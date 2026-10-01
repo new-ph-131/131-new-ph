@@ -14,13 +14,35 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     if (window.pdfjsLib) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      try {
+        // Blob worker bypasses Safari / WebKit cross-origin worker restriction completely
+        const workerBlob = new Blob([
+          'importScripts("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js");'
+        ], { type: 'application/javascript' });
+        pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+      } catch (e) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
     }
 
-    window.extractPdfTextFromBytes = async function(rawBytesList) {
+    window.extractPdfTextFromBytes = async function(rawBytes) {
       try {
-        const uint8 = new Uint8Array(rawBytesList);
-        const loadingTask = pdfjsLib.getDocument({ data: uint8 });
+        let uint8;
+        if (rawBytes instanceof Uint8Array) {
+          uint8 = rawBytes;
+        } else if (rawBytes && rawBytes.buffer) {
+          uint8 = new Uint8Array(rawBytes.buffer, rawBytes.byteOffset || 0, rawBytes.byteLength || rawBytes.length);
+        } else {
+          uint8 = new Uint8Array(rawBytes);
+        }
+
+        const loadingTask = pdfjsLib.getDocument({
+          data: uint8,
+          cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+          cMapPacked: true,
+          standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/',
+          stopAtErrors: false
+        });
         const pdf = await loadingTask.promise;
         let fullLines = [];
 
@@ -34,13 +56,13 @@
             y: it.transform[5]
           }));
 
-          // Group text items into lines using Y-coordinate clustering (tolerance: 4px)
+          // Group by Y with 8.0px tolerance (matches Marg ERP table rows perfectly)
           const lineGroups = [];
           items.sort((a, b) => b.y - a.y);
 
           for (const it of items) {
             if (!it.str || it.str.trim().length === 0) continue;
-            let matchedGroup = lineGroups.find(g => Math.abs(g.y - it.y) <= 4.0);
+            let matchedGroup = lineGroups.find(g => Math.abs(g.y - it.y) <= 8.0);
             if (!matchedGroup) {
               matchedGroup = { y: it.y, items: [] };
               lineGroups.push(matchedGroup);
@@ -48,10 +70,10 @@
             matchedGroup.items.push(it);
           }
 
-          // Sort lines from top to bottom
+          // Sort lines top to bottom
           lineGroups.sort((a, b) => b.y - a.y);
 
-          // Sort each line horizontally from left to right
+          // Sort items horizontally inside each line
           for (const group of lineGroups) {
             group.items.sort((a, b) => a.x - b.x);
             const lineStr = group.items.map(it => it.str.trim()).filter(s => s.length > 0).join(' ');

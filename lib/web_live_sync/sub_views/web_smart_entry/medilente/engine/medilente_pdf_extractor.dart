@@ -2,17 +2,18 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:js' as js;
+import 'package:archive/archive.dart';
 import '../models/medilente_bill_model.dart';
 import 'medilente_direct_parser.dart';
 import 'medilente_csv_generator.dart';
 
 class MedilentePdfExtractor {
   static Future<String> extractTextAsync(Uint8List bytes) async {
+    // 1. Primary: Fast in-browser PDF.js with direct TypedArray passing (No .toList() lag)
     try {
       if (js.context.hasProperty('extractPdfTextFromBytes')) {
         final completer = Completer<String>();
-        // Pass as plain Dart List<int> so JS receives a clean JS Array
-        final promise = js.context.callMethod('extractPdfTextFromBytes', [bytes.toList()]);
+        final promise = js.context.callMethod('extractPdfTextFromBytes', [bytes]);
 
         promise.callMethod('then', [
           js.allowInterop((result) {
@@ -23,14 +24,20 @@ class MedilentePdfExtractor {
           })
         ]);
 
-        String text = await completer.future.timeout(const Duration(seconds: 10), onTimeout: () => '');
-        if (text.trim().length > 10) {
+        String text = await completer.future.timeout(const Duration(seconds: 12), onTimeout: () => '');
+        if (text.trim().length > 30) {
           return text;
         }
       }
     } catch (_) {}
 
-    // Fallback ascii decode
+    // 2. 1000-IQ Fail-Safe: Pure Dart FlateDecode extractor (Zero dependency on JS)
+    String dartExtracted = _extractTextWithDartFlate(bytes);
+    if (dartExtracted.trim().length > 30) {
+      return dartExtracted;
+    }
+
+    // 3. Fallback: Ascii character scanner
     StringBuffer asciiBuf = StringBuffer();
     for (int b in bytes) {
       if (b >= 32 && b <= 126) {
@@ -42,11 +49,55 @@ class MedilentePdfExtractor {
     return asciiBuf.toString();
   }
 
+  static String _extractTextWithDartFlate(Uint8List bytes) {
+    try {
+      String pdfStr = String.fromCharCodes(bytes);
+      StringBuffer extracted = StringBuffer();
+      
+      RegExp streamRegex = RegExp(r'stream\r?\n', caseSensitive: false);
+      RegExp endStreamRegex = RegExp(r'\r?\nendstream', caseSensitive: false);
+
+      var streamMatches = streamRegex.allMatches(pdfStr).toList();
+      var endMatches = endStreamRegex.allMatches(pdfStr).toList();
+
+      for (int i = 0; i < streamMatches.length && i < endMatches.length; i++) {
+        int start = streamMatches[i].end;
+        int end = endMatches[i].start;
+        if (end > start) {
+          try {
+            Uint8List streamBytes = bytes.sublist(start, end);
+            List<int> decoded;
+            try {
+              decoded = ZLibDecoder().decodeBytes(streamBytes, verify: false);
+            } catch (_) {
+              decoded = streamBytes;
+            }
+            String content = String.fromCharCodes(decoded.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13));
+            
+            // Extract text tokens inside parentheses: (Text) Tj or [(Text)...] TJ
+            RegExp tjRegex = RegExp(r'\(([^)]+)\)');
+            var matches = tjRegex.allMatches(content);
+            for (var m in matches) {
+              String t = m.group(1)?.trim() ?? "";
+              if (t.isNotEmpty) {
+                extracted.write("$t ");
+              }
+            }
+            extracted.writeln();
+          } catch (_) {}
+        }
+      }
+      return extracted.toString();
+    } catch (_) {
+      return "";
+    }
+  }
+
   static Future<Map<String, dynamic>> convertPdfToCsvAndParse(Uint8List pdfBytes) async {
     String extracted = await extractTextAsync(pdfBytes);
-    MedilenteBill? bill = MedilenteDirectParser.parseRawText(extracted);
+    MedilenteBill bill = MedilenteDirectParser.parseRawText(extracted);
 
-    if (bill != null && bill.items.isNotEmpty) {
+    if (bill.items.isNotEmpty) {
       String csv = MedilenteCsvGenerator.generateCsvString(bill);
       return {
         'success': true,
