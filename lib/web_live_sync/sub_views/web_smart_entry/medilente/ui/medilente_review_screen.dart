@@ -56,7 +56,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       matchedSupplier = null;
     }
 
-    // 2. Match Items
+    // 2. Match Items & Apply Auto Pharma Strip Conversion by Default
     verifiedItems.clear();
     for (var it in widget.bill.items) {
       Medicine? matchedMed;
@@ -68,6 +68,24 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         });
       } catch (_) {
         matchedMed = null;
+      }
+
+      // Auto-detect Multi-Pack Box (e.g. 10*10, 2*15) and convert to single strip (1*10, 1*15)
+      if (it.conversionFactor == 1) {
+        var match = RegExp(r'^(\d+)[\*xX](\d+)$').firstMatch(it.pack.trim());
+        if (match != null) {
+          int n = int.tryParse(match.group(1)!) ?? 1;
+          int mUnits = int.tryParse(match.group(2)!) ?? 10;
+          if (n > 1) {
+            it.originalPack = it.pack;
+            it.pack = "1*$mUnits";
+            it.conversionFactor = n;
+            it.qty = it.qty * n;
+            it.rate = it.rate / n;
+            it.netMrp = it.netMrp / n;
+            if (it.oldMrp > 0) it.oldMrp = it.oldMrp / n;
+          }
+        }
       }
 
       double gross = it.qty * it.rate;
@@ -84,7 +102,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         'taxable': taxable,
         'taxAmt': taxAmt,
         'systemTotal': systemCalcTotal,
-        'saveMasterAsStrip': false,
+        'saveMasterAsStrip': true, // Strip pricing in Master by default!
       });
     }
 
@@ -158,6 +176,16 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         }
 
         if (existingInMaster != null) {
+          // Update master with strip pricing if needed
+          if (row['saveMasterAsStrip'] == true && existingInMaster.packing != it.pack) {
+            existingInMaster.packing = it.pack;
+            existingInMaster.mrp = it.netMrp;
+            existingInMaster.purRate = it.rate;
+            existingInMaster.rateA = it.netMrp;
+            existingInMaster.rateB = it.netMrp * 0.95;
+            existingInMaster.rateC = it.netMrp * 0.92;
+            webPh.updateMedicine(existingInMaster);
+          }
           row['matchedMed'] = existingInMaster;
           row['status'] = 'VERIFIED';
           row['isSelected'] = true;
@@ -168,12 +196,12 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
             id: "MED-${DateTime.now().millisecondsSinceEpoch}-${it.srNo}",
             systemId: sysId,
             name: it.productName.toUpperCase().trim(),
-            packing: it.pack,
+            packing: it.pack, // Saved as "1*10"!
             hsnCode: it.hsn,
             gst: it.igstRate,
-            mrp: it.netMrp,
-            purRate: it.rate,
-            rateA: it.netMrp,
+            mrp: it.netMrp,   // Saved as Strip MRP!
+            purRate: it.rate, // Saved as Strip PurRate!
+            rateA: it.netMrp, // Saved as Strip Rate A!
             rateB: it.netMrp * 0.95,
             rateC: it.netMrp * 0.92,
           );
@@ -188,7 +216,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
 
     setState(() => isLoading = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ Products reconciled with Masters!"), backgroundColor: Colors.green),
+      const SnackBar(content: Text("✅ Products created with STRIP (1*10) pricing in Master!"), backgroundColor: Colors.green),
     );
   }
 
@@ -227,6 +255,17 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     for (var row in verifiedItems.where((r) => r['isSelected'])) {
       final MedilenteItem raw = row['raw'];
       Medicine med = row['matchedMed'];
+
+      // Update Medicine Master with Strip Pricing if flagged
+      if (row['saveMasterAsStrip'] == true) {
+        med.packing = raw.pack; // e.g. "1*10"
+        med.mrp = raw.netMrp;   // Strip MRP
+        med.purRate = raw.rate; // Strip PurRate
+        med.rateA = raw.netMrp; // Strip Sale Rate A
+        med.rateB = raw.netMrp * 0.95;
+        med.rateC = raw.netMrp * 0.92;
+        webPh.updateMedicine(med);
+      }
 
       commitItems.add(PurchaseItem(
         id: "PITM-${DateTime.now().millisecondsSinceEpoch}-$sNo",
@@ -291,7 +330,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     if (pushed) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("🎉 Purchase Inward ${newPurchase.billNo} Saved & Cloud Synced!"), backgroundColor: Colors.green),
+          SnackBar(content: Text("🎉 Purchase Inward ${newPurchase.billNo} Saved & Master Updated to Strips!"), backgroundColor: Colors.green),
         );
         widget.onBack();
       }
@@ -474,7 +513,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                     child: Row(
                       children: [
                         Text(
-                          raw.pack,
+                          "${raw.pack} (${raw.conversionFactor > 1 ? 'STRIP' : 'BOX'})",
                           style: TextStyle(color: raw.conversionFactor > 1 ? Colors.greenAccent : Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 4),
@@ -498,7 +537,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
               ],
             ),
             subtitle: Text(
-              "Batch: ${raw.batch} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} ${raw.pack} • Pur.Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.netMrp.toStringAsFixed(2)} • IGST: ${raw.igstRate.toInt()}%",
+              "Batch: ${raw.batch} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} ${raw.pack} • Pur.Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.netMrp.toStringAsFixed(2)}",
               style: const TextStyle(color: Colors.white54, fontSize: 10.5),
             ),
             trailing: isLinked
@@ -517,7 +556,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_box_rounded, color: Color(0xFFF59E0B), size: 20),
-                        tooltip: "Create product master",
+                        tooltip: "Create product master with strip pricing",
                         onPressed: () => _quickCreateMedicineMaster(webPh, raw, idx),
                       ),
                     ],
@@ -622,12 +661,12 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         webPh: webPh,
         preFillData: {
           'name': it.productName,
-          'pack': it.pack,
+          'pack': it.pack, // Passed as "1*10"!
           'hsn': it.hsn,
           'gst': it.igstRate,
-          'mrp': it.netMrp > 0 ? it.netMrp : it.oldMrp,
-          'purRate': it.rate,
-          'rateA': it.netMrp > 0 ? it.netMrp : it.oldMrp,
+          'mrp': it.netMrp > 0 ? it.netMrp : it.oldMrp, // Per Strip MRP!
+          'purRate': it.rate, // Per Strip PurRate!
+          'rateA': it.netMrp > 0 ? it.netMrp : it.oldMrp, // Per Strip Rate A!
           'rateB': (it.netMrp > 0 ? it.netMrp : it.oldMrp) * 0.95,
           'form': 'TAB',
         },

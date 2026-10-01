@@ -19,9 +19,62 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
   String searchQuery = "";
   final List<String> drugForms = ["TAB", "CAP", "SYP", "INJ", "IV", "PCS", "EXT", "OINT", "DROP"];
 
+  void _convertAllBoxMastersToStrips(PharoahWebManager webPh) async {
+    int convertedCount = 0;
+
+    for (var m in webPh.medicines) {
+      String p = m.packing.trim();
+      var match = RegExp(r'^(\d+)[\*xX](\d+)$').firstMatch(p);
+      if (match != null) {
+        int n = int.tryParse(match.group(1)!) ?? 1;
+        int mUnits = int.tryParse(match.group(2)!) ?? 10;
+
+        if (n > 1) {
+          m.packing = "1*$mUnits";
+          m.mrp = m.mrp / n;
+          m.purRate = m.purRate / n;
+          m.rateA = m.rateA / n;
+          m.rateB = m.rateB / n;
+          m.rateC = m.rateC / n;
+
+          // Also update batches in batchHistory
+          if (webPh.batchHistory.containsKey(m.identityKey)) {
+            for (var b in webPh.batchHistory[m.identityKey]!) {
+              b.packing = "1*$mUnits";
+              b.mrp = b.mrp / n;
+              b.purRate = b.purRate / n;
+              b.rate = b.purRate;
+              b.rateA = b.rateA / n;
+              b.rateB = b.rateB / n;
+              b.rateC = b.rateC / n;
+            }
+          }
+          convertedCount++;
+        }
+      }
+    }
+
+    if (convertedCount > 0) {
+      webPh.rebuildInventory();
+      await webPh.pushUpdatedDataToCloud();
+      setState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("🎉 Converted $convertedCount products to single strip (1*10) pricing!"), backgroundColor: Colors.green),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("All products are already in strip format!"), backgroundColor: Colors.blue),
+        );
+      }
+    }
+  }
+
   void _showProductForm(PharoahWebManager webPh, {Medicine? med}) {
     final nameC = TextEditingController(text: med?.name);
-    final packC = TextEditingController(text: med?.packing ?? "10 TAB");
+    final packC = TextEditingController(text: med?.packing ?? "1*10");
     final hsnC = TextEditingController(text: med?.hsnCode ?? "3004");
     final gstC = TextEditingController(text: med?.gst.toString() ?? "12");
     final rackC = TextEditingController(text: med?.rackNo);
@@ -99,7 +152,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(flex: 3, child: _inputField("PACKING *", packC, Icons.inventory, isCaps: true)),
+                        Expanded(flex: 3, child: _inputField("PACKING (e.g. 1*10) *", packC, Icons.inventory, isCaps: true)),
                         const SizedBox(width: 10),
                         Expanded(
                           flex: 2,
@@ -123,33 +176,13 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    _pickerBox("COMPANY / BRAND", companyName, Icons.business, () {
-                      _showSearchModal("Select Company", webPh.companies.map((c) => c.name).toList(), (selected) {
-                        setDialogState(() {
-                          companyName = selected;
-                          companyId = webPh.getOrCreateCompany(selected);
-                        });
-                      });
-                    }),
-                    const SizedBox(height: 12),
-                    _pickerBox("SALT COMPOSITION", saltName, Icons.science, () {
-                      _showSearchModal("Select Salt", webPh.salts.map((s) => s.name).toList(), (selected) {
-                        setDialogState(() {
-                          saltName = selected;
-                          saltId = webPh.getOrCreateSalt(selected);
-                        });
-                      });
-                    }),
-                    const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(child: _inputField("MRP ₹", mrpC, Icons.currency_rupee, isNum: true)),
+                        Expanded(child: _inputField("STRIP MRP ₹", mrpC, Icons.currency_rupee, isNum: true)),
                         const SizedBox(width: 8),
-                        Expanded(child: _inputField("PUR. RATE ₹", purRateC, Icons.shopping_cart, isNum: true)),
+                        Expanded(child: _inputField("STRIP PUR. RATE ₹", purRateC, Icons.shopping_cart, isNum: true)),
                         const SizedBox(width: 8),
-                        Expanded(child: _inputField("RATE A ₹", rateAC, Icons.sell, isNum: true)),
-                        const SizedBox(width: 8),
-                        Expanded(child: _inputField("RATE B ₹", rateBC, Icons.sell, isNum: true)),
+                        Expanded(child: _inputField("STRIP RATE A ₹", rateAC, Icons.sell, isNum: true)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -247,59 +280,6 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
     );
   }
 
-  void _showSearchModal(String title, List<String> list, Function(String) onSelect) {
-    String query = "";
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          final filtered = list.where((item) => item.toLowerCase().contains(query.toLowerCase())).toList();
-          return AlertDialog(
-            backgroundColor: const Color(0xFF1E293B),
-            title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-            content: SizedBox(
-              width: 380,
-              height: 350,
-              child: Column(
-                children: [
-                  TextField(
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      hintText: "Type to search...",
-                      hintStyle: TextStyle(color: Colors.white38),
-                      prefixIcon: Icon(Icons.search, color: Colors.cyanAccent, size: 18),
-                      filled: true,
-                      fillColor: Colors.black26,
-                      border: OutlineInputBorder(borderSide: BorderSide.none),
-                    ),
-                    onChanged: (v) => setModalState(() => query = v),
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, idx) {
-                        return ListTile(
-                          dense: true,
-                          title: Text(filtered[idx], style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                          onTap: () {
-                            onSelect(filtered[idx]);
-                            Navigator.pop(ctx);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
@@ -349,17 +329,31 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                 ],
               ),
               const Spacer(),
+              // Retrofit Split Button
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F766E),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                onPressed: () => _convertAllBoxMastersToStrips(webPh),
+                icon: const Icon(Icons.call_split_rounded, size: 16, color: Color(0xFF34D399)),
+                label: const Text("CONVERT 10*10 TO STRIPS", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+              ),
+              const SizedBox(width: 10),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF7C3AED),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
                 onPressed: () => _showProductForm(webPh),
                 icon: const Icon(Icons.add_box_rounded, size: 18),
-                label: const Text("ADD NEW PRODUCT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                label: const Text("ADD NEW PRODUCT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
               ),
             ],
           ),
@@ -427,7 +421,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                               children: [
                                 _td(m.systemId, isBold: true, color: Colors.cyanAccent),
                                 _td(m.name, isLeft: true, isBold: true),
-                                _td(m.packing),
+                                _td(m.packing, color: m.packing.startsWith("1*") ? Colors.greenAccent : Colors.orangeAccent, isBold: true),
                                 _td(m.drugForm),
                                 _td("₹${m.mrp.toStringAsFixed(2)}"),
                                 _td("₹${m.rateA.toStringAsFixed(2)}"),
@@ -499,31 +493,6 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
     );
   }
 
-  Widget _pickerBox(String label, String value, IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          children: [
-            Icon(icon, color: const Color(0xFFA78BFA), size: 16),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(color: Colors.white54, fontSize: 8, fontWeight: FontWeight.bold)),
-                Text(value, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const Spacer(),
-            const Icon(Icons.arrow_drop_down, color: Colors.white54),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _confirmDelete(PharoahWebManager webPh, Medicine m) {
     showDialog(
       context: context,
@@ -532,7 +501,8 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
         title: const Text("Delete Product?", style: TextStyle(color: Colors.white, fontSize: 14)),
         content: Text("Are you sure you want to remove '${m.name}' from catalog?", style: const TextStyle(color: Colors.white70, fontSize: 11)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
