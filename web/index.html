@@ -11,18 +11,14 @@
   <title>Pharoah ERP Web Workstation</title>
   <link rel="manifest" href="manifest.json">
 
-
-  
-
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     if (window.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
+
     window.extractPdfTextFromBytes = async function(rawBytesList) {
       try {
-        // Convert plain JS Array from Dart into genuine Uint8Array
         const uint8 = new Uint8Array(rawBytesList);
         const loadingTask = pdfjsLib.getDocument({ data: uint8 });
         const pdf = await loadingTask.promise;
@@ -37,35 +33,40 @@
             x: it.transform[4],
             y: it.transform[5]
           }));
-          
-          items.sort((a, b) => {
-            if (Math.abs(a.y - b.y) <= 4) return a.x - b.x;
-            return b.y - a.y;
-          });
 
-          let currentY = null;
-          let currentLine = '';
+          // Group text items into lines using Y-coordinate clustering (tolerance: 4px)
+          const lineGroups = [];
+          items.sort((a, b) => b.y - a.y);
 
-          for (const item of items) {
-            if (currentY === null || Math.abs(item.y - currentY) > 4) {
-              if (currentLine.trim().length > 0) fullLines.push(currentLine.trim());
-              currentLine = item.str;
-              currentY = item.y;
-            } else {
-              currentLine += ' ' + item.str;
+          for (const it of items) {
+            if (!it.str || it.str.trim().length === 0) continue;
+            let matchedGroup = lineGroups.find(g => Math.abs(g.y - it.y) <= 4.0);
+            if (!matchedGroup) {
+              matchedGroup = { y: it.y, items: [] };
+              lineGroups.push(matchedGroup);
+            }
+            matchedGroup.items.push(it);
+          }
+
+          // Sort lines from top to bottom
+          lineGroups.sort((a, b) => b.y - a.y);
+
+          // Sort each line horizontally from left to right
+          for (const group of lineGroups) {
+            group.items.sort((a, b) => a.x - b.x);
+            const lineStr = group.items.map(it => it.str.trim()).filter(s => s.length > 0).join(' ');
+            if (lineStr.length > 0) {
+              fullLines.push(lineStr);
             }
           }
-          if (currentLine.trim().length > 0) fullLines.push(currentLine.trim());
         }
-        return fullLines.join('
-');
+        return fullLines.join('\n');
       } catch (e) {
         console.error('PDF.js parsing exception:', e);
         return '';
       }
     };
   </script>
-
 </head>
 <body style="background-color: #0F172A; margin: 0; padding: 0;">
   <script>

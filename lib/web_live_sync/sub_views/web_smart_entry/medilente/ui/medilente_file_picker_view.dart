@@ -52,10 +52,15 @@ class _MedilenteFilePickerViewState extends State<MedilenteFilePickerView> {
         bytes = Uint8List.fromList(byteBuffer);
       }
 
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception("File data is empty. Please select a valid PDF.");
+      }
+
       setState(() => statusMessage = "Extracting invoice text...");
-      String rawText = "";
-      if (bytes != null && bytes.isNotEmpty) {
-        rawText = await MedilentePdfExtractor.extractTextAsync(bytes);
+      String rawText = await MedilentePdfExtractor.extractTextAsync(bytes);
+
+      if (rawText.trim().isEmpty) {
+        throw Exception("No text found in PDF. Make sure it's not a scanned image without OCR.");
       }
 
       setState(() => statusMessage = "Parsing Medilente items...");
@@ -65,9 +70,33 @@ class _MedilenteFilePickerViewState extends State<MedilenteFilePickerView> {
       widget.onBillLoaded(parsedBill);
     } catch (e) {
       setState(() => isProcessing = false);
-      // Guarantee opening review screen with fallback bill on any exception
-      MedilenteBill fallbackBill = MedilenteDirectParser.parseRawText("MEDILENTE PHARMA A000734 06/07/2026");
-      widget.onBillLoaded(fallbackBill);
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (c) => AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: Colors.redAccent),
+                SizedBox(width: 10),
+                Text("Extraction Error", style: TextStyle(color: Colors.white, fontSize: 14)),
+              ],
+            ),
+            content: Text(
+              "$e",
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                onPressed: () => Navigator.pop(c),
+                child: const Text("OK", style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
@@ -124,12 +153,12 @@ class _MedilenteFilePickerViewState extends State<MedilenteFilePickerView> {
                   ),
                   const SizedBox(height: 22),
                   const Text(
-                    "Upload Any Medilente Invoice PDF",
+                    "Upload Medilente Invoice PDF",
                     style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    "Guaranteed parsing active. Select any PDF and it will instantly open the review & inward table.",
+                    "Upload Medilente invoice to automatically extract all products, batches, expiries, quantities, and GST rates.",
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.white54, fontSize: 11.5, height: 1.5),
                   ),

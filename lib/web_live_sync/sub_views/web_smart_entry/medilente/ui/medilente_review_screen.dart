@@ -39,7 +39,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
   void _reconcileWithMasters() {
     final webPh = Provider.of<PharoahWebManager>(context, listen: false);
 
-    // 1. BULLETPROOF SUPPLIER DEDUPLICATION (By Clean GST, Exact Name, or Clean String)
+    // 1. Match Supplier By Clean GST or Name
     String cleanGst = widget.bill.supplierGstin.trim().toUpperCase();
     String cleanSupName = _cleanStr(widget.bill.supplierName);
 
@@ -56,7 +56,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       matchedSupplier = null;
     }
 
-    // 2. BULLETPROOF PRODUCT DEDUPLICATION
+    // 2. Match Items
     verifiedItems.clear();
     for (var it in widget.bill.items) {
       Medicine? matchedMed;
@@ -64,21 +64,10 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
 
       try {
         matchedMed = webPh.medicines.firstWhere((m) {
-          String cleanMName = _cleanStr(m.name);
-          return cleanMName == cleanItemName;
+          return _cleanStr(m.name) == cleanItemName;
         });
       } catch (_) {
         matchedMed = null;
-      }
-
-      // Default Pharma Split: If 10*10, default to 1*10 strip
-      if (it.pack == "10*10" || it.originalPack == "10*10") {
-        it.originalPack = "10*10";
-        it.pack = "1*10";
-        it.conversionFactor = 10;
-        it.qty = it.qty * 10;
-        it.rate = it.rate / 10;
-        it.netMrp = it.netMrp / 10;
       }
 
       double gross = it.qty * it.rate;
@@ -95,7 +84,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         'taxable': taxable,
         'taxAmt': taxAmt,
         'systemTotal': systemCalcTotal,
-        'saveMasterAsStrip': true,
+        'saveMasterAsStrip': false,
       });
     }
 
@@ -161,7 +150,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         final MedilenteItem it = row['raw'];
         String cleanName = _cleanStr(it.productName);
 
-        // Deduplication Check inside Master before creating
         Medicine? existingInMaster;
         try {
           existingInMaster = webPh.medicines.firstWhere((m) => _cleanStr(m.name) == cleanName);
@@ -174,15 +162,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
           row['status'] = 'VERIFIED';
           row['isSelected'] = true;
         } else {
-          // Auto split 10*10 to 1*10 if not already converted
-          if (it.pack == "10*10" && it.conversionFactor == 1) {
-            it.pack = "1*10";
-            it.conversionFactor = 10;
-            it.qty = it.qty * 10;
-            it.rate = it.rate / 10;
-            it.netMrp = it.netMrp / 10;
-          }
-
           String sysId = "PH-MED-${10000 + webPh.medicines.length + 1}";
 
           final newMed = Medicine(
@@ -209,7 +188,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
 
     setState(() => isLoading = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ Products reconciled with Masters without duplication!"), backgroundColor: Colors.green),
+      const SnackBar(content: Text("✅ Products reconciled with Masters!"), backgroundColor: Colors.green),
     );
   }
 
@@ -236,7 +215,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       invoiceDt = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
     } catch (_) {}
 
-    // Strict App-Compatible Numbering: PUR-X
     String internalNo = WebPharoahNumberingEngine.getNextNumber(
       prefix: "PUR-",
       startFrom: 1,
@@ -249,17 +227,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     for (var row in verifiedItems.where((r) => r['isSelected'])) {
       final MedilenteItem raw = row['raw'];
       Medicine med = row['matchedMed'];
-      bool asStrip = row['saveMasterAsStrip'] == true;
-
-      if (asStrip && med.packing != "1*10") {
-        med.packing = "1*10";
-        med.mrp = raw.netMrp;
-        med.purRate = raw.rate;
-        med.rateA = raw.netMrp;
-        med.rateB = raw.netMrp * 0.95;
-        med.rateC = raw.netMrp * 0.92;
-        webPh.updateMedicine(med);
-      }
 
       commitItems.add(PurchaseItem(
         id: "PITM-${DateTime.now().millisecondsSinceEpoch}-$sNo",
@@ -297,8 +264,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       );
     }
 
-    // 🛡️ CRITICAL FIX: ID starts with PUR-WEB and sourceTag is WEB-PORTAL
-    // This allows mobile app's app_sync_engine.dart to immediately identify and import this bill!
     final newPurchase = Purchase(
       id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}",
       internalNo: internalNo,
@@ -313,22 +278,20 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       roundOff: widget.bill.roundOff,
       gstStatus: "Matched",
       items: commitItems,
-      sourceTag: "WEB-PORTAL", // Essential for app 2-way sync
+      sourceTag: "WEB-PORTAL",
     );
 
-    // Prevent duplicate bill entry in purchases list
     webPh.purchases.removeWhere((p) => p.billNo.trim().toUpperCase() == widget.bill.invoiceNo.trim().toUpperCase());
     webPh.purchases.add(newPurchase);
     webPh.rebuildInventory();
 
-    // ⚡ INSTANT ATOMIC CLOUD PUSH (Ensures bill never disappears during heartbeat)
     bool pushed = await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 
     if (pushed) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("🎉 Purchase Inward ${newPurchase.billNo} Saved & Cloud Synced! Visible in App."), backgroundColor: Colors.green),
+          SnackBar(content: Text("🎉 Purchase Inward ${newPurchase.billNo} Saved & Cloud Synced!"), backgroundColor: Colors.green),
         );
         widget.onBack();
       }
@@ -371,7 +334,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
               const Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 22),
               const SizedBox(width: 8),
               Text(
-                "VERIFY MEDILENTE INVOICE • #${widget.bill.invoiceNo}",
+                "VERIFY INVOICE • #${widget.bill.invoiceNo}",
                 style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
               const Spacer(),
@@ -455,7 +418,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "GST: ${widget.bill.supplierGstin} • PAN: ${widget.bill.supplierPan} • DL: ${widget.bill.supplierDl} • Email: ${widget.bill.supplierEmail}",
+                  "GST: ${widget.bill.supplierGstin} • Date: ${widget.bill.invoiceDate} • Phone: ${widget.bill.supplierPhone}",
                   style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                 ),
               ],
@@ -478,7 +441,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     final MedilenteItem raw = row['raw'];
     final Medicine? match = row['matchedMed'];
     bool isLinked = match != null;
-    bool isSavedAsStrip = row['saveMasterAsStrip'] == true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -512,7 +474,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                     child: Row(
                       children: [
                         Text(
-                          "${raw.pack} (${isSavedAsStrip ? 'STRIP PRICING' : 'BOX PRICING'})",
+                          raw.pack,
                           style: TextStyle(color: raw.conversionFactor > 1 ? Colors.greenAccent : Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 4),
@@ -542,7 +504,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
             trailing: isLinked
                 ? IconButton(
                     icon: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
-                    tooltip: "Configure Pack & Strip/Box Pricing",
+                    tooltip: "Configure Pack Split / Unit",
                     onPressed: () => _openPackConverter(idx),
                   )
                 : Row(
@@ -550,13 +512,13 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
-                        tooltip: "Configure Pack & Strip/Box Pricing",
+                        tooltip: "Configure Pack Split / Unit",
                         onPressed: () => _openPackConverter(idx),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_box_rounded, color: Color(0xFFF59E0B), size: 20),
-                        tooltip: "Create product master with auto-fill",
-                        onPressed: () => _quickCreateMedicineMaster(webPh, raw, idx, isSavedAsStrip),
+                        tooltip: "Create product master",
+                        onPressed: () => _quickCreateMedicineMaster(webPh, raw, idx),
                       ),
                     ],
                   ),
@@ -653,7 +615,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     );
   }
 
-  void _quickCreateMedicineMaster(PharoahWebManager webPh, MedilenteItem it, int idx, bool asStrip) {
+  void _quickCreateMedicineMaster(PharoahWebManager webPh, MedilenteItem it, int idx) {
     showDialog(
       context: context,
       builder: (c) => QuickAddProductModal(

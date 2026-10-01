@@ -1,5 +1,3 @@
-import 'sub_views/web_smart_entry/ui/web_smart_entry_hub.dart';
-import 'web_challan_view.dart';
 // FILE: lib/web_live_sync/web_portal_gateway.dart
 
 import 'package:flutter/material.dart';
@@ -25,6 +23,8 @@ import 'web_product_master.dart';
 import 'web_party_master.dart';
 import 'web_batch_master.dart';
 import 'web_aux_masters.dart';
+import 'web_challan_view.dart';
+import 'sub_views/web_smart_entry/ui/web_smart_entry_hub.dart';
 
 class WebPortalGateway extends StatefulWidget {
   const WebPortalGateway({super.key});
@@ -164,7 +164,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebReturnsView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
     }
     if (currentView == "GO_CHALLAN_SALE" || currentView == "GO_CHALLAN_PUR" || currentView == "GO_CHALLAN_SALE_REG" || currentView == "GO_CHALLAN_PUR_REG" || currentView == "CHALLANS") {
-      int tabIdx = -1; // -1 for 4-Card Hub (Sale Challan, Pur Challan, Sale Reg, Pur Reg)
+      int tabIdx = -1;
       if (currentView == "GO_CHALLAN_SALE") tabIdx = 0;
       if (currentView == "GO_CHALLAN_PUR") tabIdx = 1;
       if (currentView == "GO_CHALLAN_SALE_REG") tabIdx = 2;
