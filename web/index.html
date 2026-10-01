@@ -10,6 +10,62 @@
   <meta http-equiv="Expires" content="0">
   <title>Pharoah ERP Web Workstation</title>
   <link rel="manifest" href="manifest.json">
+
+
+  
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    window.extractPdfTextFromBytes = async function(rawBytesList) {
+      try {
+        // Convert plain JS Array from Dart into genuine Uint8Array
+        const uint8 = new Uint8Array(rawBytesList);
+        const loadingTask = pdfjsLib.getDocument({ data: uint8 });
+        const pdf = await loadingTask.promise;
+        let fullLines = [];
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          
+          const items = textContent.items.map(it => ({
+            str: it.str,
+            x: it.transform[4],
+            y: it.transform[5]
+          }));
+          
+          items.sort((a, b) => {
+            if (Math.abs(a.y - b.y) <= 4) return a.x - b.x;
+            return b.y - a.y;
+          });
+
+          let currentY = null;
+          let currentLine = '';
+
+          for (const item of items) {
+            if (currentY === null || Math.abs(item.y - currentY) > 4) {
+              if (currentLine.trim().length > 0) fullLines.push(currentLine.trim());
+              currentLine = item.str;
+              currentY = item.y;
+            } else {
+              currentLine += ' ' + item.str;
+            }
+          }
+          if (currentLine.trim().length > 0) fullLines.push(currentLine.trim());
+        }
+        return fullLines.join('
+');
+      } catch (e) {
+        console.error('PDF.js parsing exception:', e);
+        return '';
+      }
+    };
+  </script>
+
 </head>
 <body style="background-color: #0F172A; margin: 0; padding: 0;">
   <script>

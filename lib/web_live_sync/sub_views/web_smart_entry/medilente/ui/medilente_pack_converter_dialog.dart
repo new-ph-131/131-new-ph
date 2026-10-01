@@ -23,42 +23,47 @@ class MedilentePackConverterDialog extends StatefulWidget {
 }
 
 class _MedilentePackConverterDialogState extends State<MedilentePackConverterDialog> {
-  int factor = 10;
+  int boxMultiplier = 10;
+  int unitPerStrip = 10;
   String targetPack = "1*10";
   bool isSplitToSingleStrip = true;
-  bool saveMasterAsStrip = true; // True = Strip price in Master, False = Box price in Master
+  bool saveMasterAsStrip = true;
 
   @override
   void initState() {
     super.initState();
-    if (widget.item.pack == "10*10" || widget.item.originalPack == "10*10") {
-      factor = 10;
-      targetPack = "1*10";
-      isSplitToSingleStrip = true;
-      saveMasterAsStrip = true;
+    String pStr = widget.item.originalPack.isNotEmpty ? widget.item.originalPack : widget.item.pack;
+    var match = RegExp(r'^(\d+)[\*xX](\d+)$').firstMatch(pStr);
+    if (match != null) {
+      boxMultiplier = int.tryParse(match.group(1)!) ?? 10;
+      unitPerStrip = int.tryParse(match.group(2)!) ?? 10;
     } else {
-      factor = widget.item.conversionFactor > 0 ? widget.item.conversionFactor : 1;
-      targetPack = widget.item.pack;
-      isSplitToSingleStrip = factor > 1;
-      saveMasterAsStrip = isSplitToSingleStrip;
+      boxMultiplier = widget.item.conversionFactor > 1 ? widget.item.conversionFactor : 10;
+      unitPerStrip = 10;
     }
+
+    targetPack = "1*$unitPerStrip";
+    isSplitToSingleStrip = boxMultiplier > 1;
+    saveMasterAsStrip = isSplitToSingleStrip;
   }
 
   @override
   Widget build(BuildContext context) {
-    double baseQty = widget.item.originalPack.isNotEmpty && widget.item.conversionFactor > 1
+    // Original invoice box quantities and rates
+    double baseBoxQty = widget.item.conversionFactor > 1 && widget.item.originalPack.isNotEmpty
         ? (widget.item.qty / widget.item.conversionFactor)
         : widget.item.qty;
-    double baseRate = widget.item.originalPack.isNotEmpty && widget.item.conversionFactor > 1
+    double baseBoxRate = widget.item.conversionFactor > 1 && widget.item.originalPack.isNotEmpty
         ? (widget.item.rate * widget.item.conversionFactor)
         : widget.item.rate;
-    double baseMrp = widget.item.originalPack.isNotEmpty && widget.item.conversionFactor > 1
+    double baseBoxMrp = widget.item.conversionFactor > 1 && widget.item.originalPack.isNotEmpty
         ? ((widget.item.netMrp > 0 ? widget.item.netMrp : widget.item.oldMrp) * widget.item.conversionFactor)
         : (widget.item.netMrp > 0 ? widget.item.netMrp : widget.item.oldMrp);
 
-    double calculatedQty = isSplitToSingleStrip ? (baseQty * factor) : baseQty;
-    double calculatedRate = isSplitToSingleStrip ? (baseRate / factor) : baseRate;
-    double calculatedMrp = isSplitToSingleStrip ? (baseMrp / factor) : baseMrp;
+    int activeFactor = isSplitToSingleStrip ? boxMultiplier : 1;
+    double calculatedQty = baseBoxQty * activeFactor;
+    double calculatedRate = baseBoxRate / activeFactor;
+    double calculatedMrp = baseBoxMrp / activeFactor;
 
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
@@ -70,10 +75,7 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: const BoxDecoration(
-              color: Color(0x3310B981),
-              shape: BoxShape.circle,
-            ),
+            decoration: const BoxDecoration(color: Color(0x3310B981), shape: BoxShape.circle),
             child: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
           ),
           const SizedBox(width: 12),
@@ -108,14 +110,8 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      "Invoiced Box Pack: ${widget.item.originalPack.isNotEmpty ? widget.item.originalPack : '10*10'}",
-                      style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      "Invoiced Qty: ${baseQty.toInt()} Box",
-                      style: const TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.bold),
-                    ),
+                    Text("Invoiced Box Pack: ${widget.item.originalPack.isNotEmpty ? widget.item.originalPack : widget.item.pack}", style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    Text("Invoiced Qty: ${baseBoxQty.toInt()} Box", style: const TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -129,14 +125,14 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                 value: true,
                 groupValue: isSplitToSingleStrip,
                 activeColor: const Color(0xFF10B981),
-                title: const Text("Split into Strips (1*10) [Recommended]", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                subtitle: const Text("1 Box (10*10) splits into 10 Strips.", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                title: Text("Split into Single Strips ($targetPack) [Recommended for ${widget.item.originalPack}]", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                subtitle: Text("1 Box (${widget.item.originalPack}) contains $boxMultiplier strips. Multiplies qty by $boxMultiplier and divides rate by $boxMultiplier.", style: const TextStyle(color: Colors.white54, fontSize: 10)),
                 onChanged: (v) {
                   setState(() {
                     isSplitToSingleStrip = true;
                     saveMasterAsStrip = true;
-                    factor = 10;
-                    targetPack = "1*10";
+                    targetPack = "1*$unitPerStrip";
+                    activeFactor = boxMultiplier;
                   });
                 },
               ),
@@ -144,18 +140,18 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                 value: false,
                 groupValue: isSplitToSingleStrip,
                 activeColor: const Color(0xFF10B981),
-                title: const Text("Keep Entire Box (10*10)", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                subtitle: const Text("Do not split. Keep box intact.", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                title: Text("Keep Entire Box (${widget.item.originalPack})", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                subtitle: const Text("Do not split. Keep box as 1 unit.", style: const TextStyle(color: Colors.white54, fontSize: 10)),
                 onChanged: (v) {
                   setState(() {
                     isSplitToSingleStrip = false;
                     saveMasterAsStrip = false;
-                    factor = 1;
-                    targetPack = "10*10";
+                    targetPack = widget.item.originalPack;
+                    activeFactor = 1;
                   });
                 },
               ),
-              const Divider(color: Colors.white10, height: 20),
+              const Divider(color: Colors.white10, height: 22),
               const Text(
                 "2. Master Catalog & Billing Rate Preference:",
                 style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
@@ -165,16 +161,16 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                 value: true,
                 groupValue: saveMasterAsStrip,
                 activeColor: const Color(0xFF38BDF8),
-                title: const Text("Save Master as STRIP (1*10 Pricing)", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                subtitle: const Text("Sale bills will automatically use per-strip MRP and Rate. Prevents high box billing error!", style: TextStyle(color: Color(0xFF38BDF8), fontSize: 10)),
+                title: Text("Save Master as STRIP ($targetPack Pricing)", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                subtitle: const Text("Sale bills will automatically use per-strip MRP and Rate.", style: TextStyle(color: Color(0xFF38BDF8), fontSize: 10)),
                 onChanged: isSplitToSingleStrip ? (v) => setState(() => saveMasterAsStrip = v!) : null,
               ),
               RadioListTile<bool>(
                 value: false,
                 groupValue: saveMasterAsStrip,
                 activeColor: const Color(0xFF38BDF8),
-                title: const Text("Save Master as BOX (10*10 Pricing)", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                subtitle: const Text("Catalog keeps original high box MRP & Rate.", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                title: const Text("Save Master as BOX Pricing", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                subtitle: const Text("Catalog keeps original box MRP & Rate.", style: TextStyle(color: Colors.white54, fontSize: 10)),
                 onChanged: (v) => setState(() => saveMasterAsStrip = v!),
               ),
               const SizedBox(height: 12),
@@ -193,7 +189,7 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                         const Icon(Icons.flash_on_rounded, color: Color(0xFF34D399), size: 16),
                         const SizedBox(width: 6),
                         Text(
-                          "MASTER & INVENTORY EFFECT (${saveMasterAsStrip ? '1*10 STRIP' : '10*10 BOX'}):",
+                          "MASTER & INVENTORY EFFECT (${isSplitToSingleStrip ? targetPack : widget.item.originalPack}):",
                           style: const TextStyle(color: Color(0xFF34D399), fontSize: 9.5, fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -203,8 +199,8 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _calcDetail("INVENTORY STOCK", "${calculatedQty.toInt()} Units", Colors.greenAccent),
-                        _calcDetail("PUR. RATE", "₹${(saveMasterAsStrip ? (baseRate / 10) : baseRate).toStringAsFixed(2)}", Colors.white),
-                        _calcDetail("MRP IN BILLING", "₹${(saveMasterAsStrip ? (baseMrp / 10) : baseMrp).toStringAsFixed(2)}", Colors.cyanAccent),
+                        _calcDetail("PUR. RATE", "₹${calculatedRate.toStringAsFixed(2)}", Colors.white),
+                        _calcDetail("MRP IN BILLING", "₹${calculatedMrp.toStringAsFixed(2)}", Colors.cyanAccent),
                       ],
                     ),
                   ],
@@ -228,8 +224,8 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
           ),
           onPressed: () {
             widget.onApply(
-              targetPack: isSplitToSingleStrip ? "1*10" : "10*10",
-              factor: isSplitToSingleStrip ? 10 : 1,
+              targetPack: isSplitToSingleStrip ? targetPack : widget.item.originalPack,
+              factor: activeFactor,
               newQty: calculatedQty,
               newRate: calculatedRate,
               newMrp: calculatedMrp,

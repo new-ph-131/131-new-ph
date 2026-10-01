@@ -389,11 +389,11 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
           _buildSupplierVerificationCard(webPh),
           const SizedBox(height: 16),
 
-          Expanded(
-            child: ListView.builder(
-              itemCount: verifiedItems.length,
-              itemBuilder: (context, idx) => _buildItemVerificationRow(webPh, idx),
-            ),
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: verifiedItems.length,
+            itemBuilder: (context, idx) => _buildItemVerificationRow(webPh, idx),
           ),
           const SizedBox(height: 16),
 
@@ -660,7 +660,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         webPh: webPh,
         preFillData: {
           'name': it.productName,
-          'pack': asStrip ? "1*10" : it.pack,
+          'pack': it.pack,
           'hsn': it.hsn,
           'gst': it.igstRate,
           'mrp': it.netMrp > 0 ? it.netMrp : it.oldMrp,
