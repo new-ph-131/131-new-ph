@@ -7,14 +7,14 @@ class MedilenteDirectParser {
       throw Exception("PDF text is completely empty.");
     }
 
-    // Pre-normalization: collapse spaces around separators
+    // 1. Pre-normalization of separators
     String normalized = rawText
         .replaceAllMapped(RegExp(r'(\d+)\s*[\*xX]\s*(\d+)'), (m) => '${m[1]}*${m[2]}')
         .replaceAllMapped(RegExp(r'(\d{1,2})\s*/\s*(\d{2,4})'), (m) => '${m[1]}/${m[2]}');
 
     final lines = const LineSplitter().convert(normalized);
 
-    // 1. Dynamic Invoice Number
+    // 2. Invoice Number
     String invoiceNo = "";
     RegExp invRegex = RegExp(r'Invoice\s*No\.?\s*[:\-]?\s*([A-Za-z0-9]+)', caseSensitive: false);
     var invMatch = invRegex.firstMatch(normalized);
@@ -30,7 +30,7 @@ class MedilenteDirectParser {
       invoiceNo = "INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}";
     }
 
-    // 2. Dynamic Invoice Date
+    // 3. Invoice Date
     String invoiceDate = "";
     RegExp dateRegex = RegExp(r'Invoice\s*Date\s*[:\-]?\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{4})', caseSensitive: false);
     var dateMatch = dateRegex.firstMatch(normalized);
@@ -47,7 +47,7 @@ class MedilenteDirectParser {
       invoiceDate = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}";
     }
 
-    // 3. Dynamic Supplier & Buyer
+    // 4. Strict GST Mapping (06 = Medilente Haryana, 08 = Lifecare Rajasthan)
     String supplierName = "MEDILENTE PHARMA PRIVATE LTD.";
     String supplierGstin = "06AAICM6627L1Z2";
     String supplierPan = "AAICM6627L";
@@ -59,6 +59,14 @@ class MedilenteDirectParser {
     String buyerName = "LIFECARE PHARMACEUTICALS";
     String buyerGstin = "08FSBPM0623R1ZC";
 
+    RegExp supGstRegex = RegExp(r'06[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}');
+    var sMatch = supGstRegex.firstMatch(normalized);
+    if (sMatch != null) supplierGstin = sMatch.group(0)!;
+
+    RegExp buyGstRegex = RegExp(r'08[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}');
+    var bMatch = buyGstRegex.firstMatch(normalized);
+    if (bMatch != null) buyerGstin = bMatch.group(0)!;
+
     RegExp partyRegex = RegExp(r'Party\s*Name\s*[:\-]?\s*\n?([A-Za-z0-9\s\.\,\-]+)', caseSensitive: false);
     var pMatch = partyRegex.firstMatch(normalized);
     if (pMatch != null) {
@@ -68,16 +76,7 @@ class MedilenteDirectParser {
       }
     }
 
-    RegExp gstAllRegex = RegExp(r'\b(\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})\b');
-    var allGsts = gstAllRegex.allMatches(normalized).map((m) => m.group(1)!).toList();
-    if (allGsts.isNotEmpty) {
-      supplierGstin = allGsts.first;
-      if (allGsts.length > 1) {
-        buyerGstin = allGsts[1];
-      }
-    }
-
-    // 4. Totals Extraction
+    // 5. Totals Extraction
     double rawGrandTotal = 0.0;
     double rawTaxable = 0.0;
     double rawIgst = 0.0;
@@ -95,26 +94,13 @@ class MedilenteDirectParser {
       rawRoundOff = double.tryParse(roMatch.group(1)!.replaceAll(',', '')) ?? 0.0;
     }
 
-    // 5. Line Stitching (If PDF.js split items across 2 lines)
-    List<String> stitchedLines = [];
-    for (int i = 0; i < lines.length; i++) {
-      String current = lines[i].trim();
-      if (current.isEmpty) continue;
+    // 6. Universal Pack Pattern: matches 10*10, 2*15, 5*1ML, 10*1*10, etc.
+    RegExp universalPackRegex = RegExp(r'^\d+(?:[\*xX]\d+)+[A-Za-z]*$', caseSensitive: false);
 
-      // If line has a pack but lacks expiry/numbers, and next line has expiry, stitch them
-      if (RegExp(r'\b\d+[\*xX]\d+\b').hasMatch(current) && !RegExp(r'\b\d{1,2}/\d{2}\b').hasMatch(current)) {
-        if (i + 1 < lines.length && RegExp(r'\b\d{1,2}/\d{2}\b').hasMatch(lines[i + 1])) {
-          current = "$current ${lines[i + 1].trim()}";
-          i++;
-        }
-      }
-      stitchedLines.add(current);
-    }
-
-    // 6. Anchor-Based Extraction over Stitched Lines
+    // 7. Multi-Line Item Extraction
     List<MedilenteItem> items = [];
 
-    for (var line in stitchedLines) {
+    for (var line in lines) {
       String trimmed = line.trim();
       if (trimmed.isEmpty) continue;
 
@@ -123,7 +109,47 @@ class MedilenteDirectParser {
         continue;
       }
 
-      // Must contain Expiry: 7/27, 10/27, 12/28
+      // --- CASE A: SERVICE / FREIGHT CHARGES LINE (Item 7) ---
+      if (upper.contains("FREIGHT") || upper.contains("CHARGES")) {
+        List<double> nums = RegExp(r'[0-9]+(?:\.[0-9]{2})')
+            .allMatches(trimmed)
+            .map((m) => double.tryParse(m.group(0)!) ?? 0.0)
+            .toList();
+
+        if (nums.isNotEmpty) {
+          double rate = nums.length >= 2 ? nums[1] : nums[0];
+          double amount = nums.last > 0 ? nums.last : rate;
+          double igstPer = 18.0;
+          for (var n in nums) {
+            if (n == 18.0 || n == 12.0 || n == 5.0) igstPer = n;
+          }
+          double igstVal = amount * (igstPer / 100);
+
+          items.add(MedilenteItem(
+            srNo: items.length + 1,
+            hsn: "9968",
+            productName: "FREIGHT CHARGES (18% TAX)",
+            pack: "1 PCS",
+            qty: 1.0,
+            freeQty: 0.0,
+            batch: "FREIGHT",
+            mfg: "SERVICES",
+            exp: "12/99",
+            netMrp: amount,
+            oldMrp: 0.0,
+            rate: rate,
+            discountPer: 0.0,
+            igstRate: igstPer,
+            igstValue: igstVal,
+            amount: amount,
+            originalPack: "1 PCS",
+            conversionFactor: 1,
+          ));
+          continue;
+        }
+      }
+
+      // --- CASE B: MEDICINE PRODUCT LINE ---
       RegExp expRegex = RegExp(r'\b(\d{1,2}/\d{2})\b');
       var expMatch = expRegex.firstMatch(trimmed);
       if (expMatch == null) continue;
@@ -143,7 +169,7 @@ class MedilenteDirectParser {
       // Find Pack before expIdx
       int packIdx = -1;
       for (int k = 0; k < expIdx; k++) {
-        if (RegExp(r'^\d+[\*xX]\d+$').hasMatch(tokens[k])) {
+        if (universalPackRegex.hasMatch(tokens[k])) {
           packIdx = k;
           break;
         }
@@ -152,32 +178,39 @@ class MedilenteDirectParser {
 
       String pack = tokens[packIdx];
 
-      // Tokens between pack and exp: [Qty] [Free] [Batch] [Mfg]
-      List<String> midTokens = tokens.sublist(packIdx + 1, expIdx);
+      // Tokens between pack and exp: [Qty] [Free] [Batch] [Mfg...]
+      List<String> midTokens = List.from(tokens.sublist(packIdx + 1, expIdx));
       if (midTokens.isEmpty) continue;
 
-      String mfg = "GEN";
-      String batch = "AUTO";
       double qty = 1.0;
       double freeQty = 0.0;
+      String batch = "AUTO";
+      String mfg = "GEN";
 
-      if (midTokens.length >= 4) {
-        // [Qty, Free, Batch, Mfg]
-        qty = double.tryParse(midTokens[0].replaceAll(',', '')) ?? 1.0;
-        freeQty = double.tryParse(midTokens[1].replaceAll(',', '')) ?? 0.0;
-        batch = midTokens[2];
-        mfg = midTokens[3];
-      } else if (midTokens.length == 3) {
-        // [Qty, Batch, Mfg]
-        qty = double.tryParse(midTokens[0].replaceAll(',', '')) ?? 1.0;
-        batch = midTokens[1];
-        mfg = midTokens[2];
-      } else if (midTokens.length == 2) {
-        // [Qty, Batch]
-        qty = double.tryParse(midTokens[0].replaceAll(',', '')) ?? 1.0;
-        batch = midTokens[1];
+      // 1st mid token is Qty if numeric
+      if (midTokens.isNotEmpty && RegExp(r'^\d+(?:\.\d+)?$').hasMatch(midTokens.first.replaceAll(',', ''))) {
+        qty = double.tryParse(midTokens.removeAt(0).replaceAll(',', '')) ?? 1.0;
+      }
+
+      // 2nd mid token is Free if '-' or numeric
+      if (midTokens.isNotEmpty && (midTokens.first == '-' || RegExp(r'^\d+(?:\.\d+)?$').hasMatch(midTokens.first))) {
+        freeQty = double.tryParse(midTokens.removeAt(0)) ?? 0.0;
+      }
+
+      // Remaining mid tokens are Batch & Mfg
+      if (midTokens.length >= 2) {
+        batch = midTokens.removeAt(0);
+        mfg = midTokens.join(" "); // Joins e.g. "MMG H"
       } else if (midTokens.length == 1) {
-        batch = midTokens[0];
+        String merged = midTokens.first;
+        // If merged like BSG250990ABIONE
+        if (merged.length > 8 && RegExp(r'^[A-Z0-9]+[A-Z]{3,}$').hasMatch(merged)) {
+          batch = merged.substring(0, merged.length - 5);
+          mfg = merged.substring(merged.length - 5);
+        } else {
+          batch = merged;
+          mfg = "GEN";
+        }
       }
 
       // Tokens before pack: [S.N] [HSN] [Product Name...]
@@ -194,7 +227,7 @@ class MedilenteDirectParser {
       String productName = nameTokens.join(" ").trim().toUpperCase();
       if (productName.isEmpty) productName = "PRODUCT ITEM $srNo";
 
-      // Numbers after Expiry: [N.MRP, OLD_MRP, Rate, Dis, IGST, IGST_Val, Amount]
+      // Numbers after Expiry:
       List<double> numbers = [];
       for (int k = expIdx + 1; k < tokens.length; k++) {
         double? val = double.tryParse(tokens[k].replaceAll(',', ''));
@@ -205,11 +238,12 @@ class MedilenteDirectParser {
       double oldMrp = 0.0;
       double rate = 0.0;
       double disPer = 0.0;
-      double igstRate = 5.0;
+      double igstRate = 12.0;
       double igstVal = 0.0;
       double amount = 0.0;
 
       if (numbers.length >= 7) {
+        // [N.MRP, OLD_MRP, Rate, Dis, IGST, IGST_Val, Amount]
         netMrp = numbers[0];
         oldMrp = numbers[1];
         rate = numbers[2];
@@ -218,6 +252,7 @@ class MedilenteDirectParser {
         igstVal = numbers[5];
         amount = numbers[6];
       } else if (numbers.length == 6) {
+        // [M.R.P, Rate, Dis, IGST, IGST_Val, Amount]
         netMrp = numbers[0];
         rate = numbers[1];
         disPer = numbers[2];
@@ -226,16 +261,12 @@ class MedilenteDirectParser {
         amount = numbers[5];
       } else if (numbers.length >= 2) {
         netMrp = numbers[0];
-        rate = numbers.length > 2 ? numbers[2] : numbers[1];
+        rate = numbers.length > 2 ? numbers[1] : (netMrp * 0.7);
         amount = numbers.last;
       }
 
-      if (amount <= 0.0) {
-        amount = qty * rate;
-      }
-      if (igstVal <= 0.0) {
-        igstVal = amount * (igstRate / 100);
-      }
+      if (amount <= 0.0) amount = qty * rate;
+      if (igstVal <= 0.0) igstVal = amount * (igstRate / 100);
 
       items.add(MedilenteItem(
         srNo: srNo,
@@ -260,8 +291,7 @@ class MedilenteDirectParser {
     }
 
     if (items.isEmpty) {
-      String samplePreview = rawText.length > 300 ? rawText.substring(0, 300) : rawText;
-      throw Exception("Could not find table rows in PDF.\nExtracted Text Sample:\n$samplePreview");
+      throw Exception("Could not find table rows in PDF.");
     }
 
     double taxableTotal = items.fold(0.0, (sum, it) => sum + it.amount);

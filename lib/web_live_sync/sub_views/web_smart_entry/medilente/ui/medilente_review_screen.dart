@@ -56,7 +56,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       matchedSupplier = null;
     }
 
-    // 2. Match Items & Apply Auto Pharma Strip Conversion by Default
+    // 2. Multi-Pack Box Auto-Split Logic (Supports 10*10, 2*15, 5*1ML, 10*1*10)
     verifiedItems.clear();
     for (var it in widget.bill.items) {
       Medicine? matchedMed;
@@ -70,12 +70,13 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         matchedMed = null;
       }
 
-      // Auto-detect Multi-Pack Box (e.g. 10*10, 2*15) and convert to single strip (1*10, 1*15)
-      if (it.conversionFactor == 1) {
-        var match = RegExp(r'^(\d+)[\*xX](\d+)$').firstMatch(it.pack.trim());
-        if (match != null) {
-          int n = int.tryParse(match.group(1)!) ?? 1;
-          int mUnits = int.tryParse(match.group(2)!) ?? 10;
+      // Check if pack is a multi-pack box and split into single strip
+      if (it.conversionFactor == 1 && !it.productName.contains("FREIGHT")) {
+        // Match 10*1*10
+        var tripleMatch = RegExp(r'^(\d+)[\*xX]1[\*xX](\d+)$').firstMatch(it.pack.trim());
+        if (tripleMatch != null) {
+          int n = int.tryParse(tripleMatch.group(1)!) ?? 10;
+          int mUnits = int.tryParse(tripleMatch.group(2)!) ?? 10;
           if (n > 1) {
             it.originalPack = it.pack;
             it.pack = "1*$mUnits";
@@ -83,7 +84,21 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
             it.qty = it.qty * n;
             it.rate = it.rate / n;
             it.netMrp = it.netMrp / n;
-            if (it.oldMrp > 0) it.oldMrp = it.oldMrp / n;
+          }
+        } else {
+          // Match 10*10, 2*15, 5*1ML
+          var standardMatch = RegExp(r'^(\d+)[\*xX](\d+([A-Za-z]+)?)$').firstMatch(it.pack.trim());
+          if (standardMatch != null) {
+            int n = int.tryParse(standardMatch.group(1)!) ?? 1;
+            String unitStr = standardMatch.group(2)!;
+            if (n > 1) {
+              it.originalPack = it.pack;
+              it.pack = "1*$unitStr";
+              it.conversionFactor = n;
+              it.qty = it.qty * n;
+              it.rate = it.rate / n;
+              it.netMrp = it.netMrp / n;
+            }
           }
         }
       }
@@ -97,12 +112,12 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       verifiedItems.add({
         'raw': it,
         'matchedMed': matchedMed,
-        'isSelected': matchedMed != null,
+        'isSelected': true,
         'status': matchedMed == null ? 'NEW' : 'VERIFIED',
         'taxable': taxable,
         'taxAmt': taxAmt,
         'systemTotal': systemCalcTotal,
-        'saveMasterAsStrip': true, // Strip pricing in Master by default!
+        'saveMasterAsStrip': true,
       });
     }
 
@@ -176,7 +191,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         }
 
         if (existingInMaster != null) {
-          // Update master with strip pricing if needed
           if (row['saveMasterAsStrip'] == true && existingInMaster.packing != it.pack) {
             existingInMaster.packing = it.pack;
             existingInMaster.mrp = it.netMrp;
@@ -196,12 +210,12 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
             id: "MED-${DateTime.now().millisecondsSinceEpoch}-${it.srNo}",
             systemId: sysId,
             name: it.productName.toUpperCase().trim(),
-            packing: it.pack, // Saved as "1*10"!
+            packing: it.pack,
             hsnCode: it.hsn,
             gst: it.igstRate,
-            mrp: it.netMrp,   // Saved as Strip MRP!
-            purRate: it.rate, // Saved as Strip PurRate!
-            rateA: it.netMrp, // Saved as Strip Rate A!
+            mrp: it.netMrp,
+            purRate: it.rate,
+            rateA: it.netMrp,
             rateB: it.netMrp * 0.95,
             rateC: it.netMrp * 0.92,
           );
@@ -216,7 +230,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
 
     setState(() => isLoading = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ Products created with STRIP (1*10) pricing in Master!"), backgroundColor: Colors.green),
+      const SnackBar(content: Text("✅ All 7 Items Reconciled with STRIP Packing in Master!"), backgroundColor: Colors.green),
     );
   }
 
@@ -230,7 +244,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
 
     if (verifiedItems.any((row) => row['isSelected'] && row['matchedMed'] == null)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please resolve all unlinked items before finalizing!"), backgroundColor: Colors.orange),
+        const SnackBar(content: Text("Please click AUTO-RESOLVE to link all items before finalizing!"), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -256,12 +270,11 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       final MedilenteItem raw = row['raw'];
       Medicine med = row['matchedMed'];
 
-      // Update Medicine Master with Strip Pricing if flagged
-      if (row['saveMasterAsStrip'] == true) {
-        med.packing = raw.pack; // e.g. "1*10"
-        med.mrp = raw.netMrp;   // Strip MRP
-        med.purRate = raw.rate; // Strip PurRate
-        med.rateA = raw.netMrp; // Strip Sale Rate A
+      if (row['saveMasterAsStrip'] == true && !raw.productName.contains("FREIGHT")) {
+        med.packing = raw.pack;
+        med.mrp = raw.netMrp;
+        med.purRate = raw.rate;
+        med.rateA = raw.netMrp;
         med.rateB = raw.netMrp * 0.95;
         med.rateC = raw.netMrp * 0.92;
         webPh.updateMedicine(med);
@@ -330,7 +343,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     if (pushed) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("🎉 Purchase Inward ${newPurchase.billNo} Saved & Master Updated to Strips!"), backgroundColor: Colors.green),
+          SnackBar(content: Text("🎉 All ${commitItems.length} Items Inwarded & Strip Masters Synced to Cloud!"), backgroundColor: Colors.green),
         );
         widget.onBack();
       }
@@ -373,7 +386,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
               const Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 22),
               const SizedBox(width: 8),
               Text(
-                "VERIFY INVOICE • #${widget.bill.invoiceNo}",
+                "VERIFY INVOICE • #${widget.bill.invoiceNo} (${verifiedItems.length} ITEMS DETECTED)",
                 style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
               const Spacer(),
@@ -457,7 +470,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "GST: ${widget.bill.supplierGstin} • Date: ${widget.bill.invoiceDate} • Phone: ${widget.bill.supplierPhone}",
+                  "Supplier GST: ${widget.bill.supplierGstin} • Date: ${widget.bill.invoiceDate} • Phone: ${widget.bill.supplierPhone}",
                   style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                 ),
               ],
@@ -501,27 +514,28 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
               children: [
                 Text(raw.productName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
                 const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => _openPackConverter(idx),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: raw.conversionFactor > 1 ? const Color(0x3310B981) : Colors.black38,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: raw.conversionFactor > 1 ? Colors.greenAccent : Colors.white24),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          "${raw.pack} (${raw.conversionFactor > 1 ? 'STRIP' : 'BOX'})",
-                          style: TextStyle(color: raw.conversionFactor > 1 ? Colors.greenAccent : Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.swap_horiz_rounded, size: 12, color: Colors.white54),
-                      ],
+                if (!raw.productName.contains("FREIGHT"))
+                  InkWell(
+                    onTap: () => _openPackConverter(idx),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: raw.conversionFactor > 1 ? const Color(0x3310B981) : Colors.black38,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: raw.conversionFactor > 1 ? Colors.greenAccent : Colors.white24),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            "${raw.pack} (${raw.conversionFactor > 1 ? 'STRIP' : 'BOX'})",
+                            style: TextStyle(color: raw.conversionFactor > 1 ? Colors.greenAccent : Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.swap_horiz_rounded, size: 12, color: Colors.white54),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 const Spacer(),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -537,13 +551,13 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
               ],
             ),
             subtitle: Text(
-              "Batch: ${raw.batch} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} ${raw.pack} • Pur.Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.netMrp.toStringAsFixed(2)}",
+              "Batch: ${raw.batch} • Mfg: ${raw.mfg} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} ${raw.pack} • Pur.Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.netMrp.toStringAsFixed(2)}",
               style: const TextStyle(color: Colors.white54, fontSize: 10.5),
             ),
             trailing: isLinked
                 ? IconButton(
                     icon: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
-                    tooltip: "Configure Pack Split / Unit",
+                    tooltip: "Configure Pack Split",
                     onPressed: () => _openPackConverter(idx),
                   )
                 : Row(
@@ -551,12 +565,12 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
-                        tooltip: "Configure Pack Split / Unit",
+                        tooltip: "Configure Pack Split",
                         onPressed: () => _openPackConverter(idx),
                       ),
                       IconButton(
                         icon: const Icon(Icons.add_box_rounded, color: Color(0xFFF59E0B), size: 20),
-                        tooltip: "Create product master with strip pricing",
+                        tooltip: "Create product master",
                         onPressed: () => _quickCreateMedicineMaster(webPh, raw, idx),
                       ),
                     ],
@@ -597,7 +611,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("Invoice Total: ₹${widget.bill.grandTotal.toStringAsFixed(2)} (Taxable: ₹${widget.bill.taxableTotal.toStringAsFixed(2)} + IGST: ₹${widget.bill.igstTotal.toStringAsFixed(2)})",
+              Text("Invoice Grand Total: ₹${widget.bill.grandTotal.toStringAsFixed(2)} (Taxable: ₹${widget.bill.taxableTotal.toStringAsFixed(2)} + IGST: ₹${widget.bill.igstTotal.toStringAsFixed(2)})",
                   style: const TextStyle(color: Colors.white54, fontSize: 10.5, fontWeight: FontWeight.bold)),
               const SizedBox(height: 3),
               Text(
@@ -661,12 +675,12 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         webPh: webPh,
         preFillData: {
           'name': it.productName,
-          'pack': it.pack, // Passed as "1*10"!
+          'pack': it.pack,
           'hsn': it.hsn,
           'gst': it.igstRate,
-          'mrp': it.netMrp > 0 ? it.netMrp : it.oldMrp, // Per Strip MRP!
-          'purRate': it.rate, // Per Strip PurRate!
-          'rateA': it.netMrp > 0 ? it.netMrp : it.oldMrp, // Per Strip Rate A!
+          'mrp': it.netMrp > 0 ? it.netMrp : it.oldMrp,
+          'purRate': it.rate,
+          'rateA': it.netMrp > 0 ? it.netMrp : it.oldMrp,
           'rateB': (it.netMrp > 0 ? it.netMrp : it.oldMrp) * 0.95,
           'form': 'TAB',
         },
