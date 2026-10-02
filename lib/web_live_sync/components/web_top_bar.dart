@@ -6,11 +6,13 @@ import '../pharoah_web_manager.dart';
 class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
   final PharoahWebManager webPh;
   final ValueChanged<String>? onSearchChanged;
+  final bool showGlobalSearch;
 
   const WebTopBar({
     super.key,
     required this.webPh,
     this.onSearchChanged,
+    this.showGlobalSearch = true,
   });
 
   @override
@@ -71,7 +73,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-555 (CHALLAN-PARTY-MASTER-FIX)",
+                      "#PH-REV-556 (CHALLAN-WORKFLOW-FIX)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),
@@ -80,7 +82,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
             ],
           ),
           const SizedBox(width: 12),
-          if (!isTight)
+          if (showGlobalSearch && !isTight)
             Expanded(
               child: Container(
                 height: 36,

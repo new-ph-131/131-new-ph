@@ -30,6 +30,7 @@ class WebPurchaseChallanView extends StatefulWidget {
 class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
   final internalNoC = TextEditingController();
   final supplierRefC = TextEditingController();
+  final searchController = TextEditingController();
   DateTime selectedDate = DateTime.now();
   Party? selectedSupplier;
   String searchQuery = "";
@@ -87,6 +88,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
   void dispose() {
     internalNoC.dispose();
     supplierRefC.dispose();
+    searchController.dispose();
     super.dispose();
   }
 
@@ -95,11 +97,11 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
     final webPh = Provider.of<PharoahWebManager>(context);
 
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFFF59E0B)));
+      return const Center(child: Padding(padding: EdgeInsets.all(50), child: CircularProgressIndicator(color: Color(0xFFF59E0B))));
     }
 
     return Container(
-      constraints: const BoxConstraints(maxWidth: 820),
+      constraints: const BoxConstraints(maxWidth: 860),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
@@ -108,6 +110,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
@@ -127,7 +130,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
               const SizedBox(width: 10),
               Text(
                 widget.isReadOnly ? "VIEW INWARD CHALLAN" : (widget.existingRecord != null ? "MODIFY INWARD CHALLAN" : "NEW INWARD PURCHASE CHALLAN"),
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
             ],
           ),
@@ -218,9 +221,10 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
           ),
           const SizedBox(height: 10),
 
-          Expanded(
-            child: selectedSupplier != null ? _buildSupplierCard() : _buildSupplierList(webPh),
-          ),
+          if (selectedSupplier != null) 
+            _buildSupplierCard() 
+          else 
+            _buildSupplierList(webPh),
 
           if (selectedSupplier != null)
             Container(
@@ -264,85 +268,133 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
     );
   }
 
-  Widget _buildSupplierCard() => Card(
-    color: const Color(0xFF1E293B),
-    elevation: 4,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5)),
-    child: ListTile(
-      contentPadding: const EdgeInsets.all(20),
-      leading: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
-        child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B)),
-      ),
-      title: Text(selectedSupplier!.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-      subtitle: Text("${selectedSupplier!.city} | GST: ${selectedSupplier!.gst}", style: const TextStyle(color: Colors.white54, fontSize: 12)),
-      trailing: widget.isReadOnly
-          ? null
-          : IconButton(
-              icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 28),
-              onPressed: () => setState(() => selectedSupplier = null),
-            ),
+  Widget _buildSupplierCard() => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: const Color(0xFF1E293B),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFF59E0B), width: 1.5),
+    ),
+    child: Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
+          child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B)),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(selectedSupplier!.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)),
+              const SizedBox(height: 4),
+              Text("${selectedSupplier!.city} | GST: ${selectedSupplier!.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
+            ],
+          ),
+        ),
+        if (!widget.isReadOnly)
+          IconButton(
+            icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 28),
+            onPressed: () => setState(() => selectedSupplier = null),
+          ),
+      ],
     ),
   );
 
-  Widget _buildSupplierList(PharoahWebManager webPh) => Column(
-    children: [
-      Row(
-        children: [
-          Expanded(
-            child: TextField(
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: "Search Supplier by Name...",
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B)),
-                filled: true,
-                fillColor: const Color(0xFF1E293B),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+  Widget _buildSupplierList(PharoahWebManager webPh) {
+    final query = searchQuery.trim().toLowerCase();
+    final matchingSuppliers = webPh.parties.where((p) {
+      if (query.isEmpty) return p.group == "Sundry Creditors";
+      return p.name.toLowerCase().contains(query) ||
+          p.city.toLowerCase().contains(query) ||
+          p.gst.toLowerCase().contains(query);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: searchController,
+                style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                decoration: InputDecoration(
+                  hintText: "Search Supplier by Name, City or GSTIN...",
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B)),
+                  suffixIcon: searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 16),
+                          onPressed: () {
+                            searchController.clear();
+                            setState(() => searchQuery = "");
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFF1E293B),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                onChanged: (v) => setState(() => searchQuery = v),
               ),
-              onChanged: (v) => setState(() => searchQuery = v),
             ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => _openQuickAddSupplier(webPh),
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+              label: const Text("NEW SUPPLIER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
-            onPressed: () => _openQuickAddSupplier(webPh),
-            icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-            label: const Text("NEW SUPPLIER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-          ),
-        ],
-      ),
-      const SizedBox(height: 16),
-      Expanded(
-        child: Container(
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          constraints: const BoxConstraints(minHeight: 180, maxHeight: 360),
           decoration: BoxDecoration(
             color: const Color(0xFF1E293B),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white10),
           ),
-          child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            children: webPh.parties
-                .where((p) => p.group == "Sundry Creditors" && p.name.toLowerCase().contains(searchQuery.toLowerCase()))
-                .map((p) => Container(
+          child: matchingSuppliers.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      searchQuery.isEmpty 
+                        ? "No suppliers registered under Sundry Creditors." 
+                        : "No supplier found matching '$searchQuery'.",
+                      style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: matchingSuppliers.length,
+                  itemBuilder: (context, idx) {
+                    final p = matchingSuppliers[idx];
+                    return Container(
                       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
                       child: ListTile(
+                        dense: true,
                         leading: const Icon(Icons.business_outlined, color: Colors.white38),
                         title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text(p.city, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                        subtitle: Text("${p.city} | GST: ${p.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
                         onTap: () => setState(() => selectedSupplier = p),
                       ),
-                    ))
-                .toList(),
-          ),
+                    );
+                  },
+                ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }

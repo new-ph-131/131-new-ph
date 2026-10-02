@@ -29,6 +29,7 @@ class WebSaleChallanView extends StatefulWidget {
 
 class _WebSaleChallanViewState extends State<WebSaleChallanView> {
   final challanNoC = TextEditingController();
+  final searchController = TextEditingController();
   DateTime selectedDate = DateTime.now();
   Party? selectedParty;
   String searchQuery = "";
@@ -84,6 +85,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
   @override
   void dispose() {
     challanNoC.dispose();
+    searchController.dispose();
     super.dispose();
   }
 
@@ -92,11 +94,11 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
     final webPh = Provider.of<PharoahWebManager>(context);
 
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF2DD4BF)));
+      return const Center(child: Padding(padding: EdgeInsets.all(50), child: CircularProgressIndicator(color: Color(0xFF2DD4BF))));
     }
 
     return Container(
-      constraints: const BoxConstraints(maxWidth: 820),
+      constraints: const BoxConstraints(maxWidth: 860),
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
@@ -105,8 +107,8 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Top Navigation Header
           Row(
             children: [
               ElevatedButton.icon(
@@ -125,8 +127,8 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
               const Icon(Icons.local_shipping_rounded, color: Color(0xFF2DD4BF), size: 24),
               const SizedBox(width: 10),
               Text(
-                widget.isReadOnly ? "VIEW SALE CHALLAN" : (widget.existingRecord != null ? "MODIFY SALE CHALLAN" : "NEW OUTWARD CHALLAN"),
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                widget.isReadOnly ? "VIEW SALE CHALLAN" : (widget.existingRecord != null ? "MODIFY SALE CHALLAN" : "NEW OUTWARD DELIVERY CHALLAN"),
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
             ],
           ),
@@ -207,16 +209,17 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
           ),
           const SizedBox(height: 10),
 
-          // Party Area
-          Expanded(
-            child: selectedParty != null ? _buildSelectedPartyCard() : _buildPartySearchList(webPh),
-          ),
+          // Party Selection View
+          if (selectedParty != null) 
+            _buildSelectedPartyCard() 
+          else 
+            _buildPartySearchList(webPh),
 
-          // Bottom Gateway Button: PROCEED TO ITEM ENTRY
+          // Proceed Button
           if (selectedParty != null)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.only(top: 15),
+              padding: const EdgeInsets.only(top: 18),
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0F766E),
@@ -240,8 +243,8 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                   );
                 },
                 icon: const Icon(Icons.arrow_forward_rounded, size: 20),
-                label: Text(
-                  widget.isReadOnly ? "VIEW DISPATCH ITEMS ➔" : "PROCEED TO ITEM ENTRY ➔",
+                label: const Text(
+                  "PROCEED TO ITEM ENTRY ➔",
                   style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
                 ),
               ),
@@ -288,26 +291,37 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
   );
 
   Widget _buildPartySearchList(PharoahWebManager webPh) {
+    final query = searchQuery.trim().toLowerCase();
     final matchingParties = webPh.parties.where((p) {
-      if (p.name == "CASH") return true;
-      bool matchesSearch = searchQuery.isEmpty ||
-          p.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          p.city.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          p.gst.toLowerCase().contains(searchQuery.toLowerCase());
-      return matchesSearch;
+      if (query.isEmpty) return true;
+      return p.name.toLowerCase().contains(query) ||
+          p.city.toLowerCase().contains(query) ||
+          p.gst.toLowerCase().contains(query) ||
+          p.phone.toLowerCase().contains(query);
     }).toList();
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             Expanded(
               child: TextField(
+                controller: searchController,
                 style: const TextStyle(color: Colors.white, fontSize: 12.5),
                 decoration: InputDecoration(
-                  hintText: "Search Customer or Party by Name, City or GSTIN...",
+                  hintText: "Type customer name, city, phone or GSTIN...",
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
                   prefixIcon: const Icon(Icons.search, color: Color(0xFF2DD4BF), size: 18),
+                  suffixIcon: searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 16),
+                          onPressed: () {
+                            searchController.clear();
+                            setState(() => searchQuery = "");
+                          },
+                        )
+                      : null,
                   filled: true,
                   fillColor: const Color(0xFF1E293B),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -330,35 +344,55 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: matchingParties.isEmpty
-                ? const Center(child: Text("No parties found.", style: TextStyle(color: Colors.white38, fontSize: 12)))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    itemCount: matchingParties.length,
-                    itemBuilder: (context, idx) {
-                      final p = matchingParties[idx];
-                      return Container(
-                        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
-                        child: ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.person_outline_rounded, color: Colors.white38),
-                          title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                          subtitle: Text("${p.city} | GST: ${p.gst} | Group: ${p.group}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
-                          onTap: () => setState(() => selectedParty = p),
-                        ),
-                      );
-                    },
-                  ),
+        const SizedBox(height: 12),
+        Container(
+          constraints: const BoxConstraints(minHeight: 180, maxHeight: 360),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
           ),
+          child: matchingParties.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      searchQuery.isEmpty 
+                        ? "No parties found in store database." 
+                        : "No party found matching '$searchQuery'.",
+                      style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: matchingParties.length,
+                  itemBuilder: (context, idx) {
+                    final p = matchingParties[idx];
+                    return Container(
+                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
+                      child: ListTile(
+                        dense: true,
+                        leading: Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: const BoxDecoration(
+                            color: Color(0x262DD4BF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.person_outline_rounded, color: Color(0xFF2DD4BF), size: 16),
+                        ),
+                        title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text(
+                          "${p.city.isEmpty ? 'No City' : p.city} | GST: ${p.gst.isEmpty ? 'N/A' : p.gst} | Group: ${p.group}",
+                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 13),
+                        onTap: () => setState(() => selectedParty = p),
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
     );

@@ -104,6 +104,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       backgroundColor: const Color(0xFF0B132B),
       appBar: WebTopBar(
         webPh: webPh,
+        showGlobalSearch: isHomeDashboard,
         onSearchChanged: (v) => setState(() => searchQuery = v),
       ),
       body: Row(
