@@ -1,59 +1,22 @@
-Target dart2js failed: ProcessException: Process exited abnormally with exit code 1:
-Error: Expected a String, but got 'web_challan_view'.
-Error: Expected ';' after this.
-Error: A function declaration needs an explicit list of parameters.
-Error: Expected '{' before this.
-Error: Expected a declaration, but got '.'.
-Error: Variables must be declared using the keywords 'const', 'final', 'var' or a type name.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: Directives must appear before any declarations.
-Error: The method 'WebChallanView' isn't defined for the class '_WebPortalGatewayState'.
-Error: Compilation failed.
-#0      RunResult.throwException (package:flutter_tools/src/base/process.dart:122:5)
-Error: Failed to compile application for the Web.
-Target dart2js failed: ProcessException: Process exited abnormally with exit code 1:
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddPartyModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: The getter 'pf' isn't defined for the class '_QuickAddProductModalState'.
-Error: Compilation failed.
-#0      RunResult.throwException (package:flutter_tools/src/base/process.dart:122:5)
-Error: Failed to compile application for the Web.
-Target dart2js failed: ProcessException: Process exited abnormally with exit code 1:
-Error: Error when reading 'lib/web_live_sync/sub_views/web_smart_entry/web_billing/quick_add_party_modal.dart': Error reading 'lib/web_live_sync/sub_views/web_smart_entry/web_billing/quick_add_party_modal.dart'  (No such file or directory)
-Error: Error when reading 'lib/web_live_sync/sub_views/web_smart_entry/web_billing/quick_add_product_modal.da
+error • In constant expressions, operands of this operator must be of type 'bool', 'num', 'String' or 'null' • lib/web_live_sync/web_pdf_router_service.dart:324:26 • const_eval_type_bool_num_string
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:332:35 • undefined_identifier
+error • Undefined name 'MainAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:335:38 • undefined_identifier
+error • In constant expressions, operands of this operator must be of type 'bool', 'num', 'String' or 'null' • lib/web_live_sync/web_pdf_router_service.dart:315:26 • const_eval_type_bool_num_string
+error • Undefined name 'MainAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:326:38 • undefined_identifier
+error • Undefined name 'MainAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:537:38 • undefined_identifier
+error • Expected an identifier • lib/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart:1078:23 • missing_identifier
+error • Too many positional arguments: 0 expected, but 1 found • lib/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart:1078:23 • extra_positional_arguments_could_be_named
+error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:49 • expected_token
+error • Too many positional arguments: 1 expected, but 4 found • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:49 • extra_positional_arguments_could_be_named
+error • Undefined name 'APPLY' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:49 • undefined_identifier
+error • Undefined name 'SAVE' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:57 • undefined_identifier
+error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:62 • expected_token
+error • Undefined name 'SETTING' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:62 • undefined_identifier
+error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:69 • expected_token
+error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:49 • expected_token
+error • Too many positional arguments: 1 expected, but 4 found • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:49 • extra_positional_arguments_could_be_named
+error • Undefined name 'APPLY' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:49 • undefined_identifier
+error • Undefined name 'SAVE' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:57 • undefined_identifier
+error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:62 • expected_token
+error • Undefined name 'SETTING' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:62 • undefined_identifier
+error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:69 • expected_token
