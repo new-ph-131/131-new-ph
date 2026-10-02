@@ -106,7 +106,6 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Navigation
           Row(
             children: [
               ElevatedButton.icon(
@@ -278,7 +277,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
         ),
         if (!widget.isReadOnly)
           IconButton(
-            icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 26),
+            icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 28),
             tooltip: "Change Customer",
             onPressed: () => setState(() => selectedParty = null),
           ),
@@ -286,66 +285,81 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
     ),
   );
 
-  Widget _buildPartySearchList(PharoahWebManager webPh) => Column(
-    children: [
-      Row(
-        children: [
-          Expanded(
-            child: TextField(
-              style: const TextStyle(color: Colors.white, fontSize: 12.5),
-              decoration: InputDecoration(
-                hintText: "Search Customer by Name, City or GSTIN...",
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF2DD4BF), size: 18),
-                filled: true,
-                fillColor: const Color(0xFF1E293B),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+  Widget _buildPartySearchList(PharoahWebManager webPh) {
+    // Flexible search: Matches all non-creditor parties or matches search query
+    final matchingParties = webPh.parties.where((p) {
+      bool isNotSupplier = p.group != "Sundry Creditors" && p.name != "CASH";
+      bool matchesSearch = searchQuery.isEmpty ||
+          p.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          p.city.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          p.gst.toLowerCase().contains(searchQuery.toLowerCase());
+      return (isNotSupplier || searchQuery.isNotEmpty) && matchesSearch;
+    }).toList();
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                decoration: InputDecoration(
+                  hintText: "Search Customer by Name, City or GSTIN...",
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF2DD4BF), size: 18),
+                  filled: true,
+                  fillColor: const Color(0xFF1E293B),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+                onChanged: (v) => setState(() => searchQuery = v),
               ),
-              onChanged: (v) => setState(() => searchQuery = v),
             ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(width: 12),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () => _openQuickAddCustomer(webPh),
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+              label: const Text("NEW CUSTOMER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
-            onPressed: () => _openQuickAddCustomer(webPh),
-            icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-            label: const Text("NEW CUSTOMER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-          ),
-        ],
-      ),
-      const SizedBox(height: 14),
-      Expanded(
-        child: Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            children: webPh.parties
-                .where((p) => p.group == "Sundry Debtors" && (p.name.toLowerCase().contains(searchQuery.toLowerCase()) || p.city.toLowerCase().contains(searchQuery.toLowerCase())))
-                .map((p) => Container(
-                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
-                      child: ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.person_outline_rounded, color: Colors.white38),
-                        title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text("${p.city} | GST: ${p.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
-                        onTap: () => setState(() => selectedParty = p),
-                      ),
-                    ))
-                .toList(),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: matchingParties.isEmpty
+                ? const Center(child: Text("No customers found.", style: TextStyle(color: Colors.white38, fontSize: 12)))
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    itemCount: matchingParties.length,
+                    itemBuilder: (context, idx) {
+                      final p = matchingParties[idx];
+                      return Container(
+                        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
+                        child: ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.person_outline_rounded, color: Colors.white38),
+                          title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          subtitle: Text("${p.city} | GST: ${p.gst} | Group: ${p.group}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 14),
+                          onTap: () => setState(() => selectedParty = p),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
