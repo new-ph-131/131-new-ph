@@ -8,6 +8,7 @@ import '../../../../web_pharoah_numbering_engine.dart';
 import '../models/amazon_bill_model.dart';
 import '../../../web_billing/quick_add_party_modal.dart';
 import '../../../web_billing/quick_add_product_modal.dart';
+import 'amazon_pack_converter_dialog.dart';
 
 class AmazonReviewScreen extends StatefulWidget {
   final AmazonBill bill;
@@ -69,7 +70,9 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
       String cleanItemName = _cleanStr(it.productName);
 
       try {
-        matchedMed = webPh.medicines.firstWhere((m) => _cleanStr(m.name) == cleanItemName);
+        matchedMed = webPh.medicines.firstWhere((m) {
+          return _cleanStr(m.name) == cleanItemName;
+        });
       } catch (_) {
         matchedMed = null;
       }
@@ -88,10 +91,137 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
         'taxable': taxable,
         'taxAmt': taxAmt,
         'systemTotal': systemCalcTotal,
+        'saveMasterAsStrip': true,
       });
     }
 
     setState(() => isLoading = false);
+  }
+
+  void _openPackConverter(int idx) {
+    final row = verifiedItems[idx];
+    final AmazonItem it = row['raw'];
+
+    showDialog(
+      context: context,
+      builder: (c) => AmazonPackConverterDialog(
+        item: it,
+        onApply: ({
+          required String targetPack,
+          required int factor,
+          required double newQty,
+          required double newRate,
+          required double newMrp,
+          required bool saveMasterAsStrip,
+        }) {
+          setState(() {
+            it.pack = targetPack;
+            it.conversionFactor = factor;
+            it.qty = newQty;
+            it.rate = newRate;
+            it.mrp = newMrp;
+
+            double gross = it.qty * it.rate;
+            double discAmt = gross * (it.discountPer / 100);
+            double taxable = gross - discAmt;
+            double taxAmt = taxable * (it.totalTaxRate / 100);
+            row['taxable'] = taxable;
+            row['taxAmt'] = taxAmt;
+            row['systemTotal'] = taxable + taxAmt;
+          });
+        },
+      ),
+    );
+  }
+
+  void _showInstantLinkOverlay(int itemIndex) {
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    String localSearch = "";
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final filteredMeds = webPh.medicines
+              .where((m) => m.name.toLowerCase().contains(localSearch.toLowerCase()))
+              .toList();
+
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.8,
+            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 20, right: 20, top: 15),
+            child: Column(
+              children: [
+                Container(height: 5, width: 50, decoration: const BoxDecoration(color: Colors.white24)),
+                const SizedBox(height: 15),
+                const Text(
+                  "SELECT SYSTEM PRODUCT TO LINK",
+                  style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+                ),
+                const SizedBox(height: 15),
+                TextField(
+                  style: const TextStyle(color: Colors.white),
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: "Search catalog by name...",
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B)),
+                    filled: true,
+                    fillColor: Colors.white10,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+                  ),
+                  onChanged: (v) => setSheetState(() => localSearch = v),
+                ),
+                const SizedBox(height: 15),
+                Expanded(
+                  child: filteredMeds.isEmpty
+                      ? const Center(child: Text("No products found.", style: TextStyle(color: Colors.white38)))
+                      : ListView.builder(
+                          itemCount: filteredMeds.length,
+                          itemBuilder: (c, idx) {
+                            final m = filteredMeds[idx];
+                            return ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.medication_rounded, color: Color(0xFFF59E0B)),
+                              title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                              subtitle: Text("Pack: ${m.packing} | Stock: ${m.stock.toInt()} | MRP: ₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+                              trailing: const Icon(Icons.link_rounded, color: Colors.greenAccent, size: 20),
+                              onTap: () => Navigator.pop(context, m),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ).then((selectedMed) {
+      if (selectedMed != null && selectedMed is Medicine) {
+        setState(() {
+          verifiedItems[itemIndex]['matchedMed'] = selectedMed;
+          verifiedItems[itemIndex]['status'] = 'VERIFIED';
+          verifiedItems[itemIndex]['isSelected'] = true;
+        });
+        _propagateItemLink(selectedMed, verifiedItems[itemIndex]['raw'].productName);
+      }
+    });
+  }
+
+  void _propagateItemLink(Medicine med, String targetName) {
+    String cleanTarget = _cleanStr(targetName);
+    setState(() {
+      for (var row in verifiedItems) {
+        final AmazonItem raw = row['raw'];
+        if (row['matchedMed'] == null && _cleanStr(raw.productName) == cleanTarget) {
+          row['matchedMed'] = med;
+          row['status'] = 'VERIFIED';
+          row['isSelected'] = true;
+        }
+      }
+    });
   }
 
   void _autoResolveAllNewProducts(PharoahWebManager webPh) {
@@ -256,7 +386,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
           'name': widget.bill.supplierName,
           'gst': widget.bill.supplierGstin,
           'pan': widget.bill.supplierPan,
-          'dl': widget.bill.supplierDl,
+          'dl': widget.bill.supplierDl, // Full DL Number DRUG/24-25/20B-21B/120460-61,20-21/120458-59
           'phone': widget.bill.supplierPhone,
           'address': widget.bill.supplierAddress,
           'city': 'JAIPUR',
@@ -264,6 +394,85 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
           'group': 'Sundry Creditors',
         },
         onPartyCreated: (p) => setState(() => matchedSupplier = p),
+      ),
+    );
+  }
+
+  void _showQuickPartyPicker(PharoahWebManager webPh) {
+    String search = "";
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (c) => StatefulBuilder(
+        builder: (context, setPickerState) {
+          final list = webPh.parties.where((p) => p.name.toLowerCase().contains(search.toLowerCase())).toList();
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.8,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                const Text("SELECT SUPPLIER FROM MASTER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 12),
+                TextField(
+                  style: const TextStyle(color: Colors.white),
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: "Search party by name...",
+                    prefixIcon: Icon(Icons.search, color: Color(0xFFF59E0B)),
+                    filled: true,
+                    fillColor: Colors.white10,
+                  ),
+                  onChanged: (v) => setPickerState(() => search = v),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: list.length,
+                    itemBuilder: (ctx, i) => ListTile(
+                      title: Text(list[i].name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      subtitle: Text("${list[i].city} | GST: ${list[i].gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                      onTap: () {
+                        setState(() => matchedSupplier = list[i]);
+                        Navigator.pop(c);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _quickCreateMedicineMaster(PharoahWebManager webPh, AmazonItem it, int idx) {
+    showDialog(
+      context: context,
+      builder: (c) => QuickAddProductModal(
+        webPh: webPh,
+        preFillData: {
+          'name': it.productName,
+          'pack': it.pack,
+          'hsn': it.hsn,
+          'gst': it.totalTaxRate,
+          'mrp': it.mrp,
+          'purRate': it.rate,
+          'rateA': it.mrp,
+          'rateB': it.mrp * 0.95,
+          'form': 'TAB',
+        },
+        onProductCreated: (newMedMap) {
+          final med = Medicine.fromMap(newMedMap);
+          setState(() {
+            verifiedItems[idx]['matchedMed'] = med;
+            verifiedItems[idx]['status'] = 'VERIFIED';
+            verifiedItems[idx]['isSelected'] = true;
+          });
+          _propagateItemLink(med, it.productName);
+        },
       ),
     );
   }
@@ -308,7 +517,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
           ),
           const SizedBox(height: 18),
 
-          // Supplier Verification Card
+          // Supplier Verification Card with Create, Link & Change Actions
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -324,23 +533,54 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(matchedSupplier != null ? matchedSupplier!.name : widget.bill.supplierName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
-                      Text("GST: ${widget.bill.supplierGstin} • Date: $activeDateDisplay • Phone: ${widget.bill.supplierPhone}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+                      Row(
+                        children: [
+                          Text(matchedSupplier != null ? matchedSupplier!.name : widget.bill.supplierName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: matchedSupplier != null ? const Color(0x2610B981) : const Color(0x26EF4444),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: matchedSupplier != null ? Colors.greenAccent : Colors.redAccent, width: 0.5),
+                            ),
+                            child: Text(
+                              matchedSupplier != null ? "VERIFIED SUPPLIER" : "UNLINKED SENDER",
+                              style: TextStyle(color: matchedSupplier != null ? Colors.greenAccent : Colors.redAccent, fontSize: 8.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text("GST: ${widget.bill.supplierGstin} • DL: ${widget.bill.supplierDl} • Date: $activeDateDisplay • Phone: ${widget.bill.supplierPhone}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
                     ],
                   ),
                 ),
-                if (matchedSupplier == null)
+                if (matchedSupplier == null) ...[
                   ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), foregroundColor: Colors.black),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white),
                     onPressed: () => _quickCreateSupplier(webPh),
                     child: const Text("CREATE SUPPLIER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
                   ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF38BDF8), side: const BorderSide(color: Color(0xFF38BDF8))),
+                    onPressed: () => _showQuickPartyPicker(webPh),
+                    child: const Text("LINK SUPPLIER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  ),
+                ] else ...[
+                  TextButton.icon(
+                    onPressed: () => setState(() => matchedSupplier = null),
+                    icon: const Icon(Icons.sync_alt_rounded, size: 14, color: Colors.orangeAccent),
+                    label: const Text("CHANGE", style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(height: 16),
 
-          // Item Rows
+          // Item Rows with Full Actions: Add, Link & Split
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -366,19 +606,71 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
                         children: [
                           Text(raw.productName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
                           const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(4)),
-                            child: Text(raw.pack, style: const TextStyle(color: Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          InkWell(
+                            onTap: () => _openPackConverter(idx),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.white24)),
+                              child: Row(
+                                children: [
+                                  Text(raw.pack, style: const TextStyle(color: Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.swap_horiz_rounded, size: 12, color: Colors.white54),
+                                ],
+                              ),
+                            ),
                           ),
                           const Spacer(),
-                          Text(isLinked ? "LINKED: ${match.name}" : "NOT FOUND IN MASTERS", style: TextStyle(color: isLinked ? Colors.greenAccent : Colors.orangeAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: isLinked ? const Color(0x2610B981) : const Color(0x26F59E0B), borderRadius: BorderRadius.circular(4)),
+                            child: Text(isLinked ? "LINKED: ${match.name}" : "NOT FOUND IN MASTERS", style: TextStyle(color: isLinked ? Colors.greenAccent : Colors.orangeAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+                          ),
                         ],
                       ),
                       subtitle: Text(
                         "Batch: ${raw.batch} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} + ${raw.freeQty.toInt()} Free • Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.mrp.toStringAsFixed(2)} • GST: ${raw.totalTaxRate.toStringAsFixed(1)}% (CGST+SGST)",
                         style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                       ),
+                      trailing: isLinked
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
+                                  tooltip: "Configure Pack Split",
+                                  onPressed: () => _openPackConverter(idx),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.link_off_rounded, color: Colors.redAccent, size: 18),
+                                  tooltip: "Unlink Product",
+                                  onPressed: () => setState(() {
+                                    row['matchedMed'] = null;
+                                    row['status'] = 'NEW';
+                                  }),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.link_rounded, color: Color(0xFF38BDF8), size: 20),
+                                  tooltip: "Link to Existing Catalog Product",
+                                  onPressed: () => _showInstantLinkOverlay(idx),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.add_box_rounded, color: Color(0xFFF59E0B), size: 20),
+                                  tooltip: "Quick Create in Master",
+                                  onPressed: () => _quickCreateMedicineMaster(webPh, raw, idx),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.call_split_rounded, color: Color(0xFF34D399), size: 20),
+                                  tooltip: "Configure Pack Split",
+                                  onPressed: () => _openPackConverter(idx),
+                                ),
+                              ],
+                            ),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

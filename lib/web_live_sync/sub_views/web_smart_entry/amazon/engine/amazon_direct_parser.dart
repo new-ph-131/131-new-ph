@@ -25,7 +25,7 @@ class AmazonDirectParser {
     }
     if (invoiceNo.isEmpty) invoiceNo = "INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}";
 
-    // 2. Invoice Date (Handles DD-MM-YYYY and DD/MM/YYYY)
+    // 2. Invoice Date
     String invoiceDate = "";
     RegExp dateRegex = RegExp(r'Invoice\s*Date\s*[:\-]?\s*([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{4})', caseSensitive: false);
     var dateMatch = dateRegex.firstMatch(normalized);
@@ -40,18 +40,29 @@ class AmazonDirectParser {
       invoiceDate = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}";
     }
 
-    // 3. Supplier Details
+    // 3. Supplier Details (Full DL Number: DRUG/24-25/20B-21B/120460-61,20-21/120458-59)
     String supplierName = "AMAGEN PHARMA PRIVATE LIMITED";
     String supplierGstin = "08AAZCA9942R1Z9";
     String supplierPan = "AAZCA9942R";
-    String supplierDl = "DRUG/24-25/20B-21B/120460-61";
-    String supplierPhone = "9828052544";
-    String supplierAddress = "DEVI NAGAR, JAIPUR-302019, RAJASTHAN";
+    String supplierDl = "DRUG/24-25/20B-21B/120460-61,20-21/120458-59";
+    String supplierPhone = "9828052544,9602509882";
+    String supplierAddress = "5C,SHRI KRISHNA VIHAR, NEAR DRAVYAWATI RIVER DEVI NAGAR, JAIPUR-302019";
 
     String buyerName = "LIFECARE PHARMACEUTICALS";
     String buyerGstin = "08FSBPM0623R1ZC";
 
-    // Dynamic Party / Supplier Detection
+    // Dynamic Full DL extraction
+    RegExp dlRegex = RegExp(r'D\.?L\.?\s*No\.?\s*[:\-]?\s*([A-Za-z0-9\/\,\-]+)', caseSensitive: false);
+    var dlMatches = dlRegex.allMatches(normalized).map((m) => m.group(1)!.trim()).toList();
+    if (dlMatches.isNotEmpty) {
+      for (var d in dlMatches) {
+        if (d.toUpperCase().contains("DRUG") || d.length > 20) {
+          supplierDl = d;
+        }
+      }
+    }
+
+    // Dynamic GSTIN extraction
     RegExp allGsts = RegExp(r'\b(\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})\b');
     var gsts = allGsts.allMatches(normalized).map((m) => m.group(1)!).toList();
     if (gsts.isNotEmpty) {
@@ -63,10 +74,6 @@ class AmazonDirectParser {
           supplierPan = g.substring(2, 12);
         }
       }
-    }
-
-    if (normalized.toUpperCase().contains("AMAGEN PHARMA")) {
-      supplierName = "AMAGEN PHARMA PRIVATE LIMITED";
     }
 
     // 4. Totals
