@@ -65,13 +65,52 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     });
   }
 
+  // 🧠 SMART LPR ENGINE: Find Latest Purchase Rate across Batches and Inward History
+  double _findLatestPurchaseRate(PharoahWebManager webPh, Medicine med) {
+    if (med.purRate > 0) return med.purRate;
+
+    // Check available batches for this medicine
+    final batches = webPh.batchHistory[med.identityKey] ?? [];
+    for (var b in batches.reversed) {
+      if (b.purRate > 0) return b.purRate;
+      if (b.rate > 0) return b.rate;
+    }
+
+    // Check previous purchase bills for this supplier and medicine
+    for (var p in webPh.purchases.reversed) {
+      for (var it in p.items) {
+        if ((it.medicineID == med.id || it.name.trim().toUpperCase() == med.name.trim().toUpperCase()) && it.purchaseRate > 0) {
+          return it.purchaseRate;
+        }
+      }
+    }
+
+    // Check previous purchase challans
+    for (var c in webPh.purchaseChallans.reversed) {
+      for (var it in c.items) {
+        if ((it.medicineID == med.id || it.name.trim().toUpperCase() == med.name.trim().toUpperCase()) && it.purchaseRate > 0) {
+          return it.purchaseRate;
+        }
+      }
+    }
+
+    return 0.0;
+  }
+
+  // ===========================================================================
+  // 🪄 INWARD ITEM ENTRY MODAL WITH AUTO-FETCH PURCHASE RATE
+  // ===========================================================================
   void _openPcItemDialog(PharoahWebManager webPh, Medicine med, {PurchaseItem? itemToEdit, int? editIndex}) {
     if (widget.isReadOnly) return;
+
+    double autoPurRate = itemToEdit != null 
+        ? itemToEdit.purchaseRate 
+        : _findLatestPurchaseRate(webPh, med);
 
     final batchC = TextEditingController(text: itemToEdit?.batch ?? "");
     final expC = TextEditingController(text: itemToEdit?.exp ?? "12/28");
     final mrpC = TextEditingController(text: itemToEdit?.mrp.toStringAsFixed(2) ?? med.mrp.toStringAsFixed(2));
-    final purRateC = TextEditingController(text: itemToEdit?.purchaseRate.toStringAsFixed(2) ?? med.purRate.toStringAsFixed(2));
+    final purRateC = TextEditingController(text: autoPurRate > 0 ? autoPurRate.toStringAsFixed(2) : (med.purRate > 0 ? med.purRate.toStringAsFixed(2) : "0.00"));
     final qtyC = TextEditingController(text: itemToEdit?.qty.toInt().toString() ?? "1");
     final freeC = TextEditingController(text: itemToEdit?.freeQty.toInt().toString() ?? "0");
     final gstC = TextEditingController(text: itemToEdit?.gstRate.toString() ?? med.gst.toString());
@@ -225,7 +264,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                             batchC.text = selected.batch;
                                             expC.text = selected.exp;
                                             mrpC.text = selected.mrp.toStringAsFixed(2);
-                                            purRateC.text = selected.purRate.toStringAsFixed(2);
+                                            double bPur = selected.purRate > 0 ? selected.purRate : (selected.rate > 0 ? selected.rate : autoPurRate);
+                                            purRateC.text = bPur.toStringAsFixed(2);
                                             rateAC.text = selected.rateA.toStringAsFixed(2);
                                             rateBC.text = selected.rateB.toStringAsFixed(2);
                                             rateCC.text = selected.rateC.toStringAsFixed(2);
@@ -545,6 +585,9 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     );
   }
 
+  // ===========================================================================
+  // 💾 SAVE INWARD & PERMANENTLY UPDATE MEDICINE MASTER L.P.R. (LATEST RATE)
+  // ===========================================================================
   void _savePurchaseChallan(PharoahWebManager webPh, {bool andPrint = false}) async {
     if (items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Challan cannot be empty! Please add products."), backgroundColor: Colors.orange));
@@ -572,11 +615,23 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     
     webPh.purchaseChallans.add(newChallan);
 
+    // 2-Way Batch Inventory Activity + Medicine Master Auto-Update
     for (var item in items) {
       String resolvedKey = item.medicineID;
       try {
-        final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
-        resolvedKey = med.identityKey;
+        int mIdx = webPh.medicines.indexWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
+        if (mIdx != -1) {
+          final med = webPh.medicines[mIdx];
+          resolvedKey = med.identityKey;
+
+          // 🔥 AUTO-UPDATE MEDICINE MASTER WITH LATEST PURCHASE RATE (L.P.R.)
+          med.purRate = item.purchaseRate;
+          if (item.mrp > 0) med.mrp = item.mrp;
+          if (item.rateA > 0) med.rateA = item.rateA;
+          if (item.rateB > 0) med.rateB = item.rateB;
+          if (item.rateC > 0) med.rateC = item.rateC;
+          webPh.updateMedicine(med);
+        }
       } catch (_) {}
 
       webPh.registerBatchActivity(
@@ -604,7 +659,9 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅ Inward Purchase Challan ${widget.internalNo} Saved & Inventory Synced!"), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ Inward Challan ${widget.internalNo} Saved & Master L.P.R. Updated!"), backgroundColor: Colors.green),
+      );
       Navigator.pop(context);
     }
   }
@@ -784,6 +841,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                 itemCount: matchingMeds.length,
                 itemBuilder: (context, idx) {
                   final med = matchingMeds[idx];
+                  double lpr = _findLatestPurchaseRate(webPh, med);
+
                   return ListTile(
                     dense: true,
                     leading: const Icon(Icons.medication_rounded, color: Color(0xFFF59E0B), size: 18),
@@ -794,7 +853,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                         Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
                     ),
-                    subtitle: Text("MRP: ₹${med.mrp.toStringAsFixed(2)} | Pur Rate: ₹${med.purRate.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                    subtitle: Text("MRP: ₹${med.mrp.toStringAsFixed(2)} | L.P.R: ₹${lpr.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
                     onTap: () {
                       setState(() => productSearchC.clear());
                       _openPcItemDialog(webPh, med);
