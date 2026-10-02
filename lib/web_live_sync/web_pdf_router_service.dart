@@ -161,7 +161,7 @@ class WebPdfRouterService {
   }
 
   // ===========================================================================
-  // 2. SALE CHALLAN (OUTWARD DELIVERY NOTE) - EXACT APP REPLICA
+  // 2. SALE CHALLAN (OUTWARD DELIVERY NOTE) - 100% IDENTICAL TO PDF 2
   // ===========================================================================
   static Future<Uint8List> generateSaleChallanBytes({
     required SaleChallan challan,
@@ -194,9 +194,10 @@ class WebPdfRouterService {
                 decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
                 child: pw.Column(
                   children: [
-                    // Header
+                    // Header Box Row
                     pw.Row(
                       children: [
+                        // Box 1: Sender (Januram)
                         _hBox(
                           280, true,
                           pw.Column(
@@ -205,21 +206,23 @@ class WebPdfRouterService {
                               pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                               pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
                               pw.Text("GST: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${shop.phone}", style: const pw.TextStyle(fontSize: 7)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ' + shop.email.toLowerCase() : ''}", style: const pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
+                        // Box 2: Delivery Challan Doc Details
                         _hBox(
                           175, true,
                           pw.Column(
                             children: [
-                              pw.Text("DELIVERY CHALLAN", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900)),
+                              pw.Text("DELIVERY CHALLAN", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
                               pw.Divider(thickness: 0.5),
-                              pw.Text("No: ${challan.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                              pw.Text(challan.billNo, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                               pw.Text(DateFormat("dd/MM/yyyy").format(challan.date), style: const pw.TextStyle(fontSize: 8)),
                             ],
                           ),
                         ),
+                        // Box 3: Consignee Details (Medilente)
                         _hBox(
                           345, false,
                           pw.Column(
@@ -227,8 +230,10 @@ class WebPdfRouterService {
                             children: [
                               pw.Text("CONSIGNEE DETAILS:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
                               pw.Text(party.name, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                              pw.Text("${party.address}, ${party.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
-                              pw.Text("GSTIN: ${party.gst} | DL: ${party.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("${party.address.isNotEmpty ? party.address : challan.partyState}, ${party.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
+                              pw.Text("GSTIN: ${party.gst.isNotEmpty ? party.gst : challan.partyGstin} | DL: ${party.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                              if (party.phone.isNotEmpty || party.email.isNotEmpty)
+                                pw.Text("Mob: ${party.phone}${party.email.isNotEmpty ? ' | Email: ' + party.email.toLowerCase() : ''}", style: const pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
@@ -240,16 +245,16 @@ class WebPdfRouterService {
                       color: PdfColors.grey200,
                       child: pw.Row(
                         children: [
-                          _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40),
-                          _tCol("Product Description", 220, isLeft: true),
-                          _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
+                          _tCol("S.N", 25), _tCol("Qty+Free", 55), _tCol("Pack", 45),
+                          _tCol("Product Description", 210, isLeft: true),
+                          _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 50),
                           _tCol("MRP", 55), _tCol("Rate", 55), _tCol("GST%", 40),
-                          _tCol("Net Total", 140, isLast: true),
+                          _tCol("Net Total", 145, isLast: true),
                         ],
                       ),
                     ),
 
-                    // Items List
+                    // Items Table
                     pw.Expanded(
                       child: pw.Column(
                         children: pageItems.asMap().entries.map((entry) {
@@ -262,15 +267,15 @@ class WebPdfRouterService {
                             decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
                             child: pw.Row(
                               children: [
-                                _cell("${start + idx + 1}", 25), _cell(qtyDisp, 60), _cell(i.packing, 40),
+                                _cell("${start + idx + 1}", 25), _cell(qtyDisp, 55), _cell(i.packing, 45),
                                 pw.Container(
-                                  width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
+                                  width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
                                   child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                                 ),
-                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
+                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 50),
                                 _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.rate.toStringAsFixed(2), 55),
                                 _cell("${i.gstRate.toInt()}%", 40),
-                                _cell(i.total.toStringAsFixed(2), 140),
+                                _cell(i.total.toStringAsFixed(2), 145),
                               ],
                             ),
                           );
@@ -288,19 +293,66 @@ class WebPdfRouterService {
                   ],
                 ),
               ),
-              pw.SizedBox(height: 4),
-              pw.Center(
-                child: pw.Text(
-                  "This is a system-generated document. | Powered by Pharoah ERP [Web Workstation]",
-                  style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600),
-                ),
-              ),
             ],
           ),
         ),
       );
     }
     return pdf.save();
+  }
+
+  static pw.Widget _buildChallanFooter(String shopName, SaleChallan challan) {
+    String sealCode = challan.sigHistory.isNotEmpty ? challan.sigHistory.last.verificationCode : "N/A";
+    String remarks = challan.remarks.trim().isNotEmpty ? challan.remarks.trim() : "Verified.";
+
+    return pw.Container(
+      height: 105,
+      decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
+      child: pw.Row(
+        children: [
+          pw.Container(
+            width: 480, padding: const pw.EdgeInsets.all(8),
+            decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.SizedBox(height: 40),
+                pw.Text("RECEIVER SIGNATURE & STAMP", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                pw.Spacer(),
+                pw.Text(
+                  "SECURE NOTICE: Locked with code $sealCode.",
+                  style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
+                ),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 320, padding: const pw.EdgeInsets.all(8),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("GRAND TOTAL VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${challan.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
+                pw.SizedBox(height: 4),
+                pw.Align(
+                  alignment: pw.Alignment.centerLeft,
+                  child: pw.Text("REMARKS: $remarks", style: const pw.TextStyle(fontSize: 7)),
+                ),
+                pw.Spacer(),
+                pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 25),
+                pw.Text("AUTHORISED SIGNATORY", style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   static Future<void> printSaleChallan({
@@ -319,56 +371,6 @@ class WebPdfRouterService {
   }) async {
     final bytes = await generateSaleChallanBytes(challan: challan, party: party, shop: shop);
     await Printing.sharePdf(bytes: bytes, filename: "Challan_${challan.billNo}.pdf");
-  }
-
-  static pw.Widget _buildChallanFooter(String shopName, SaleChallan challan) {
-    String sealCode = challan.sigHistory.isNotEmpty ? challan.sigHistory.last.verificationCode : "";
-
-    return pw.Container(
-      height: 105,
-      decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
-      child: pw.Row(
-        children: [
-          pw.Container(
-            width: 480, padding: const pw.EdgeInsets.all(8),
-            decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                if (sealCode.isNotEmpty)
-                  pw.Text("DIGITAL SEAL CODE: $sealCode", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
-                pw.SizedBox(height: 40),
-                pw.Text("RECEIVER SIGNATURE & STAMP", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                pw.Spacer(),
-                pw.Text(
-                  challan.remarks.isNotEmpty ? "Remarks: ${challan.remarks}" : "Material received in good condition.",
-                  style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
-                ),
-              ],
-            ),
-          ),
-          pw.Container(
-            width: 320, padding: const pw.EdgeInsets.all(8),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
-              children: [
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text("NET CHALLAN VALUE", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${challan.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900)),
-                  ],
-                ),
-                pw.Spacer(),
-                pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 25),
-                pw.Text("AUTHORISED SIGNATORY", style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   // --- STUBS & UTILS ---

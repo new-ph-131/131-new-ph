@@ -121,22 +121,8 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
 
     String challanId = widget.existingRecord?.id ?? "SCH-WEB-${DateTime.now().millisecondsSinceEpoch}";
 
-    // Digital Seal Code Generation
     List<ChallanSignature> sigHistory = List.from(widget.existingRecord?.sigHistory ?? []);
     bool isSigned = widget.existingRecord?.isSigned ?? false;
-
-    if (webPh.appConfig.showCustomerSignChallan == true && sigHistory.isEmpty) {
-      final code = "VR-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}";
-      sigHistory.add(ChallanSignature(
-        id: "SIG-${DateTime.now().millisecondsSinceEpoch}",
-        imagePath: "",
-        verificationCode: code,
-        signedAmount: totalAmt,
-        signedQty: items.fold(0.0, (s, it) => s + it.qty + it.freeQty),
-        signDate: DateTime.now(),
-      ));
-      isSigned = true;
-    }
 
     final newChallan = SaleChallan(
       id: challanId,
@@ -149,7 +135,8 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       items: List.from(items),
       totalAmount: totalAmt,
       status: widget.existingRecord?.status ?? "Pending",
-      remarks: remarksC.text.trim(),
+      remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Verified.",
+      salesmanName: "WEB-PORTAL",
       sigHistory: sigHistory,
       isSigned: isSigned,
     );
@@ -194,10 +181,9 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("✅ Outward Delivery Challan ${widget.challanNo} Saved & Inventory Synced!"), backgroundColor: Colors.green),
+        SnackBar(content: Text("✅ Outward Delivery Challan ${widget.challanNo} Saved & Synced!"), backgroundColor: Colors.green),
       );
-      Navigator.pop(context); // Step 2 to Step 1
-      Navigator.pop(context); // Step 1 to Hub
+      Navigator.pop(context);
     }
   }
 
@@ -229,7 +215,8 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                       date: widget.challanDate,
                       items: items,
                       totalAmount: totalAmt,
-                      remarks: remarksC.text.trim(),
+                      remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Verified.",
+                      salesmanName: "WEB-PORTAL",
                     );
                     await WebPdfRouterService.printSaleChallan(
                       challan: tempChallan,
@@ -249,7 +236,6 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Header Strip (Consignee & Date)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
@@ -287,15 +273,12 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
             ),
             const SizedBox(height: 14),
 
-            // Product Search Trigger Bar
             if (!widget.isReadOnly) _buildProductSearchCard(webPh),
             if (!widget.isReadOnly) const SizedBox(height: 14),
 
-            // Cart Table
             Expanded(child: _buildCartTable(webPh)),
             const SizedBox(height: 14),
 
-            // Footer
             _buildFooter(webPh),
           ],
         ),
