@@ -49,7 +49,6 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
 
   @override
   Widget build(BuildContext context) {
-    // Original invoice box quantities and rates
     double baseBoxQty = widget.item.conversionFactor > 1 && widget.item.originalPack.isNotEmpty
         ? (widget.item.qty / widget.item.conversionFactor)
         : widget.item.qty;
@@ -179,7 +178,7 @@ class _MedilentePackConverterDialogState extends State<MedilentePackConverterDia
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Color(0x3310B981)),
+                  border: Border.all(color: const Color(0x3310B981)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

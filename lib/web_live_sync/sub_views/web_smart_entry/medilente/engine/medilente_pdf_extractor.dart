@@ -65,7 +65,7 @@ class MedilentePdfExtractor {
             Uint8List streamBytes = bytes.sublist(start, end);
             List<int> decoded;
             try {
-              decoded = ZLibDecoder().decodeBytes(streamBytes, verify: false);
+              decoded = const ZLibDecoder().decodeBytes(streamBytes, verify: false);
             } catch (_) {
               decoded = streamBytes;
             }

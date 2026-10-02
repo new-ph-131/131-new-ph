@@ -65,9 +65,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     });
   }
 
-  // ===========================================================================
-  // 🪄 THE FULL APP-WORKFLOW INWARD ITEM ENTRY MODAL
-  // ===========================================================================
   void _openPcItemDialog(PharoahWebManager webPh, Medicine med, {PurchaseItem? itemToEdit, int? editIndex}) {
     if (widget.isReadOnly) return;
 
@@ -155,7 +152,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Header
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                       decoration: const BoxDecoration(
@@ -204,15 +200,13 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Row 1: Batch with Recall & Expiry
                             Row(
                               children: [
                                 Expanded(
                                   flex: 4,
-                                  child: _dialogInput(
-                                    "BATCH NO (CASE-SENSITIVE) *",
-                                    batchC,
-                                    isHighlight: true,
+                                  child: _DialogInputField(
+                                    label: "BATCH NO (CASE-SENSITIVE) *",
+                                    ctrl: batchC,
                                     suffix: ElevatedButton.icon(
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: const Color(0xFFF59E0B),
@@ -249,13 +243,17 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                 const SizedBox(width: 10),
                                 Expanded(
                                   flex: 2,
-                                  child: _dialogInput("EXPIRY (MM/YY) *", expC, isNum: true, onChanged: (v) => setDialogState(() => formatExpiry(v))),
+                                  child: _DialogInputField(
+                                    label: "EXPIRY (MM/YY) *",
+                                    ctrl: expC,
+                                    isNum: true,
+                                    onChanged: (v) => setDialogState(() => formatExpiry(v)),
+                                  ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 12),
 
-                            // Row 2: Rate Schemes
                             Row(
                               children: [
                                 const Text("RATE SCHEME:", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
@@ -282,51 +280,119 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                             ),
                             const SizedBox(height: 12),
 
-                            // Row 3: MRP, Purchase Rate & GST
                             Row(
                               children: [
                                 if (selectedRateType == "C") ...[
                                   Expanded(
-                                    child: _dialogInput("C FORMULA %", rateCDiscC, isNum: true, onChanged: (_) => setDialogState(() => calculateRateC())),
+                                    child: _DialogInputField(
+                                      label: "C FORMULA %",
+                                      ctrl: rateCDiscC,
+                                      isNum: true,
+                                      onChanged: (_) => setDialogState(() => calculateRateC()),
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
                                 ],
-                                Expanded(child: _dialogInput("MRP ₹", mrpC, isNum: true, onChanged: (_) => setDialogState(() { if (selectedRateType == "C") calculateRateC(); }))),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "MRP ₹",
+                                    ctrl: mrpC,
+                                    isNum: true,
+                                    onChanged: (_) => setDialogState(() { if (selectedRateType == "C") calculateRateC(); }),
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("PUR. RATE ₹ *", purRateC, isNum: true, isHighlight: true, onChanged: (_) => setDialogState(() => syncDiscount(true)))),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "PUR. RATE ₹ *",
+                                    ctrl: purRateC,
+                                    isNum: true,
+                                    onChanged: (_) => setDialogState(() => syncDiscount(true)),
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("GST %", gstC, isNum: true, onChanged: (_) => setDialogState(() { if (selectedRateType == "C") calculateRateC(); }))),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "GST %",
+                                    ctrl: gstC,
+                                    isNum: true,
+                                    onChanged: (_) => setDialogState(() { if (selectedRateType == "C") calculateRateC(); }),
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 12),
 
-                            // Row 4: Qty, Free Qty & 2-Way Discount Sync
                             Row(
                               children: [
-                                Expanded(child: _dialogInput("QTY *", qtyC, isNum: true, isHighlight: true, onChanged: (_) => setDialogState(() => syncDiscount(true)))),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "QTY *",
+                                    ctrl: qtyC,
+                                    isNum: true,
+                                    onChanged: (_) => setDialogState(() => syncDiscount(true)),
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("FREE QTY", freeC, isNum: true)),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "FREE QTY",
+                                    ctrl: freeC,
+                                    isNum: true,
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("DISC %", discPerC, isNum: true, onChanged: (_) => setDialogState(() => syncDiscount(true)))),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "DISC %",
+                                    ctrl: discPerC,
+                                    isNum: true,
+                                    onChanged: (_) => setDialogState(() => syncDiscount(true)),
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("DISC ₹", discAmtC, isNum: true, onChanged: (_) => setDialogState(() => syncDiscount(false)))),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "DISC ₹",
+                                    ctrl: discAmtC,
+                                    isNum: true,
+                                    onChanged: (_) => setDialogState(() => syncDiscount(false)),
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 12),
 
-                            // Row 5: Derived Rates Grid
                             Row(
                               children: [
-                                Expanded(child: _dialogInput("RATE A ₹", rateAC, isNum: true)),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "RATE A ₹",
+                                    ctrl: rateAC,
+                                    isNum: true,
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("RATE B ₹", rateBC, isNum: true)),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "RATE B ₹",
+                                    ctrl: rateBC,
+                                    isNum: true,
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
-                                Expanded(child: _dialogInput("RATE C ₹", rateCC, isNum: true, isReadOnly: selectedRateType == "C")),
+                                Expanded(
+                                  child: _DialogInputField(
+                                    label: "RATE C ₹",
+                                    ctrl: rateCC,
+                                    isNum: true,
+                                    isReadOnly: selectedRateType == "C",
+                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 16),
 
-                            // Row 6: Net Item Calculation Box
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                               decoration: BoxDecoration(
@@ -365,7 +431,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                             ),
                             const SizedBox(height: 16),
 
-                            // Action Button
                             SizedBox(
                               width: double.infinity,
                               height: 46,
@@ -442,49 +507,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     );
   }
 
-  Widget _dialogInput(
-    String label,
-    TextEditingController ctrl, {
-    bool isNum = false,
-    bool isCaps = false,
-    bool isHighlight = false,
-    bool isReadOnly = false,
-    Widget? suffix,
-    Function(String)? onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: isReadOnly ? Colors.black38 : (isHighlight ? const Color(0x33F59E0B) : Colors.black26),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isHighlight ? const Color(0xFFF59E0B) : Colors.white12),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: ctrl,
-                  readOnly: isReadOnly,
-                  onChanged: onChanged,
-                  keyboardType: isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-                  textCapitalization: isCaps ? TextCapitalization.characters : TextCapitalization.none,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: InputBorder.none),
-                ),
-              ),
-              if (suffix != null) suffix,
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _rateSegment(String label, bool isSelected, VoidCallback onTap) {
     return Expanded(
       child: InkWell(
@@ -550,7 +572,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     
     webPh.purchaseChallans.add(newChallan);
 
-    // 2-Way Batch Inventory Activity
     for (var item in items) {
       String resolvedKey = item.medicineID;
       try {
@@ -635,7 +656,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Header Info Box
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
@@ -673,15 +693,12 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
             ),
             const SizedBox(height: 14),
 
-            // Product Search Trigger
             if (!widget.isReadOnly) _buildProductSearchCard(webPh),
             if (!widget.isReadOnly) const SizedBox(height: 14),
 
-            // Cart Table
             Expanded(child: _buildCartTable(webPh)),
             const SizedBox(height: 14),
 
-            // Footer
             _buildFooter(webPh),
           ],
         ),
@@ -725,7 +742,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                     prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B), size: 18),
                     suffixIcon: productSearchC.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 18),
+                            icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 16),
                             onPressed: () => setState(() => productSearchC.clear()),
                           )
                         : null,
@@ -951,4 +968,114 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
 
   Widget _th(String t, {bool isLeft = false}) => Padding(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6), child: Text(t, textAlign: isLeft ? TextAlign.left : TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)));
   Widget _td(String t, {bool isLeft = false, bool isBold = false, Color color = Colors.white}) => Padding(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6), child: Text(t, textAlign: isLeft ? TextAlign.left : TextAlign.center, style: TextStyle(color: color, fontSize: 11, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)));
+}
+
+// =============================================================================
+// 🛡️ DYNAMIC FOCUS & NO-GHOST-CURSOR INPUT FIELD (100% CLEAN SYNTAX)
+// =============================================================================
+class _DialogInputField extends StatefulWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final bool isNum;
+  final bool isReadOnly;
+  final Widget? suffix;
+  final Function(String)? onChanged;
+
+  const _DialogInputField({
+    required this.label,
+    required this.ctrl,
+    this.isNum = false,
+    this.isReadOnly = false,
+    this.suffix,
+    this.onChanged,
+  });
+
+  @override
+  State<_DialogInputField> createState() => _DialogInputFieldState();
+}
+
+class _DialogInputFieldState extends State<_DialogInputField> {
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isFocused = _focusNode.hasFocus;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: TextStyle(
+            color: _isFocused ? const Color(0xFFFBBF24) : Colors.white54,
+            fontSize: 8.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: widget.isReadOnly
+                ? Colors.black38
+                : (_isFocused ? const Color(0x33F59E0B) : Colors.black26),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _isFocused ? const Color(0xFFF59E0B) : Colors.white12,
+              width: _isFocused ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.ctrl,
+                  focusNode: _focusNode,
+                  showCursor: _isFocused,
+                  cursorColor: const Color(0xFFF59E0B),
+                  cursorHeight: 14,
+                  cursorWidth: 1.5,
+                  cursorRadius: const Radius.circular(2),
+                  readOnly: widget.isReadOnly,
+                  onChanged: widget.onChanged,
+                  keyboardType: widget.isNum
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              if (widget.suffix != null) widget.suffix!,
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

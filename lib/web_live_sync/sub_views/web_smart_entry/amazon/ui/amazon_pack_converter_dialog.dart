@@ -36,13 +36,11 @@ class _AmazonPackConverterDialogState extends State<AmazonPackConverterDialog> {
     originalPackStr = widget.item.originalPack.isNotEmpty ? widget.item.originalPack : widget.item.pack;
     String pStr = originalPackStr.trim().toUpperCase();
 
-    // 1. Triple pack support (e.g. 10*1*10)
     var tripleMatch = RegExp(r'^(\d+)[\*xX]1[\*xX](\d+)$').firstMatch(pStr);
     if (tripleMatch != null) {
       boxMultiplier = int.tryParse(tripleMatch.group(1)!) ?? 10;
       unitPerStripStr = tripleMatch.group(2)!;
     } else {
-      // 2. Standard pack support (e.g. 10*10, 2*15, 1X10, 5*1ML)
       var standardMatch = RegExp(r'^(\d+)[\*xX](\d+([A-Za-z]+)?)$').firstMatch(pStr);
       if (standardMatch != null) {
         boxMultiplier = int.tryParse(standardMatch.group(1)!) ?? 1;
@@ -185,7 +183,7 @@ class _AmazonPackConverterDialogState extends State<AmazonPackConverterDialog> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Color(0x3310B981)),
+                  border: Border.all(color: const Color(0x3310B981)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
