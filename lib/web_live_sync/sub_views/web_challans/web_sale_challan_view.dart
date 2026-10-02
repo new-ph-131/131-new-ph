@@ -245,7 +245,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                 icon: const Icon(Icons.arrow_forward_rounded, size: 20),
                 label: const Text(
                   "PROCEED TO ITEM ENTRY ➔",
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
                 ),
               ),
             ),

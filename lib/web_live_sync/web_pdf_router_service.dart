@@ -6,7 +6,7 @@ import "package:pdf/widgets.dart" as pw;
 import "package:printing/printing.dart";
 import "package:intl/intl.dart";
 import "web_models.dart";
-import "../../pdf/pdf_master_service.dart";
+import "package:pharoah_erp/pdf/pdf_master_service.dart";
 
 class WebPdfRouterService {
   
@@ -56,7 +56,7 @@ class WebPdfRouterService {
                               pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                               pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
                               pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${shop.phone} | Email: ${shop.email.toLowerCase()}", style: const pw.TextStyle(fontSize: 7)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: const pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
@@ -206,7 +206,7 @@ class WebPdfRouterService {
                               pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                               pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
                               pw.Text("GST: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ' + shop.email.toLowerCase() : ''}", style: const pw.TextStyle(fontSize: 7)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: const pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
@@ -233,7 +233,7 @@ class WebPdfRouterService {
                               pw.Text("${party.address.isNotEmpty ? party.address : challan.partyState}, ${party.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
                               pw.Text("GSTIN: ${party.gst.isNotEmpty ? party.gst : challan.partyGstin} | DL: ${party.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
                               if (party.phone.isNotEmpty || party.email.isNotEmpty)
-                                pw.Text("Mob: ${party.phone}${party.email.isNotEmpty ? ' | Email: ' + party.email.toLowerCase() : ''}", style: const pw.TextStyle(fontSize: 7)),
+                                pw.Text("Mob: ${party.phone}${party.email.isNotEmpty ? ' | Email: ${party.email.toLowerCase()}' : ''}", style: const pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
@@ -272,7 +272,7 @@ class WebPdfRouterService {
                                   width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
                                   child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                                 ),
-                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 50),
+                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
                                 _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.rate.toStringAsFixed(2), 55),
                                 _cell("${i.gstRate.toInt()}%", 40),
                                 _cell(i.total.toStringAsFixed(2), 145),
@@ -321,7 +321,7 @@ class WebPdfRouterService {
                 pw.Spacer(),
                 pw.Text(
                   "SECURE NOTICE: Locked with code $sealCode.",
-                  style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
+                  style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
                 ),
               ],
             ),
@@ -332,7 +332,7 @@ class WebPdfRouterService {
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
                 pw.Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text("GRAND TOTAL VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
                     pw.Text("Rs. ${challan.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),

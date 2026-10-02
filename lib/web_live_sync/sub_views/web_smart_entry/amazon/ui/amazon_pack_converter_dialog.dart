@@ -185,7 +185,7 @@ class _AmazonPackConverterDialogState extends State<AmazonPackConverterDialog> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Color(0x3310B981)),
+                  border: Border.all(color: const Color(0x3310B981)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
