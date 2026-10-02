@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../../../pharoah_web_manager.dart';
 import '../../../../web_models.dart';
+import '../../../../web_app_date_logic.dart';
 import '../../../../web_pharoah_numbering_engine.dart';
 import '../models/medilente_bill_model.dart';
 import '../../../web_billing/quick_add_party_modal.dart';
@@ -28,10 +30,222 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
   bool isLoading = true;
   bool isSaving = false;
 
+  // Smart Date & FY Watchdog state
+  late DateTime activeInvoiceDate;
+  late String activeDateDisplay;
+  bool isDateShifted = false;
+  String dateAdjustmentNote = "";
+
   @override
   void initState() {
     super.initState();
+    _initDateAndFYCheck();
     _reconcileWithMasters();
+  }
+
+  void _initDateAndFYCheck() {
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    activeDateDisplay = widget.bill.invoiceDate;
+
+    DateTime parsedDt = DateTime.now();
+    try {
+      final parts = widget.bill.invoiceDate.split('/');
+      parsedDt = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
+    } catch (_) {}
+
+    activeInvoiceDate = parsedDt;
+
+    DateTime fyStart = WebAppDateLogic.getFYStart(webPh.financialYear);
+    DateTime fyEnd = WebAppDateLogic.getFYEnd(webPh.financialYear);
+
+    // If date is outside current working FY, prompt the user with 1000-IQ smart choices
+    if (parsedDt.isBefore(fyStart) || parsedDt.isAfter(fyEnd)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showFyMismatchDialog(webPh, parsedDt, fyStart, fyEnd);
+      });
+    }
+  }
+
+  void _showFyMismatchDialog(PharoahWebManager webPh, DateTime parsedDt, DateTime fyStart, DateTime fyEnd) {
+    bool isOlder = parsedDt.isBefore(fyStart);
+    DateTime suggestedShiftDate = isOlder ? fyStart : fyEnd;
+    String suggestedShiftStr = DateFormat('dd/MM/yyyy').format(suggestedShiftDate);
+    String detectedFy = isOlder 
+        ? "${parsedDt.year}-${(parsedDt.year + 1).toString().substring(2)}" 
+        : "${parsedDt.year - 1}-${parsedDt.year.toString().substring(2)}";
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B), size: 24),
+            SizedBox(width: 10),
+            Text(
+              "FINANCIAL YEAR MISMATCH",
+              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Invoice Date in PDF:", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                        Text(widget.bill.invoiceDate, style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Bill Belongs To:", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                        Text("FY $detectedFy", style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Active Workstation FY:", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                        Text("FY ${webPh.financialYear} (${DateFormat('dd/MM/yy').format(fyStart)} to ${DateFormat('dd/MM/yy').format(fyEnd)})",
+                            style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "Aap is bill ko kaise inward karna chahte hain?",
+                style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 14),
+
+              // Option 1: SHIFT TO 01/04 (RECOMMENDED)
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    activeInvoiceDate = suggestedShiftDate;
+                    activeDateDisplay = "$suggestedShiftStr (Shifted from ${widget.bill.invoiceDate})";
+                    isDateShifted = true;
+                    dateAdjustmentNote = "[Shifted to FY ${webPh.financialYear} | Original Date: ${widget.bill.invoiceDate}]";
+                  });
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("✅ Inward date shifted to $suggestedShiftStr for FY ${webPh.financialYear} compliance!"),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0x3310B981),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF10B981)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.flash_on_rounded, color: Color(0xFF34D399), size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "FORCE INWARD IN FY ${webPh.financialYear} (SHIFT TO $suggestedShiftStr)",
+                              style: const TextStyle(color: Color(0xFF34D399), fontSize: 11.5, fontWeight: FontWeight.w900),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              "Recommended for GST ITC. Bill will immediately show on top of Purchase Register.",
+                              style: TextStyle(color: Colors.white60, fontSize: 9.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Option 2: KEEP ORIGINAL DATE
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    activeInvoiceDate = parsedDt;
+                    activeDateDisplay = "${widget.bill.invoiceDate} (Original Backdated)";
+                    isDateShifted = false;
+                    dateAdjustmentNote = "[Original Date: ${widget.bill.invoiceDate}]";
+                  });
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("⚠️ Kept original date. Use 'SHOW ALL DATES' in Purchase Register to view it."),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.history_rounded, color: Colors.orangeAccent, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "KEEP ORIGINAL DATE (${widget.bill.invoiceDate})",
+                              style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              "Preserves original date. You can view it in Purchase Register by toggling 'ALL DATES'.",
+                              style: TextStyle(color: Colors.white54, fontSize: 9.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _cleanStr(String s) => s.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
@@ -39,7 +253,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
   void _reconcileWithMasters() {
     final webPh = Provider.of<PharoahWebManager>(context, listen: false);
 
-    // 1. Match Supplier By Clean GST or Name
+    // Match Supplier
     String cleanGst = widget.bill.supplierGstin.trim().toUpperCase();
     String cleanSupName = _cleanStr(widget.bill.supplierName);
 
@@ -56,7 +270,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       matchedSupplier = null;
     }
 
-    // 2. Multi-Pack Box Auto-Split Logic (Supports 10*10, 2*15, 5*1ML, 10*1*10)
+    // Match Items
     verifiedItems.clear();
     for (var it in widget.bill.items) {
       Medicine? matchedMed;
@@ -70,9 +284,8 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         matchedMed = null;
       }
 
-      // Check if pack is a multi-pack box and split into single strip
+      // Multi-Pack Box Auto-Split (10*10, 2*15, 5*1ML, 10*1*10)
       if (it.conversionFactor == 1 && !it.productName.contains("FREIGHT")) {
-        // Match 10*1*10
         var tripleMatch = RegExp(r'^(\d+)[\*xX]1[\*xX](\d+)$').firstMatch(it.pack.trim());
         if (tripleMatch != null) {
           int n = int.tryParse(tripleMatch.group(1)!) ?? 10;
@@ -86,7 +299,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
             it.netMrp = it.netMrp / n;
           }
         } else {
-          // Match 10*10, 2*15, 5*1ML
           var standardMatch = RegExp(r'^(\d+)[\*xX](\d+([A-Za-z]+)?)$').firstMatch(it.pack.trim());
           if (standardMatch != null) {
             int n = int.tryParse(standardMatch.group(1)!) ?? 1;
@@ -230,7 +442,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
 
     setState(() => isLoading = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ All 7 Items Reconciled with STRIP Packing in Master!"), backgroundColor: Colors.green),
+      const SnackBar(content: Text("✅ All Items Reconciled with STRIP Packing in Master!"), backgroundColor: Colors.green),
     );
   }
 
@@ -250,12 +462,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     }
 
     setState(() => isSaving = true);
-
-    DateTime invoiceDt = DateTime.now();
-    try {
-      final parts = widget.bill.invoiceDate.split('/');
-      invoiceDt = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
-    } catch (_) {}
 
     String internalNo = WebPharoahNumberingEngine.getNextNumber(
       prefix: "PUR-",
@@ -322,7 +528,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       billNo: widget.bill.invoiceNo,
       partyId: matchedSupplier!.id,
       distributorName: matchedSupplier!.name,
-      date: invoiceDt,
+      date: activeInvoiceDate, // Smart compliant date!
       entryDate: DateTime.now(),
       paymentMode: "CREDIT",
       totalAmount: widget.bill.grandTotal,
@@ -330,7 +536,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       roundOff: widget.bill.roundOff,
       gstStatus: "Matched",
       items: commitItems,
-      sourceTag: "WEB-PORTAL",
+      sourceTag: isDateShifted ? "WEB-PORTAL SHIFTED-FY" : "WEB-PORTAL",
     );
 
     webPh.purchases.removeWhere((p) => p.billNo.trim().toUpperCase() == widget.bill.invoiceNo.trim().toUpperCase());
@@ -343,7 +549,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
     if (pushed) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("🎉 All ${commitItems.length} Items Inwarded & Strip Masters Synced to Cloud!"), backgroundColor: Colors.green),
+          SnackBar(content: Text("🎉 Purchase Inward ${newPurchase.billNo} Saved & Master Updated to Strips!"), backgroundColor: Colors.green),
         );
         widget.onBack();
       }
@@ -470,7 +676,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "Supplier GST: ${widget.bill.supplierGstin} • Date: ${widget.bill.invoiceDate} • Phone: ${widget.bill.supplierPhone}",
+                  "Supplier GST: ${widget.bill.supplierGstin} • Inward Date: $activeDateDisplay • Phone: ${widget.bill.supplierPhone}",
                   style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                 ),
               ],

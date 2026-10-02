@@ -24,6 +24,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
   DateTime toDate = DateTime.now();
   String searchQuery = "";
   bool _isInit = false;
+  bool showAllDates = false; // Bypass date boundaries toggle!
 
   bool isSelectionMode = false;
   List<String> selectedPurchaseIds = [];
@@ -57,7 +58,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
 
     List<Purchase> filteredPurchases = webPh.purchases.reversed.where((p) {
       final pDateOnly = _dateOnly(p.date);
-      bool dateMatch = !pDateOnly.isBefore(fDateOnly) && !pDateOnly.isAfter(tDateOnly);
+      bool dateMatch = showAllDates || (!pDateOnly.isBefore(fDateOnly) && !pDateOnly.isAfter(tDateOnly));
       bool searchMatch = searchQuery.isEmpty ||
           p.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
           p.billNo.toLowerCase().contains(searchQuery.toLowerCase()) ||
@@ -160,6 +161,18 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                     Expanded(child: _dateTile("FROM DATE", fromDate, (d) => setState(() => fromDate = d), webPh.financialYear)),
                     const SizedBox(width: 12),
                     Expanded(child: _dateTile("TO DATE", toDate, (d) => setState(() => toDate = d), webPh.financialYear)),
+                    const SizedBox(width: 12),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: showAllDates ? const Color(0xFF10B981) : Colors.white12,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () => setState(() => showAllDates = !showAllDates),
+                      icon: Icon(showAllDates ? Icons.visibility_rounded : Icons.all_inclusive_rounded, size: 16),
+                      label: Text(showAllDates ? "SHOW 30 DAYS" : "SHOW ALL DATES", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -204,7 +217,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                     Icon(Icons.inventory_2_outlined, size: 45, color: Colors.white24),
                     SizedBox(height: 12),
                     Text(
-                      "No inward purchases found matching current filters.",
+                      "No inward purchases found matching current filters.\nClick 'SHOW ALL DATES' above to view all bills across all dates.",
                       style: TextStyle(color: Colors.white54, fontSize: 12),
                       textAlign: TextAlign.center,
                     ),
@@ -249,7 +262,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                         _badge(p.paymentMode.toUpperCase(), p.paymentMode.toUpperCase() == "CASH" ? Colors.greenAccent : Colors.orangeAccent),
                       ],
                     ),
-                    subtitle: Text("Bill: ${p.billNo} • Entry: ${p.internalNo} • ${WebAppDateLogic.format(p.date)}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+                    subtitle: Text("Bill: ${p.billNo} • Entry: ${p.internalNo} • Date: ${WebAppDateLogic.format(p.date)}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min, 
                       children: [
