@@ -12,13 +12,13 @@ import '../web_billing/quick_add_party_modal.dart';
 import 'web_purchase_challan_billing_view.dart';
 
 class WebPurchaseChallanView extends StatefulWidget {
-  final VoidCallback? onBack;
+  final VoidCallback onBack;
   final PurchaseChallan? existingRecord;
   final bool isReadOnly;
 
   const WebPurchaseChallanView({
     super.key,
-    this.onBack,
+    required this.onBack,
     this.existingRecord,
     this.isReadOnly = false,
   });
@@ -53,8 +53,8 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
         selectedDate = ex.date;
         try {
           selectedSupplier = webPh.parties.firstWhere((p) => p.name == ex.distributorName);
-        } catch (e) {
-          selectedSupplier = Party(id: "0", name: ex.distributorName);
+        } catch (_) {
+          selectedSupplier = Party(id: ex.partyId, name: ex.distributorName);
         }
         setState(() => isLoading = false);
       } else {
@@ -77,6 +77,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
       context: context,
       builder: (c) => QuickAddPartyModal(
         webPh: webPh,
+        preFillData: const {'group': 'Sundry Creditors'},
         onPartyCreated: (newParty) {
           setState(() => selectedSupplier = newParty);
         },
@@ -120,6 +121,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
                 ),
                 onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back_rounded, size: 16),
@@ -136,7 +138,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
           ),
           const SizedBox(height: 20),
 
-          // Header (Challan No & Date)
+          // Header (Challan ID & Supplier Ref No)
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -154,7 +156,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                         readOnly: true,
                         style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFF59E0B), fontSize: 14),
                         decoration: InputDecoration(
-                          labelText: "INTERNAL INWARD ID",
+                          labelText: "INWARD ID",
                           labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
                           filled: true,
                           fillColor: Colors.black26,
@@ -170,7 +172,9 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                         textCapitalization: TextCapitalization.characters,
                         style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
                         decoration: InputDecoration(
-                          labelText: "SUPPLIER REF / CHALLAN NO *",
+                          labelText: "SUPPLIER REF NO *",
+                          hintText: "Enter Supplier Bill / Challan No",
+                          hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
                           labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
                           filled: true,
                           fillColor: widget.isReadOnly ? Colors.black26 : const Color(0x33F59E0B),
@@ -216,7 +220,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
           const SizedBox(height: 20),
 
           const Text(
-            "SELECT SUPPLIER / DISTRIBUTOR",
+            "SELECT DISTRIBUTOR / SUPPLIER",
             style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
           ),
           const SizedBox(height: 10),
@@ -226,20 +230,24 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
           else 
             _buildSupplierList(webPh),
 
+          // Bottom Gateway Button
           if (selectedSupplier != null)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.only(top: 18),
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.isReadOnly ? Colors.purple : const Color(0xFFD97706),
+                  backgroundColor: const Color(0xFFD97706),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
                 ),
                 onPressed: () {
                   if (supplierRefC.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Supplier Ref / Challan No is required!"), backgroundColor: Colors.red));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Supplier Ref / Challan No is required!"), backgroundColor: Colors.red),
+                    );
                     return;
                   }
                   Navigator.push(
@@ -247,7 +255,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                     MaterialPageRoute(
                       builder: (c) => WebPurchaseChallanBillingView(
                         supplier: selectedSupplier!,
-                        internalNo: internalNoC.text,
+                        internalNo: internalNoC.text.trim(),
                         supplierRefNo: supplierRefC.text.trim(),
                         challanDate: selectedDate,
                         existingRecord: widget.existingRecord,
@@ -258,7 +266,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                 },
                 icon: Icon(widget.isReadOnly ? Icons.visibility : Icons.arrow_forward_rounded, size: 20),
                 label: Text(
-                  widget.isReadOnly ? "VIEW INWARD ITEMS" : "PROCEED TO INWARD ENTRY",
+                  widget.isReadOnly ? "VIEW INWARD ITEMS ➔" : "PROCEED TO INWARD ENTRY ➔",
                   style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
                 ),
               ),
@@ -274,15 +282,16 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
       color: const Color(0xFF1E293B),
       borderRadius: BorderRadius.circular(16),
       border: Border.all(color: const Color(0xFFF59E0B), width: 1.5),
+      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
     ),
     child: Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
-          child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B)),
+          child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B), size: 26),
         ),
-        const SizedBox(width: 14),
+        const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,9 +315,10 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
     final query = searchQuery.trim().toLowerCase();
     final matchingSuppliers = webPh.parties.where((p) {
       if (query.isEmpty) return p.group == "Sundry Creditors";
-      return p.name.toLowerCase().contains(query) ||
-          p.city.toLowerCase().contains(query) ||
-          p.gst.toLowerCase().contains(query);
+      return p.group == "Sundry Creditors" &&
+          (p.name.toLowerCase().contains(query) ||
+           p.city.toLowerCase().contains(query) ||
+           p.gst.toLowerCase().contains(query));
     }).toList();
 
     return Column(
@@ -321,9 +331,9 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                 controller: searchController,
                 style: const TextStyle(color: Colors.white, fontSize: 12.5),
                 decoration: InputDecoration(
-                  hintText: "Search Supplier by Name, City or GSTIN...",
+                  hintText: "Search Distributor by Name, City or GST...",
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
-                  prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B)),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B), size: 18),
                   suffixIcon: searchQuery.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 16),
@@ -385,9 +395,17 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
                       child: ListTile(
                         dense: true,
-                        leading: const Icon(Icons.business_outlined, color: Colors.white38),
+                        leading: Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: const BoxDecoration(
+                            color: Color(0x26F59E0B),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.business_outlined, color: Color(0xFFF59E0B), size: 16),
+                        ),
                         title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text("${p.city} | GST: ${p.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                        subtitle: Text("${p.city.isEmpty ? 'No City' : p.city} | GST: ${p.gst.isEmpty ? 'N/A' : p.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 13),
                         onTap: () => setState(() => selectedSupplier = p),
                       ),
                     );

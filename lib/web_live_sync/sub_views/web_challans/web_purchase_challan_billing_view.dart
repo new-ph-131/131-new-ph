@@ -8,6 +8,7 @@ import '../../web_models.dart';
 import '../../pharoah_web_manager.dart';
 import '../../web_pdf_router_service.dart';
 import '../web_billing/quick_add_product_modal.dart';
+import '../web_billing/web_batch_lookup_dialog.dart';
 
 class WebPurchaseChallanBillingView extends StatefulWidget {
   final Party supplier;
@@ -63,20 +64,23 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     });
   }
 
-  // --- CUSTOM INWARD ITEM ENTRY DIALOG (Direct Match with App Logic) ---
-  void _openPcItemDialog(PharoahWebManager webPh, Medicine med) {
+  // --- INWARD ITEM ENTRY DIALOG (MATCHING PURCHASE BILLING) ---
+  void _openPcItemDialog(PharoahWebManager webPh, Medicine med, {PurchaseItem? itemToEdit, int? editIndex}) {
     if (widget.isReadOnly) return;
 
-    final batchC = TextEditingController();
-    final expC = TextEditingController(text: "12/28");
-    final mrpC = TextEditingController(text: med.mrp.toStringAsFixed(2));
-    final purRateC = TextEditingController(text: med.purRate.toStringAsFixed(2));
-    final qtyC = TextEditingController(text: "1");
-    final freeC = TextEditingController(text: "0");
-    final gstC = TextEditingController(text: med.gst.toString());
+    final batchC = TextEditingController(text: itemToEdit?.batch ?? "");
+    final expC = TextEditingController(text: itemToEdit?.exp ?? "12/28");
+    final mrpC = TextEditingController(text: itemToEdit?.mrp.toStringAsFixed(2) ?? med.mrp.toStringAsFixed(2));
+    final purRateC = TextEditingController(text: itemToEdit?.purchaseRate.toStringAsFixed(2) ?? med.purRate.toStringAsFixed(2));
+    final qtyC = TextEditingController(text: itemToEdit?.qty.toInt().toString() ?? "1");
+    final freeC = TextEditingController(text: itemToEdit?.freeQty.toInt().toString() ?? "0");
+    final gstC = TextEditingController(text: itemToEdit?.gstRate.toString() ?? med.gst.toString());
+
+    List<BatchInfo> availableBatches = webPh.batchHistory[med.identityKey] ?? [];
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (c) => StatefulBuilder(
         builder: (context, setDialogState) {
           double q = double.tryParse(qtyC.text) ?? 0.0;
@@ -89,22 +93,67 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: const BorderSide(color: Colors.white12)),
             title: Row(
               children: [
-                const Icon(Icons.downloading_rounded, color: Color(0xFFF59E0B)),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
+                  child: const Icon(Icons.downloading_rounded, color: Color(0xFFF59E0B), size: 20),
+                ),
                 const SizedBox(width: 10),
-                Text("INWARD ITEM • ${med.name}", style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("INWARD ITEM ENTRY", style: TextStyle(color: Color(0xFFF59E0B), fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                      Text("${med.name} (${med.packing})", style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900), overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20), onPressed: () => Navigator.pop(c)),
               ],
             ),
             content: SizedBox(
-              width: 500,
+              width: 520,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Row(
                       children: [
-                        Expanded(flex: 3, child: _dialogInput("BATCH NO *", batchC, isCaps: false)),
+                        Expanded(
+                          flex: 3,
+                          child: _dialogInput(
+                            "BATCH NO *",
+                            batchC,
+                            isHighlight: true,
+                            suffix: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFF59E0B),
+                                foregroundColor: Colors.black,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                elevation: 0,
+                              ),
+                              onPressed: () async {
+                                final selected = await showDialog<dynamic>(
+                                  context: context,
+                                  builder: (ctx) => WebBatchLookupDialog(medicine: med, batches: availableBatches, prioritizeExpired: false),
+                                );
+                                if (selected != null && selected is BatchInfo) {
+                                  setDialogState(() {
+                                    batchC.text = selected.batch;
+                                    expC.text = selected.exp;
+                                    mrpC.text = selected.mrp.toStringAsFixed(2);
+                                    purRateC.text = selected.purRate.toStringAsFixed(2);
+                                  });
+                                }
+                              },
+                              icon: const Icon(Icons.layers_rounded, size: 14),
+                              label: const Text("BATCHES", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
                         const SizedBox(width: 10),
-                        Expanded(flex: 2, child: _dialogInput("EXPIRY (MM/YY)", expC, isNum: true)),
+                        Expanded(flex: 2, child: _dialogInput("EXPIRY (MM/YY) *", expC, isNum: true)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -146,10 +195,10 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white),
                 onPressed: () {
-                  if (batchC.text.trim().isEmpty || q <= 0 || pRate <= 0) return;
+                  if (batchC.text.trim().isEmpty || expC.text.trim().isEmpty || q <= 0 || pRate <= 0) return;
                   final newItem = PurchaseItem(
-                    id: "PCITM-${DateTime.now().millisecondsSinceEpoch}",
-                    srNo: items.length + 1,
+                    id: itemToEdit?.id ?? "PCITM-${DateTime.now().millisecondsSinceEpoch}",
+                    srNo: itemToEdit != null ? itemToEdit.srNo : items.length + 1,
                     medicineID: med.id,
                     name: med.name,
                     packing: med.packing,
@@ -163,10 +212,17 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                     gstRate: g,
                     total: itemTotal,
                   );
-                  setState(() => items.add(newItem));
+
+                  setState(() {
+                    if (editIndex != null) {
+                      items[editIndex] = newItem;
+                    } else {
+                      items.add(newItem);
+                    }
+                  });
                   Navigator.pop(c);
                 },
-                child: const Text("ADD TO INWARD CHALLAN", style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(itemToEdit != null ? "UPDATE ITEM" : "ADD TO INWARD", style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -175,24 +231,33 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     );
   }
 
-  Widget _dialogInput(String label, TextEditingController ctrl, {bool isNum = false, bool isCaps = false, bool isHighlight = false, Function(String)? onChanged}) {
+  Widget _dialogInput(String label, TextEditingController ctrl, {bool isNum = false, bool isCaps = false, bool isHighlight = false, Widget? suffix, Function(String)? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        TextField(
-          controller: ctrl,
-          onChanged: onChanged,
-          keyboardType: isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-          textCapitalization: isCaps ? TextCapitalization.characters : TextCapitalization.none,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: isHighlight ? const Color(0x33F59E0B) : Colors.black26,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            isDense: true,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: isHighlight ? const Color(0x33F59E0B) : Colors.black26,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isHighlight ? const Color(0xFFF59E0B) : Colors.white12),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: ctrl,
+                  onChanged: onChanged,
+                  keyboardType: isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+                  textCapitalization: isCaps ? TextCapitalization.characters : TextCapitalization.none,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: InputBorder.none),
+                ),
+              ),
+              if (suffix != null) suffix,
+            ],
           ),
         ),
       ],
@@ -215,7 +280,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
 
   void _savePurchaseChallan(PharoahWebManager webPh, {bool andPrint = false}) async {
     if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Challan cannot be empty!"), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Challan cannot be empty! Please add products."), backgroundColor: Colors.orange));
       return;
     }
 
@@ -231,7 +296,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       items: List.from(items),
       totalAmount: totalAmt,
       status: widget.existingRecord?.status ?? "Pending",
-      remarks: remarksC.text.trim(),
+      remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Stock inward verified.",
     );
 
     if (widget.existingRecord != null) {
@@ -240,7 +305,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     
     webPh.purchaseChallans.add(newChallan);
 
-    // 2-Way Batch Sync
+    // 2-Way Batch Inventory Activity
     for (var item in items) {
       String resolvedKey = item.medicineID;
       try {
@@ -263,6 +328,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       );
     }
 
+    webPh.rebuildInventory();
     await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 
@@ -272,8 +338,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅ Inward Challan ${widget.internalNo} Saved!"), backgroundColor: Colors.green));
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅ Inward Purchase Challan ${widget.internalNo} Saved & Synced!"), backgroundColor: Colors.green));
+      Navigator.pop(context);
     }
   }
 
@@ -284,22 +350,49 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        title: Text(widget.isReadOnly ? "View Inward Items" : "Inward ID: ${widget.internalNo}"),
+        title: Text(widget.isReadOnly ? "View Inward Items" : "Inward Note: ${widget.internalNo}"),
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
         elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: Colors.white10, height: 1.0),
-        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_rounded),
+            tooltip: "Print Inward PDF",
+            onPressed: items.isEmpty
+                ? null
+                : () async {
+                    final tempChallan = PurchaseChallan(
+                      id: "temp",
+                      internalNo: widget.internalNo,
+                      billNo: widget.supplierRefNo,
+                      partyId: widget.supplier.id,
+                      distributorName: widget.supplier.name,
+                      date: widget.challanDate,
+                      items: items,
+                      totalAmount: totalAmt,
+                      remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Stock inward verified.",
+                    );
+                    await WebPdfRouterService.printPurchaseChallan(
+                      challan: tempChallan,
+                      party: widget.supplier,
+                      shop: CompanyProfile.fromMap(webPh.companyProfile),
+                    );
+                  },
+          ),
+          if (!widget.isReadOnly)
+            TextButton(
+              onPressed: items.isEmpty ? null : () => _savePurchaseChallan(webPh, andPrint: false),
+              child: const Text("FINISH", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Header Info
+            // Header Info Box
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B),
                 borderRadius: BorderRadius.circular(16),
@@ -310,34 +403,38 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.business_rounded, color: Color(0xFFF59E0B), size: 24),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
+                        child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B), size: 20),
+                      ),
                       const SizedBox(width: 12),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.supplier.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-                          Text("Supplier Ref: ${widget.supplierRefNo} | GST: ${widget.supplier.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                          Text(widget.supplier.name, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                          Text("Ref: ${widget.supplierRefNo} | GST: ${widget.supplier.gst}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
                         ],
                       ),
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-                    child: Text("DATE: ${DateFormat('dd/MM/yyyy').format(widget.challanDate)}", style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: Text("DATE: ${DateFormat('dd/MM/yyyy').format(widget.challanDate)}", style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Product Search Bar
+            // Product Search Trigger
             if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-            if (!widget.isReadOnly) const SizedBox(height: 16),
+            if (!widget.isReadOnly) const SizedBox(height: 14),
 
             // Cart Table
             Expanded(child: _buildCartTable(webPh)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
             // Footer
             _buildFooter(webPh),
@@ -360,7 +457,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(16),
@@ -377,13 +474,13 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                   decoration: InputDecoration(
                     labelText: "SEARCH PRODUCT TO INWARD",
-                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold),
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9.5),
                     hintText: "Type medicine name...",
                     hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
                     prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B), size: 18),
                     suffixIcon: productSearchC.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 18),
+                            icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 16),
                             onPressed: () => setState(() => productSearchC.clear()),
                           )
                         : null,
@@ -411,9 +508,9 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
           ),
 
           if (matchingMeds.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Container(
-              constraints: const BoxConstraints(maxHeight: 200),
+              constraints: const BoxConstraints(maxHeight: 180),
               decoration: BoxDecoration(
                 color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(10),
@@ -465,15 +562,15 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
               Text("INWARD ITEMS (${items.length})", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
             ],
           ),
-          const Divider(color: Colors.white10, height: 20),
+          const Divider(color: Colors.white10, height: 16),
           if (items.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("Inward Challan is empty. Search products above.", style: TextStyle(color: Colors.white38, fontSize: 12))))
+            const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("Cart is empty. Search products above to add to inward challan.", style: TextStyle(color: Colors.white38, fontSize: 11))))
           else
             Expanded(
               child: SingleChildScrollView(
                 child: Table(
                   columnWidths: const {
-                    0: FixedColumnWidth(40),
+                    0: FixedColumnWidth(35),
                     1: FlexColumnWidth(3),
                     2: FixedColumnWidth(70),
                     3: FixedColumnWidth(80),
@@ -486,7 +583,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                   children: [
                     TableRow(
                       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
-                      children: [_th("SN"), _th("PRODUCT NAME", isLeft: true), _th("PACK"), _th("BATCH"), _th("EXP"), _th("QTY"), _th("PUR RATE"), _th("TOTAL"), _th("ACT")],
+                      children: [_th("SN"), _th("PRODUCT NAME", isLeft: true), _th("PACK"), _th("BATCH"), _th("EXP"), _th("QTY"), _th("PUR. RATE"), _th("TOTAL"), _th("ACT")],
                     ),
                     ...items.asMap().entries.map((entry) {
                       int idx = entry.key; PurchaseItem it = entry.value;
@@ -500,6 +597,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
+                              if (!widget.isReadOnly) IconButton(icon: const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF38BDF8)), onPressed: () { final med = webPh.medicines.firstWhere((m) => m.id == it.medicineID); _openPcItemDialog(webPh, med, itemToEdit: it, editIndex: idx); }),
                               if (!widget.isReadOnly) IconButton(icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent), onPressed: () => setState(() { items.removeAt(idx); _recalculateSR(); })),
                             ],
                           ),
@@ -517,7 +615,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
 
   Widget _buildFooter(PharoahWebManager webPh) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -528,7 +626,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
               readOnly: widget.isReadOnly,
               style: const TextStyle(color: Colors.white, fontSize: 12),
               decoration: InputDecoration(
-                labelText: "INWARD REMARKS",
+                labelText: "INWARD REMARKS / TRANSPORT DETAILS",
                 labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
                 prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 18),
                 filled: true,
@@ -537,15 +635,15 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
               ),
             ),
           ),
-          const SizedBox(width: 40),
+          const SizedBox(width: 30),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text("NET INWARD VALUE", style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+              const Text("NET INWARD VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
               Text("₹${totalAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 24, fontWeight: FontWeight.w900)),
             ],
           ),
-          const SizedBox(width: 30),
+          const SizedBox(width: 25),
           if (!widget.isReadOnly) ...[
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -560,17 +658,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
               icon: const Icon(Icons.print_rounded, size: 18),
               label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
-          ] else ...[
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: () async {
-                final tempChallan = PurchaseChallan(id: "temp", internalNo: widget.internalNo, billNo: widget.supplierRefNo, partyId: widget.supplier.id, distributorName: widget.supplier.name, date: widget.challanDate, items: items, totalAmount: totalAmt, remarks: remarksC.text.trim());
-                await WebPdfRouterService.printPurchaseChallan(challan: tempChallan, party: widget.supplier, shop: CompanyProfile.fromMap(webPh.companyProfile));
-              },
-              icon: const Icon(Icons.print_rounded, size: 18),
-              label: const Text("PRINT CHALLAN", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-            ),
-          ]
+          ],
         ],
       ),
     );

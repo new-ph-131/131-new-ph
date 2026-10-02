@@ -373,6 +373,212 @@ class WebPdfRouterService {
     await Printing.sharePdf(bytes: bytes, filename: "Challan_${challan.billNo}.pdf");
   }
 
+  // ===========================================================================
+  // 3. PURCHASE CHALLAN (INWARD DELIVERY NOTE) - EXACT APP REPLICA
+  // ===========================================================================
+  static Future<Uint8List> generatePurchaseChallanBytes({
+    required PurchaseChallan challan,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final pdf = pw.Document();
+    const double masterWidth = 800;
+    const double pageHeightLimit = 550;
+    const int itemsPerPage = 15;
+
+    int totalPages = (challan.items.length / itemsPerPage).ceil();
+    if (totalPages == 0) totalPages = 1;
+
+    for (int pageNum = 0; pageNum < totalPages; pageNum++) {
+      int start = pageNum * itemsPerPage;
+      int end = (start + itemsPerPage < challan.items.length) ? start + itemsPerPage : challan.items.length;
+      List<PurchaseItem> pageItems = challan.items.sublist(start, end);
+      bool isLastPage = (pageNum == totalPages - 1);
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          build: (context) => pw.Column(
+            children: [
+              pw.Container(
+                width: masterWidth,
+                height: pageHeightLimit,
+                decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
+                child: pw.Column(
+                  children: [
+                    // Header Row
+                    pw.Row(
+                      children: [
+                        // Box 1: Receiver Shop (Januram)
+                        _hBox(
+                          280, true,
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
+                              pw.Text("GST: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: const pw.TextStyle(fontSize: 7)),
+                            ],
+                          ),
+                        ),
+                        // Box 2: Inward Note Details
+                        _hBox(
+                          175, true,
+                          pw.Column(
+                            children: [
+                              pw.Text("INWARD CHALLAN", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.amber900)),
+                              pw.Divider(thickness: 0.5),
+                              pw.Text("ID: ${challan.internalNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("Ref: ${challan.billNo}", style: const pw.TextStyle(fontSize: 8)),
+                              pw.Text(DateFormat("dd/MM/yyyy").format(challan.date), style: const pw.TextStyle(fontSize: 8)),
+                            ],
+                          ),
+                        ),
+                        // Box 3: Supplier Details
+                        _hBox(
+                          345, false,
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text("SUPPLIER DETAILS:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                              pw.Text(party.name, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text("${party.address}, ${party.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
+                              pw.Text("GSTIN: ${party.gst} | DL: ${party.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                              if (party.phone.isNotEmpty || party.email.isNotEmpty)
+                                pw.Text("Mob: ${party.phone}${party.email.isNotEmpty ? ' | Email: ${party.email.toLowerCase()}' : ''}", style: const pw.TextStyle(fontSize: 7)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Table Header
+                    pw.Container(
+                      color: PdfColors.grey200,
+                      child: pw.Row(
+                        children: [
+                          _tCol("S.N", 25), _tCol("Qty+Free", 55), _tCol("Pack", 45),
+                          _tCol("Product Description", 210, isLeft: true),
+                          _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 50),
+                          _tCol("MRP", 55), _tCol("Pur.Rate", 55), _tCol("GST%", 40),
+                          _tCol("Net Total", 145, isLast: true),
+                        ],
+                      ),
+                    ),
+
+                    // Items Table
+                    pw.Expanded(
+                      child: pw.Column(
+                        children: pageItems.asMap().entries.map((entry) {
+                          int idx = entry.key;
+                          var i = entry.value;
+                          String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+                          String qtyDisp = "${fmt(i.qty)} + ${fmt(i.freeQty)}";
+
+                          return pw.Container(
+                            decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
+                            child: pw.Row(
+                              children: [
+                                _cell("${start + idx + 1}", 25), _cell(qtyDisp, 55), _cell(i.packing, 45),
+                                pw.Container(
+                                  width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
+                                  child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                ),
+                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 50),
+                                _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.purchaseRate.toStringAsFixed(2), 55),
+                                _cell("${i.gstRate.toInt()}%", 40),
+                                _cell(i.total.toStringAsFixed(2), 145),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    if (isLastPage)
+                      _buildPurchaseChallanFooter(shop.name, challan)
+                    else
+                      pw.Container(
+                        height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
+                        child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return pdf.save();
+  }
+
+  static pw.Widget _buildPurchaseChallanFooter(String shopName, PurchaseChallan challan) {
+    String remarks = challan.remarks.trim().isNotEmpty ? challan.remarks.trim() : "Stock inward verified.";
+
+    return pw.Container(
+      height: 105,
+      decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
+      child: pw.Row(
+        children: [
+          pw.Container(
+            width: 480, padding: const pw.EdgeInsets.all(8),
+            decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text("STOCK INWARD CONFIRMATION", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 6),
+                pw.Text("Note: Material verified and stored in inventory.", style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+                pw.Spacer(),
+                pw.Text("REMARKS: $remarks", style: const pw.TextStyle(fontSize: 7)),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 320, padding: const pw.EdgeInsets.all(8),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("TOTAL INWARD VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${challan.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.amber900)),
+                  ],
+                ),
+                pw.Spacer(),
+                pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 25),
+                pw.Text("STORE MANAGER / RECEIVER", style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<void> printPurchaseChallan({
+    required PurchaseChallan challan,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final bytes = await generatePurchaseChallanBytes(challan: challan, party: party, shop: shop);
+    await Printing.layoutPdf(onLayout: (_) async => bytes, name: "Inward_${challan.internalNo}", format: PdfPageFormat.a4.landscape);
+  }
+
+  static Future<void> downloadPurchaseChallanPdf({
+    required PurchaseChallan challan,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final bytes = await generatePurchaseChallanBytes(challan: challan, party: party, shop: shop);
+    await Printing.sharePdf(bytes: bytes, filename: "Inward_${challan.internalNo}.pdf");
+  }
+
   // --- STUBS & UTILS ---
   static Future<Uint8List> generateSaleReportBytes({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async => pw.Document().save();
   static Future<void> printSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
@@ -382,8 +588,6 @@ class WebPdfRouterService {
   static Future<Uint8List> generatePurchaseReportBytes({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async => pw.Document().save();
   static Future<void> printPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
   static Future<void> downloadPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
-  static Future<void> printPurchaseChallan({required PurchaseChallan challan, required Party party, required CompanyProfile shop}) async {}
-  static Future<void> downloadPurchaseChallanPdf({required PurchaseChallan challan, required Party party, required CompanyProfile shop}) async {}
   static Future<void> printChallanReport({required List<dynamic> challans, required CompanyProfile shop, required DateTime from, required DateTime to, required bool isSaleChallan}) async {}
   static Future<void> printCreditNote({required SaleReturn returnObj, required Party party, required CompanyProfile shop}) async {}
   static Future<void> printDebitNote({required PurchaseReturn returnObj, required Party party, required CompanyProfile shop}) async {}
@@ -422,10 +626,13 @@ class WebPdfRouterService {
                 if (sale.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", sale.extraDiscount),
                 _fRow("ROUND OFF", sale.roundOff),
                 pw.Divider(thickness: 0.5),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("GRAND TOTAL", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.Text("Rs. ${sale.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-                ]),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("GRAND TOTAL", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${sale.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
               ],
             ),
           ),
