@@ -111,14 +111,35 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
 
   void _saveSaleChallan(PharoahWebManager webPh, {bool andPrint = false}) async {
     if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Challan cannot be empty!"), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Challan cannot be empty! Please add products."), backgroundColor: Colors.orange),
+      );
       return;
     }
 
     setState(() => isSaving = true);
 
+    String challanId = widget.existingRecord?.id ?? "SCH-WEB-${DateTime.now().millisecondsSinceEpoch}";
+
+    // Digital Seal Code Generation
+    List<ChallanSignature> sigHistory = List.from(widget.existingRecord?.sigHistory ?? []);
+    bool isSigned = widget.existingRecord?.isSigned ?? false;
+
+    if (webPh.appConfig.showCustomerSignChallan == true && sigHistory.isEmpty) {
+      final code = "VR-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}";
+      sigHistory.add(ChallanSignature(
+        id: "SIG-${DateTime.now().millisecondsSinceEpoch}",
+        imagePath: "",
+        verificationCode: code,
+        signedAmount: totalAmt,
+        signedQty: items.fold(0.0, (s, it) => s + it.qty + it.freeQty),
+        signDate: DateTime.now(),
+      ));
+      isSigned = true;
+    }
+
     final newChallan = SaleChallan(
-      id: widget.existingRecord?.id ?? "SCH-WEB-${DateTime.now().millisecondsSinceEpoch}",
+      id: challanId,
       billNo: widget.challanNo,
       partyId: widget.party.id,
       partyName: widget.party.name,
@@ -129,6 +150,8 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       totalAmount: totalAmt,
       status: widget.existingRecord?.status ?? "Pending",
       remarks: remarksC.text.trim(),
+      sigHistory: sigHistory,
+      isSigned: isSigned,
     );
 
     if (widget.existingRecord != null) {
@@ -137,7 +160,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
     
     webPh.saleChallans.add(newChallan);
 
-    // 2-Way Batch Sync
+    // 2-Way Batch Inventory Activity
     for (var item in items) {
       String resolvedKey = item.medicineID;
       try {
@@ -160,6 +183,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       );
     }
 
+    webPh.rebuildInventory();
     await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 
@@ -169,9 +193,11 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("✅ Delivery Challan ${widget.challanNo} Saved!"), backgroundColor: Colors.green));
-      // Pop Back to Hub (which will be at root due to Gateway)
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ Outward Delivery Challan ${widget.challanNo} Saved & Inventory Synced!"), backgroundColor: Colors.green),
+      );
+      Navigator.pop(context); // Step 2 to Step 1
+      Navigator.pop(context); // Step 1 to Hub
     }
   }
 
@@ -186,18 +212,46 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
         backgroundColor: const Color(0xFF1E293B),
         foregroundColor: Colors.white,
         elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: Colors.white10, height: 1.0),
-        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_rounded),
+            tooltip: "Print Challan PDF",
+            onPressed: items.isEmpty
+                ? null
+                : () async {
+                    final tempChallan = SaleChallan(
+                      id: "temp",
+                      billNo: widget.challanNo,
+                      partyId: widget.party.id,
+                      partyName: widget.party.name,
+                      partyGstin: widget.party.gst,
+                      partyState: widget.party.state,
+                      date: widget.challanDate,
+                      items: items,
+                      totalAmount: totalAmt,
+                      remarks: remarksC.text.trim(),
+                    );
+                    await WebPdfRouterService.printSaleChallan(
+                      challan: tempChallan,
+                      party: widget.party,
+                      shop: CompanyProfile.fromMap(webPh.companyProfile),
+                    );
+                  },
+          ),
+          if (!widget.isReadOnly)
+            TextButton(
+              onPressed: items.isEmpty ? null : () => _saveSaleChallan(webPh, andPrint: false),
+              child: const Text("FINISH", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Header Info
+            // Header Strip (Consignee & Date)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFF1E293B),
                 borderRadius: BorderRadius.circular(16),
@@ -208,34 +262,38 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.person_rounded, color: Color(0xFF2DD4BF), size: 24),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(color: Color(0x332DD4BF), shape: BoxShape.circle),
+                        child: const Icon(Icons.person_rounded, color: Color(0xFF2DD4BF), size: 20),
+                      ),
                       const SizedBox(width: 12),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(widget.party.name, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-                          Text("${widget.party.city} | GST: ${widget.party.gst}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                          Text(widget.party.name.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                          Text("${widget.party.city} | GST: ${widget.party.gst}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
                         ],
                       ),
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-                    child: Text("DATE: ${DateFormat('dd/MM/yyyy').format(widget.challanDate)}", style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    child: Text("DATE: ${DateFormat('dd/MM/yyyy').format(widget.challanDate)}", style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Product Search Bar
+            // Product Search Trigger Bar
             if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-            if (!widget.isReadOnly) const SizedBox(height: 16),
+            if (!widget.isReadOnly) const SizedBox(height: 14),
 
             // Cart Table
             Expanded(child: _buildCartTable(webPh)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
             // Footer
             _buildFooter(webPh),
@@ -258,7 +316,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(16),
@@ -274,14 +332,14 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                   controller: productSearchC,
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                   decoration: InputDecoration(
-                    labelText: "SEARCH PRODUCT TO DISPATCH",
-                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold),
-                    hintText: "Type medicine name...",
+                    labelText: "SEARCH MEDICINE TO DISPATCH",
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9.5),
+                    hintText: "Type medicine name (e.g. DOLO, PAN 40)...",
                     hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
                     prefixIcon: const Icon(Icons.search, color: Color(0xFF2DD4BF), size: 18),
                     suffixIcon: productSearchC.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 18),
+                            icon: const Icon(Icons.clear_rounded, color: Colors.white54, size: 16),
                             onPressed: () => setState(() => productSearchC.clear()),
                           )
                         : null,
@@ -309,9 +367,9 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
           ),
 
           if (matchingMeds.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Container(
-              constraints: const BoxConstraints(maxHeight: 200),
+              constraints: const BoxConstraints(maxHeight: 180),
               decoration: BoxDecoration(
                 color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(10),
@@ -333,7 +391,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                         Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
                         const Spacer(),
                         Text(
-                          "Stock: ${med.stock.toInt()}",
+                          "Stock: ${med.stock.toInt()} Qty",
                           style: TextStyle(color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
                         ),
                       ],
@@ -368,15 +426,15 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
               Text("DISPATCH ITEMS (${items.length})", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
             ],
           ),
-          const Divider(color: Colors.white10, height: 20),
+          const Divider(color: Colors.white10, height: 16),
           if (items.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("Challan is empty. Search products above.", style: TextStyle(color: Colors.white38, fontSize: 12))))
+            const Center(child: Padding(padding: EdgeInsets.all(40), child: Text("Cart is empty. Search products above to add to delivery challan.", style: TextStyle(color: Colors.white38, fontSize: 11))))
           else
             Expanded(
               child: SingleChildScrollView(
                 child: Table(
                   columnWidths: const {
-                    0: FixedColumnWidth(40),
+                    0: FixedColumnWidth(35),
                     1: FlexColumnWidth(3),
                     2: FixedColumnWidth(70),
                     3: FixedColumnWidth(80),
@@ -421,7 +479,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
 
   Widget _buildFooter(PharoahWebManager webPh) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -441,15 +499,15 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
               ),
             ),
           ),
-          const SizedBox(width: 40),
+          const SizedBox(width: 30),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+              const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
               Text("₹${totalAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 24, fontWeight: FontWeight.w900)),
             ],
           ),
-          const SizedBox(width: 30),
+          const SizedBox(width: 25),
           if (!widget.isReadOnly) ...[
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F766E), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -464,17 +522,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
               icon: const Icon(Icons.print_rounded, size: 18),
               label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
-          ] else ...[
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2DD4BF), foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: () async {
-                final tempChallan = SaleChallan(id: "temp", billNo: widget.challanNo, partyId: widget.party.id, partyName: widget.party.name, partyGstin: widget.party.gst, partyState: widget.party.state, date: widget.challanDate, items: items, totalAmount: totalAmt, remarks: remarksC.text.trim());
-                await WebPdfRouterService.printSaleChallan(challan: tempChallan, party: widget.party, shop: CompanyProfile.fromMap(webPh.companyProfile));
-              },
-              icon: const Icon(Icons.print_rounded, size: 18),
-              label: const Text("PRINT CHALLAN", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-            ),
-          ]
+          ],
         ],
       ),
     );

@@ -18,6 +18,8 @@ import 'web_purchase_summary_view.dart';
 import 'web_challan_stitcher_wizard.dart';
 import 'web_returns_view.dart';
 import 'sub_views/web_challans/web_challan_hub.dart'; 
+import 'sub_views/web_challans/web_sale_challan_view.dart';
+import 'sub_views/web_challans/web_purchase_challan_view.dart';
 import 'web_voucher_view.dart';
 import 'web_product_master.dart';
 import 'web_party_master.dart';
@@ -163,14 +165,24 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       if (currentView == "GO_RET_REG") tabIdx = 2;
       return WebReturnsView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
     }
-    if (currentView == "GO_CHALLAN_SALE" || currentView == "GO_CHALLAN_PUR" || currentView == "GO_CHALLAN_SALE_REG" || currentView == "GO_CHALLAN_PUR_REG" || currentView == "CHALLANS") {
-      int tabIdx = -1;
-      if (currentView == "GO_CHALLAN_SALE") tabIdx = 0;
-      if (currentView == "GO_CHALLAN_PUR") tabIdx = 1;
-      if (currentView == "GO_CHALLAN_SALE_REG") tabIdx = 2;
-      if (currentView == "GO_CHALLAN_PUR_REG") tabIdx = 3;
-      return WebChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
+    
+    // --- EXACT 2-STEP SALE CHALLAN FLOW ---
+    if (currentView == "GO_CHALLAN_SALE") {
+      return WebSaleChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
+    if (currentView == "GO_CHALLAN_PUR") {
+      return WebPurchaseChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
+    }
+    if (currentView == "GO_CHALLAN_SALE_REG") {
+      return WebChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: 2);
+    }
+    if (currentView == "GO_CHALLAN_PUR_REG") {
+      return WebChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: 3);
+    }
+    if (currentView == "CHALLANS") {
+      return WebChallanHub(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
+    }
+
     if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_DAYBOOK" || currentView == "GO_LEDGERS" || currentView == "ACCOUNTS") {
       int tabIdx = 0;
       if (currentView == "GO_PAYMENT") tabIdx = 1;

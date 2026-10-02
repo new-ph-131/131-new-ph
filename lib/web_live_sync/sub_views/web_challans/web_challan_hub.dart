@@ -1,7 +1,10 @@
 // FILE: lib/web_live_sync/sub_views/web_challans/web_challan_hub.dart
 
 import 'package:flutter/material.dart';
-import 'sale_challan/ui/web_sale_challan_screen.dart';
+import 'web_sale_challan_view.dart';
+import 'web_purchase_challan_view.dart';
+import '../../web_challan_view.dart';
+import '../../web_challan_stitcher_wizard.dart';
 
 class WebChallanHub extends StatefulWidget {
   final VoidCallback onBack;
@@ -29,7 +32,29 @@ class _WebChallanHubState extends State<WebChallanHub> {
   @override
   Widget build(BuildContext context) {
     if (activeSubView == "SALE_CHALLAN_ENTRY") {
-      return WebSaleChallanScreen(
+      return WebSaleChallanView(
+        onBack: () => setState(() => activeSubView = "HUB"),
+      );
+    }
+    if (activeSubView == "PURCHASE_CHALLAN_ENTRY") {
+      return WebPurchaseChallanView(
+        onBack: () => setState(() => activeSubView = "HUB"),
+      );
+    }
+    if (activeSubView == "SALE_REG") {
+      return WebChallanView(
+        onBack: () => setState(() => activeSubView = "HUB"),
+        initialTabIndex: 2,
+      );
+    }
+    if (activeSubView == "PUR_REG") {
+      return WebChallanView(
+        onBack: () => setState(() => activeSubView = "HUB"),
+        initialTabIndex: 3,
+      );
+    }
+    if (activeSubView == "STITCHER") {
+      return WebChallanStitcherWizard(
         onBack: () => setState(() => activeSubView = "HUB"),
       );
     }
@@ -88,7 +113,7 @@ class _WebChallanHubState extends State<WebChallanHub> {
                 children: [
                   _challanBtn(
                     title: "Sale Challan",
-                    subtitle: "Outward Delivery Note",
+                    subtitle: "Step 1 & 2 Outward Dispatch Note",
                     icon: Icons.local_shipping_rounded,
                     color: Colors.teal,
                     onTap: () => setState(() => activeSubView = "SALE_CHALLAN_ENTRY"),
@@ -98,36 +123,28 @@ class _WebChallanHubState extends State<WebChallanHub> {
                     subtitle: "Inward Stock Note",
                     icon: Icons.inventory_2_rounded,
                     color: Colors.orange,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pur Challan next...")));
-                    },
+                    onTap: () => setState(() => activeSubView = "PURCHASE_CHALLAN_ENTRY"),
                   ),
                   _challanBtn(
                     title: "Sale Reg",
                     subtitle: "Outward Dispatch History",
                     icon: Icons.list_alt_rounded,
                     color: Colors.indigo,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Sale Reg next...")));
-                    },
+                    onTap: () => setState(() => activeSubView = "SALE_REG"),
                   ),
                   _challanBtn(
                     title: "Pur Reg",
                     subtitle: "Inward Delivery History",
                     icon: Icons.history_edu_rounded,
                     color: Colors.amber.shade800,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Pur Reg next...")));
-                    },
+                    onTap: () => setState(() => activeSubView = "PUR_REG"),
                   ),
                   _challanBtn(
                     title: "Stitcher / Bill",
                     subtitle: "Convert Challan to GST Bill",
                     icon: Icons.auto_fix_high_rounded,
                     color: Colors.purpleAccent,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stitcher next...")));
-                    },
+                    onTap: () => setState(() => activeSubView = "STITCHER"),
                   ),
                 ],
               );
