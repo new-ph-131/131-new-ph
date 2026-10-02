@@ -37,7 +37,6 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
           m.rateB = m.rateB / n;
           m.rateC = m.rateC / n;
 
-          // Also update batches in batchHistory
           if (webPh.batchHistory.containsKey(m.identityKey)) {
             for (var b in webPh.batchHistory[m.identityKey]!) {
               b.packing = "1*$mUnits";
@@ -101,12 +100,6 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
 
     String? companyId = med?.companyId;
     String? saltId = med?.saltId;
-    String companyName = companyId != null && companyId.isNotEmpty
-        ? webPh.companies.firstWhere((c) => c.id == companyId, orElse: () => Company(id: "", name: "")).name
-        : "Select Company Brand";
-    String saltName = saltId != null && saltId.isNotEmpty
-        ? webPh.salts.firstWhere((s) => s.id == saltId, orElse: () => Salt(id: "", name: "")).name
-        : "Select Salt Composition";
 
     showDialog(
       context: context,
@@ -183,6 +176,8 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                         Expanded(child: _inputField("STRIP PUR. RATE ₹", purRateC, Icons.shopping_cart, isNum: true)),
                         const SizedBox(width: 8),
                         Expanded(child: _inputField("STRIP RATE A ₹", rateAC, Icons.sell, isNum: true)),
+                        const SizedBox(width: 8),
+                        Expanded(child: _inputField("STRIP RATE B ₹", rateBC, Icons.sell, isNum: true)),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -329,7 +324,6 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                 ],
               ),
               const Spacer(),
-              // Retrofit Split Button
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0F766E),
@@ -501,7 +495,9 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
         title: const Text("Delete Product?", style: TextStyle(color: Colors.white, fontSize: 14)),
         content: Text("Are you sure you want to remove '${m.name}' from catalog?", style: const TextStyle(color: Colors.white70, fontSize: 11)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),

@@ -9,7 +9,6 @@ import 'medilente_csv_generator.dart';
 
 class MedilentePdfExtractor {
   static Future<String> extractTextAsync(Uint8List bytes) async {
-    // 1. Primary: Fast in-browser PDF.js with direct TypedArray passing (No .toList() lag)
     try {
       if (js.context.hasProperty('extractPdfTextFromBytes')) {
         final completer = Completer<String>();
@@ -31,13 +30,11 @@ class MedilentePdfExtractor {
       }
     } catch (_) {}
 
-    // 2. 1000-IQ Fail-Safe: Pure Dart FlateDecode extractor (Zero dependency on JS)
     String dartExtracted = _extractTextWithDartFlate(bytes);
     if (dartExtracted.trim().length > 30) {
       return dartExtracted;
     }
 
-    // 3. Fallback: Ascii character scanner
     StringBuffer asciiBuf = StringBuffer();
     for (int b in bytes) {
       if (b >= 32 && b <= 126) {
@@ -54,8 +51,8 @@ class MedilentePdfExtractor {
       String pdfStr = String.fromCharCodes(bytes);
       StringBuffer extracted = StringBuffer();
       
-      RegExp streamRegex = RegExp(r'stream\r?\n', caseSensitive: false);
-      RegExp endStreamRegex = RegExp(r'\r?\nendstream', caseSensitive: false);
+      final streamRegex = RegExp(r'stream\r?\n', caseSensitive: false);
+      final endStreamRegex = RegExp(r'\r?\nendstream', caseSensitive: false);
 
       var streamMatches = streamRegex.allMatches(pdfStr).toList();
       var endMatches = endStreamRegex.allMatches(pdfStr).toList();
@@ -74,8 +71,7 @@ class MedilentePdfExtractor {
             }
             String content = String.fromCharCodes(decoded.where((b) => (b >= 32 && b <= 126) || b == 10 || b == 13));
             
-            // Extract text tokens inside parentheses: (Text) Tj or [(Text)...] TJ
-            RegExp tjRegex = RegExp(r'\(([^)]+)\)');
+            final tjRegex = RegExp(r'\(([^)]+)\)');
             var matches = tjRegex.allMatches(content);
             for (var m in matches) {
               String t = m.group(1)?.trim() ?? "";

@@ -12,10 +12,16 @@ import '../web_billing/quick_add_party_modal.dart';
 import 'web_purchase_challan_billing_view.dart';
 
 class WebPurchaseChallanView extends StatefulWidget {
+  final VoidCallback? onBack;
   final PurchaseChallan? existingRecord;
   final bool isReadOnly;
 
-  const WebPurchaseChallanView({super.key, this.existingRecord, this.isReadOnly = false});
+  const WebPurchaseChallanView({
+    super.key,
+    this.onBack,
+    this.existingRecord,
+    this.isReadOnly = false,
+  });
 
   @override
   State<WebPurchaseChallanView> createState() => _WebPurchaseChallanViewState();
@@ -89,162 +95,171 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
     final webPh = Provider.of<PharoahWebManager>(context);
 
     if (isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F172A),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFFF59E0B))),
-      );
+      return const Center(child: CircularProgressIndicator(color: Color(0xFFF59E0B)));
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        title: Text(widget.isReadOnly ? "View Purchase Challan" : (widget.existingRecord != null ? "Modify Purchase Challan" : "New Inward Challan")),
-        backgroundColor: const Color(0xFF1E293B),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(color: Colors.white10, height: 1.0),
-        ),
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 820),
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white10),
       ),
-      body: Center(
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              const SizedBox(height: 20),
-              
-              // --- 1. HEADER (CHALLAN NO & DATE) ---
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white12),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white12,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                child: Column(
+                onPressed: widget.onBack,
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: const Text("BACK TO CHALLANS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 15),
+              const Icon(Icons.inventory_2_rounded, color: Color(0xFFF59E0B), size: 24),
+              const SizedBox(width: 10),
+              Text(
+                widget.isReadOnly ? "VIEW INWARD CHALLAN" : (widget.existingRecord != null ? "MODIFY INWARD CHALLAN" : "NEW INWARD PURCHASE CHALLAN"),
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Header (Challan No & Date)
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Column(
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: internalNoC,
-                            readOnly: true,
-                            style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFF59E0B), fontSize: 14),
-                            decoration: InputDecoration(
-                              labelText: "INTERNAL INWARD ID",
-                              labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
-                              filled: true,
-                              fillColor: Colors.black26,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                            ),
-                          ),
+                    Expanded(
+                      child: TextField(
+                        controller: internalNoC,
+                        readOnly: true,
+                        style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFFF59E0B), fontSize: 14),
+                        decoration: InputDecoration(
+                          labelText: "INTERNAL INWARD ID",
+                          labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                         ),
-                        const SizedBox(width: 15),
-                        Expanded(
-                          child: TextField(
-                            controller: supplierRefC,
-                            readOnly: widget.isReadOnly,
-                            textCapitalization: TextCapitalization.characters,
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: "SUPPLIER REF / CHALLAN NO *",
-                              labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
-                              filled: true,
-                              fillColor: widget.isReadOnly ? Colors.black26 : const Color(0x33F59E0B),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 15),
-                    InkWell(
-                      onTap: widget.isReadOnly ? null : () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
-                          lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
-                        );
-                        if (picked != null) setState(() => selectedDate = picked);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                        decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text("INWARD DATE", style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 4),
-                                Text(DateFormat('dd/MM/yyyy').format(selectedDate), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                              ],
-                            ),
-                            const Icon(Icons.calendar_month_rounded, color: Color(0xFFF59E0B), size: 20),
-                          ],
+                    const SizedBox(width: 15),
+                    Expanded(
+                      child: TextField(
+                        controller: supplierRefC,
+                        readOnly: widget.isReadOnly,
+                        textCapitalization: TextCapitalization.characters,
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          labelText: "SUPPLIER REF / CHALLAN NO *",
+                          labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+                          filled: true,
+                          fillColor: widget.isReadOnly ? Colors.black26 : const Color(0x33F59E0B),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                         ),
                       ),
                     ),
                   ],
                 ),
-              ),
-
-              const SizedBox(height: 20),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text("SELECT SUPPLIER / DISTRIBUTOR", style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
-              ),
-              const SizedBox(height: 10),
-
-              // --- 2. PARTY SELECTION ---
-              Expanded(
-                child: selectedSupplier != null ? _buildSupplierCard() : _buildSupplierList(webPh),
-              ),
-
-              // --- 3. PROCEED BUTTON ---
-              if (selectedSupplier != null)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: widget.isReadOnly ? Colors.purple : const Color(0xFFD97706),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () {
-                      if (supplierRefC.text.trim().isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Supplier Ref / Challan No is required!"), backgroundColor: Colors.red));
-                        return;
-                      }
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (c) => WebPurchaseChallanBillingView(
-                            supplier: selectedSupplier!,
-                            internalNo: internalNoC.text,
-                            supplierRefNo: supplierRefC.text.trim(),
-                            challanDate: selectedDate,
-                            existingRecord: widget.existingRecord,
-                            isReadOnly: widget.isReadOnly,
-                          ),
+                const SizedBox(height: 15),
+                InkWell(
+                  onTap: widget.isReadOnly ? null : () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
+                      lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
+                    );
+                    if (picked != null) setState(() => selectedDate = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text("INWARD DATE", style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text(DateFormat('dd/MM/yyyy').format(selectedDate), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                          ],
                         ),
-                      );
-                    },
-                    icon: Icon(widget.isReadOnly ? Icons.visibility : Icons.arrow_forward_rounded, size: 20),
-                    label: Text(
-                      widget.isReadOnly ? "VIEW INWARD ITEMS" : "PROCEED TO INWARD ENTRY",
-                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
+                        const Icon(Icons.calendar_month_rounded, color: Color(0xFFF59E0B), size: 20),
+                      ],
                     ),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
-        ),
+          const SizedBox(height: 20),
+
+          const Text(
+            "SELECT SUPPLIER / DISTRIBUTOR",
+            style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 10),
+
+          Expanded(
+            child: selectedSupplier != null ? _buildSupplierCard() : _buildSupplierList(webPh),
+          ),
+
+          if (selectedSupplier != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.isReadOnly ? Colors.purple : const Color(0xFFD97706),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  if (supplierRefC.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Supplier Ref / Challan No is required!"), backgroundColor: Colors.red));
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (c) => WebPurchaseChallanBillingView(
+                        supplier: selectedSupplier!,
+                        internalNo: internalNoC.text,
+                        supplierRefNo: supplierRefC.text.trim(),
+                        challanDate: selectedDate,
+                        existingRecord: widget.existingRecord,
+                        isReadOnly: widget.isReadOnly,
+                      ),
+                    ),
+                  );
+                },
+                icon: Icon(widget.isReadOnly ? Icons.visibility : Icons.arrow_forward_rounded, size: 20),
+                label: Text(
+                  widget.isReadOnly ? "VIEW INWARD ITEMS" : "PROCEED TO INWARD ENTRY",
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

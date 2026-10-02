@@ -4,7 +4,6 @@ import socketserver
 import threading
 import subprocess
 import os
-import sys
 import json
 import time
 import queue
@@ -12,7 +11,6 @@ import queue
 PORT = 8888
 PIPE_PATH = "/tmp/pharoah_terminal.pipe"
 
-# Connected browser clients queue
 clients = []
 clients_lock = threading.Lock()
 log_history = []
@@ -186,7 +184,7 @@ HTML_PAGE = """<!DOCTYPE html>
   <header>
     <div class="title">
       <div class="pulse"></div>
-      CODESPACE LIVE TERMINAL PORT
+      CODESPACE LIVE TERMINAL PORT (ACTIVE)
     </div>
     <div class="actions">
       <button class="btn-clear" onclick="clearTerminal()">🧹 Clear</button>
@@ -196,15 +194,13 @@ HTML_PAGE = """<!DOCTYPE html>
 
   <div class="quick-bar">
     <button class="quick-btn" onclick="sendCmd('flutter analyze lib/web_live_sync/')">🔍 Analyze Web</button>
-    <button class="quick-btn" onclick="sendCmd('flutter analyze')">📊 Analyze All</button>
     <button class="quick-btn" onclick="sendCmd('git status')">🌿 Git Status</button>
-    <button class="quick-btn" onclick="sendCmd('cat latest_error.txt')">❌ View Latest Error</button>
   </div>
 
   <div id="terminal"></div>
 
   <footer>
-    <input type="text" id="cmdInput" placeholder="iPad se koi bhi command type karein (e.g. flutter pub get)..." onkeydown="if(event.key==='Enter') runInputCmd()">
+    <input type="text" id="cmdInput" placeholder="Command daalein..." onkeydown="if(event.key==='Enter') runInputCmd()">
     <button onclick="runInputCmd()">▶ Run</button>
   </footer>
 
@@ -249,8 +245,6 @@ HTML_PAGE = """<!DOCTYPE html>
           btn.textContent = "📋 COPY FOR AI";
           btn.style.background = "#059669";
         }, 2000);
-      }).catch(err => {
-        alert("Clipboard copy error: " + err);
       });
     }
 
@@ -271,19 +265,21 @@ HTML_PAGE = """<!DOCTYPE html>
       }
     }
 
-    // Connect Server-Sent Events (Live Stream)
-    const evtSource = new EventSource('/events');
-    evtSource.onmessage = function(e) {
-      try {
-        const payload = JSON.parse(e.data);
-        appendLine(payload.data, payload.type);
-      } catch(_) {
-        appendLine(e.data, 'log');
-      }
-    };
-    evtSource.onerror = function() {
-      appendLine("[Connecting to Terminal Server...]", "warn");
-    };
+    // Auto-reconnect EventSource with ping handler
+    function connectSSE() {
+      const evtSource = new EventSource('/events');
+      evtSource.onmessage = function(e) {
+        try {
+          const payload = JSON.parse(e.data);
+          appendLine(payload.data, payload.type);
+        } catch(_) {}
+      };
+      evtSource.onerror = function() {
+        evtSource.close();
+        setTimeout(connectSSE, 2000);
+      };
+    }
+    connectSSE();
   </script>
 </body>
 </html>
@@ -316,9 +312,14 @@ class CustomHandler(http.server.BaseHTTPRequestHandler):
 
             try:
                 while True:
-                    msg = q.get()
-                    self.wfile.write(f"data: {msg}\n\n".encode('utf-8'))
-                    self.wfile.flush()
+                    try:
+                        msg = q.get(timeout=15)
+                        self.wfile.write(f"data: {msg}\n\n".encode('utf-8'))
+                        self.wfile.flush()
+                    except queue.Empty:
+                        # Keep alive heartbeat ping for Safari on iPad
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
             except:
                 with clients_lock:
                     if q in clients:
@@ -342,14 +343,11 @@ class CustomHandler(http.server.BaseHTTPRequestHandler):
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
-
-print("====================================================")
-print(f"  🚀 LIVE WEB TERMINAL ACTIVE ON PORT {PORT}")
-print("====================================================")
-execute_command_async("echo '⚡ Live Web Terminal connected successfully!'")
+    allow_reuse_address = True
 
 server = ThreadedHTTPServer(('0.0.0.0', PORT), CustomHandler)
+execute_command_async("echo '⚡ Live Web Terminal connected successfully!'")
 try:
     server.serve_forever()
-except KeyboardInterrupt:
-    server.server_close()
+except:
+    pass

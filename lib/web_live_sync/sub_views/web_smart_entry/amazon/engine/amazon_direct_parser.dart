@@ -78,7 +78,7 @@ class AmazonDirectParser {
 
     // 4. Totals
     double rawGrandTotal = 0.0;
-    double rawTaxable = 0.0;
+    
     double rawRoundOff = 0.0;
 
     RegExp grandTotalRegex = RegExp(r'Grand\s*Total\s*[:\-]?\s*([0-9,]+\.[0-9]{2})', caseSensitive: false);
