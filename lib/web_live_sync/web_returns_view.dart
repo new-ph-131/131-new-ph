@@ -1,4 +1,5 @@
 // FILE: lib/web_live_sync/web_returns_view.dart
+// ignore_for_file: prefer_const_constructors, unnecessary_const
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_returns/credit_note/ui/web_credit_note_screen.dart';
+import 'sub_views/web_returns/debit_note/ui/web_debit_note_screen.dart';
 
 class WebReturnsView extends StatefulWidget {
   final VoidCallback onBack;
@@ -27,7 +29,9 @@ class WebReturnsView extends StatefulWidget {
 }
 
 class _WebReturnsViewState extends State<WebReturnsView> {
-  late String activeSubView; // "HUB", "CN", "DN", "BREAKAGE", "REGISTER"
+  late String activeSubView; // "HUB", "CN", "DN", "REGISTER"
+  dynamic recordToEdit;
+  bool isReadOnlyMode = false;
 
   DateTime regFromDate = DateTime.now();
   DateTime regToDate = DateTime.now();
@@ -42,7 +46,7 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     } else if (widget.initialAction == "GO_DN" || widget.initialTabIndex == 1) {
       activeSubView = "DN";
     } else if (widget.initialAction == "GO_BREAKAGE") {
-      activeSubView = "BREAKAGE";
+      activeSubView = "CN"; // Handled seamlessly inside Credit Note with Breakage mode
     } else if (widget.initialAction == "GO_RET_REG" || widget.initialTabIndex == 2) {
       activeSubView = "REGISTER";
     } else {
@@ -95,27 +99,38 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     final webPh = Provider.of<PharoahWebManager>(context);
     final activeShop = CompanyProfile.fromMap(webPh.companyProfile);
 
-    // 1. FULL MODULAR CREDIT NOTE (SALE RETURN) SCREEN CONNECTED HERE
+    // 1. FULL MODULAR CREDIT NOTE (SALE RETURN) SCREEN
     if (activeSubView == "CN") {
       return WebCreditNoteScreen(
-        onBack: () => setState(() => activeSubView = "HUB"),
+        existingRecord: recordToEdit is SaleReturn ? recordToEdit : null,
+        isReadOnly: isReadOnlyMode,
+        onBack: () => setState(() {
+          activeSubView = "HUB";
+          recordToEdit = null;
+          isReadOnlyMode = false;
+        }),
       );
     }
 
-    // 2. Returns Register
+    // 2. FULL MODULAR DEBIT NOTE (PURCHASE RETURN) SCREEN
+    if (activeSubView == "DN") {
+      return WebDebitNoteScreen(
+        existingRecord: recordToEdit is PurchaseReturn ? recordToEdit : null,
+        isReadOnly: isReadOnlyMode,
+        onBack: () => setState(() {
+          activeSubView = "HUB";
+          recordToEdit = null;
+          isReadOnlyMode = false;
+        }),
+      );
+    }
+
+    // 3. COMBINED RETURNS REGISTER (CN & DN)
     if (activeSubView == "REGISTER") {
       return _buildRegisterContainer(webPh, activeShop);
     }
 
-    // 3. Sub-views Placeholders (For Debit Note & Breakage Out in upcoming phases)
-    if (activeSubView == "DN") {
-      return _buildPlaceholderScreen("DEBIT NOTE (PURCHASE RETURN)", "Distributor Inward Return & Rate Pull", const Color(0xFFD97706));
-    }
-    if (activeSubView == "BREAKAGE") {
-      return _buildPlaceholderScreen("EXPIRY / BREAKAGE RETURN", "Non-Sellable Stock Damage Right-Off", Colors.orangeAccent);
-    }
-
-    // Main Hub: 4 Master Buttons
+    // 4. MAIN RETURNS HUB (4 MODULE CARDS)
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -174,7 +189,11 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     badgeText: "${webPh.saleReturns.length} CN Records",
                     icon: Icons.assignment_return_rounded,
                     color: const Color(0xFFDC2626),
-                    onTap: () => setState(() => activeSubView = "CN"),
+                    onTap: () => setState(() {
+                      recordToEdit = null;
+                      isReadOnlyMode = false;
+                      activeSubView = "CN";
+                    }),
                   ),
                   _returnModuleCard(
                     title: "Debit Note",
@@ -182,15 +201,23 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     badgeText: "${webPh.purchaseReturns.length} DN Records",
                     icon: Icons.remove_shopping_cart_rounded,
                     color: const Color(0xFFD97706),
-                    onTap: () => setState(() => activeSubView = "DN"),
+                    onTap: () => setState(() {
+                      recordToEdit = null;
+                      isReadOnlyMode = false;
+                      activeSubView = "DN";
+                    }),
                   ),
                   _returnModuleCard(
                     title: "Breakage / Expiry",
-                    subtitle: "Non-Sellable Stock Right-Off",
-                    badgeText: "Damage Out",
+                    subtitle: "Non-Sellable Damage Out",
+                    badgeText: "Damage Reversal",
                     icon: Icons.delete_sweep_rounded,
                     color: const Color(0xFFEA580C),
-                    onTap: () => setState(() => activeSubView = "BREAKAGE"),
+                    onTap: () => setState(() {
+                      recordToEdit = null;
+                      isReadOnlyMode = false;
+                      activeSubView = "CN";
+                    }),
                   ),
                   _returnModuleCard(
                     title: "Returns Register",
@@ -285,53 +312,6 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     );
   }
 
-  Widget _buildPlaceholderScreen(String title, String subtitle, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.white12, foregroundColor: Colors.white),
-                onPressed: () => setState(() => activeSubView = "HUB"),
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text("BACK TO RETURNS HUB", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 15),
-              Icon(Icons.assignment_return_rounded, color: color, size: 22),
-              const SizedBox(width: 10),
-              Text(title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-            ],
-          ),
-          const SizedBox(height: 40),
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16)),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.construction_rounded, color: color, size: 40),
-                  const SizedBox(height: 12),
-                  Text("MODULE IN PROGRESS", style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 14)),
-                  const SizedBox(height: 6),
-                  Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildRegisterContainer(PharoahWebManager webPh, CompanyProfile activeShop) {
     final fDateOnly = _dateOnly(regFromDate);
     final tDateOnly = _dateOnly(regToDate);
@@ -363,7 +343,13 @@ class _WebReturnsViewState extends State<WebReturnsView> {
           Row(
             children: [
               ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.white12, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white12,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
                 onPressed: () => setState(() => activeSubView = "HUB"),
                 icon: const Icon(Icons.arrow_back_rounded, size: 16),
                 label: const Text("BACK TO RETURNS HUB", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
@@ -371,24 +357,40 @@ class _WebReturnsViewState extends State<WebReturnsView> {
               const SizedBox(width: 15),
               const Icon(Icons.format_list_bulleted_rounded, color: Color(0xFFF87171), size: 22),
               const SizedBox(width: 10),
-              const Text("COMBINED RETURNS REGISTER (CN & DN)", style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+              const Text(
+                "COMBINED RETURNS REGISTER (CN & DN)",
+                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+              ),
             ],
           ),
           const SizedBox(height: 16),
-          TextField(
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: "Search in Returns Register by party, note no...", 
-              filled: true, 
-              fillColor: Colors.black26, 
-              border: InputBorder.none,
-              prefixIcon: Icon(Icons.search, color: Color(0xFFF87171)),
-            ),
-            onChanged: (v) => setState(() => registerSearch = v),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                  decoration: const InputDecoration(
+                    hintText: "Search in Returns Register by party, note number...", 
+                    hintStyle: TextStyle(color: Colors.white38, fontSize: 11.5),
+                    filled: true, 
+                    fillColor: Color(0xFF1E293B), 
+                    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)), borderSide: BorderSide.none),
+                    prefixIcon: Icon(Icons.search, color: Color(0xFFF87171), size: 18),
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onChanged: (v) => setState(() => registerSearch = v),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           filtered.isEmpty
-              ? const Padding(padding: EdgeInsets.all(30), child: Center(child: Text("No return records found.", style: TextStyle(color: Colors.white38))))
+              ? const Padding(
+                  padding: EdgeInsets.all(35),
+                  child: Center(
+                    child: Text("No return records found for current filters.", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  ),
+                )
               : ListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -400,35 +402,97 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     String billNo = _getReturnBillNo(item);
                     double total = _getReturnTotal(item);
 
-                    return Card(
-                      color: const Color(0xFF1E293B),
+                    return Container(
                       margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white10),
+                      ),
                       child: ListTile(
                         dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                         leading: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: isCn ? const Color(0x33DC2626) : const Color(0x33F59E0B),
-                            borderRadius: BorderRadius.circular(4),
+                            color: isCn ? const Color(0x33DC2626) : const Color(0x33D97706),
+                            borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(isCn ? "CN" : "DN", style: TextStyle(color: isCn ? const Color(0xFFF87171) : const Color(0xFFFBBF24), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          child: Text(
+                            isCn ? "SALE CN" : "PUR DN",
+                            style: TextStyle(
+                              color: isCn ? const Color(0xFFF87171) : const Color(0xFFFBBF24),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ),
-                        title: Text(party, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.5)),
-                        subtitle: Text("No: $billNo • Date: ${DateFormat('dd/MM/yyyy').format(_getReturnDate(item))}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+                        title: Text(party, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text(
+                          "No: $billNo • Date: ${DateFormat('dd/MM/yyyy').format(_getReturnDate(item))} • Type: ${item.returnType}",
+                          style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text("₹${total.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                            const SizedBox(width: 8),
-                            if (isCn)
-                              IconButton(
-                                icon: const Icon(Icons.print, color: Colors.cyanAccent, size: 18),
-                                tooltip: "Print Credit Note",
-                                onPressed: () {
-                                  final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
-                                  WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop);
-                                },
+                            Text(
+                              "₹${total.toStringAsFixed(2)}",
+                              style: TextStyle(
+                                color: isCn ? const Color(0xFFF87171) : const Color(0xFFFBBF24),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
                               ),
+                            ),
+                            const SizedBox(width: 12),
+                            IconButton(
+                              icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18),
+                              tooltip: isCn ? "Print Credit Note" : "Print Debit Note",
+                              onPressed: () {
+                                final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
+                                if (isCn) {
+                                  WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop);
+                                } else {
+                                  WebPdfRouterService.printDebitNote(returnObj: item, party: pObj, shop: activeShop);
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.download_rounded, color: Colors.greenAccent, size: 18),
+                              tooltip: "Download PDF",
+                              onPressed: () {
+                                final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
+                                if (isCn) {
+                                  WebPdfRouterService.downloadCreditNotePdf(returnObj: item, party: pObj, shop: activeShop);
+                                } else {
+                                  WebPdfRouterService.downloadDebitNotePdf(returnObj: item, party: pObj, shop: activeShop);
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent, size: 20),
+                              tooltip: "Modify Return",
+                              onPressed: () {
+                                setState(() {
+                                  recordToEdit = item;
+                                  isReadOnlyMode = false;
+                                  activeSubView = isCn ? "CN" : "DN";
+                                });
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                              tooltip: "Delete Return Record",
+                              onPressed: () {
+                                if (isCn) {
+                                  webPh.deleteSaleReturn(item.id);
+                                } else {
+                                  webPh.deletePurchaseReturn(item.id);
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("🗑️ Return Record Removed & Stock Adjusted!"), backgroundColor: Colors.redAccent),
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),

@@ -1,6 +1,8 @@
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:308:35 • undefined_identifier
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:323:35 • undefined_identifier
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:512:35 • undefined_identifier
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:525:35 • undefined_identifier
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:714:35 • undefined_identifier
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:792:35 • undefined_identifier
+error • The named parameter 'CrossAxisAlignment' isn't defined • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:260:33 • undefined_named_parameter
+error • Expected to find ';' • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:422:15 • expected_token
+error • Expected an identifier • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:422:16 • missing_identifier
+error • Expected to find ';' • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:422:16 • expected_token
+error • Unexpected text ';' • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:422:16 • unexpected_token
+error • Expected an identifier • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:423:13 • missing_identifier
+error • Unexpected text ';' • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:423:13 • unexpected_token
+error • Expected to find ')' • lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart:427:6 • expected_token

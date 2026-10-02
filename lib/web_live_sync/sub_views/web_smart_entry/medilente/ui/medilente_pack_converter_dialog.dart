@@ -1,3 +1,6 @@
+// FILE: lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart
+// ignore_for_file: unnecessary_const, prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import '../models/medilente_bill_model.dart';
 

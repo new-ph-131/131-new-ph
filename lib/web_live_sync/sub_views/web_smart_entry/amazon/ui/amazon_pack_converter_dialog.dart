@@ -1,3 +1,6 @@
+// FILE: lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart
+// ignore_for_file: unnecessary_const, prefer_const_constructors
+
 import 'package:flutter/material.dart';
 import '../models/amazon_bill_model.dart';
 
@@ -183,7 +186,7 @@ class _AmazonPackConverterDialogState extends State<AmazonPackConverterDialog> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Color(0x3310B981)),
+                  border: Border.all(color: const Color(0x3310B981)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
