@@ -85,18 +85,27 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
   }
 
   // ===========================================================================
-  // ⚡ DRAFT GENERATOR (Preserves sourceChallanNo & sourceChallanId)
+  // ⚡ DRAFT GENERATOR
   // ===========================================================================
-  void _generateDrafts(PharoahWebManager webPh) {
+  void _generateDrafts(PharoahWebManager webPh) async {
     setState(() {
       isProcessing = true;
+      progressValue = 0.0;
       progressText = "Stitching Challans...";
     });
 
     List<Map<String, dynamic>> temp = [];
     bool isSale = _tabController.index == 0;
 
-    for (var pName in selectedPartyNames) {
+    for (int k = 0; k < selectedPartyNames.length; k++) {
+      var pName = selectedPartyNames[k];
+
+      setState(() {
+        progressValue = (k + 1) / selectedPartyNames.length;
+        progressText = "Analyzing Challans for $pName...";
+      });
+      await Future.delayed(const Duration(milliseconds: 10)); // Breathe
+
       Party? pObj;
       try {
         pObj = webPh.parties.firstWhere((p) => p.name.trim().toUpperCase() == pName.trim().toUpperCase());
@@ -161,8 +170,10 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
 
     setState(() {
       isProcessing = true;
-      progressText = "Saving ${b['party'].name}...";
+      progressValue = 0.5;
+      progressText = "Saving Invoice for ${b['party'].name}...";
     });
+    await Future.delayed(const Duration(milliseconds: 50));
 
     bool isSale = _tabController.index == 0;
     String finalNo;
@@ -265,6 +276,9 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       }
     }
 
+    setState(() { progressText = "Syncing Inventory to Cloud..."; });
+    await Future.delayed(const Duration(milliseconds: 50));
+
     webPh.rebuildInventory();
     await webPh.pushUpdatedDataToCloud();
 
@@ -273,6 +287,311 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       draftBills[i]['billNo'] = finalNo;
       isProcessing = false;
     });
+  }
+
+  // ===========================================================================
+  // 💾 BATCH SAVE ALL DRAFTS (WITH DYNAMIC PERCENTAGE LOADER)
+  // ===========================================================================
+  Future<void> _handleBatchSave(PharoahWebManager webPh) async {
+    var selected = draftBills.where((b) => b['isSelected'] && b['status'] == 'DRAFT').toList();
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No pending drafts selected to save!"), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    setState(() {
+      isProcessing = true;
+      progressValue = 0.0;
+      progressText = "Initializing batch process...";
+    });
+
+    bool isSale = _tabController.index == 0;
+
+    if (isSale) {
+      String prefix = "INV-";
+      int start = 101;
+      try {
+        final defSeries = webPh.numberingSeries.firstWhere((s) => s.type == "SALE" && s.isDefault && s.isActive);
+        prefix = defSeries.prefix;
+        start = defSeries.startNumber;
+      } catch (_) {}
+
+      for (int k = 0; k < selected.length; k++) {
+        var b = selected[k];
+
+        // 🧠 Dynamic Yield & UI Update
+        setState(() {
+          progressValue = (k + 1) / selected.length;
+          progressText = "Saving Invoice ${k + 1} of ${selected.length}: ${b['party'].name}...";
+        });
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to paint
+
+        String finalBillNo = WebPharoahNumberingEngine.getNextNumber(prefix: prefix, startFrom: start, currentList: webPh.sales);
+        final Party pRef = b['party'] as Party;
+
+        final newSale = Sale(
+          id: "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalBillNo",
+          billNo: finalBillNo,
+          partyId: pRef.id,
+          partyName: pRef.name,
+          partyGstin: pRef.gst,
+          partyState: pRef.state,
+          partyAddress: pRef.address,
+          partyCity: pRef.city,
+          partyPhone: pRef.phone,
+          partyEmail: pRef.email,
+          partyDl: pRef.dl,
+          partyPan: pRef.pan,
+          date: b['date'],
+          paymentMode: "CREDIT",
+          totalAmount: b['total'],
+          items: (b['items'] as List).cast<BillItem>(),
+          linkedChallanIds: List<String>.from(b['challanIds']),
+          sourceTag: "WEB-PORTAL STITCHED",
+        );
+
+        webPh.sales.add(newSale);
+        for (var cId in b['challanIds']) {
+          int idx = webPh.saleChallans.indexWhere((c) => c.id == cId);
+          if (idx != -1) webPh.saleChallans[idx].status = "Billed";
+        }
+
+        for (var item in newSale.items) {
+          String resolvedKey = item.medicineID;
+          try {
+            final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
+            resolvedKey = med.identityKey;
+          } catch (_) {}
+
+          webPh.registerBatchActivity(
+            productKey: resolvedKey,
+            batchNo: item.batch,
+            exp: item.exp,
+            packing: item.packing,
+            mrp: item.mrp,
+            rate: item.rate,
+          );
+        }
+
+        b['status'] = 'SAVED';
+        b['billNo'] = finalBillNo;
+      }
+    } else {
+      for (int k = 0; k < selected.length; k++) {
+        var b = selected[k];
+
+        // 🧠 Dynamic Yield & UI Update
+        setState(() {
+          progressValue = (k + 1) / selected.length;
+          progressText = "Saving Inward ${k + 1} of ${selected.length}: ${b['party'].name}...";
+        });
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to paint
+
+        String finalInternalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "PUR-", startFrom: 1, currentList: webPh.purchases);
+        final Party pRef = b['party'] as Party;
+
+        final newPurchase = Purchase(
+          id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalInternalNo",
+          internalNo: finalInternalNo,
+          billNo: "CH-CONV-${finalInternalNo.replaceAll('PUR-', '')}",
+          partyId: pRef.id,
+          distributorName: pRef.name,
+          date: b['date'],
+          entryDate: DateTime.now(),
+          paymentMode: "CREDIT",
+          totalAmount: b['total'],
+          items: (b['items'] as List).cast<PurchaseItem>(),
+          linkedChallanIds: List<String>.from(b['challanIds']),
+          sourceTag: "WEB-PORTAL STITCHED",
+        );
+
+        webPh.purchases.add(newPurchase);
+        for (var cId in b['challanIds']) {
+          int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId);
+          if (idx != -1) webPh.purchaseChallans[idx].status = "Billed";
+        }
+
+        for (var item in newPurchase.items) {
+          String resolvedKey = item.medicineID;
+          try {
+            final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
+            resolvedKey = med.identityKey;
+          } catch (_) {}
+
+          webPh.registerBatchActivity(
+            productKey: resolvedKey,
+            batchNo: item.batch,
+            exp: item.exp,
+            packing: item.packing,
+            mrp: item.mrp,
+            rate: item.purchaseRate,
+          );
+        }
+
+        b['status'] = 'SAVED';
+        b['billNo'] = finalInternalNo;
+      }
+    }
+
+    setState(() {
+      progressText = "Syncing Inventory to Cloud...";
+    });
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    webPh.rebuildInventory();
+    await webPh.pushUpdatedDataToCloud();
+    setState(() => isProcessing = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ ${selected.length} Invoices Stitched & Saved!"), backgroundColor: Colors.green),
+      );
+    }
+  }
+
+  // ===========================================================================
+  // 📦 BULK ZIP PDF EXPORT FOR WEB
+  // ===========================================================================
+  Future<void> _handleZipExport(PharoahWebManager webPh) async {
+    var selected = draftBills.where((b) => b['isSelected']).toList();
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Select bills to export ZIP!"), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    // Step A: Auto-save any remaining drafts first
+    if (selected.any((b) => b['status'] == 'DRAFT')) {
+      await _handleBatchSave(webPh);
+    }
+
+    setState(() {
+      isProcessing = true;
+      progressValue = 0.0;
+      progressText = "Preparing Invoices ZIP Package...";
+    });
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    try {
+      final archive = Archive();
+      bool isSale = _tabController.index == 0;
+      final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
+
+      for (int k = 0; k < selected.length; k++) {
+        var d = selected[k];
+        String targetBillNo = d['billNo'];
+
+        setState(() {
+          progressValue = (k + 1) / selected.length;
+          progressText = "Generating PDF ${k + 1}/${selected.length}: ${d['party'].name}";
+        });
+
+        await Future.delayed(const Duration(milliseconds: 50));
+
+        Uint8List? pdfBytes;
+        if (isSale) {
+          Sale? sObj;
+          try {
+            sObj = webPh.sales.firstWhere((s) => s.billNo == targetBillNo);
+          } catch (_) {}
+
+          if (sObj != null) {
+            pdfBytes = await WebPdfRouterService.generateSaleBytes(
+              sale: sObj,
+              party: d['party'],
+              shop: shopProfile,
+              config: webPh.appConfig,
+            );
+          }
+        } else {
+          Purchase? pObj;
+          try {
+            pObj = webPh.purchases.firstWhere((p) => p.internalNo == targetBillNo);
+          } catch (_) {}
+
+          if (pObj != null) {
+            pdfBytes = await WebPdfRouterService.generatePurchaseChallanBytes(
+              challan: PurchaseChallan(
+                id: 'temp',
+                internalNo: pObj.internalNo,
+                billNo: pObj.billNo,
+                partyId: pObj.partyId,
+                distributorName: pObj.distributorName,
+                date: pObj.date,
+                items: pObj.items,
+                totalAmount: pObj.totalAmount,
+              ),
+              party: d['party'],
+              shop: shopProfile,
+            );
+          }
+        }
+
+        if (pdfBytes != null && pdfBytes.isNotEmpty) {
+          String safeParty = d['party'].name.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+          String fileName = "${targetBillNo}_$safeParty.pdf";
+          archive.addFile(ArchiveFile(fileName, pdfBytes.length, pdfBytes));
+        }
+      }
+
+      setState(() {
+        progressText = "Compressing ZIP file...";
+      });
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final zipData = ZipEncoder().encode(archive);
+
+      if (zipData != null && zipData.isNotEmpty) {
+        String zipName = "Stitched_Invoices_${DateFormat('ddMM_HHmm').format(DateTime.now())}";
+
+        await FileSaver.instance.saveFile(
+          name: zipName,
+          bytes: Uint8List.fromList(zipData),
+          ext: "zip",
+          mimeType: MimeType.zip,
+        );
+
+        setState(() => isProcessing = false);
+
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1E293B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.folder_zip_rounded, color: Color(0xFF10B981), size: 22),
+                  SizedBox(width: 8),
+                  Text("ZIP BUNDLE READY", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Text(
+                "Successfully exported ${selected.length} invoices into '$zipName.zip'.\nCheck your browser's Downloads folder.",
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("OK", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        throw Exception("Failed to encode ZIP archive data.");
+      }
+    } catch (e) {
+      setState(() => isProcessing = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Export Error: $e"), backgroundColor: Colors.redAccent));
+      }
+    }
   }
 
   // ===========================================================================
@@ -393,287 +712,6 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
   }
 
   // ===========================================================================
-  // 💾 BATCH SAVE ALL DRAFTS
-  // ===========================================================================
-  Future<void> _handleBatchSave(PharoahWebManager webPh) async {
-    var selected = draftBills.where((b) => b['isSelected'] && b['status'] == 'DRAFT').toList();
-    if (selected.isEmpty) return;
-
-    setState(() {
-      isProcessing = true;
-      progressText = "Finalizing Batch Invoices...";
-      progressValue = 0.1;
-    });
-
-    bool isSale = _tabController.index == 0;
-
-    if (isSale) {
-      String prefix = "INV-";
-      int start = 101;
-      try {
-        final defSeries = webPh.numberingSeries.firstWhere((s) => s.type == "SALE" && s.isDefault && s.isActive);
-        prefix = defSeries.prefix;
-        start = defSeries.startNumber;
-      } catch (_) {}
-
-      for (int k = 0; k < selected.length; k++) {
-        var b = selected[k];
-        String finalBillNo = WebPharoahNumberingEngine.getNextNumber(prefix: prefix, startFrom: start, currentList: webPh.sales);
-        final Party pRef = b['party'] as Party;
-
-        final newSale = Sale(
-          id: "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalBillNo",
-          billNo: finalBillNo,
-          partyId: pRef.id,
-          partyName: pRef.name,
-          partyGstin: pRef.gst,
-          partyState: pRef.state,
-          partyAddress: pRef.address,
-          partyCity: pRef.city,
-          partyPhone: pRef.phone,
-          partyEmail: pRef.email,
-          partyDl: pRef.dl,
-          partyPan: pRef.pan,
-          date: b['date'],
-          paymentMode: "CREDIT",
-          totalAmount: b['total'],
-          items: (b['items'] as List).cast<BillItem>(),
-          linkedChallanIds: List<String>.from(b['challanIds']),
-          sourceTag: "WEB-PORTAL STITCHED",
-        );
-
-        webPh.sales.add(newSale);
-        for (var cId in b['challanIds']) {
-          int idx = webPh.saleChallans.indexWhere((c) => c.id == cId);
-          if (idx != -1) webPh.saleChallans[idx].status = "Billed";
-        }
-
-        for (var item in newSale.items) {
-          String resolvedKey = item.medicineID;
-          try {
-            final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
-            resolvedKey = med.identityKey;
-          } catch (_) {}
-
-          webPh.registerBatchActivity(
-            productKey: resolvedKey,
-            batchNo: item.batch,
-            exp: item.exp,
-            packing: item.packing,
-            mrp: item.mrp,
-            rate: item.rate,
-          );
-        }
-
-        b['status'] = 'SAVED';
-        b['billNo'] = finalBillNo;
-      }
-    } else {
-      for (int k = 0; k < selected.length; k++) {
-        var b = selected[k];
-        String finalInternalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "PUR-", startFrom: 1, currentList: webPh.purchases);
-        final Party pRef = b['party'] as Party;
-
-        final newPurchase = Purchase(
-          id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalInternalNo",
-          internalNo: finalInternalNo,
-          billNo: "CH-CONV-${finalInternalNo.replaceAll('PUR-', '')}",
-          partyId: pRef.id,
-          distributorName: pRef.name,
-          date: b['date'],
-          entryDate: DateTime.now(),
-          paymentMode: "CREDIT",
-          totalAmount: b['total'],
-          items: (b['items'] as List).cast<PurchaseItem>(),
-          linkedChallanIds: List<String>.from(b['challanIds']),
-          sourceTag: "WEB-PORTAL STITCHED",
-        );
-
-        webPh.purchases.add(newPurchase);
-        for (var cId in b['challanIds']) {
-          int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId);
-          if (idx != -1) webPh.purchaseChallans[idx].status = "Billed";
-        }
-
-        for (var item in newPurchase.items) {
-          String resolvedKey = item.medicineID;
-          try {
-            final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
-            resolvedKey = med.identityKey;
-          } catch (_) {}
-
-          webPh.registerBatchActivity(
-            productKey: resolvedKey,
-            batchNo: item.batch,
-            exp: item.exp,
-            packing: item.packing,
-            mrp: item.mrp,
-            rate: item.purchaseRate,
-          );
-        }
-
-        b['status'] = 'SAVED';
-        b['billNo'] = finalInternalNo;
-      }
-    }
-
-    webPh.rebuildInventory();
-    await webPh.pushUpdatedDataToCloud();
-    setState(() => isProcessing = false);
-  }
-
-  // ===========================================================================
-  // 📦 CRASH-PROOF BATCH ZIP EXPORT (Uses FileSaver Blob - Never Crashes WebGL)
-  // ===========================================================================
-  Future<void> _handleZipExport(PharoahWebManager webPh) async {
-    var selected = draftBills.where((b) => b['isSelected']).toList();
-    if (selected.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Select bills to export ZIP!"), backgroundColor: Colors.orange),
-      );
-      return;
-    }
-
-    // Step A: Auto-save any remaining drafts first
-    if (selected.any((b) => b['status'] == 'DRAFT')) {
-      await _handleBatchSave(webPh);
-    }
-
-    setState(() {
-      isProcessing = true;
-      progressValue = 0.05;
-      progressText = "Preparing Invoices ZIP Package...";
-    });
-
-    try {
-      final archive = Archive();
-      bool isSale = _tabController.index == 0;
-      final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
-
-      for (int k = 0; k < selected.length; k++) {
-        var d = selected[k];
-        String targetBillNo = d['billNo'];
-
-        setState(() {
-          progressValue = 0.1 + ((k + 1) / selected.length) * 0.75;
-          progressText = "Generating PDF ${k + 1}/${selected.length}: ${d['party'].name}";
-        });
-
-        // 🧠 Breath-room for Browser Event Loop: prevents CanvasKit/Safari crash
-        await Future.delayed(const Duration(milliseconds: 50));
-
-        Uint8List? pdfBytes;
-        if (isSale) {
-          Sale? sObj;
-          try {
-            sObj = webPh.sales.firstWhere((s) => s.billNo == targetBillNo);
-          } catch (_) {
-            sObj = null;
-          }
-
-          if (sObj != null) {
-            pdfBytes = await WebPdfRouterService.generateSaleBytes(
-              sale: sObj,
-              party: d['party'],
-              shop: shopProfile,
-              config: webPh.appConfig,
-            );
-          }
-        } else {
-          Purchase? pObj;
-          try {
-            pObj = webPh.purchases.firstWhere((p) => p.internalNo == targetBillNo);
-          } catch (_) {
-            pObj = null;
-          }
-
-          if (pObj != null) {
-            pdfBytes = await WebPdfRouterService.generatePurchaseChallanBytes(
-              challan: PurchaseChallan(
-                id: 'temp',
-                internalNo: pObj.internalNo,
-                billNo: pObj.billNo,
-                partyId: pObj.partyId,
-                distributorName: pObj.distributorName,
-                date: pObj.date,
-                items: pObj.items,
-                totalAmount: pObj.totalAmount,
-              ),
-              party: d['party'],
-              shop: shopProfile,
-            );
-          }
-        }
-
-        if (pdfBytes != null && pdfBytes.isNotEmpty) {
-          String safeParty = d['party'].name.replaceAll(RegExp(r'[^A-Z0-9]'), '');
-          String fileName = "${targetBillNo}_$safeParty.pdf";
-          archive.addFile(ArchiveFile(fileName, pdfBytes.length, pdfBytes));
-        }
-      }
-
-      setState(() {
-        progressValue = 0.90;
-        progressText = "Compressing ZIP file...";
-      });
-
-      await Future.delayed(const Duration(milliseconds: 50));
-      final zipData = ZipEncoder().encode(archive);
-
-      if (zipData != null && zipData.isNotEmpty) {
-        String zipName = "Stitched_Invoices_${DateFormat('ddMM_HHmm').format(DateTime.now())}";
-
-        // 🚀 CRASH-PROOF BROWSER DOWNLOAD: Uses FileSaver with MimeType.zip
-        await FileSaver.instance.saveFile(
-          name: zipName,
-          bytes: Uint8List.fromList(zipData),
-          ext: "zip",
-          mimeType: MimeType.zip,
-        );
-
-        setState(() => isProcessing = false);
-
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: const Color(0xFF1E293B),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Row(
-                children: [
-                  Icon(Icons.folder_zip_rounded, color: Color(0xFF10B981), size: 22),
-                  SizedBox(width: 8),
-                  Text("ZIP BUNDLE READY", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              content: Text(
-                "Successfully exported ${selected.length} invoices into '$zipName.zip'.\nCheck your browser's Downloads folder.",
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              actions: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text("OK", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-          );
-        }
-      } else {
-        throw Exception("Failed to encode ZIP archive data.");
-      }
-    } catch (e) {
-      setState(() => isProcessing = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Export Error: $e"), backgroundColor: Colors.redAccent),
-        );
-      }
-    }
-  }
-
-  // ===========================================================================
   // 🖥️ UI STEP ROUTER
   // ===========================================================================
   @override
@@ -732,14 +770,24 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
 
           if (isProcessing)
             Container(
-              padding: const EdgeInsets.all(40),
+              padding: const EdgeInsets.all(50),
               alignment: Alignment.center,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(value: progressValue > 0 ? progressValue : null, color: color),
+                  const CircularProgressIndicator(color: Colors.white24),
+                  const SizedBox(height: 20),
+                  Text("${(progressValue * 100).toInt()}%", style: TextStyle(color: color, fontSize: 40, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: 320,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(value: progressValue > 0 ? progressValue : null, color: color, backgroundColor: Colors.white10, minHeight: 8),
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  Text(progressText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  Text(progressText, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 0.5)),
                 ],
               ),
             )

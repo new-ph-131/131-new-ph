@@ -10,8 +10,7 @@ import "web_models.dart";
 import "package:pharoah_erp/pdf/pdf_master_service.dart";
 
 class WebPdfRouterService {
-  static const String testIdTag = "#PH-REV-124";
-  
+    
   // ===========================================================================
   // 1. SALE INVOICE PDF
   // ===========================================================================
@@ -140,7 +139,7 @@ class WebPdfRouterService {
               pw.SizedBox(height: 3),
               pw.Center(
                 child: pw.Text(
-                  "This is a system-generated document. | Powered by Pharoah ERP [Web Workstation $testIdTag]",
+                  "This is a system-generated document. | Powered by Pharoah ERP",
                   style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600),
                 ),
               ),
@@ -724,7 +723,7 @@ class WebPdfRouterService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text("Powered by Pharoah ERP [Web Workstation $testIdTag]", style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+                  pw.Text("Powered by Pharoah ERP", style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
                   pw.Text("Page ${pageNum + 1} of $totalPages", style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
                 ],
               ),
@@ -988,7 +987,7 @@ class WebPdfRouterService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text("Powered by Pharoah ERP [Web Workstation $testIdTag]", style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+                  pw.Text("Powered by Pharoah ERP", style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
                   pw.Text("Page ${pageNum + 1} of $totalPages", style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
                 ],
               ),

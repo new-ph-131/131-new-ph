@@ -1,6 +1,2 @@
-error • Expected to find ')' • lib/web_live_sync/web_purchase_entry_view.dart:587:8 • expected_token
-error • Expected to find ')' • lib/web_live_sync/web_purchase_entry_view.dart:843:8 • expected_token
-error • Expected to find ')' • lib/web_live_sync/web_purchase_entry_view.dart:963:8 • expected_token
-error • Expected to find ')' • lib/web_live_sync/web_purchase_entry_view.dart:1087:8 • expected_token
-error • Expected to find ')' • lib/web_live_sync/web_purchase_entry_view.dart:1229:8 • expected_token
-error • Expected to find ')' • lib/web_live_sync/web_purchase_entry_view.dart:1338:8 • expected_token
+error • Only static fields can be declared as const • lib/web_live_sync/web_product_master.dart:20:3 • const_instance_field
+error • Only static fields can be declared as const • lib/web_live_sync/web_product_master.dart:21:3 • const_instance_field

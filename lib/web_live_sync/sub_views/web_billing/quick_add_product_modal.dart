@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../../web_models.dart';
 import '../../pharoah_web_manager.dart';
+import '../../web_pharoah_numbering_engine.dart';
 
 class QuickAddProductModal extends StatefulWidget {
   final PharoahWebManager webPh;
@@ -22,9 +23,9 @@ class QuickAddProductModal extends StatefulWidget {
 
 class _QuickAddProductModalState extends State<QuickAddProductModal> {
   final nameC = TextEditingController();
-  final packC = TextEditingController(text: "10 TAB");
+  final packC = TextEditingController(text: "1*10");
   final hsnC = TextEditingController(text: "3004");
-  final gstC = TextEditingController(text: "12");
+  final gstC = TextEditingController(text: "5");
   final mrpC = TextEditingController(text: "0.0");
   final purRateC = TextEditingController(text: "0.0");
   final rateAC = TextEditingController(text: "0.0");
@@ -35,6 +36,7 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
   String? selectedSaltId;
   bool isNarcotic = false;
   bool isScheduleH1 = false;
+  String selGst = "5";
 
   final List<String> drugForms = ["TAB", "CAP", "SYP", "INJ", "IV", "PCS", "EXT", "OINT", "DROP"];
 
@@ -44,9 +46,17 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
     if (widget.preFillData != null) {
       final pf = widget.preFillData!;
       nameC.text = (pf['name'] ?? '').toString();
-      packC.text = (pf['pack'] ?? '10 TAB').toString();
+      packC.text = (pf['pack'] ?? '1*10').toString();
       hsnC.text = (pf['hsn'] ?? '3004').toString();
-      gstC.text = (pf['gst'] ?? 12).toString();
+      
+      double g = double.tryParse((pf['gst'] ?? 5.0).toString()) ?? 5.0;
+      gstC.text = g.toString();
+      if ([0.0, 5.0, 12.0, 18.0, 28.0].contains(g)) {
+        selGst = g.toInt().toString();
+      } else {
+        selGst = "Manual";
+      }
+
       mrpC.text = (pf['mrp'] ?? 0.0).toString();
       purRateC.text = (pf['purRate'] ?? 0.0).toString();
       rateAC.text = (pf['rateA'] ?? pf['mrp'] ?? 0.0).toString();
@@ -69,9 +79,9 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
   }
 
   void _saveProduct() {
-    if (nameC.text.trim().isEmpty || packC.text.trim().isEmpty) {
+    if (nameC.text.trim().isEmpty || packC.text.trim().isEmpty || gstC.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Product Name and Packing are required!"), backgroundColor: Colors.orange),
+        const SnackBar(content: Text("Product Name, Packing and GST% are required!"), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -80,12 +90,16 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
     double pur = double.tryParse(purRateC.text) ?? 0.0;
     double a = double.tryParse(rateAC.text) ?? (mrp > 0 ? mrp : 0.0);
     double b = double.tryParse(rateBC.text) ?? (a > 0 ? a * 0.95 : 0.0);
-    double gst = double.tryParse(gstC.text) ?? 12.0;
+    double gst = double.tryParse(gstC.text) ?? 5.0;
 
-    String sysId = "PH-W-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}";
+    String sysId = WebPharoahNumberingEngine.getNextNumber(
+      prefix: "PH-",
+      startFrom: 10001,
+      currentList: widget.webPh.medicines,
+    );
 
     final newMed = Medicine(
-      id: sysId,
+      id: "MED-${DateTime.now().millisecondsSinceEpoch}",
       systemId: sysId,
       name: nameC.text.trim().toUpperCase(),
       packing: packC.text.trim().toUpperCase(),
@@ -149,7 +163,7 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(flex: 3, child: _ipadInput("PACKING *", packC, Icons.inventory, isCaps: true)),
+                  Expanded(flex: 3, child: _ipadInput("PACKING (e.g. 1*10) *", packC, Icons.inventory, isCaps: true)),
                   const SizedBox(width: 10),
                   Expanded(
                     flex: 2,
@@ -189,9 +203,30 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: _ipadInput("HSN CODE", hsnC, Icons.tag, isCaps: true)),
+                  Expanded(flex: 2, child: _ipadInput("HSN CODE", hsnC, Icons.tag, isCaps: true)),
                   const SizedBox(width: 10),
-                  Expanded(child: _ipadInput("GST %", gstC, Icons.percent, isNum: true)),
+                  Expanded(
+                    flex: 2,
+                    child: _ipadDropdown(
+                      "GST % *",
+                      ["0", "5", "12", "18", "28", "Manual"].contains(selGst) ? selGst : "5",
+                      ["0", "5", "12", "18", "28", "Manual"].map((f) => DropdownMenuItem(value: f, child: Text(f == "Manual" ? f : "$f%"))).toList(),
+                      (v) {
+                        setState(() {
+                          selGst = v!;
+                          if (v != "Manual") {
+                            gstC.text = v;
+                          } else {
+                            gstC.text = "";
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  if (selGst == "Manual") ...[
+                    const SizedBox(width: 10),
+                    Expanded(flex: 2, child: _ipadInput("CUSTOM GST %", gstC, Icons.edit, isNum: true)),
+                  ]
                 ],
               ),
               const SizedBox(height: 12),
