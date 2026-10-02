@@ -1,4 +1,12 @@
-// FILE: lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart
+import os
+import subprocess
+
+dn_file = "lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart"
+cn_file = "lib/web_live_sync/sub_views/web_returns/credit_note/ui/credit_note_cart_widget.dart"
+gw_file = "lib/web_live_sync/web_portal_gateway.dart"
+
+# --- 1. CLEAN REWRITE OF DEBIT NOTE CART WIDGET ---
+dn_code = r'''// FILE: lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart
 
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -6,6 +14,7 @@ import '../../../../web_models.dart';
 import '../../../../pharoah_web_manager.dart';
 import '../logic/debit_note_controller.dart';
 import 'debit_note_magic_history_modal.dart';
+import '../../../web_billing/quick_add_product_modal.dart';
 import '../../../web_billing/web_batch_lookup_dialog.dart';
 
 class DebitNoteCartWidget extends StatelessWidget {
@@ -391,7 +400,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                                 onPressed: executeSave,
-                                child: const Text("CONFIRM & ADD TO DEBIT NOTE", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5)),
+                                child: Text(itemToEdit != null ? "UPDATE ITEM" : "CONFIRM & ADD TO DEBIT NOTE (ENTER)", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5)),
                               ),
                             ),
                           ],
@@ -475,6 +484,20 @@ class DebitNoteCartWidget extends StatelessWidget {
     );
   }
 
+  void _openQuickAddProduct(BuildContext context) {
+    if (controller.isReadOnly) return;
+    showDialog(
+      context: context,
+      builder: (c) => QuickAddProductModal(
+        webPh: webPh,
+        onProductCreated: (newMedMap) {
+          final medObj = Medicine.fromMap(newMedMap);
+          _openItemEntryDialog(context, medObj);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final query = controller.productSearchC.text.trim().toLowerCase();
@@ -490,14 +513,14 @@ class DebitNoteCartWidget extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!controller.isReadOnly) ...[
             Row(
@@ -520,6 +543,18 @@ class DebitNoteCartWidget extends StatelessWidget {
                     onChanged: (_) => controller.notifySearch(),
                   ),
                 ),
+                const SizedBox(width: 10),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD97706),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => _openQuickAddProduct(context),
+                  icon: const Icon(Icons.add_box_rounded, size: 16),
+                  label: const Text("+ PRODUCT", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
             if (matchingMeds.isNotEmpty) ...[
@@ -540,7 +575,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                       dense: true,
                       leading: const Icon(Icons.medication_rounded, color: Color(0xFFFBBF24), size: 18),
                       title: Text(med.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      subtitle: Text("Pack: ${med.packing} • Pur.Rate: ₹${med.purRate.toStringAsFixed(2)} • Stock: ${med.stock.toInt()}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
+                      subtitle: Text("Pack: ${med.packing} • Pur.Rate: ₹${med.purRate.toStringAsFixed(2)} • Live Stock: ${med.stock.toInt()}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
                       trailing: const Icon(Icons.auto_fix_high_rounded, color: Color(0xFFFBBF24), size: 16),
                       onTap: () {
                         controller.productSearchC.clear();
@@ -551,7 +586,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
           ],
 
           Row(
@@ -560,9 +595,9 @@ class DebitNoteCartWidget extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 "DEBIT NOTE CART ITEMS (${controller.items.length})",
-                style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
@@ -570,15 +605,15 @@ class DebitNoteCartWidget extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Text(
-                  "👉 Right Swipe on item to delete",
-                  style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold),
+                  "Swipe Right to Delete 👉",
+                  style: TextStyle(color: Colors.white54, fontSize: 9.5),
                 ),
               ),
               const Spacer(),
               if (controller.items.isNotEmpty && !controller.isReadOnly)
                 TextButton(
                   onPressed: () => controller.clearCart(),
-                  child: const Text("Clear Cart", style: TextStyle(color: Colors.redAccent, fontSize: 11)),
+                  child: const Text("Clear Cart", style: TextStyle(color: Colors.redAccent, fontSize: 10.5)),
                 ),
             ],
           ),
@@ -594,43 +629,37 @@ class DebitNoteCartWidget extends StatelessWidget {
           else
             LayoutBuilder(
               builder: (context, constraints) {
-                final bool isNarrow = constraints.maxWidth < 800;
-                final double contentWidth = isNarrow ? 800.0 : constraints.maxWidth;
-
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  physics: isNarrow ? const BouncingScrollPhysics() : const NeverScrollableScrollPhysics(),
-                  child: SizedBox(
-                    width: contentWidth,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: constraints.maxWidth > 850 ? constraints.maxWidth : 850,
+                    ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Responsive Header
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           decoration: BoxDecoration(
                             color: const Color(0xFF0F172A),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white12),
                           ),
                           child: Row(
                             children: [
-                              _colHead("SN", width: 36),
-                              _colHead("TYPE", width: 56),
-                              Expanded(flex: 4, child: _colHead("PRODUCT NAME", isLeft: true)),
-                              _colHead("PACK", width: 75),
-                              _colHead("BATCH", width: 85),
-                              _colHead("EXP", width: 65),
-                              _colHead("QTY", width: 70, isRight: true),
-                              _colHead("RATE", width: 75, isRight: true),
-                              _colHead("TOTAL", width: 90, isRight: true),
-                              _colHead("ACT", width: 65),
+                              _th("SN", width: 40),
+                              _th("TYPE", width: 60),
+                              Expanded(flex: 3, child: _th("PRODUCT NAME", isLeft: true)),
+                              _th("PACK", width: 75),
+                              _th("BATCH", width: 85),
+                              _th("EXP", width: 65),
+                              _th("QTY", width: 75),
+                              _th("RATE", width: 80),
+                              _th("TOTAL", width: 95),
+                              _th("ACT", width: 70),
                             ],
                           ),
                         ),
                         const SizedBox(height: 6),
 
-                        // Swipeable Items List
                         ...controller.items.asMap().entries.map((entry) {
                           int idx = entry.key;
                           PurchaseItem it = entry.value;
@@ -642,38 +671,29 @@ class DebitNoteCartWidget extends StatelessWidget {
                             direction: controller.isReadOnly ? DismissDirection.none : DismissDirection.startToEnd,
                             background: Container(
                               margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFFD97706), Color(0xFF92400E)],
-                                ),
+                                color: Colors.red.shade900,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               alignment: Alignment.centerLeft,
                               child: const Row(
                                 children: [
-                                  Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 22),
-                                  SizedBox(width: 10),
-                                  Text(
-                                    "SWIPE TO DELETE ITEM",
-                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5, letterSpacing: 0.5),
-                                  ),
+                                  Icon(Icons.delete_sweep_rounded, color: Colors.white, size: 20),
+                                  SizedBox(width: 8),
+                                  Text("DELETING ITEM...", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
                                 ],
                               ),
                             ),
                             onDismissed: (_) {
                               controller.removeItem(idx);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text("🗑️ ${it.name} removed from Debit Note"),
-                                  duration: const Duration(seconds: 2),
-                                  backgroundColor: Colors.orange.shade900,
-                                ),
+                                SnackBar(content: Text("🗑️ ${it.name} removed from Debit Note"), duration: const Duration(seconds: 2)),
                               );
                             },
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                               decoration: BoxDecoration(
                                 color: Colors.black26,
                                 borderRadius: BorderRadius.circular(8),
@@ -681,29 +701,28 @@ class DebitNoteCartWidget extends StatelessWidget {
                               ),
                               child: Row(
                                 children: [
-                                  _colCell("${idx + 1}", width: 36),
-                                  SizedBox(
-                                    width: 56,
-                                    child: Center(
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: isExp ? const Color(0x33EA580C) : const Color(0x330F766E),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          isExp ? "EXP" : "RET",
-                                          style: TextStyle(
-                                            color: isExp ? const Color(0xFFF97316) : Colors.tealAccent,
-                                            fontSize: 8.5,
-                                            fontWeight: FontWeight.w900,
-                                          ),
+                                  _td("${idx + 1}", width: 40),
+                                  Container(
+                                    width: 60,
+                                    alignment: Alignment.center,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isExp ? const Color(0x33EA580C) : const Color(0x330F766E),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        isExp ? "EXP" : "RET",
+                                        style: TextStyle(
+                                          color: isExp ? const Color(0xFFF97316) : Colors.tealAccent,
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w900,
                                         ),
                                       ),
                                     ),
                                   ),
                                   Expanded(
-                                    flex: 4,
+                                    flex: 3,
                                     child: InkWell(
                                       onTap: () {
                                         final med = webPh.medicines.firstWhere(
@@ -712,21 +731,17 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         );
                                         _openItemEntryDialog(context, med, itemToEdit: it, editIndex: idx);
                                       },
-                                      child: Text(
-                                        it.name,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                      child: Text(it.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis),
                                     ),
                                   ),
-                                  _colCell(it.packing, width: 75),
-                                  _colCell(it.batch, width: 85),
-                                  _colCell(it.exp, width: 65),
-                                  _colCell(qtyDisp, width: 70, isRight: true, isBold: true, color: const Color(0xFFFBBF24)),
-                                  _colCell("₹${it.purchaseRate.toStringAsFixed(2)}", width: 75, isRight: true),
-                                  _colCell("₹${it.total.toStringAsFixed(2)}", width: 90, isRight: true, isBold: true, color: const Color(0xFFF59E0B)),
+                                  _td(it.packing, width: 75),
+                                  _td(it.batch, width: 85),
+                                  _td(it.exp, width: 65),
+                                  _td(qtyDisp, width: 75, isBold: true, color: const Color(0xFFFBBF24)),
+                                  _td("₹${it.purchaseRate.toStringAsFixed(2)}", width: 80),
+                                  _td("₹${it.total.toStringAsFixed(2)}", width: 95, isBold: true, color: const Color(0xFFF59E0B)),
                                   SizedBox(
-                                    width: 65,
+                                    width: 70,
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
@@ -743,7 +758,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                                               _openItemEntryDialog(context, med, itemToEdit: it, editIndex: idx);
                                             },
                                           ),
-                                          const SizedBox(width: 8),
+                                          const SizedBox(width: 6),
                                           IconButton(
                                             icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
                                             padding: EdgeInsets.zero,
@@ -771,24 +786,51 @@ class DebitNoteCartWidget extends StatelessWidget {
     );
   }
 
-  Widget _colHead(String t, {double? width, bool isLeft = false, bool isRight = false}) {
-    TextAlign align = isLeft ? TextAlign.left : (isRight ? TextAlign.right : TextAlign.center);
+  Widget _th(String t, {double? width, bool isLeft = false}) {
     Widget textWidget = Text(
       t,
-      textAlign: align,
+      textAlign: isLeft ? TextAlign.left : TextAlign.center,
       style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold),
     );
     return width != null ? SizedBox(width: width, child: textWidget) : textWidget;
   }
 
-  Widget _colCell(String t, {double? width, bool isLeft = false, bool isRight = false, bool isBold = false, Color color = Colors.white}) {
-    TextAlign align = isLeft ? TextAlign.left : (isRight ? TextAlign.right : TextAlign.center);
+  Widget _td(String t, {double? width, bool isLeft = false, bool isBold = false, Color color = Colors.white}) {
     Widget textWidget = Text(
       t,
-      textAlign: align,
+      textAlign: isLeft ? TextAlign.left : TextAlign.center,
       style: TextStyle(color: color, fontSize: 11, fontWeight: isBold ? FontWeight.bold : FontWeight.normal),
       overflow: TextOverflow.ellipsis,
     );
     return width != null ? SizedBox(width: width, child: textWidget) : textWidget;
   }
 }
+'''
+
+with open(dn_file, 'w', encoding='utf-8') as f:
+    f.write(dn_code)
+print(f"✔ Fixed and updated: {dn_file}")
+
+# --- 2. CLEAN REWRITE OF CREDIT NOTE CART WIDGET ---
+with open(cn_file, 'w', encoding='utf-8') as f:
+    f.write(cn_code)
+print(f"✔ Fixed and updated: {cn_file}")
+
+# --- 3. CLEAN UP WEB PORTAL GATEWAY HEADER IF NEEDED ---
+if os.path.exists(gw_file):
+    with open(gw_file, 'r', encoding='utf-8') as f:
+        content = f.read()
+    if not content.startswith('//') and not content.startswith('import'):
+        # Fix top line
+        lines = content.splitlines()
+        clean_lines = [l for l in lines if 'web_challan_view' not in l and not l.strip() == '']
+        with open(gw_file, 'w', encoding='utf-8') as f:
+            f.write('// FILE: lib/web_live_sync/web_portal_gateway.dart\n\n' + '\n'.join(clean_lines) + '\n')
+        print(f"✔ Cleaned: {gw_file}")
+
+# --- 4. VERIFY WITH FLUTTER ANALYZE ---
+print("\n🔍 Running flutter analyze lib/web_live_sync/ ...")
+res = subprocess.run(["flutter", "analyze", "lib/web_live_sync/"], capture_output=True, text=True)
+print(res.stdout)
+if res.stderr:
+    print(res.stderr)

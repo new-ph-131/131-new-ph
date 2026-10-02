@@ -1,4 +1,3 @@
-import 'web_pdf_router_service.dart';
 // FILE: lib/web_live_sync/web_purchase_entry_view.dart
 
 import 'package:flutter/material.dart';
@@ -6,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
+import 'web_pdf_router_service.dart';
 import 'sub_views/web_billing/quick_add_party_modal.dart';
 import 'sub_views/web_billing/quick_add_product_modal.dart';
 import 'sub_views/web_billing/web_batch_lookup_dialog.dart';
@@ -13,8 +13,6 @@ import 'sub_views/web_billing/web_batch_lookup_dialog.dart';
 class WebPurchaseEntryView extends StatefulWidget {
   final VoidCallback onBack;
   final int initialTabIndex;
-
-  // 🆕 ADDED FOR DRAFT / STITCHER & EDIT SUPPORT
   final Party? initialSupplier;
   final String? initialInternalNo;
   final String? initialBillNo;
@@ -64,7 +62,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
   bool isSaving = false;
 
   String registerSearchQuery = "";
-  static const String currentTestId = "#PH-REV-116";
 
   @override
   void initState() {
@@ -76,7 +73,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
 
   void _initBillingSession(PharoahWebManager webPh) {
     if (widget.initialSupplier != null || widget.existingItems != null) {
-      // 🆕 DRAFT / MODIFY MODE
       billDate = widget.initialDate ?? DateTime.now();
       entryDate = widget.initialEntryDate ?? DateTime.now();
       paymentMode = widget.initialMode ?? "CREDIT";
@@ -95,7 +91,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
         } catch (_) {}
       }
     } else {
-      // NORMAL NEW ENTRY
       internalNoC.text = webPh.getNextBillNumber("PURCHASE", "PUR-", 1);
       billDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
       entryDate = DateTime.now();
@@ -481,7 +476,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
     if (widget.modifyPurchaseId != null) webPh.deletePurchase(widget.modifyPurchaseId!);
     webPh.addPurchaseAndSync(newPurchase);
     
-    // 🆕 Mark challans as billed if from stitcher
     if (widget.linkedChallanIds != null) {
       for (var id in widget.linkedChallanIds!) {
         int idx = webPh.purchaseChallans.indexWhere((c) => c.id == id);
@@ -503,7 +497,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
 
-    // Agar hum sirf ek single record view/edit kar rahe hain toh tab menu hide kardo
     if (widget.initialSupplier != null || widget.existingItems != null) {
       return _buildNewPurchaseTab(webPh);
     }
@@ -518,7 +511,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Bar
           Row(
             children: [
               ElevatedButton.icon(
@@ -540,24 +532,10 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
                 "PURCHASE INWARD & REGISTER",
                 style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0x33F59E0B),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFF59E0B)),
-                ),
-                child: const Text(
-                  currentTestId,
-                  style: TextStyle(color: Color(0xFFF59E0B), fontSize: 9, fontWeight: FontWeight.w900),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 15),
 
-          // Tabs Switcher
           Container(
             decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
             child: TabBar(
@@ -573,7 +551,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
           ),
           const SizedBox(height: 16),
 
-          // Tab Views
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -588,49 +565,44 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
     );
   }
 
-  // TAB 1: NEW PURCHASE INWARD ENTRY / MODIFY
   Widget _buildNewPurchaseTab(PharoahWebManager webPh) {
-    return IgnorePointer(
-      ignoring: widget.isReadOnly,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeaderBar(webPh),
-          const SizedBox(height: 16),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 7,
-                  child: Column(
-                    children: [
-                      if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-                      if (!widget.isReadOnly) const SizedBox(height: 16),
-                      Expanded(child: _buildCartTable(webPh)),
-                    ],
-                  ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildHeaderBar(webPh),
+        const SizedBox(height: 16),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 7,
+                child: Column(
+                  children: [
+                    if (!widget.isReadOnly) _buildProductSearchCard(webPh),
+                    if (!widget.isReadOnly) const SizedBox(height: 16),
+                    Expanded(child: _buildCartTable(webPh)),
+                  ],
                 ),
-                const SizedBox(width: 18),
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    children: [
-                      _buildSupplierCard(webPh),
-                      const SizedBox(height: 16),
-                      _buildGrandTotalCard(webPh),
-                    ],
-                  ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                flex: 3,
+                child: Column(
+                  children: [
+                    _buildSupplierCard(webPh),
+                    const SizedBox(height: 16),
+                    _buildGrandTotalCard(webPh),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  // TAB 2: PURCHASE REGISTER (ALL PURCHASES FROM APP & WEB)
   Widget _buildPurchaseRegisterTab(PharoahWebManager webPh) {
     List<Purchase> allPurchases = List.from(webPh.purchases);
     allPurchases.sort((a, b) => b.date.compareTo(a.date));
@@ -753,7 +725,6 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
       ),
       child: Row(
         children: [
-          // Agar hum Draft/Modify mode me hain, toh back button dikhayein
           if (widget.initialSupplier != null || widget.existingItems != null)
             Padding(
               padding: const EdgeInsets.only(right: 12),
@@ -1317,7 +1288,7 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
               ),
             ),
           ] else ...[
-             SizedBox(
+            SizedBox(
               width: double.infinity,
               height: 46,
               child: ElevatedButton.icon(
@@ -1341,7 +1312,7 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
                 label: const Text("PRINT THIS INWARD SLIP", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5, letterSpacing: 0.5)),
               ),
             ),
-          ]
+          ],
         ],
       ),
     );

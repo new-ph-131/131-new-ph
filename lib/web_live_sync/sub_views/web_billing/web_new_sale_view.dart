@@ -267,54 +267,51 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       builder: (context, constraints) {
         bool isWideScreen = constraints.maxWidth > 1100;
 
-        return IgnorePointer(
-          ignoring: widget.isReadOnly,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeaderBar(webPh),
-              const SizedBox(height: 16),
-              if (isWideScreen)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 13,
-                      child: Column(
-                        children: [
-                          if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-                          if (!widget.isReadOnly) const SizedBox(height: 16),
-                          _buildCartTable(webPh),
-                        ],
-                      ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeaderBar(webPh),
+            const SizedBox(height: 16),
+            if (isWideScreen)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 13,
+                    child: Column(
+                      children: [
+                        if (!widget.isReadOnly) _buildProductSearchCard(webPh),
+                        if (!widget.isReadOnly) const SizedBox(height: 16),
+                        _buildCartTable(webPh),
+                      ],
                     ),
-                    const SizedBox(width: 18),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 340, maxWidth: 420),
-                      child: Column(
-                        children: [
-                          _buildCustomerCard(webPh),
-                          const SizedBox(height: 16),
-                          _buildGrandTotalCard(webPh),
-                        ],
-                      ),
+                  ),
+                  const SizedBox(width: 18),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 340, maxWidth: 420),
+                    child: Column(
+                      children: [
+                        _buildCustomerCard(webPh),
+                        const SizedBox(height: 16),
+                        _buildGrandTotalCard(webPh),
+                      ],
                     ),
-                  ],
-                )
-              else
-                Column(
-                  children: [
-                    _buildCustomerCard(webPh),
-                    const SizedBox(height: 16),
-                    if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-                    if (!widget.isReadOnly) const SizedBox(height: 16),
-                    _buildCartTable(webPh),
-                    const SizedBox(height: 16),
-                    _buildGrandTotalCard(webPh),
-                  ],
-                ),
-            ],
-          ),
+                  ),
+                ],
+              )
+            else
+              Column(
+                children: [
+                  _buildCustomerCard(webPh),
+                  const SizedBox(height: 16),
+                  if (!widget.isReadOnly) _buildProductSearchCard(webPh),
+                  if (!widget.isReadOnly) const SizedBox(height: 16),
+                  _buildCartTable(webPh),
+                  const SizedBox(height: 16),
+                  _buildGrandTotalCard(webPh),
+                ],
+              ),
+          ],
         );
       },
     );

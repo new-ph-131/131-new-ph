@@ -421,12 +421,25 @@ class PharoahWebManager with ChangeNotifier {
 
   void deleteSale(String saleId) {
     try {
-      final s = sales.firstWhere((x) => x.id == saleId);
-      if (s.linkedChallanIds.isNotEmpty) {
-        for (var cid in s.linkedChallanIds) {
-          int idx = saleChallans.indexWhere((c) => c.id == cid);
-          if (idx != -1) {
-            saleChallans[idx].status = "Pending";
+      final s = sales.firstWhere(
+        (x) => x.id == saleId || x.billNo == saleId,
+        orElse: () => sales.firstWhere((x) => x.id == saleId),
+      );
+
+      Set<String> targetChallanKeys = {};
+      for (var cid in s.linkedChallanIds) {
+        if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
+      }
+      for (var it in s.items) {
+        if (it.sourceChallanNo.trim().isNotEmpty) targetChallanKeys.add(it.sourceChallanNo.trim().toUpperCase());
+        if (it.sourceChallanId.trim().isNotEmpty) targetChallanKeys.add(it.sourceChallanId.trim().toUpperCase());
+      }
+
+      if (targetChallanKeys.isNotEmpty) {
+        for (var ch in saleChallans) {
+          if (targetChallanKeys.contains(ch.id.trim().toUpperCase()) ||
+              targetChallanKeys.contains(ch.billNo.trim().toUpperCase())) {
+            ch.status = "Pending";
           }
         }
       }
@@ -435,10 +448,10 @@ class PharoahWebManager with ChangeNotifier {
     deletedRecordIds.add(saleId);
     _saveLocalTombstones();
 
-    sales.removeWhere((s) => s.id == saleId);
+    sales.removeWhere((s) => s.id == saleId || s.billNo == saleId);
     rebuildInventory();
     notifyListeners();
-    _autoSyncService.triggerAutoSync(); // ⚡ Silent Debounced Push
+    _autoSyncService.triggerAutoSync();
   }
 
   void addPurchaseAndSync(Purchase purchase) {
@@ -471,12 +484,26 @@ class PharoahWebManager with ChangeNotifier {
 
   void deletePurchase(String purId) {
     try {
-      final p = purchases.firstWhere((x) => x.id == purId);
-      if (p.linkedChallanIds.isNotEmpty) {
-        for (var cid in p.linkedChallanIds) {
-          int idx = purchaseChallans.indexWhere((c) => c.id == cid);
-          if (idx != -1) {
-            purchaseChallans[idx].status = "Pending";
+      final p = purchases.firstWhere(
+        (x) => x.id == purId || x.internalNo == purId || x.billNo == purId,
+        orElse: () => purchases.firstWhere((x) => x.id == purId),
+      );
+
+      Set<String> targetChallanKeys = {};
+      for (var cid in p.linkedChallanIds) {
+        if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
+      }
+      for (var it in p.items) {
+        if (it.sourceChallanNo.trim().isNotEmpty) targetChallanKeys.add(it.sourceChallanNo.trim().toUpperCase());
+        if (it.sourceChallanId.trim().isNotEmpty) targetChallanKeys.add(it.sourceChallanId.trim().toUpperCase());
+      }
+
+      if (targetChallanKeys.isNotEmpty) {
+        for (var ch in purchaseChallans) {
+          if (targetChallanKeys.contains(ch.id.trim().toUpperCase()) ||
+              targetChallanKeys.contains(ch.internalNo.trim().toUpperCase()) ||
+              targetChallanKeys.contains(ch.billNo.trim().toUpperCase())) {
+            ch.status = "Pending";
           }
         }
       }
@@ -485,10 +512,10 @@ class PharoahWebManager with ChangeNotifier {
     deletedRecordIds.add(purId);
     _saveLocalTombstones();
 
-    purchases.removeWhere((p) => p.id == purId);
+    purchases.removeWhere((p) => p.id == purId || p.internalNo == purId || p.billNo == purId);
     rebuildInventory();
     notifyListeners();
-    _autoSyncService.triggerAutoSync(); // ⚡ Silent Debounced Push
+    _autoSyncService.triggerAutoSync();
   }
 
   void deleteVoucher(String voucherId) {
