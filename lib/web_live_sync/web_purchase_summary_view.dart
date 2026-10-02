@@ -24,7 +24,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
   DateTime toDate = DateTime.now();
   String searchQuery = "";
   bool _isInit = false;
-  bool showAllDates = false; // Bypass date boundaries toggle!
+  bool showAllDates = false;
 
   bool isSelectionMode = false;
   List<String> selectedPurchaseIds = [];
@@ -86,6 +86,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
     }
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
@@ -93,7 +94,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
@@ -117,29 +118,58 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                 style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
               const Spacer(),
+
+              // EXACT APP WORKFLOW: PopupMenuButton for Summary PDF Actions
               if (filteredPurchases.isNotEmpty) ...[
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFD97706),
-                    foregroundColor: Colors.white,
+                PopupMenuButton<String>(
+                  icon: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD97706),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.picture_as_pdf_rounded, size: 16, color: Colors.white),
+                        SizedBox(width: 6),
+                        Text("SUMMARY PDF", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10.5)),
+                        Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+                      ],
+                    ),
                   ),
-                  icon: const Icon(Icons.picture_as_pdf_rounded, size: 16),
-                  label: const Text("PRINT REPORT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
-                  onPressed: () => WebPdfRouterService.printPurchaseReport(purchases: filteredPurchases, shop: activeShop, from: fromDate, to: toDate),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E293B),
-                    foregroundColor: const Color(0xFFFBBF24),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Color(0xFFFBBF24))),
-                  ),
-                  icon: const Icon(Icons.download_rounded, size: 16),
-                  label: const Text("DOWNLOAD PDF", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
-                  onPressed: () => WebPdfRouterService.downloadPurchaseReport(purchases: filteredPurchases, shop: activeShop, from: fromDate, to: toDate),
+                  tooltip: "Inward Summary Report PDF Actions",
+                  color: const Color(0xFF1E293B),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.white12)),
+                  onSelected: (val) {
+                    if (val == 'print') {
+                      WebPdfRouterService.printPurchaseReport(purchases: filteredPurchases, shop: activeShop, from: fromDate, to: toDate);
+                    } else if (val == 'download') {
+                      WebPdfRouterService.downloadPurchaseReport(purchases: filteredPurchases, shop: activeShop, from: fromDate, to: toDate);
+                    }
+                  },
+                  itemBuilder: (c) => [
+                    const PopupMenuItem(
+                      value: 'print',
+                      child: Row(
+                        children: [
+                          Icon(Icons.visibility_rounded, size: 18, color: Color(0xFFFBBF24)),
+                          SizedBox(width: 10),
+                          Text("Open / Print Summary PDF", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'download',
+                      child: Row(
+                        children: [
+                          Icon(Icons.download_rounded, size: 18, color: Colors.greenAccent),
+                          SizedBox(width: 10),
+                          Text("Download Summary PDF", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -309,7 +339,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                           },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18), 
+                          icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent), 
                           tooltip: "Delete Purchase",
                           onPressed: () {
                             webPh.deletePurchase(p.id);

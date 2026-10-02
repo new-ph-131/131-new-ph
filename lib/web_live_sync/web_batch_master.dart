@@ -16,8 +16,15 @@ class WebBatchMasterView extends StatefulWidget {
 }
 
 class _WebBatchMasterViewState extends State<WebBatchMasterView> {
+  final TextEditingController searchController = TextEditingController();
   Medicine? selectedMed;
   String searchQuery = "";
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
 
   void _showAddBatchDialog(PharoahWebManager webPh, Medicine med) {
     final batchNoC = TextEditingController();
@@ -291,9 +298,14 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
-    final filteredMeds = webPh.medicines.where((m) =>
-        m.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-        m.systemId.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+
+    // Instant Search Results (no 2nd click needed)
+    final query = searchQuery.trim().toLowerCase();
+    final matchingMeds = query.isEmpty
+        ? <Medicine>[]
+        : webPh.medicines.where((m) =>
+            m.name.toLowerCase().contains(query) ||
+            m.systemId.toLowerCase().contains(query)).take(8).toList();
 
     List<BatchInfo> batches = [];
     if (selectedMed != null) {
@@ -301,6 +313,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
     }
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
@@ -308,9 +321,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
+          // Header Bar
           Row(
             children: [
               ElevatedButton.icon(
@@ -359,7 +372,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
           ),
           const Divider(color: Colors.white10, height: 25),
 
-          // Product Selector Card
+          // Product Selector Card (Instant 1-Tap Search Box)
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -368,29 +381,76 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               border: Border.all(color: Colors.white12),
             ),
             child: selectedMed == null
-                ? Autocomplete<Medicine>(
-                    displayStringForOption: (m) => "${m.name} (${m.packing}) - Stock: ${m.stock.toInt()}",
-                    optionsBuilder: (textEditingValue) {
-                      if (textEditingValue.text.isEmpty) return const Iterable.empty();
-                      return filteredMeds.where((m) =>
-                          m.name.toLowerCase().contains(textEditingValue.text.toLowerCase()) ||
-                          m.systemId.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-                    },
-                    onSelected: (m) => setState(() => selectedMed = m),
-                    fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                      return TextField(
-                        controller: controller,
-                        focusNode: focusNode,
-                        style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.bold),
-                        decoration: const InputDecoration(
-                          hintText: "Type Medicine Name or ID to select product...",
-                          hintStyle: TextStyle(color: Colors.white38, fontSize: 11.5),
-                          prefixIcon: Icon(Icons.search, color: Color(0xFF38BDF8), size: 18),
+                ? Column(
+                    children: [
+                      TextField(
+                        controller: searchController,
+                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                        decoration: InputDecoration(
+                          hintText: "Type Medicine Name or ID (Instant Results)...",
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
+                          prefixIcon: const Icon(Icons.search, color: Color(0xFF38BDF8), size: 18),
+                          suffixIcon: searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                                  onPressed: () {
+                                    searchController.clear();
+                                    setState(() => searchQuery = "");
+                                  },
+                                )
+                              : null,
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
                         ),
-                      );
-                    },
+                        onChanged: (v) => setState(() => searchQuery = v),
+                      ),
+                      if (matchingMeds.isNotEmpty) ...[
+                        const Divider(color: Colors.white10, height: 16),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 250),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0x3338BDF8)),
+                          ),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: matchingMeds.length,
+                            itemBuilder: (ctx, i) {
+                              final m = matchingMeds[i];
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.medication_rounded, color: Color(0xFF38BDF8), size: 18),
+                                title: Row(
+                                  children: [
+                                    Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                    const SizedBox(width: 8),
+                                    Text("(${m.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                                    const Spacer(),
+                                    Text(
+                                      "Stock: ${m.stock.toInt()} Qty",
+                                      style: TextStyle(
+                                        color: m.stock > 0 ? Colors.greenAccent : Colors.redAccent,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                subtitle: Text("ID: ${m.systemId} • MRP: ₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                                onTap: () {
+                                  setState(() {
+                                    selectedMed = m;
+                                    searchController.clear();
+                                    searchQuery = "";
+                                  });
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
                   )
                 : Row(
                     children: [
@@ -420,110 +480,221 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
-                        tooltip: "Clear Product Selection",
-                        onPressed: () => setState(() => selectedMed = null),
+                        tooltip: "Change Product Selection",
+                        onPressed: () {
+                          setState(() {
+                            selectedMed = null;
+                            searchController.clear();
+                            searchQuery = "";
+                          });
+                        },
                       ),
                     ],
                   ),
           ),
           const SizedBox(height: 16),
 
-          // Batches Table
-          Expanded(
-            child: selectedMed == null
-                ? const Center(
-                    child: Text(
-                      "Search and select a medicine above to view and manage its batch records.",
-                      style: TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                  )
-                : (batches.isEmpty
-                    ? const Center(
-                        child: Text(
-                          "No batches recorded for this medicine.\nClick 'Add Batch To Item' to create one.",
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white38, fontSize: 12),
+          // Batches Table Area (Auto-Adjusting for Portrait & Landscape)
+          selectedMed == null
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 60),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.search_rounded, size: 40, color: Colors.white24),
+                        SizedBox(height: 12),
+                        Text(
+                          "Type medicine name above to select and view batch records.",
+                          style: TextStyle(color: Colors.white38, fontSize: 13),
                         ),
-                      )
-                    : SingleChildScrollView(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 800),
-                          child: Table(
-                            columnWidths: const {
-                              0: FixedColumnWidth(120),
-                              1: FixedColumnWidth(110),
-                              2: FixedColumnWidth(90),
-                              3: FixedColumnWidth(90),
-                              4: FixedColumnWidth(90),
-                              5: FixedColumnWidth(110),
-                              6: FixedColumnWidth(140),
-                            },
-                            children: [
-                              TableRow(
-                                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
-                                children: [
-                                  _th("BATCH NO", isLeft: true),
-                                  _th("EXPIRY"),
-                                  _th("MRP"),
-                                  _th("PUR. RATE"),
-                                  _th("RATE A"),
-                                  _th("LIVE STOCK"),
-                                  _th("ACTIONS"),
-                                ],
+                      ],
+                    ),
+                  ),
+                )
+              : (batches.isEmpty
+                  ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 60),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white10),
+                      ),
+                      child: const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.layers_clear_rounded, size: 40, color: Colors.white24),
+                            SizedBox(height: 12),
+                            Text(
+                              "No batches recorded for this medicine.\nClick '+ ADD BATCH TO ITEM' above to create one.",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white38, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final double availableWidth = constraints.maxWidth;
+                        final double tableWidth = availableWidth > 850 ? availableWidth : 850;
+
+                        double totalStockSum = batches.fold(0.0, (s, b) => s + b.qty);
+                        int activeCount = batches.where((b) => WebExpiryMaster.getStatus(b.exp) != ExpiryStatus.expired).length;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white10),
                               ),
-                              for (final b in batches)
-                                TableRow(
-                                  decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
-                                  children: [
-                                    _td(b.batch, isLeft: true, isBold: true),
-                                    _tdExpiry(b.exp),
-                                    _td("₹${b.mrp.toStringAsFixed(2)}"),
-                                    _td("₹${b.purRate.toStringAsFixed(2)}"),
-                                    _td("₹${b.rateA.toStringAsFixed(2)}"),
-                                    _td("${b.qty.toInt()} Qty", isBold: true, color: b.qty > 0 ? Colors.greenAccent : Colors.redAccent),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.orangeAccent,
-                                            foregroundColor: Colors.black,
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                            elevation: 0,
-                                          ),
-                                          onPressed: () => _showAdjustmentDialog(webPh, selectedMed!, b),
-                                          icon: const Icon(Icons.exposure_rounded, size: 14),
-                                          label: const Text("ADJUST", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                physics: availableWidth < 850
+                                    ? const BouncingScrollPhysics()
+                                    : const NeverScrollableScrollPhysics(),
+                                child: SizedBox(
+                                  width: tableWidth,
+                                  child: Table(
+                                    columnWidths: const {
+                                      0: FlexColumnWidth(2.5),
+                                      1: FlexColumnWidth(1.8),
+                                      2: FlexColumnWidth(1.5),
+                                      3: FlexColumnWidth(1.5),
+                                      4: FlexColumnWidth(1.5),
+                                      5: FlexColumnWidth(1.8),
+                                      6: FixedColumnWidth(160),
+                                    },
+                                    defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                                    children: [
+                                      TableRow(
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF0F172A),
+                                          border: Border(bottom: BorderSide(color: Colors.white24, width: 1)),
                                         ),
-                                        const SizedBox(width: 6),
-                                        IconButton(
-                                          icon: const Icon(Icons.edit_note_rounded, size: 18, color: Color(0xFF38BDF8)),
-                                          tooltip: "Edit Pricing",
-                                          onPressed: () => _showEditMetadataDialog(webPh, selectedMed!, b),
+                                        children: [
+                                          _th("BATCH NO", isLeft: true),
+                                          _th("EXPIRY"),
+                                          _th("MRP", isRight: true),
+                                          _th("PUR. RATE", isRight: true),
+                                          _th("RATE A", isRight: true),
+                                          _th("LIVE STOCK", isRight: true),
+                                          _th("ACTIONS"),
+                                        ],
+                                      ),
+                                      for (int idx = 0; idx < batches.length; idx++) ...[
+                                        TableRow(
+                                          decoration: BoxDecoration(
+                                            color: idx % 2 == 1 ? const Color(0x0DFFFFFF) : Colors.transparent,
+                                            border: const Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
+                                          ),
+                                          children: [
+                                            _td(
+                                              batches[idx].batch.trim().isEmpty ? "(No Batch No)" : batches[idx].batch,
+                                              isLeft: true,
+                                              isBold: true,
+                                            ),
+                                            _tdExpiry(batches[idx].exp),
+                                            _td("₹${batches[idx].mrp.toStringAsFixed(2)}", isRight: true),
+                                            _td("₹${batches[idx].purRate.toStringAsFixed(2)}", isRight: true),
+                                            _td("₹${batches[idx].rateA.toStringAsFixed(2)}", isRight: true),
+                                            _td(
+                                              "${batches[idx].qty.toInt()} Qty",
+                                              isRight: true,
+                                              isBold: true,
+                                              color: batches[idx].qty > 0 ? Colors.greenAccent : Colors.redAccent,
+                                            ),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              children: [
+                                                ElevatedButton.icon(
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: Colors.orangeAccent,
+                                                    foregroundColor: Colors.black,
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                    elevation: 0,
+                                                  ),
+                                                  onPressed: () => _showAdjustmentDialog(webPh, selectedMed!, batches[idx]),
+                                                  icon: const Icon(Icons.exposure_rounded, size: 14),
+                                                  label: const Text("ADJUST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                IconButton(
+                                                  icon: const Icon(Icons.edit_note_rounded, size: 20, color: Color(0xFF38BDF8)),
+                                                  tooltip: "Edit Pricing",
+                                                  onPressed: () => _showEditMetadataDialog(webPh, selectedMed!, batches[idx]),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
                                         ),
                                       ],
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                            ],
-                          ),
-                        ),
-                      )),
-          ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    "TOTAL BATCHES: ${batches.length}   |   ACTIVE: $activeCount",
+                                    style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    "TOTAL ON HAND: ${totalStockSum.toInt()} Qty",
+                                    style: const TextStyle(color: Colors.greenAccent, fontSize: 14, fontWeight: FontWeight.w900),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    )),
         ],
       ),
     );
   }
 
-  Widget _th(String t, {bool isLeft = false}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-    child: Text(t, textAlign: isLeft ? TextAlign.left : TextAlign.center, style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
+  Widget _th(String t, {bool isLeft = false, bool isRight = false}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+    child: Text(
+      t,
+      textAlign: isLeft ? TextAlign.left : (isRight ? TextAlign.right : TextAlign.center),
+      style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+    ),
   );
 
-  Widget _td(String t, {bool isLeft = false, bool isBold = false, Color color = Colors.white}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-    child: Text(t, textAlign: isLeft ? TextAlign.left : TextAlign.center, style: TextStyle(color: color, fontSize: 11, fontWeight: isBold ? FontWeight.bold : FontWeight.normal), overflow: TextOverflow.ellipsis),
+  Widget _td(String t, {bool isLeft = false, bool isRight = false, bool isBold = false, Color color = Colors.white}) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+    child: Text(
+      t,
+      textAlign: isLeft ? TextAlign.left : (isRight ? TextAlign.right : TextAlign.center),
+      style: TextStyle(color: color, fontSize: 12, fontWeight: isBold ? FontWeight.bold : FontWeight.normal),
+      overflow: TextOverflow.ellipsis,
+    ),
   );
 
   Widget _tdExpiry(String exp) {
@@ -534,20 +705,21 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
     if (status == ExpiryStatus.nearExpiry) label = "Near Exp";
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(exp, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
-            const SizedBox(width: 4),
+            Text(exp.isEmpty ? "N/A" : exp, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 5),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
               decoration: BoxDecoration(
-                color: color == Colors.green ? const Color(0x3310B981) : (color == Colors.red ? const Color(0x33DC2626) : const Color(0x33F59E0B)),
+                color: color.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: color.withValues(alpha: 0.5), width: 0.5),
               ),
-              child: Text(label, style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.bold)),
+              child: Text(label, style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.bold)),
             ),
           ],
         ),

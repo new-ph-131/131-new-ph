@@ -8,6 +8,8 @@ import "package:printing/printing.dart";
 import "package:intl/intl.dart";
 import "web_models.dart";
 import "package:pharoah_erp/pdf/pdf_master_service.dart";
+import "pdf/web_sale_report_pdf.dart";
+import "pdf/web_purchase_report_pdf.dart";
 
 class WebPdfRouterService {
     
@@ -1089,14 +1091,26 @@ class WebPdfRouterService {
   }
 
   // --- STUBS & UTILITIES ---
-  static Future<Uint8List> generateSaleReportBytes({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async => pw.Document().save();
-  static Future<void> printSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
-  static Future<void> downloadSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
+  static Future<Uint8List> generateSaleReportBytes({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
+    return await WebSaleReportPdf.generateBytes(sales: sales, shop: shop, from: from, to: to);
+  }
+  static Future<void> printSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
+    await WebSaleReportPdf.printReport(sales: sales, shop: shop, from: from, to: to);
+  }
+  static Future<void> downloadSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
+    await WebSaleReportPdf.downloadReport(sales: sales, shop: shop, from: from, to: to);
+  }
   static Future<Uint8List> generatePurchaseBytes({required Purchase purchase, required Party party, required CompanyProfile shop}) async => pw.Document().save();
   static Future<void> printPurchaseInvoice({required Purchase purchase, required Party party, required CompanyProfile shop}) async {}
-  static Future<Uint8List> generatePurchaseReportBytes({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async => pw.Document().save();
-  static Future<void> printPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
-  static Future<void> downloadPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
+  static Future<Uint8List> generatePurchaseReportBytes({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
+    return await WebPurchaseReportPdf.generateBytes(purchases: purchases, shop: shop, from: from, to: to);
+  }
+  static Future<void> printPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
+    await WebPurchaseReportPdf.printReport(purchases: purchases, shop: shop, from: from, to: to);
+  }
+  static Future<void> downloadPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
+    await WebPurchaseReportPdf.downloadReport(purchases: purchases, shop: shop, from: from, to: to);
+  }
   static Future<void> printChallanReport({required List<dynamic> challans, required CompanyProfile shop, required DateTime from, required DateTime to, required bool isSaleChallan}) async {}
   static Future<void> downloadBulkZip({required List<dynamic> documents, required CompanyProfile shop, required AppConfig config, required Function(double, String) onProgress}) async {}
 

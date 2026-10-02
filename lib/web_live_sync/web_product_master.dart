@@ -73,7 +73,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
   }
 
   void _showProductForm(PharoahWebManager webPh, {Medicine? med}) async {
-    final pf = null;
+    const pf = null;
 
     final nameC = TextEditingController(text: med?.name ?? pf?['name']?.toString().toUpperCase());
     final packC = TextEditingController(text: med?.packing ?? pf?['pack']?.toString().toUpperCase() ?? "1*10");

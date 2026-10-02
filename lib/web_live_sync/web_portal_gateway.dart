@@ -27,6 +27,7 @@ import 'web_batch_master.dart';
 import 'web_aux_masters.dart';
 import 'web_challan_view.dart';
 import 'sub_views/web_smart_entry/ui/web_smart_entry_hub.dart';
+import 'web_ca_profile_view.dart';
 
 class WebPortalGateway extends StatefulWidget {
   const WebPortalGateway({super.key});
@@ -211,6 +212,9 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     }
     if (currentView == "GO_M_BATCH") {
       return WebBatchMasterView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));
+    }
+    if (currentView == "GO_M_CA") {
+      return WebCaProfileView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));
     }
 
     // --- AUX MASTERS ---

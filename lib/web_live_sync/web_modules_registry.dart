@@ -125,6 +125,7 @@ class WebModulesRegistry {
         WebActionItem(key: "GO_M_ROUTE", title: "Routes", subtitle: "Delivery Route Planner", icon: Icons.map_rounded, color: Color(0xFF0F766E)),
         WebActionItem(key: "GO_M_COMP", title: "Company", subtitle: "Manufacturer Library", icon: Icons.business_rounded, color: Color(0xFF9A3412)),
         WebActionItem(key: "GO_M_SALT", title: "Salt Master", subtitle: "Mono/Duo Salt Master", icon: Icons.science_rounded, color: Color(0xFFC2410C)),
+        WebActionItem(key: "GO_M_CA", title: "CA Profile", subtitle: "Auditor & Mail Redirection", icon: Icons.assignment_ind_rounded, color: Color(0xFFEA580C)),
       ],
     ),
 
