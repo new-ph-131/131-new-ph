@@ -1,22 +1,3 @@
-error • In constant expressions, operands of this operator must be of type 'bool', 'num', 'String' or 'null' • lib/web_live_sync/web_pdf_router_service.dart:324:26 • const_eval_type_bool_num_string
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:332:35 • undefined_identifier
-error • Undefined name 'MainAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:335:38 • undefined_identifier
-error • In constant expressions, operands of this operator must be of type 'bool', 'num', 'String' or 'null' • lib/web_live_sync/web_pdf_router_service.dart:315:26 • const_eval_type_bool_num_string
-error • Undefined name 'MainAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:326:38 • undefined_identifier
-error • Undefined name 'MainAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:537:38 • undefined_identifier
-error • Expected an identifier • lib/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart:1078:23 • missing_identifier
-error • Too many positional arguments: 0 expected, but 1 found • lib/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart:1078:23 • extra_positional_arguments_could_be_named
-error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:49 • expected_token
-error • Too many positional arguments: 1 expected, but 4 found • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:49 • extra_positional_arguments_could_be_named
-error • Undefined name 'APPLY' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:49 • undefined_identifier
-error • Undefined name 'SAVE' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:57 • undefined_identifier
-error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:62 • expected_token
-error • Undefined name 'SETTING' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:62 • undefined_identifier
-error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/amazon/ui/amazon_pack_converter_dialog.dart:242:69 • expected_token
-error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:49 • expected_token
-error • Too many positional arguments: 1 expected, but 4 found • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:49 • extra_positional_arguments_could_be_named
-error • Undefined name 'APPLY' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:49 • undefined_identifier
-error • Undefined name 'SAVE' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:57 • undefined_identifier
-error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:62 • expected_token
-error • Undefined name 'SETTING' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:62 • undefined_identifier
-error • Expected to find ',' • lib/web_live_sync/sub_views/web_smart_entry/medilente/ui/medilente_pack_converter_dialog.dart:236:69 • expected_token
+error • The named parameter 'initialTabIndex' isn't defined • lib/web_live_sync/web_portal_gateway.dart:167:92 • undefined_named_parameter
+error • The named parameter 'initialAction' isn't defined • lib/web_live_sync/web_portal_gateway.dart:191:92 • undefined_named_parameter
+error • The named parameter 'initialAction' isn't defined • lib/web_live_sync/web_portal_gateway.dart:206:95 • undefined_named_parameter
