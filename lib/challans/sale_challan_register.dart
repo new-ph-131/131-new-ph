@@ -148,6 +148,7 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
 
   Widget _buildChallanCard(SaleChallan ch, PharoahManager ph) {
     bool isPending = ch.status == "Pending";
+    bool isWeb = ch.id.startsWith("SCH-WEB") || ch.salesmanName == "WEB-PORTAL";
     
     // --- INTEGRITY LOGIC ---
     bool hasSign = ch.isSigned && ch.sigHistory.isNotEmpty;
@@ -186,7 +187,27 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(ch.partyName, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
-                    Text("${ch.billNo} • ${DateFormat('dd/MM/yyyy').format(ch.date)}", style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Text("${ch.billNo} • ${DateFormat('dd/MM/yyyy').format(ch.date)}", style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                        if (isWeb) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.blue.shade300, width: 0.5),
+                            ),
+                            child: Text(
+                              "WEB PORTAL",
+                              style: TextStyle(color: Colors.blue.shade900, fontSize: 7.5, fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                     if (isTampered) const Text("⚠️ EDITED AFTER SIGNING", style: TextStyle(color: Colors.orange, fontSize: 8, fontWeight: FontWeight.bold)),
                   ],
                 ),

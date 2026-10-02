@@ -9,7 +9,7 @@ import '../pharoah_date_controller.dart';
 import '../app_date_logic.dart';
 import 'purchase_challan_view.dart';
 import '../pdf/pdf_router_service.dart';
-import '../pdf/purchase_challan_report_pdf.dart'; // <--- Report Import
+import '../pdf/purchase_challan_report_pdf.dart';
 
 class PurchaseChallanRegister extends StatefulWidget {
   const PurchaseChallanRegister({super.key});
@@ -29,7 +29,6 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
     super.didChangeDependencies();
     if (!_isInit) {
       final ph = Provider.of<PharoahManager>(context, listen: false);
-      // Smart Date Logic (Financial Year aware)
       toDate = AppDateLogic.getSmartDate(ph.currentFY);
       fromDate = toDate.subtract(const Duration(days: 30));
       DateTime fyStart = AppDateLogic.getFYStart(ph.currentFY);
@@ -42,10 +41,10 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
 
-    // Filter Logic: Search + Date Range
     final list = ph.purchaseChallans.reversed.where((ch) {
       bool matchesSearch = ch.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
-                           ch.billNo.toLowerCase().contains(searchQuery.toLowerCase());
+                           ch.billNo.toLowerCase().contains(searchQuery.toLowerCase()) ||
+                           ch.internalNo.toLowerCase().contains(searchQuery.toLowerCase());
       bool matchesDate = ch.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
                          ch.date.isBefore(toDate.add(const Duration(days: 1)));
       return matchesSearch && matchesDate;
@@ -57,9 +56,6 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
         title: const Text("Purchase Challan Register"),
         backgroundColor: Colors.amber.shade900,
         foregroundColor: Colors.white,
-        // ==========================================================
-        // ACTION SECTION 1: TOP RIGHT PDF REPORT BUTTON
-        // ==========================================================
         actions: [
           IconButton(
             icon: const Icon(Icons.picture_as_pdf_outlined), 
@@ -153,12 +149,14 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
   }
 
   Widget _buildChallanCard(PurchaseChallan ch, PharoahManager ph) {
+    bool isWeb = ch.id.startsWith("PCH-WEB") || ch.internalNo.startsWith("PCH-WEB") || ch.remarks.contains("WEB-PORTAL");
+
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: InkWell(
-        onTap: () => _showActionMenu(ch, ph), // <--- Tap trigger for Menu
+        onTap: () => _showActionMenu(ch, ph),
         borderRadius: BorderRadius.circular(18),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -175,12 +173,32 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(ch.distributorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    Text("Ref: ${ch.billNo} • ID: ${ch.internalNo}", style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Text("Ref: ${ch.billNo} • ID: ${ch.internalNo}", style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                        if (isWeb) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.amber.shade400, width: 0.5),
+                            ),
+                            child: Text(
+                              "WEB PORTAL",
+                              style: TextStyle(color: Colors.amber.shade900, fontSize: 7.5, fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                     Text(DateFormat('dd MMM yyyy').format(ch.date), style: TextStyle(color: Colors.amber.shade900, fontSize: 10, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
-           // --- 📬 SMART DISPATCH (MAIL) ---
+              // --- 📬 SMART DISPATCH (MAIL) ---
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -217,9 +235,6 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
     );
   }
 
-  // ==========================================================================
-  // ACTION SECTION 2: BOTTOM SHEET MENU (VIEW / EDIT / PRINT / DELETE)
-  // ==========================================================================
   void _showActionMenu(PurchaseChallan ch, PharoahManager ph) {
     showModalBottomSheet(
       context: context,
@@ -236,36 +251,29 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
             Text("Challan: ${ch.billNo}", style: const TextStyle(color: Colors.grey, fontSize: 12)),
             const Divider(height: 30),
 
-            // 1. VIEW (READ-ONLY)
             _menuTile(Icons.visibility_outlined, "View Inward Details", Colors.blue, () {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseChallanView(existingRecord: ch, isReadOnly: true)));
             }),
 
-            // 2. EDIT
             _menuTile(Icons.edit_note_rounded, "Modify / Edit Items", Colors.orange, () {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseChallanView(existingRecord: ch)));
             }),
 
-            // 3. PRINT PDF
-            // 3. PRINT PDF (Via Universal Router)
-_menuTile(Icons.print_rounded, "Print / Share PDF", Colors.teal, () async {
-  Navigator.pop(c);
-  if(ph.activeCompany != null) {
-    final party = ph.parties.firstWhere((p) => p.name == ch.distributorName, orElse: () => Party(id: '0', name: ch.distributorName));
-    
-    // Router ab decide karega ki Inward Challan kaisa dikhna chahiye
-    await PdfRouterService.printChallan(
-      challan: ch, 
-      party: party, 
-      ph: ph, 
-      isSaleChallan: false // False matlab Inward/Purchase Challan
-    );
-  }
-}),
+            _menuTile(Icons.print_rounded, "Print / Share PDF", Colors.teal, () async {
+              Navigator.pop(c);
+              if(ph.activeCompany != null) {
+                final party = ph.parties.firstWhere((p) => p.name == ch.distributorName, orElse: () => Party(id: '0', name: ch.distributorName));
+                await PdfRouterService.printChallan(
+                  challan: ch, 
+                  party: party, 
+                  ph: ph, 
+                  isSaleChallan: false
+                );
+              }
+            }),
 
-            // 4. DELETE
             _menuTile(Icons.delete_forever_rounded, "Delete Permanently", Colors.red, () {
               Navigator.pop(c);
               _confirmDelete(ch, ph);
