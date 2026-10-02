@@ -1,10 +1,12 @@
 // FILE: lib/web_live_sync/sub_views/web_challans/web_challan_hub.dart
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'web_sale_challan_view.dart';
 import 'web_purchase_challan_view.dart';
 import '../../web_challan_view.dart';
 import '../../web_challan_stitcher_wizard.dart';
+import '../../pharoah_web_manager.dart';
 
 class WebChallanHub extends StatefulWidget {
   final VoidCallback onBack;
@@ -26,11 +28,25 @@ class _WebChallanHubState extends State<WebChallanHub> {
   @override
   void initState() {
     super.initState();
-    activeSubView = (widget.initialAction == "GO_CHALLAN_SALE") ? "SALE_CHALLAN_ENTRY" : "HUB";
+    if (widget.initialAction == "GO_CHALLAN_SALE") {
+      activeSubView = "SALE_CHALLAN_ENTRY";
+    } else if (widget.initialAction == "GO_CHALLAN_PUR") {
+      activeSubView = "PURCHASE_CHALLAN_ENTRY";
+    } else if (widget.initialAction == "GO_CHALLAN_SALE_REG") {
+      activeSubView = "SALE_REG";
+    } else if (widget.initialAction == "GO_CHALLAN_PUR_REG") {
+      activeSubView = "PUR_REG";
+    } else if (widget.initialAction == "GO_STITCHER") {
+      activeSubView = "STITCHER";
+    } else {
+      activeSubView = "HUB";
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final webPh = Provider.of<PharoahWebManager>(context);
+
     if (activeSubView == "SALE_CHALLAN_ENTRY") {
       return WebSaleChallanView(
         onBack: () => setState(() => activeSubView = "HUB"),
@@ -60,7 +76,7 @@ class _WebChallanHubState extends State<WebChallanHub> {
     }
 
     return Container(
-      padding: const EdgeInsets.all(25),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(20),
@@ -101,26 +117,28 @@ class _WebChallanHubState extends State<WebChallanHub> {
 
           LayoutBuilder(
             builder: (context, constraints) {
-              int crossAxisCount = constraints.maxWidth > 1100 ? 5 : (constraints.maxWidth > 700 ? 3 : 1);
+              int crossAxisCount = constraints.maxWidth > 950 ? 5 : (constraints.maxWidth > 650 ? 3 : 2);
 
               return GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: crossAxisCount,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 1.15,
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+                childAspectRatio: 1.25,
                 children: [
                   _challanBtn(
                     title: "Sale Challan",
-                    subtitle: "Step 1 & 2 Outward Dispatch Note",
+                    subtitle: "Outward Delivery Note",
+                    badgeText: null,
                     icon: Icons.local_shipping_rounded,
                     color: Colors.teal,
                     onTap: () => setState(() => activeSubView = "SALE_CHALLAN_ENTRY"),
                   ),
                   _challanBtn(
                     title: "Pur Challan",
-                    subtitle: "Inward Stock Note",
+                    subtitle: "Inward Purchase Note",
+                    badgeText: null,
                     icon: Icons.inventory_2_rounded,
                     color: Colors.orange,
                     onTap: () => setState(() => activeSubView = "PURCHASE_CHALLAN_ENTRY"),
@@ -128,6 +146,7 @@ class _WebChallanHubState extends State<WebChallanHub> {
                   _challanBtn(
                     title: "Sale Reg",
                     subtitle: "Outward Dispatch History",
+                    badgeText: "${webPh.saleChallans.length} Records",
                     icon: Icons.list_alt_rounded,
                     color: Colors.indigo,
                     onTap: () => setState(() => activeSubView = "SALE_REG"),
@@ -135,6 +154,7 @@ class _WebChallanHubState extends State<WebChallanHub> {
                   _challanBtn(
                     title: "Pur Reg",
                     subtitle: "Inward Delivery History",
+                    badgeText: "${webPh.purchaseChallans.length} Records",
                     icon: Icons.history_edu_rounded,
                     color: Colors.amber.shade800,
                     onTap: () => setState(() => activeSubView = "PUR_REG"),
@@ -142,6 +162,7 @@ class _WebChallanHubState extends State<WebChallanHub> {
                   _challanBtn(
                     title: "Stitcher / Bill",
                     subtitle: "Convert Challan to GST Bill",
+                    badgeText: "Auto Merge",
                     icon: Icons.auto_fix_high_rounded,
                     color: Colors.purpleAccent,
                     onTap: () => setState(() => activeSubView = "STITCHER"),
@@ -158,50 +179,73 @@ class _WebChallanHubState extends State<WebChallanHub> {
   Widget _challanBtn({
     required String title,
     required String subtitle,
+    String? badgeText,
     required IconData icon,
     required Color color,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: color.withAlpha(100), width: 1.2),
           boxShadow: [
             BoxShadow(
               color: color.withAlpha(20),
-              blurRadius: 14,
+              blurRadius: 12,
               offset: const Offset(0, 4),
             )
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withAlpha(35),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(35),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 22),
+                ),
+                if (badgeText != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withAlpha(30),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: color.withAlpha(100), width: 0.5),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: TextStyle(color: color, fontSize: 8.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: const TextStyle(color: Colors.white54, fontSize: 10),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(color: color, fontSize: 13.5, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white54, fontSize: 9.5),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ],
         ),

@@ -8,16 +8,15 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
-import 'web_challan_stitcher_wizard.dart';
 
 class WebChallanView extends StatefulWidget {
   final VoidCallback onBack;
-  final int initialTabIndex; // -1 for 5-Card Hub, 0 for Sale Challan, 1 for Pur Challan, 2 for Sale Reg, 3 for Pur Reg, 4 for Stitcher
+  final int initialTabIndex; // 2 for Sale Reg, 3 for Pur Reg
 
   const WebChallanView({
     super.key,
     required this.onBack,
-    this.initialTabIndex = -1,
+    this.initialTabIndex = 2,
   });
 
   @override
@@ -27,7 +26,6 @@ class WebChallanView extends StatefulWidget {
 class _WebChallanViewState extends State<WebChallanView> {
   late int activeIndex;
 
-  // Register State
   DateTime regFromDate = DateTime.now();
   DateTime regToDate = DateTime.now();
   String registerSearch = "";
@@ -70,7 +68,6 @@ class _WebChallanViewState extends State<WebChallanView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Bar with direct onBack handler
           Row(
             children: [
               ElevatedButton.icon(
@@ -81,146 +78,26 @@ class _WebChallanViewState extends State<WebChallanView> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
-                onPressed: () {
-                  if (activeIndex != -1) {
-                    setState(() => activeIndex = -1);
-                  } else {
-                    widget.onBack();
-                  }
-                },
+                onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: Text(activeIndex != -1 ? "BACK TO CHALLANS HUB" : "BACK", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                label: const Text("BACK TO CHALLANS HUB", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 15),
               const Icon(Icons.local_shipping_rounded, color: Colors.tealAccent, size: 22),
               const SizedBox(width: 10),
-              const Text(
-                "CHALLAN MANAGEMENT",
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+              Text(
+                activeIndex == 3 ? "PURCHASE CHALLAN (INWARD) REGISTER" : "SALE CHALLAN (OUTWARD) REGISTER",
+                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
-          // --- HUB MODE: 5 BIG MODULE CARDS ---
-          if (activeIndex == -1) _build5ChallanCards(webPh),
-
-          // --- DEDICATED SUB-VIEWS ---
-          if (activeIndex == 2) _buildSaleRegister(webPh),
-          if (activeIndex == 3) _buildPurchaseRegister(webPh),
-          if (activeIndex == 4) WebChallanStitcherWizard(onBack: () => setState(() => activeIndex = -1)),
+          if (activeIndex == 3)
+            _buildPurchaseRegister(webPh)
+          else
+            _buildSaleRegister(webPh),
         ],
-      ),
-    );
-  }
-
-  // ===========================================================================
-  // 🎴 5 COMPLETE MODULE CARDS (Including Stitcher / Bill)
-  // ===========================================================================
-  Widget _build5ChallanCards(PharoahWebManager webPh) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        int crossAxisCount = constraints.maxWidth > 1100 ? 5 : (constraints.maxWidth > 700 ? 3 : 1);
-
-        return GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: crossAxisCount,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 1.15,
-          children: [
-            _appModuleCard(
-              title: "Sale Challan",
-              subtitle: "Outward Delivery Note",
-              icon: Icons.local_shipping_rounded,
-              color: Colors.teal,
-              onTap: () => widget.onBack(), // Opens direct new sale challan
-            ),
-            _appModuleCard(
-              title: "Pur Challan",
-              subtitle: "Inward Purchase Note",
-              icon: Icons.inventory_2_rounded,
-              color: Colors.orange,
-              onTap: () => widget.onBack(), // Opens direct new pur challan
-            ),
-            _appModuleCard(
-              title: "Sale Reg",
-              subtitle: "${webPh.saleChallans.length} Outward Records",
-              icon: Icons.list_alt_rounded,
-              color: Colors.indigo,
-              onTap: () => setState(() => activeIndex = 2),
-            ),
-            _appModuleCard(
-              title: "Pur Reg",
-              subtitle: "${webPh.purchaseChallans.length} Inward Records",
-              icon: Icons.history_edu_rounded,
-              color: Colors.amber.shade800,
-              onTap: () => setState(() => activeIndex = 3),
-            ),
-            _appModuleCard(
-              title: "Stitcher / Bill",
-              subtitle: "Convert Challan to GST Bill",
-              icon: Icons.auto_fix_high_rounded,
-              color: Colors.purpleAccent,
-              onTap: () => setState(() => activeIndex = 4),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _appModuleCard({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: color.withAlpha(100), width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: color.withAlpha(20),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            )
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withAlpha(35),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: const TextStyle(color: Colors.white54, fontSize: 10),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
       ),
     );
   }
