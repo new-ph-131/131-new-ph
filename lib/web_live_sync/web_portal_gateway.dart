@@ -160,14 +160,16 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     if (currentView == "GO_STITCHER") {
       return WebChallanStitcherWizard(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
+
+    // --- RETURNS & REVERSALS (Uses initialAction) ---
     if (currentView == "GO_CN" || currentView == "GO_DN" || currentView == "GO_BREAKAGE" || currentView == "GO_RET_REG" || currentView == "RETURNS") {
-      int tabIdx = 0;
-      if (currentView == "GO_DN") tabIdx = 1;
-      if (currentView == "GO_RET_REG") tabIdx = 2;
-      return WebReturnsView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
+      return WebReturnsView(
+        onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"),
+        initialAction: currentView,
+      );
     }
     
-    // --- EXACT 2-STEP SALE CHALLAN FLOW ---
+    // --- EXACT 2-STEP SALE & PURCHASE CHALLAN FLOW ---
     if (currentView == "GO_CHALLAN_SALE") {
       return WebSaleChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
@@ -184,12 +186,14 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebChallanHub(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
 
+    // --- ACCOUNTS & VOUCHERS (Uses initialTabIndex) ---
     if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_DAYBOOK" || currentView == "GO_LEDGERS" || currentView == "ACCOUNTS") {
       int tabIdx = 0;
       if (currentView == "GO_PAYMENT") tabIdx = 1;
       if (currentView == "GO_DAYBOOK" || currentView == "GO_LEDGERS") tabIdx = 2;
       return WebVoucherView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
     }
+
     if (currentView == "GO_M_ITEM" || currentView == "GO_STOCK" || currentView == "GO_SHORTAGE" || currentView == "INVENTORY") {
       return WebProductMasterView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
@@ -199,6 +203,8 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     if (currentView == "GO_M_BATCH") {
       return WebBatchMasterView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
+
+    // --- AUX MASTERS (Uses initialTabIndex) ---
     if (currentView == "GO_M_COMP" || currentView == "GO_M_SALT" || currentView == "GO_M_ROUTE") {
       int tabIdx = 0;
       if (currentView == "GO_M_SALT") tabIdx = 1;
