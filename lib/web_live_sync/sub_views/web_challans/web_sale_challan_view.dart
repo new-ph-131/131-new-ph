@@ -106,6 +106,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Top Navigation Header
           Row(
             children: [
               ElevatedButton.icon(
@@ -114,6 +115,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
                 ),
                 onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back_rounded, size: 16),
@@ -286,14 +288,13 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
   );
 
   Widget _buildPartySearchList(PharoahWebManager webPh) {
-    // Flexible search: Matches all non-creditor parties or matches search query
     final matchingParties = webPh.parties.where((p) {
-      bool isNotSupplier = p.group != "Sundry Creditors" && p.name != "CASH";
+      if (p.name == "CASH") return true;
       bool matchesSearch = searchQuery.isEmpty ||
           p.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
           p.city.toLowerCase().contains(searchQuery.toLowerCase()) ||
           p.gst.toLowerCase().contains(searchQuery.toLowerCase());
-      return (isNotSupplier || searchQuery.isNotEmpty) && matchesSearch;
+      return matchesSearch;
     }).toList();
 
     return Column(
@@ -304,7 +305,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
               child: TextField(
                 style: const TextStyle(color: Colors.white, fontSize: 12.5),
                 decoration: InputDecoration(
-                  hintText: "Search Customer by Name, City or GSTIN...",
+                  hintText: "Search Customer or Party by Name, City or GSTIN...",
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 11.5),
                   prefixIcon: const Icon(Icons.search, color: Color(0xFF2DD4BF), size: 18),
                   filled: true,
@@ -338,7 +339,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
               border: Border.all(color: Colors.white10),
             ),
             child: matchingParties.isEmpty
-                ? const Center(child: Text("No customers found.", style: TextStyle(color: Colors.white38, fontSize: 12)))
+                ? const Center(child: Text("No parties found.", style: TextStyle(color: Colors.white38, fontSize: 12)))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     itemCount: matchingParties.length,
