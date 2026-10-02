@@ -63,7 +63,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
       matchedSupplier = null;
     }
 
-    // Match Items
+    // Match Items & Initialize Box-To-Strip
     verifiedItems.clear();
     for (var it in widget.bill.items) {
       Medicine? matchedMed;
@@ -120,6 +120,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
             it.qty = newQty;
             it.rate = newRate;
             it.mrp = newMrp;
+            row['saveMasterAsStrip'] = saveMasterAsStrip;
 
             double gross = it.qty * it.rate;
             double discAmt = gross * (it.discountPer / 100);
@@ -240,6 +241,15 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
         }
 
         if (existing != null) {
+          if (row['saveMasterAsStrip'] == true && existing.packing != it.pack) {
+            existing.packing = it.pack;
+            existing.mrp = it.mrp;
+            existing.purRate = it.rate;
+            existing.rateA = it.mrp;
+            existing.rateB = it.mrp * 0.95;
+            existing.rateC = it.mrp * 0.92;
+            webPh.updateMedicine(existing);
+          }
           row['matchedMed'] = existing;
           row['status'] = 'VERIFIED';
         } else {
@@ -267,7 +277,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
 
     setState(() => isLoading = false);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ Products added to Catalog!"), backgroundColor: Colors.green),
+      const SnackBar(content: Text("✅ Products added to Catalog with Strip Pack!"), backgroundColor: Colors.green),
     );
   }
 
@@ -301,13 +311,15 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
       final AmazonItem raw = row['raw'];
       Medicine med = row['matchedMed'];
 
-      med.packing = raw.pack;
-      med.mrp = raw.mrp;
-      med.purRate = raw.rate;
-      med.rateA = raw.mrp;
-      med.rateB = raw.mrp * 0.95;
-      med.rateC = raw.mrp * 0.92;
-      webPh.updateMedicine(med);
+      if (row['saveMasterAsStrip'] == true) {
+        med.packing = raw.pack;
+        med.mrp = raw.mrp;
+        med.purRate = raw.rate;
+        med.rateA = raw.mrp;
+        med.rateB = raw.mrp * 0.95;
+        med.rateC = raw.mrp * 0.92;
+        webPh.updateMedicine(med);
+      }
 
       commitItems.add(PurchaseItem(
         id: "PITM-${DateTime.now().millisecondsSinceEpoch}-$sNo",
@@ -386,7 +398,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
           'name': widget.bill.supplierName,
           'gst': widget.bill.supplierGstin,
           'pan': widget.bill.supplierPan,
-          'dl': widget.bill.supplierDl, // Full DL Number DRUG/24-25/20B-21B/120460-61,20-21/120458-59
+          'dl': widget.bill.supplierDl,
           'phone': widget.bill.supplierPhone,
           'address': widget.bill.supplierAddress,
           'city': 'JAIPUR',
@@ -517,7 +529,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
           ),
           const SizedBox(height: 18),
 
-          // Supplier Verification Card with Create, Link & Change Actions
+          // Supplier Verification Card
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -580,7 +592,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Item Rows with Full Actions: Add, Link & Split
+          // Item Rows
           ListView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -610,7 +622,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
                             onTap: () => _openPackConverter(idx),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.white24)),
+                              decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(4)),
                               child: Row(
                                 children: [
                                   Text(raw.pack, style: const TextStyle(color: Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold)),
