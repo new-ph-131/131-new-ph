@@ -1,4 +1,5 @@
 // FILE: lib/web_live_sync/web_pdf_router_service.dart
+// Live Test ID: #PH-REV-117 (CREDIT NOTE MULTI-PAGE FIX)
 
 import "dart:typed_data";
 import "package:pdf/pdf.dart";
@@ -9,6 +10,7 @@ import "web_models.dart";
 import "package:pharoah_erp/pdf/pdf_master_service.dart";
 
 class WebPdfRouterService {
+  static const String testIdTag = "#PH-REV-117";
   
   // ===========================================================================
   // 1. SALE INVOICE PDF
@@ -138,7 +140,7 @@ class WebPdfRouterService {
               pw.SizedBox(height: 4),
               pw.Center(
                 child: pw.Text(
-                  "This is a system-generated document. | Powered by Pharoah ERP [Web Workstation]",
+                  "This is a system-generated document. | Powered by Pharoah ERP [Web Workstation $testIdTag]",
                   style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600),
                 ),
               ),
@@ -161,7 +163,7 @@ class WebPdfRouterService {
   }
 
   // ===========================================================================
-  // 2. SALE CHALLAN (OUTWARD DELIVERY NOTE) - 100% IDENTICAL TO PDF 2
+  // 2. SALE CHALLAN (OUTWARD DELIVERY NOTE)
   // ===========================================================================
   static Future<Uint8List> generateSaleChallanBytes({
     required SaleChallan challan,
@@ -194,10 +196,8 @@ class WebPdfRouterService {
                 decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
                 child: pw.Column(
                   children: [
-                    // Header Box Row
                     pw.Row(
                       children: [
-                        // Box 1: Sender (Januram)
                         _hBox(
                           280, true,
                           pw.Column(
@@ -210,7 +210,6 @@ class WebPdfRouterService {
                             ],
                           ),
                         ),
-                        // Box 2: Delivery Challan Doc Details
                         _hBox(
                           175, true,
                           pw.Column(
@@ -222,7 +221,6 @@ class WebPdfRouterService {
                             ],
                           ),
                         ),
-                        // Box 3: Consignee Details (Medilente)
                         _hBox(
                           345, false,
                           pw.Column(
@@ -239,8 +237,6 @@ class WebPdfRouterService {
                         ),
                       ],
                     ),
-
-                    // Table Header
                     pw.Container(
                       color: PdfColors.grey200,
                       child: pw.Row(
@@ -253,8 +249,6 @@ class WebPdfRouterService {
                         ],
                       ),
                     ),
-
-                    // Items Table
                     pw.Expanded(
                       child: pw.Column(
                         children: pageItems.asMap().entries.map((entry) {
@@ -272,7 +266,7 @@ class WebPdfRouterService {
                                   width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
                                   child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                                 ),
-                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
+                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 50),
                                 _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.rate.toStringAsFixed(2), 55),
                                 _cell("${i.gstRate.toInt()}%", 40),
                                 _cell(i.total.toStringAsFixed(2), 145),
@@ -282,14 +276,11 @@ class WebPdfRouterService {
                         }).toList(),
                       ),
                     ),
-
-                    if (isLastPage)
-                      _buildChallanFooter(shop.name, challan)
-                    else
-                      pw.Container(
-                        height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
-                        child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
-                      ),
+                    if (isLastPage) _buildChallanFooter(shop.name, challan)
+                    else pw.Container(
+                      height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
+                      child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
+                    ),
                   ],
                 ),
               ),
@@ -374,7 +365,7 @@ class WebPdfRouterService {
   }
 
   // ===========================================================================
-  // 3. PURCHASE CHALLAN (INWARD DELIVERY NOTE) - EXACT APP REPLICA
+  // 3. PURCHASE CHALLAN (INWARD DELIVERY NOTE)
   // ===========================================================================
   static Future<Uint8List> generatePurchaseChallanBytes({
     required PurchaseChallan challan,
@@ -407,10 +398,8 @@ class WebPdfRouterService {
                 decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
                 child: pw.Column(
                   children: [
-                    // Header Row
                     pw.Row(
                       children: [
-                        // Box 1: Receiver Shop (Januram)
                         _hBox(
                           280, true,
                           pw.Column(
@@ -423,7 +412,6 @@ class WebPdfRouterService {
                             ],
                           ),
                         ),
-                        // Box 2: Inward Note Details
                         _hBox(
                           175, true,
                           pw.Column(
@@ -436,7 +424,6 @@ class WebPdfRouterService {
                             ],
                           ),
                         ),
-                        // Box 3: Supplier Details
                         _hBox(
                           345, false,
                           pw.Column(
@@ -453,8 +440,6 @@ class WebPdfRouterService {
                         ),
                       ],
                     ),
-
-                    // Table Header
                     pw.Container(
                       color: PdfColors.grey200,
                       child: pw.Row(
@@ -467,8 +452,6 @@ class WebPdfRouterService {
                         ],
                       ),
                     ),
-
-                    // Items Table
                     pw.Expanded(
                       child: pw.Column(
                         children: pageItems.asMap().entries.map((entry) {
@@ -496,14 +479,11 @@ class WebPdfRouterService {
                         }).toList(),
                       ),
                     ),
-
-                    if (isLastPage)
-                      _buildPurchaseChallanFooter(shop.name, challan)
-                    else
-                      pw.Container(
-                        height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
-                        child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
-                      ),
+                    if (isLastPage) _buildPurchaseChallanFooter(shop.name, challan)
+                    else pw.Container(
+                      height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
+                      child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
+                    ),
                   ],
                 ),
               ),
@@ -579,7 +559,481 @@ class WebPdfRouterService {
     await Printing.sharePdf(bytes: bytes, filename: "Inward_${challan.internalNo}.pdf");
   }
 
-  // --- STUBS & UTILS ---
+  // ===========================================================================
+  // 4. CREDIT NOTE PDF (SALE RETURN) - 100% IDENTICAL FIXED-HEIGHT BOX MULTI-PAGE
+  // ===========================================================================
+  static Future<Uint8List> generateCreditNoteBytes({
+    required SaleReturn returnObj,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final pdf = pw.Document();
+    const double masterWidth = 800;
+    const double pageHeightLimit = 550;
+    const int itemsPerPage = 14; // Safer item count per fixed page box to prevent overflow
+
+    final sellable = returnObj.items.where((i) => i.isBreakage == false).toList();
+    final breakage = returnObj.items.where((i) => i.isBreakage == true).toList();
+
+    List<dynamic> combinedList = [];
+    if (sellable.isNotEmpty) {
+      combinedList.add(">> SALES RETURN (SELLABLE STOCK)");
+      combinedList.addAll(sellable);
+    }
+    if (breakage.isNotEmpty) {
+      combinedList.add(">> BREAKAGE & EXPIRY (NON-SELLABLE)");
+      combinedList.addAll(breakage);
+    }
+
+    int totalPages = (combinedList.length / itemsPerPage).ceil();
+    if (totalPages == 0) totalPages = 1;
+    bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
+
+    for (int pageNum = 0; pageNum < totalPages; pageNum++) {
+      int start = pageNum * itemsPerPage;
+      int end = (start + itemsPerPage < combinedList.length) ? start + itemsPerPage : combinedList.length;
+      List<dynamic> pageContent = combinedList.sublist(start, end);
+      bool isLastPage = (pageNum == totalPages - 1);
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          build: (context) => pw.Column(
+            children: [
+              pw.Container(
+                width: masterWidth,
+                height: pageHeightLimit,
+                decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
+                child: pw.Column(
+                  children: [
+                    pw.Row(
+                      children: [
+                        _hBox(
+                          280, true,
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
+                              pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                        _hBox(
+                          175, true,
+                          pw.Column(
+                            children: [
+                              pw.Text("CREDIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                              pw.Divider(thickness: 0.5),
+                              pw.Text("CN: ${returnObj.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                              pw.Text(DateFormat("dd/MM/yyyy").format(returnObj.date), style: const pw.TextStyle(fontSize: 8)),
+                            ],
+                          ),
+                        ),
+                        _hBox(
+                          345, false,
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text("CONSIGNEE:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                              pw.Text(party.name, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text("GST: ${party.gst.isNotEmpty ? party.gst : 'N/A'}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Table Header with MRP included (repeats on every page box)
+                    pw.Container(
+                      color: PdfColors.grey200,
+                      child: pw.Row(
+                        children: [
+                          _tCol("S.N", 25), _tCol("Qty+Free", 50), _tCol("Pack", 40),
+                          _tCol("Description", 210, isLeft: true),
+                          _tCol("Batch", 70), _tCol("Exp", 45), _tCol("HSN", 45),
+                          _tCol("MRP", 55), _tCol("Rate", 55),
+                          if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else _tCol("IGST", 80),
+                          _tCol("Total", 125, isLast: true),
+                        ],
+                      ),
+                    ),
+
+                    pw.Expanded(
+                      child: pw.Column(
+                        children: pageContent.map((entry) {
+                          if (entry is String) {
+                            return pw.Container(
+                              width: masterWidth, padding: const pw.EdgeInsets.all(3),
+                              decoration: const pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
+                              child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                            );
+                          }
+                          BillItem i = entry as BillItem;
+                          String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+                          String qtyDisp = "${fmt(i.qty)}+${fmt(i.freeQty)}";
+
+                          return pw.Container(
+                            decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
+                            child: pw.Row(
+                              children: [
+                                _cell("${returnObj.items.indexOf(i) + 1}", 25),
+                                _cell(qtyDisp, 50),
+                                _cell(i.packing, 40),
+                                pw.Container(
+                                  width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
+                                  child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                ),
+                                _cell(i.batch, 70), _cell(i.exp, 45), _cell(i.hsn, 45),
+                                _cell(i.mrp.toStringAsFixed(2), 55),
+                                _cell(i.rate.toStringAsFixed(2), 55),
+                                if (isLocal) ...[_cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40), _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40)] else _cell("${i.gstRate.toStringAsFixed(1)}%", 80),
+                                _cell(i.total.toStringAsFixed(2), 125),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    if (isLastPage) _buildCreditNoteFooter(shop.name, returnObj, isLocal)
+                    else pw.Container(
+                      height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
+                      child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text("Powered by Pharoah ERP [Web Workstation $testIdTag]", style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+                  pw.Text("Page ${pageNum + 1} of $totalPages", style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return pdf.save();
+  }
+
+  static pw.Widget _buildCreditNoteFooter(String shopName, SaleReturn returnObj, bool isLocal) {
+    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate));
+    double totalTax = returnObj.totalAmount - taxable;
+
+    return pw.Container(
+      height: 110,
+      decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
+      child: pw.Row(
+        children: [
+          pw.Container(
+            width: 320, padding: const pw.EdgeInsets.all(5),
+            decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text("Amount: RUPEES ${PdfMasterService.numberToWords(returnObj.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                pw.Spacer(),
+                pw.Text("Verified return account settlement.", style: const pw.TextStyle(fontSize: 7)),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 250, padding: const pw.EdgeInsets.all(5),
+            decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
+            child: pw.Column(
+              children: [
+                _fRow("TAXABLE VAL", taxable),
+                if (returnObj.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", returnObj.extraDiscount),
+                if (returnObj.roundOff != 0) _fRow("ROUND OFF", returnObj.roundOff),
+                if (isLocal) ...[
+                  _fRow("CGST TOTAL", totalTax / 2),
+                  _fRow("SGST TOTAL", totalTax / 2),
+                ] else ...[
+                  _fRow("IGST TOTAL", totalTax),
+                ],
+                pw.Divider(thickness: 0.5),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("NET CREDIT", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${returnObj.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 230, padding: const pw.EdgeInsets.all(8),
+            child: pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Align(
+                  alignment: pw.Alignment.topRight,
+                  child: pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                ),
+                pw.Align(
+                  alignment: pw.Alignment.bottomRight,
+                  child: pw.Text("Authorised Signatory", style: const pw.TextStyle(fontSize: 7)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<void> printCreditNote({
+    required SaleReturn returnObj,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final bytes = await generateCreditNoteBytes(returnObj: returnObj, party: party, shop: shop);
+    await Printing.layoutPdf(onLayout: (_) async => bytes, name: "CreditNote_${returnObj.billNo}", format: PdfPageFormat.a4.landscape);
+  }
+
+  static Future<void> downloadCreditNotePdf({
+    required SaleReturn returnObj,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final bytes = await generateCreditNoteBytes(returnObj: returnObj, party: party, shop: shop);
+    await Printing.sharePdf(bytes: bytes, filename: "CreditNote_${returnObj.billNo}.pdf");
+  }
+
+  // ===========================================================================
+  // 5. DEBIT NOTE PDF (PURCHASE RETURN)
+  // ===========================================================================
+  static Future<Uint8List> generateDebitNoteBytes({
+    required PurchaseReturn returnObj,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final pdf = pw.Document();
+    const double masterWidth = 800;
+    const double pageHeightLimit = 550;
+    const int itemsPerPage = 16;
+
+    final sellable = returnObj.items.where((i) => i.isBreakage == false).toList();
+    final breakage = returnObj.items.where((i) => i.isBreakage == true).toList();
+
+    List<dynamic> combinedList = [];
+    if (sellable.isNotEmpty) {
+      combinedList.add(">> PURCHASE RETURN (STOCK OUT -)");
+      combinedList.addAll(sellable);
+    }
+    if (breakage.isNotEmpty) {
+      combinedList.add(">> BREAKAGE & EXPIRY RETURN (NON-SELLABLE)");
+      combinedList.addAll(breakage);
+    }
+
+    int totalPages = (combinedList.length / itemsPerPage).ceil();
+    if (totalPages == 0) totalPages = 1;
+    bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
+
+    for (int pageNum = 0; pageNum < totalPages; pageNum++) {
+      int start = pageNum * itemsPerPage;
+      int end = (start + itemsPerPage < combinedList.length) ? start + itemsPerPage : combinedList.length;
+      List<dynamic> pageContent = combinedList.sublist(start, end);
+      bool isLastPage = (pageNum == totalPages - 1);
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          build: (context) => pw.Column(
+            children: [
+              pw.Container(
+                width: masterWidth,
+                height: pageHeightLimit,
+                decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
+                child: pw.Column(
+                  children: [
+                    pw.Row(
+                      children: [
+                        _hBox(
+                          280, true,
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
+                              pw.Text("GST: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: const pw.TextStyle(fontSize: 7)),
+                            ],
+                          ),
+                        ),
+                        _hBox(
+                          175, true,
+                          pw.Column(
+                            children: [
+                              pw.Text("DEBIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                              pw.Text(returnObj.returnType.toUpperCase(), style: const pw.TextStyle(fontSize: 8, color: PdfColors.brown700)),
+                              pw.Divider(thickness: 0.5),
+                              pw.Text(returnObj.billNo, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                              pw.Text(DateFormat("dd/MM/yyyy").format(returnObj.date), style: const pw.TextStyle(fontSize: 8)),
+                            ],
+                          ),
+                        ),
+                        _hBox(
+                          345, false,
+                          pw.Column(
+                            crossAxisAlignment: pw.CrossAxisAlignment.start,
+                            children: [
+                              pw.Text("DEBITED SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
+                              pw.Text(party.name, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text("${party.address}, ${party.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
+                              pw.Text("GSTIN: ${party.gst} | DL: ${party.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    pw.Container(
+                      color: PdfColors.grey200,
+                      child: pw.Row(
+                        children: [
+                          _tCol("S.N", 25), _tCol("Type", 40), _tCol("Qty+Free", 55), _tCol("Pack", 40),
+                          _tCol("Product Description", 205, isLeft: true),
+                          _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
+                          _tCol("Pur.Rate", 55),
+                          if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else _tCol("IGST", 80),
+                          _tCol("Debit Total", 135, isLast: true),
+                        ],
+                      ),
+                    ),
+
+                    pw.Expanded(
+                      child: pw.Column(
+                        children: pageContent.map((entry) {
+                          if (entry is String) {
+                            return pw.Container(
+                              width: masterWidth, padding: const pw.EdgeInsets.all(3),
+                              decoration: const pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
+                              child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                            );
+                          }
+                          PurchaseItem i = entry as PurchaseItem;
+                          String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
+                          String qtyDisp = "${fmt(i.qty)} + ${fmt(i.freeQty)}";
+
+                          return pw.Container(
+                            decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
+                            child: pw.Row(
+                              children: [
+                                _cell("${returnObj.items.indexOf(i) + 1}", 25),
+                                _cell(i.isBreakage ? "EXP" : "RET", 40),
+                                _cell(qtyDisp, 55),
+                                _cell(i.packing, 40),
+                                pw.Container(
+                                  width: 205, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
+                                  child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                ),
+                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
+                                _cell(i.purchaseRate.toStringAsFixed(2), 55),
+                                if (isLocal) ...[_cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40), _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40)] else _cell("${i.gstRate.toStringAsFixed(1)}%", 80),
+                                _cell(i.total.toStringAsFixed(2), 135),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    if (isLastPage) _buildDebitNoteFooter(shop.name, returnObj)
+                    else pw.Container(
+                      height: 30, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
+                      child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
+                    ),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text("Powered by Pharoah ERP [Web Workstation $testIdTag]", style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+                  pw.Text("Page ${pageNum + 1} of $totalPages", style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return pdf.save();
+  }
+
+  static pw.Widget _buildDebitNoteFooter(String shopName, PurchaseReturn returnObj) {
+    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.qty * i.purchaseRate - i.discountRupees));
+    double tax = returnObj.totalAmount - taxable;
+
+    return pw.Container(
+      height: 105,
+      decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
+      child: pw.Row(
+        children: [
+          pw.Container(
+            width: 450, padding: const pw.EdgeInsets.all(8),
+            decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text("Amount in Words: RUPEES ${PdfMasterService.numberToWords(returnObj.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown800)),
+                pw.Spacer(),
+                pw.Text("Note: Outward Debit Settlement with Distributor.", style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+              ],
+            ),
+          ),
+          pw.Container(
+            width: 350, padding: const pw.EdgeInsets.all(8),
+            child: pw.Column(
+              children: [
+                _fRow("PURCHASE TAXABLE", taxable),
+                _fRow("GST REVERSED", tax),
+                if (returnObj.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", returnObj.extraDiscount),
+                _fRow("ROUND OFF", returnObj.roundOff),
+                pw.Divider(thickness: 0.5),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("NET DEBIT VALUE", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                    pw.Text("Rs. ${returnObj.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<void> printDebitNote({
+    required PurchaseReturn returnObj,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final bytes = await generateDebitNoteBytes(returnObj: returnObj, party: party, shop: shop);
+    await Printing.layoutPdf(onLayout: (_) async => bytes, name: "DebitNote_${returnObj.billNo}", format: PdfPageFormat.a4.landscape);
+  }
+
+  static Future<void> downloadDebitNotePdf({
+    required PurchaseReturn returnObj,
+    required Party party,
+    required CompanyProfile shop,
+  }) async {
+    final bytes = await generateDebitNoteBytes(returnObj: returnObj, party: party, shop: shop);
+    await Printing.sharePdf(bytes: bytes, filename: "DebitNote_${returnObj.billNo}.pdf");
+  }
+
+  // --- STUBS & UTILITIES ---
   static Future<Uint8List> generateSaleReportBytes({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async => pw.Document().save();
   static Future<void> printSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
   static Future<void> downloadSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
@@ -589,13 +1043,11 @@ class WebPdfRouterService {
   static Future<void> printPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
   static Future<void> downloadPurchaseReport({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {}
   static Future<void> printChallanReport({required List<dynamic> challans, required CompanyProfile shop, required DateTime from, required DateTime to, required bool isSaleChallan}) async {}
-  static Future<void> printCreditNote({required SaleReturn returnObj, required Party party, required CompanyProfile shop}) async {}
-  static Future<void> printDebitNote({required PurchaseReturn returnObj, required Party party, required CompanyProfile shop}) async {}
   static Future<void> downloadBulkZip({required List<dynamic> documents, required CompanyProfile shop, required AppConfig config, required Function(double, String) onProgress}) async {}
 
   static pw.Widget _hBox(double w, bool b, pw.Widget child) => pw.Container(width: w, height: 105, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: b ? 0.5 : 0), bottom: const pw.BorderSide(width: 0.5))), child: child);
   static pw.Widget _tCol(String t, double w, {bool isLast = false, bool isLeft = false}) => pw.Container(width: w, height: 20, alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, padding: const pw.EdgeInsets.only(left: 5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: isLast ? 0 : 0.5), bottom: const pw.BorderSide(width: 0.5))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
-  static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: const pw.TextStyle(fontSize: 7.5)));
+  static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
 
   static pw.Widget _buildSaleFooter(String shopName, Sale sale, bool isLocal) {
     double taxableTotal = sale.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate));
@@ -656,7 +1108,7 @@ class WebPdfRouterService {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(l, style: const pw.TextStyle(fontSize: 7.5)),
-          pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+          pw.Text(v.toStringAsFixed(2), style: const pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
         ],
       );
 }

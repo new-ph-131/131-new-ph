@@ -8,6 +8,7 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_returns/credit_note/ui/web_credit_note_screen.dart';
 
 class WebReturnsView extends StatefulWidget {
   final VoidCallback onBack;
@@ -94,15 +95,19 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     final webPh = Provider.of<PharoahWebManager>(context);
     final activeShop = CompanyProfile.fromMap(webPh.companyProfile);
 
-    // Sub-view: Register
+    // 1. FULL MODULAR CREDIT NOTE (SALE RETURN) SCREEN CONNECTED HERE
+    if (activeSubView == "CN") {
+      return WebCreditNoteScreen(
+        onBack: () => setState(() => activeSubView = "HUB"),
+      );
+    }
+
+    // 2. Returns Register
     if (activeSubView == "REGISTER") {
       return _buildRegisterContainer(webPh, activeShop);
     }
 
-    // Sub-view: Placeholders for next phases
-    if (activeSubView == "CN") {
-      return _buildPlaceholderScreen("CREDIT NOTE (SALE RETURN)", "Customer Sales Return with Magic History Box", Colors.redAccent);
-    }
+    // 3. Sub-views Placeholders (For Debit Note & Breakage Out in upcoming phases)
     if (activeSubView == "DN") {
       return _buildPlaceholderScreen("DEBIT NOTE (PURCHASE RETURN)", "Distributor Inward Return & Rate Pull", const Color(0xFFD97706));
     }
@@ -315,11 +320,9 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                 children: [
                   Icon(Icons.construction_rounded, color: color, size: 40),
                   const SizedBox(height: 12),
-                  Text("STEP 1: BUTTON READY", style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 14)),
+                  Text("MODULE IN PROGRESS", style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 14)),
                   const SizedBox(height: 6),
                   Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  const Text("अगले स्टेप में हम इसका पूरा वर्कफ़्लो (Magic History Box + Items) बनाएंगे।", style: TextStyle(color: Colors.white38, fontSize: 11)),
                 ],
               ),
             ),
@@ -417,17 +420,15 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                           children: [
                             Text("₹${total.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
                             const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.print, color: Colors.cyanAccent, size: 18),
-                              onPressed: () {
-                                final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
-                                if (item is SaleReturn) {
+                            if (isCn)
+                              IconButton(
+                                icon: const Icon(Icons.print, color: Colors.cyanAccent, size: 18),
+                                tooltip: "Print Credit Note",
+                                onPressed: () {
+                                  final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
                                   WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop);
-                                } else if (item is PurchaseReturn) {
-                                  WebPdfRouterService.printDebitNote(returnObj: item, party: pObj, shop: activeShop);
-                                }
-                              },
-                            ),
+                                },
+                              ),
                           ],
                         ),
                       ),

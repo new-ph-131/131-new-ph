@@ -1,3 +1,6 @@
-error • The named parameter 'initialTabIndex' isn't defined • lib/web_live_sync/web_portal_gateway.dart:167:92 • undefined_named_parameter
-error • The named parameter 'initialAction' isn't defined • lib/web_live_sync/web_portal_gateway.dart:191:92 • undefined_named_parameter
-error • The named parameter 'initialAction' isn't defined • lib/web_live_sync/web_portal_gateway.dart:206:95 • undefined_named_parameter
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:308:35 • undefined_identifier
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:323:35 • undefined_identifier
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:512:35 • undefined_identifier
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:525:35 • undefined_identifier
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:714:35 • undefined_identifier
+error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/web_pdf_router_service.dart:792:35 • undefined_identifier

@@ -161,7 +161,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebChallanStitcherWizard(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
 
-    // --- RETURNS & REVERSALS (Uses initialAction) ---
+    // --- RETURNS & REVERSALS (Credit Note, Debit Note, Breakage, Register) ---
     if (currentView == "GO_CN" || currentView == "GO_DN" || currentView == "GO_BREAKAGE" || currentView == "GO_RET_REG" || currentView == "RETURNS") {
       return WebReturnsView(
         onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"),
@@ -169,7 +169,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       );
     }
     
-    // --- EXACT 2-STEP SALE & PURCHASE CHALLAN FLOW ---
+    // --- CHALLANS FLOW ---
     if (currentView == "GO_CHALLAN_SALE") {
       return WebSaleChallanView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
@@ -186,7 +186,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebChallanHub(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
 
-    // --- ACCOUNTS & VOUCHERS (Uses initialTabIndex) ---
+    // --- ACCOUNTS & VOUCHERS ---
     if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_DAYBOOK" || currentView == "GO_LEDGERS" || currentView == "ACCOUNTS") {
       int tabIdx = 0;
       if (currentView == "GO_PAYMENT") tabIdx = 1;
@@ -204,7 +204,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebBatchMasterView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
 
-    // --- AUX MASTERS (Uses initialTabIndex) ---
+    // --- AUX MASTERS ---
     if (currentView == "GO_M_COMP" || currentView == "GO_M_SALT" || currentView == "GO_M_ROUTE") {
       int tabIdx = 0;
       if (currentView == "GO_M_SALT") tabIdx = 1;
