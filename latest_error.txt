@@ -1,3 +1,0 @@
-error • In constant expressions, operands of this operator must be of type 'bool', 'num', 'String' or 'null' • lib/web_live_sync/pdf/web_voucher_pdf.dart:138:65 • const_eval_type_bool_num_string
-error • Undefined class 'PharoahWebManager' • lib/web_live_sync/web_pdf_router_service.dart:1145:14 • undefined_class
-error • Undefined name 'WebVoucherPdf' • lib/web_live_sync/web_pdf_router_service.dart:1147:25 • undefined_identifier

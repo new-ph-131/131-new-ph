@@ -1,3 +1,5 @@
+import 'sub_views/web_data_exchange/ui/web_data_exchange_hub.dart';
+import 'sub_views/web_gst/web_gst_hub.dart';
 // FILE: lib/web_live_sync/web_portal_gateway.dart
 
 import 'package:flutter/material.dart';
@@ -26,7 +28,6 @@ import 'web_party_master.dart';
 import 'web_batch_master.dart';
 import 'web_aux_masters.dart';
 import 'web_challan_view.dart';
-import 'sub_views/web_smart_entry/ui/web_smart_entry_hub.dart';
 import 'web_ca_profile_view.dart';
 import 'web_shortage_register.dart';
 import 'web_ledger_view.dart';
@@ -145,9 +146,20 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
   }
 
   Widget _buildCurrentView(PharoahWebManager webPh) {
-    // --- DATA HUB ---
-    if (currentView == "GO_SMART_ENTRY") {
-      return WebSmartEntryHub(onBack: () => _navigateToHub("DATA_HUB", "DATA EXCHANGE HUB"));
+        // --- GST COMPLIANCE (FIXED ROUTING - NO LONGER OPENS BILLING SALES) ---
+    if (currentView == "GO_GST_1" || currentView == "GO_GST_3B" || currentView == "GO_GST_2" || currentView == "GO_GST_RECON" || currentView == "GO_EWAY" || currentView == "GST") {
+      return WebGstHub(
+        onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"),
+        initialAction: currentView,
+      );
+    }
+
+    // --- DATA EXCHANGE HUB (SMART ENTRY, C2C, C2V, 39-CSV) ---
+    if (currentView == "GO_SMART_ENTRY" || currentView == "GO_C2C" || currentView == "GO_C2V" || currentView == "GO_CSV" || currentView == "DATA_HUB") {
+      return WebDataExchangeHub(
+        onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"),
+        initialAction: currentView,
+      );
     }
     
     // --- BILLING & SALES ---
@@ -196,11 +208,11 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     if (currentView == "GO_LEDGERS" || currentView == "GO_ITEM_LEDGER") {
       return WebLedgerView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
-    if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_DAYBOOK" || currentView == "ACCOUNTS") {
+    if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_CONTRA" || currentView == "GO_EXPENSE" || currentView == "GO_DAYBOOK" || currentView == "GO_HISTORY" || currentView == "GO_BANK_BOOK" || currentView == "ACCOUNTS") {
       int tabIdx = 0;
-      if (currentView == "GO_PAYMENT") tabIdx = 1;
-      if (currentView == "GO_DAYBOOK") tabIdx = 2;
-      return WebVoucherView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
+      if (currentView == "GO_DAYBOOK") tabIdx = 1;
+      if (currentView == "GO_BANK_BOOK") tabIdx = 2;
+      return WebVoucherView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx, initialAction: currentView);
     }
 
     // --- INVENTORY ---

@@ -104,10 +104,14 @@ class WebModulesRegistry {
       icon: Icons.account_balance_wallet_rounded,
       color: Color(0xFF3730A3),
       subActions: [
-        WebActionItem(key: "GO_DAYBOOK", title: "Daybook", subtitle: "Daily Inflow & Outflow", icon: Icons.event_note_rounded, color: Color(0xFF475569)),
-        WebActionItem(key: "GO_LEDGERS", title: "Ledgers", subtitle: "Customer Balances", icon: Icons.people_alt_rounded, color: Color(0xFF4338CA)),
-        WebActionItem(key: "GO_RECEIPT", title: "Receipts", subtitle: "Payment Received (Cash/Bank)", icon: Icons.add_chart_rounded, color: Color(0xFF15803D)),
+        WebActionItem(key: "GO_RECEIPT", title: "Receipts", subtitle: "Customer Inflow & Collection", icon: Icons.add_chart_rounded, color: Color(0xFF15803D)),
         WebActionItem(key: "GO_PAYMENT", title: "Payments", subtitle: "Supplier Payment Out", icon: Icons.analytics_rounded, color: Color(0xFFB91C1C)),
+        WebActionItem(key: "GO_CONTRA", title: "Contra", subtitle: "Bank Deposit & Withdrawal", icon: Icons.sync_alt_rounded, color: Color(0xFFD97706)),
+        WebActionItem(key: "GO_EXPENSE", title: "Expenses", subtitle: "Store Operating Expenses", icon: Icons.money_off_rounded, color: Color(0xFFB45309)),
+        WebActionItem(key: "GO_DAYBOOK", title: "Daybook", subtitle: "Daily Inflow & Outflow", icon: Icons.event_note_rounded, color: Color(0xFF475569)),
+        WebActionItem(key: "GO_HISTORY", title: "Audit History", subtitle: "Voucher Register & Excel", icon: Icons.format_list_bulleted_rounded, color: Color(0xFF0F766E)),
+        WebActionItem(key: "GO_BANK_BOOK", title: "Passbook", subtitle: "Bank Ledger Statement", icon: Icons.account_balance_rounded, color: Color(0xFF0284C7)),
+        WebActionItem(key: "GO_LEDGERS", title: "Ledgers", subtitle: "Party Balance & Statements", icon: Icons.people_alt_rounded, color: Color(0xFF4338CA)),
       ],
     ),
 
@@ -133,13 +137,15 @@ class WebModulesRegistry {
     WebHubItem(
       id: "GST",
       title: "GST COMPLIANCE",
-      subtitle: "GSTR-1, GSTR-3B & Reconciliations",
+      subtitle: "GSTR-1, GSTR-3B, GSTR-2, Recon & E-Way",
       icon: Icons.verified_rounded,
       color: Color(0xFF15803D),
       subActions: [
-        WebActionItem(key: "GO_GST_1", title: "GSTR-1", subtitle: "B2B, B2C & HSN Summary", icon: Icons.assignment_outlined, color: Color(0xFF15803D)),
+        WebActionItem(key: "GO_GST_1", title: "GSTR-1", subtitle: "B2B, B2C, HSN & Docs", icon: Icons.assignment_outlined, color: Color(0xFF15803D)),
         WebActionItem(key: "GO_GST_3B", title: "GSTR-3B", subtitle: "Monthly Tax Computation", icon: Icons.summarize_outlined, color: Color(0xFF2563EB)),
-        WebActionItem(key: "GO_GST_RECON", title: "Portal", subtitle: "ITC Reconciliation", icon: Icons.fact_check_outlined, color: Color(0xFF0D9488)),
+        WebActionItem(key: "GO_GST_2", title: "GSTR-2", subtitle: "Purchase Register & ITC", icon: Icons.shopping_cart_checkout_rounded, color: Color(0xFFD97706)),
+        WebActionItem(key: "GO_GST_RECON", title: "Portal Match", subtitle: "2A / 2B ITC Reconciliation", icon: Icons.fact_check_outlined, color: Color(0xFF0D9488)),
+        WebActionItem(key: "GO_EWAY", title: "E-Way Bill", subtitle: ">= ₹50,000 JSON Download", icon: Icons.local_shipping_outlined, color: Color(0xFF6366F1)),
       ],
     ),
 

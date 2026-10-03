@@ -1022,4 +1022,17 @@ class PharoahWebManager with ChangeNotifier {
     return (todayTotal + newAmount) > 200000;
   }
 
+
+  void cancelVoucher(String id) {
+    int i = vouchers.indexWhere((v) => v.id == id);
+    if (i != -1) {
+      vouchers[i].status = "Cancelled";
+      if (!vouchers[i].narration.startsWith("[CANCELLED]")) {
+        vouchers[i].narration = "[CANCELLED] ${vouchers[i].narration}";
+      }
+      notifyListeners();
+      _autoSyncService.triggerAutoSync();
+    }
+  }
+
 }
