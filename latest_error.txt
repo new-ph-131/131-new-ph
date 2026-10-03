@@ -1,25 +1,3 @@
-error • The property 'paymentMode' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:84:19 • unchecked_use_of_nullable_value
-error • The property 'totalAmount' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:86:20 • unchecked_use_of_nullable_value
-error • The property 'totalAmount' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:87:19 • unchecked_use_of_nullable_value
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:110:27 • undefined_identifier
-error • The name 'Purchase' isn't a type, so it can't be used as a type argument • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:127:19 • non_type_as_type_argument
-error • Undefined class 'CompanyProfile' • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:128:14 • undefined_class
-error • The name 'Purchase' isn't a type, so it can't be used as a type argument • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:141:19 • non_type_as_type_argument
-error • Undefined class 'CompanyProfile' • lib/web_live_sync/pdf/web_purchase_report_pdf.dart:142:14 • undefined_class
-error • Target of URI doesn't exist: '../../web_models.dart' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:8:8 • uri_does_not_exist
-error • The name 'Sale' isn't a type, so it can't be used as a type argument • lib/web_live_sync/pdf/web_sale_report_pdf.dart:12:19 • non_type_as_type_argument
-error • Undefined class 'CompanyProfile' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:13:14 • undefined_class
-error • The property 'items' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:85:30 • unchecked_use_of_nullable_value
-error • The property 'date' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:87:49 • unchecked_use_of_nullable_value
-error • The property 'billNo' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:88:19 • unchecked_use_of_nullable_value
-error • The property 'partyName' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:89:19 • unchecked_use_of_nullable_value
-error • The property 'partyGstin' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:90:19 • unchecked_use_of_nullable_value
-error • The property 'partyGstin' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:90:45 • unchecked_use_of_nullable_value
-error • The property 'paymentMode' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:91:19 • unchecked_use_of_nullable_value
-error • The property 'totalAmount' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:92:20 • unchecked_use_of_nullable_value
-error • The property 'totalAmount' can't be unconditionally accessed because the receiver can be 'null' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:94:19 • unchecked_use_of_nullable_value
-error • Undefined name 'CrossAxisAlignment' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:118:27 • undefined_identifier
-error • The name 'Sale' isn't a type, so it can't be used as a type argument • lib/web_live_sync/pdf/web_sale_report_pdf.dart:135:19 • non_type_as_type_argument
-error • Undefined class 'CompanyProfile' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:136:14 • undefined_class
-error • The name 'Sale' isn't a type, so it can't be used as a type argument • lib/web_live_sync/pdf/web_sale_report_pdf.dart:149:19 • non_type_as_type_argument
-error • Undefined class 'CompanyProfile' • lib/web_live_sync/pdf/web_sale_report_pdf.dart:150:14 • undefined_class
+error • In constant expressions, operands of this operator must be of type 'bool', 'num', 'String' or 'null' • lib/web_live_sync/pdf/web_voucher_pdf.dart:138:65 • const_eval_type_bool_num_string
+error • Undefined class 'PharoahWebManager' • lib/web_live_sync/web_pdf_router_service.dart:1145:14 • undefined_class
+error • Undefined name 'WebVoucherPdf' • lib/web_live_sync/web_pdf_router_service.dart:1147:25 • undefined_identifier

@@ -28,6 +28,8 @@ import 'web_aux_masters.dart';
 import 'web_challan_view.dart';
 import 'sub_views/web_smart_entry/ui/web_smart_entry_hub.dart';
 import 'web_ca_profile_view.dart';
+import 'web_shortage_register.dart';
+import 'web_ledger_view.dart';
 
 class WebPortalGateway extends StatefulWidget {
   const WebPortalGateway({super.key});
@@ -191,15 +193,21 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     }
 
     // --- ACCOUNTS & VOUCHERS ---
-    if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_DAYBOOK" || currentView == "GO_LEDGERS" || currentView == "ACCOUNTS") {
+    if (currentView == "GO_LEDGERS" || currentView == "GO_ITEM_LEDGER") {
+      return WebLedgerView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
+    }
+    if (currentView == "GO_RECEIPT" || currentView == "GO_PAYMENT" || currentView == "GO_DAYBOOK" || currentView == "ACCOUNTS") {
       int tabIdx = 0;
       if (currentView == "GO_PAYMENT") tabIdx = 1;
-      if (currentView == "GO_DAYBOOK" || currentView == "GO_LEDGERS") tabIdx = 2;
+      if (currentView == "GO_DAYBOOK") tabIdx = 2;
       return WebVoucherView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"), initialTabIndex: tabIdx);
     }
 
     // --- INVENTORY ---
-    if (currentView == "GO_STOCK" || currentView == "GO_SHORTAGE" || currentView == "INVENTORY") {
+    if (currentView == "GO_SHORTAGE") {
+      return WebShortageRegisterView(onBack: () => _navigateToHub("INVENTORY", "STOCK & ANALYTICS"));
+    }
+    if (currentView == "GO_STOCK" || currentView == "GO_ITEM_LEDGER" || currentView == "GO_DUMP") {
       return WebProductMasterView(onBack: () => _navigateToHub("INVENTORY", "STOCK & ANALYTICS"));
     }
 

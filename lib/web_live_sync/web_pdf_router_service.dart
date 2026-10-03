@@ -7,9 +7,12 @@ import "package:pdf/widgets.dart" as pw;
 import "package:printing/printing.dart";
 import "package:intl/intl.dart";
 import "web_models.dart";
+import "pharoah_web_manager.dart";
+import "pdf/web_voucher_pdf.dart";
 import "package:pharoah_erp/pdf/pdf_master_service.dart";
 import "pdf/web_sale_report_pdf.dart";
 import "pdf/web_purchase_report_pdf.dart";
+import "pdf/web_party_ledger_pdf.dart";
 
 class WebPdfRouterService {
     
@@ -1113,6 +1116,42 @@ class WebPdfRouterService {
   }
   static Future<void> printChallanReport({required List<dynamic> challans, required CompanyProfile shop, required DateTime from, required DateTime to, required bool isSaleChallan}) async {}
   static Future<void> downloadBulkZip({required List<dynamic> documents, required CompanyProfile shop, required AppConfig config, required Function(double, String) onProgress}) async {}
+
+
+  static Future<void> printPartyLedger({
+    required CompanyProfile shop,
+    required Party party,
+    required List<Map<String, dynamic>> data,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    await WebPartyLedgerPdf.printStatement(shop: shop, party: party, data: data, from: from, to: to);
+  }
+
+  static Future<void> downloadPartyLedger({
+    required CompanyProfile shop,
+    required Party party,
+    required List<Map<String, dynamic>> data,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    await WebPartyLedgerPdf.downloadStatement(shop: shop, party: party, data: data, from: from, to: to);
+  }
+
+
+  static Future<void> printVoucher({
+    required Voucher voucher,
+    required Party party,
+    required CompanyProfile shop,
+    required PharoahWebManager webPh,
+  }) async {
+    final bytes = await WebVoucherPdf.generateBytes(voucher, party, shop, webPh);
+    await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      name: "Voucher_${voucher.voucherNo}",
+      format: const PdfPageFormat(105 * PdfPageFormat.mm, 148 * PdfPageFormat.mm, marginAll: 5 * PdfPageFormat.mm),
+    );
+  }
 
   static pw.Widget _hBox(double w, bool b, pw.Widget child) => pw.Container(width: w, height: 95, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: b ? 0.5 : 0), bottom: const pw.BorderSide(width: 0.5))), child: child);
   static pw.Widget _tCol(String t, double w, {bool isLast = false, bool isLeft = false}) => pw.Container(width: w, height: 18, alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, padding: const pw.EdgeInsets.only(left: 5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: isLast ? 0 : 0.5), bottom: const pw.BorderSide(width: 0.5))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
