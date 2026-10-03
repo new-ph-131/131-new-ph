@@ -1,4 +1,21 @@
-// FILE: lib/web_live_sync/app_sync_engine.dart
+import re
+import subprocess
+import sys
+
+print("🏷️ Step 1/3: Updating Live Tag to #PH-REV-624 (SYNC-ENGINE-INTEGRATION)...")
+tb_path = "lib/web_live_sync/components/web_top_bar.dart"
+with open(tb_path, "r", encoding="utf-8") as f:
+    tb = f.read()
+
+new_rev = "#PH-REV-624 (SYNC-ENGINE-INTEGRATION)"
+tb = re.sub(r"#PH-REV-\d+[^\"]*", new_rev, tb)
+with open(tb_path, "w", encoding="utf-8") as f:
+    f.write(tb)
+print(f"✔ Tag Updated: {new_rev}")
+
+print("⚡ Step 2/3: Rewriting app_sync_engine.dart to use 1000-IQ Protocol...")
+sync_path = "lib/web_live_sync/app_sync_engine.dart"
+sync_code = r'''// FILE: lib/web_live_sync/app_sync_engine.dart
 
 import 'dart:convert';
 import 'dart:io';
@@ -32,14 +49,18 @@ class AppSyncEngine {
       final companyId = ph.activeCompany!.id;
       final storeToken = await WebLiveToken.getOrCreateToken(companyId);
 
-      // STEP 1: SNAP & DETECT (The Spy)
+      // =======================================================================
+      // STEP 1: SNAP & DETECT (The Spy) - Catch Mobile Local Deletions
+      // =======================================================================
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       List<String> newlyDeleted = await SnapshotWatcher.detectLocalDeletions(ph);
       if (newlyDeleted.isNotEmpty) {
         localTombstones.addAll(newlyDeleted);
       }
 
+      // =======================================================================
       // STEP 2: PULL CLOUD DATA
+      // =======================================================================
       final pullUri = Uri.parse(
         "${WebCloudConfig.cloudRelayEndpoint}?action=PULL_STORE_DATA"
         "&storeToken=${Uri.encodeComponent(storeToken)}"
@@ -53,6 +74,7 @@ class AppSyncEngine {
         if (cloudData['status'] == 'SUCCESS' && cloudData['files'] != null) {
           final Map<String, dynamic> cloudFiles = cloudData['files'];
 
+          // Extract Cloud Tombstones (Web Deletions)
           if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
             try {
               List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
@@ -60,12 +82,17 @@ class AppSyncEngine {
             } catch (_) {}
           }
 
-          // STEP 3: EXECUTE DEATH (The Graveyard)
+          // ===================================================================
+          // STEP 3: EXECUTE DEATH (The Graveyard) - Purge Zombie Records
+          // ===================================================================
           TombstoneEngine.purgeDeletedRecords(ph, localTombstones);
 
-          // STEP 4: DELTA MERGE (The Updater)
+          // ===================================================================
+          // STEP 4: DELTA MERGE (The Updater) - Add & Edit Sync
+          // ===================================================================
           bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localTombstones);
 
+          // REBUILD INVENTORY ONLY IF SOMETHING ADDED/EDITED/DELETED
           if (hasChanges || newlyDeleted.isNotEmpty || localTombstones.isNotEmpty) {
             InventoryLogicCenter.rebuildAllInventory(
               medicines: ph.medicines,
@@ -80,10 +107,15 @@ class AppSyncEngine {
         }
       }
 
+      // Save latest merged tombstones to local memory
       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
+
+      // TAKE FRESH SNAPSHOT BEFORE PUSHING TO CLOUD
       await SnapshotWatcher.takeSnapshot(ph);
 
+      // =======================================================================
       // STEP 5: PUSH TO CLOUD (The Rebirth)
+      // =======================================================================
       Map<String, String> filesPayload = {};
       for (var name in _coreFiles) {
         final file = File('$workingDir/$name');
@@ -92,6 +124,7 @@ class AppSyncEngine {
         }
       }
       
+      // Send the universal tombstone list to cloud
       filesPayload['tombstones.json'] = jsonEncode(localTombstones.toList());
 
       final payload = {
@@ -140,3 +173,15 @@ class AppSyncEngine {
     }
   }
 }
+'''
+with open(sync_path, "w", encoding="utf-8") as f:
+    f.write(sync_code)
+print("✔ Core Engine Upgraded!")
+
+print("\n🔍 Step 3/3: Running Flutter Analyze on web_live_sync...")
+res = subprocess.run(["flutter", "analyze", "lib/web_live_sync/"], text=True)
+if res.returncode != 0:
+    print("❌ Analyze output:")
+    print(res.stdout)
+    sys.exit(1)
+print("✅ 0 ISSUES FOUND! Analyzer is 100% clean.")
