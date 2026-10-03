@@ -473,7 +473,7 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
       sourceTag: "WEB-PORTAL",
     );
 
-    if (widget.modifyPurchaseId != null) webPh.deletePurchase(widget.modifyPurchaseId!);
+    if (widget.modifyPurchaseId != null) webPh.purchases.removeWhere((p) => p.id == widget.modifyPurchaseId!);
     webPh.addPurchaseAndSync(newPurchase);
     
     if (widget.linkedChallanIds != null) {

@@ -141,9 +141,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       isSigned: isSigned,
     );
 
-    if (widget.existingRecord != null) {
-      webPh.deleteSaleChallan(widget.existingRecord!.id);
-    }
+    if (widget.existingRecord != null) { webPh.saleChallans.removeWhere((c) => c.id == widget.existingRecord!.id); }
     
     webPh.saleChallans.add(newChallan);
 

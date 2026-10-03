@@ -90,9 +90,7 @@ class CreditNoteMechanism {
     String? existingId,
   }) async {
     // अगर एडिट मोड है तो पुराना रिटर्न रिकॉर्ड हटाएं
-    if (existingId != null) {
-      webPh.deleteSaleReturn(existingId);
-    }
+    if (existingId != null) { webPh.saleReturns.removeWhere((r) => r.id == existingId); }
 
     final newReturn = SaleReturn(
       id: noteId,

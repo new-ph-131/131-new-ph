@@ -90,9 +90,7 @@ class DebitNoteMechanism {
     String? existingId,
   }) async {
     // अगर एडिट मोड है तो पुराना डेबिट नोट हटाएं
-    if (existingId != null) {
-      webPh.deletePurchaseReturn(existingId);
-    }
+    if (existingId != null) { webPh.purchaseReturns.removeWhere((r) => r.id == existingId); }
 
     final newReturn = PurchaseReturn(
       id: noteId,

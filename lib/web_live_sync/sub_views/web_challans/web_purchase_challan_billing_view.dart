@@ -609,9 +609,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Stock inward verified.",
     );
 
-    if (widget.existingRecord != null) {
-      webPh.deletePurchaseChallan(widget.existingRecord!.id);
-    }
+    if (widget.existingRecord != null) { webPh.purchaseChallans.removeWhere((c) => c.id == widget.existingRecord!.id); }
     
     webPh.purchaseChallans.add(newChallan);
 

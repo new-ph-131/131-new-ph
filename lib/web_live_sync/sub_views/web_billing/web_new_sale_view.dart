@@ -228,7 +228,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       partyPan: activeParty.pan,
     );
 
-    if (widget.modifySaleId != null) webPh.deleteSale(widget.modifySaleId!);
+    if (widget.modifySaleId != null) webPh.sales.removeWhere((s) => s.id == widget.modifySaleId!);
     webPh.addSaleAndSync(newSale);
     
     if (widget.linkedChallanIds != null) {
