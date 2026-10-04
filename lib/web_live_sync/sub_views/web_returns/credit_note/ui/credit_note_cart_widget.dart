@@ -284,7 +284,7 @@ class CreditNoteCartWidget extends StatelessWidget {
                         ...controller.items.asMap().entries.map((entry) {
                           int idx = entry.key;
                           BillItem it = entry.value;
-                          String qtyDisp = "${it.qty.toInt()}${it.freeQty > 0 ? ' + ${it.freeQty.toInt()}' : ''}";
+                          String qtyDisp = "${(it.qty % 1 == 0 ? it.qty.toInt().toString() : it.qty.toStringAsFixed(1))}${it.freeQty > 0 ? ' + ${(it.freeQty % 1 == 0 ? it.freeQty.toInt().toString() : it.freeQty.toStringAsFixed(1))}' : ''}";
                           bool isExp = it.isBreakage;
 
                           return Dismissible(
