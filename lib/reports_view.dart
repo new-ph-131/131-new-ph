@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'pharoah_manager.dart';
 import 'models.dart';
-import 'pdf_service.dart';
+import 'pdf/pdf_router_service.dart';
 import 'sale_entry_view.dart';
 
 class ReportsView extends StatefulWidget {
@@ -146,7 +146,7 @@ class _ReportsViewState extends State<ReportsView> {
                                     (x) => x.name == sale.partyName, 
                                     orElse: () => ph.parties[0]
                                   );
-                                  PdfService.generateInvoice(sale, p);
+                                  PdfRouterService.printSale(sale: sale, party: p, ph: ph);
                                 },
                               ),
                               // ACTION POPUP

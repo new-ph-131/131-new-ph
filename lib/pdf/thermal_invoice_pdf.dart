@@ -27,7 +27,7 @@ class ThermalInvoicePdf {
                   if (config.showLogo && config.logoPath != null && File(config.logoPath!).existsSync())
                     pw.Container(width: 40, height: 40, child: pw.Image(pw.MemoryImage(File(config.logoPath!).readAsBytesSync()))),
                   pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                  pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), textAlign: pw.TextAlign.center),
+                  pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), textAlign: pw.TextAlign.center),
                   pw.Text("GSTIN: ${shop.gstin}", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
                   pw.Divider(thickness: 0.5),
                 ]),
@@ -36,7 +36,7 @@ class ThermalInvoicePdf {
               // --- BILL INFO ---
               pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
                 pw.Text("Bill: ${sale.billNo}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                pw.Text(DateFormat('dd/MM/yy').format(sale.date), style: const pw.TextStyle(fontSize: 8)),
+                pw.Text(DateFormat('dd/MM/yy').format(sale.date), style: pw.TextStyle(fontSize: 8)),
               ]),
               pw.Text("Cust: ${party.name}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
               pw.Divider(thickness: 0.5),
@@ -55,7 +55,7 @@ class ThermalInvoicePdf {
                   children: [
                     pw.Text(it.name, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
                     pw.Row(children: [
-                      pw.Text("Qty: ${it.qty.toInt()} x ${it.rate.toStringAsFixed(2)}", style: const pw.TextStyle(fontSize: 7)),
+                      pw.Text("Qty: ${it.qty.toInt()} x ${it.rate.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 7)),
                       pw.Spacer(),
                       pw.Text(it.total.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
                     ]),
@@ -82,11 +82,11 @@ class ThermalInvoicePdf {
                     height: 30, width: 100,
                     child: pw.BarcodeWidget(barcode: pw.Barcode.code128(), data: sale.billNo, drawText: false),
                   ),
-                  pw.Text(sale.billNo, style: const pw.TextStyle(fontSize: 6)),
+                  pw.Text(sale.billNo, style: pw.TextStyle(fontSize: 6)),
                 ]),
               ),
               pw.SizedBox(height: 5),
-              pw.Center(child: pw.Text("Thank You! Visit Again", style: const pw.TextStyle(fontSize: 7, fontStyle: pw.FontStyle.italic))),
+              pw.Center(child: pw.Text("Thank You! Visit Again", style: pw.TextStyle(fontSize: 7, fontStyle: pw.FontStyle.italic))),
             ],
           );
         },
@@ -97,7 +97,7 @@ class ThermalInvoicePdf {
   }
 
   static pw.Widget _sumRow(String l, double v) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-    pw.Text(l, style: const pw.TextStyle(fontSize: 7)),
-    pw.Text(v.toStringAsFixed(2), style: const pw.TextStyle(fontSize: 7)),
+    pw.Text(l, style: pw.TextStyle(fontSize: 7)),
+    pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7)),
   ]);
 }

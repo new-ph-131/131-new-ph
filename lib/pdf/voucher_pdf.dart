@@ -83,8 +83,8 @@ class VoucherPdf {
             // SHOP HEADER
             pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
             pw.Text(shop.address.toUpperCase(), 
-              style: const pw.TextStyle(fontSize: 5.5), textAlign: pw.TextAlign.center, maxLines: 2),
-            pw.Text("GSTIN: ${shop.gstin} | Mob: ${shop.phone}", style: const pw.TextStyle(fontSize: 5.5)),
+              style: pw.TextStyle(fontSize: 5.5), textAlign: pw.TextAlign.center, maxLines: 2),
+            pw.Text("GSTIN: ${shop.gstin} | Mob: ${shop.phone}", style: pw.TextStyle(fontSize: 5.5)),
             
             pw.SizedBox(height: 4),
 
@@ -96,7 +96,7 @@ class VoucherPdf {
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.all(2),
-                  decoration: const pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
+                  decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
                   child: pw.Center(child: pw.Text("${v.type.toUpperCase()} VOUCHER", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
                 ),
 
@@ -114,7 +114,7 @@ class VoucherPdf {
                   pw.Container(
                     width: double.infinity,
                     padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.3, style: pw.BorderStyle.dashed))),
+                    decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.3, style: pw.BorderStyle.dashed))),
                     child: pw.Text("CHQ NO: ${v.chequeNo}  |  DATED: ${v.chequeDate != null ? DateFormat('dd-MM-yyyy').format(v.chequeDate!) : 'N/A'}", 
                       style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
                   ),
@@ -122,7 +122,7 @@ class VoucherPdf {
                 // TABLE HEADER
                 pw.Container(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5), bottom: pw.BorderSide(width: 0.5))),
+                  decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5), bottom: pw.BorderSide(width: 0.5))),
                   child: pw.Row(children: [
                     pw.Expanded(flex: 5, child: pw.Text("Particulars", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))),
                     pw.Expanded(flex: 2, child: pw.Text("Debit", textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))),
@@ -138,20 +138,20 @@ class VoucherPdf {
                     pw.Row(children: [
                       pw.Expanded(flex: 5, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                         pw.Text(isReceipt ? v.depositedIn.toUpperCase() : party.name.toUpperCase(), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                        if (!isReceipt) pw.Text("GST: ${party.gst} | ${party.city}", style: const pw.TextStyle(fontSize: 5)),
+                        if (!isReceipt) pw.Text("GST: ${party.gst} | ${party.city}", style: pw.TextStyle(fontSize: 5)),
                       ])),
-                      pw.Expanded(flex: 2, child: pw.Text(v.amount.toStringAsFixed(2), textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 7.5))),
+                      pw.Expanded(flex: 2, child: pw.Text(v.amount.toStringAsFixed(2), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 7.5))),
                       pw.Expanded(flex: 2, child: pw.Text("", textAlign: pw.TextAlign.right)),
                     ]),
                     pw.SizedBox(height: 4),
                     // ROW 2: Counter Ledger
                     pw.Row(children: [
                       pw.Expanded(flex: 5, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                        pw.Text(isReceipt ? party.name.toUpperCase() : v.depositedIn.toUpperCase(), style: const pw.TextStyle(fontSize: 7.5)),
-                        if (isReceipt) pw.Text("GST: ${party.gst} | ${party.city}", style: const pw.TextStyle(fontSize: 5)),
+                        pw.Text(isReceipt ? party.name.toUpperCase() : v.depositedIn.toUpperCase(), style: pw.TextStyle(fontSize: 7.5)),
+                        if (isReceipt) pw.Text("GST: ${party.gst} | ${party.city}", style: pw.TextStyle(fontSize: 5)),
                       ])),
                       pw.Expanded(flex: 2, child: pw.Text("", textAlign: pw.TextAlign.right)),
-                      pw.Expanded(flex: 2, child: pw.Text(v.amount.toStringAsFixed(2), textAlign: pw.TextAlign.right, style: const pw.TextStyle(fontSize: 7.5))),
+                      pw.Expanded(flex: 2, child: pw.Text(v.amount.toStringAsFixed(2), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 7.5))),
                     ]),
                   ]),
                 ),
@@ -161,15 +161,15 @@ class VoucherPdf {
                   pw.Container(
                     width: double.infinity,
                     padding: const pw.EdgeInsets.all(3),
-                    decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.3, style: pw.BorderStyle.dashed))),
+                    decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.3, style: pw.BorderStyle.dashed))),
                     child: pw.Text("ADJ AGAINST: ${adjList.join(', ')}", 
-                      style: const pw.TextStyle(fontSize: 5.5), maxLines: 2),
+                      style: pw.TextStyle(fontSize: 5.5), maxLines: 2),
                   ),
 
                 // TOTAL ROW
                 pw.Container(
                   padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                  decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
+                  decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
                   child: pw.Row(children: [
                     pw.Expanded(flex: 5, child: pw.Text("TOTAL", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))),
                     pw.Expanded(flex: 2, child: pw.Text(v.amount.toStringAsFixed(2), textAlign: pw.TextAlign.right, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
@@ -181,11 +181,11 @@ class VoucherPdf {
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.all(4),
-                  decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
+                  decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
                   child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                     pw.Text("Rupees ${PdfMasterService.numberToWords(v.amount.round())} Only", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
                     if (v.narration.isNotEmpty)
-                      pw.Text("Remarks: ${v.narration}", style: const pw.TextStyle(fontSize: 5.5, fontStyle: pw.FontStyle.italic)),
+                      pw.Text("Remarks: ${v.narration}", style: pw.TextStyle(fontSize: 5.5, fontStyle: pw.FontStyle.italic)),
                   ]),
                 ),
               ]),
@@ -197,16 +197,16 @@ class VoucherPdf {
             pw.Container(
               width: double.infinity,
               child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-                pw.Text("Authorised Signatory for", style: const pw.TextStyle(fontSize: 6)),
+                pw.Text("Authorised Signatory for", style: pw.TextStyle(fontSize: 6)),
                 pw.SizedBox(height: 1),
                 pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                 pw.SizedBox(height: 15),
-                pw.Container(width: 70, decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5)))),
+                pw.Container(width: 70, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5)))),
               ]),
             ),
             pw.SizedBox(height: 2),
             pw.Text("System Generated Document via Pharoah ERP", 
-              style: const pw.TextStyle(fontSize: 4, color: PdfColors.grey500)),
+              style: pw.TextStyle(fontSize: 4, color: PdfColors.grey500)),
           ]),
         ]);
       },

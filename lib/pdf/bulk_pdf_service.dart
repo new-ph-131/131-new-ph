@@ -99,7 +99,7 @@ class BulkPdfService {
               _hBox(170, pw.Column(children: [
                 pw.Text("GST RECORD", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
                 pw.Divider(thickness: 0.5),
-                pw.Text(billNo, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                pw.Text(sale.billNo, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                 pw.Text(DateFormat('dd/MM/yyyy').format(DateTime.now()), style: const pw.TextStyle(fontSize: 8)),
               ])),
               // Box 3: Party Details (335)

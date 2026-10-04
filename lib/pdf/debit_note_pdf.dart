@@ -56,20 +56,20 @@ class DebitNotePdf {
               pw.Row(children: [
                 _hBox(280, true, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                  pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
+                  pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
                   pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                  pw.Text("Mob: ${shop.phone} | Email: ${shop.email.toLowerCase()}", style: const pw.TextStyle(fontSize: 7)),
+                  pw.Text("Mob: ${shop.phone} | Email: ${shop.email.toLowerCase()}", style: pw.TextStyle(fontSize: 7)),
                 ])),
                 _hBox(175, true, pw.Column(children: [
                   pw.Text("DEBIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
                   pw.Divider(thickness: 0.5),
                   pw.Text("No: ${ret.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: const pw.TextStyle(fontSize: 8)),
+                  pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
                 ])),
                 _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text("SEND TO SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
                   pw.Text(supplier.name, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                  pw.Text("${supplier.address}, ${supplier.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
+                  pw.Text("${supplier.address}, ${supplier.city}", style: pw.TextStyle(fontSize: 7.5), maxLines: 2),
                   pw.Text("GST: ${supplier.gst} | DL: ${supplier.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
                   pw.Text("PAN: ${supplier.pan} | Mob: ${supplier.phone}", style: pw.TextStyle(fontSize: 7)),
                   if (supplier.email.isNotEmpty) pw.Text("Email: ${supplier.email.toLowerCase()}", style: pw.TextStyle(fontSize: 7)),
@@ -89,7 +89,7 @@ class DebitNotePdf {
               // --- SMART CONTENT ---
               pw.Expanded(child: pw.Column(children: pageItems.map((entry) {
                 if (entry is String) {
-                  return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: const pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
+                  return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
                   child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)));
                 }
                 // Field Mapping Fix: Using purchaseRate
@@ -102,12 +102,12 @@ class DebitNotePdf {
 
                 return pw.Container(
                   color: isShaded ? PdfColors.grey50 : PdfColors.white,
-                  decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
+                  decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
                   child: pw.Row(children: [
                     _cell("$sNo", 25), 
                     _cell("${fmt(i.qty)} + ${fmt(i.freeQty)}", 60), 
                     _cell(i.packing, 40),
-                    pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: const pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
+                    pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                     _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
                     _cell(i.mrp.toStringAsFixed(2), 55), 
                     _cell(i.purchaseRate.toStringAsFixed(2), 55),
@@ -125,7 +125,7 @@ class DebitNotePdf {
           pw.Center(
             child: pw.Text(
               "This is a system-generated document. | Powered by Pharoah ERP [Download from Play Store] | Support: cloudcubeapps.ok@gmail.com",
-              style: const pw.TextStyle(fontSize: 5, color: PdfColors.grey600),
+              style: pw.TextStyle(fontSize: 5, color: PdfColors.grey600),
             ),
           ),
         ])
@@ -167,14 +167,14 @@ class DebitNotePdf {
             pw.Row(children: [
               _hBox(280, true, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                 pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                pw.Text(shop.address, style: const pw.TextStyle(fontSize: 7), maxLines: 2),
+                pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
                 pw.Text("GSTIN: ${shop.gstin}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
               ])),
               _hBox(175, true, pw.Column(children: [
                 pw.Text("DEBIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
                 pw.Divider(thickness: 0.5),
                 pw.Text("No: ${ret.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: const pw.TextStyle(fontSize: 8)),
+                pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
               ])),
               _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                 pw.Text("SEND TO SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
@@ -188,13 +188,13 @@ class DebitNotePdf {
               _tCol("CGST", 40), _tCol("SGST", 40), _tCol("Total", 100, isLast: true), 
             ])),
             pw.Expanded(child: pw.Column(children: pageItems.map((entry) {
-              if (entry is String) return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: const pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))), child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)));
+              if (entry is String) return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))), child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)));
               PurchaseItem i = entry as PurchaseItem;
               double taxableRow = i.purchaseRate * i.qty;
               double taxAmt = i.total - taxableRow;
-              return pw.Container(decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))), child: pw.Row(children: [
+              return pw.Container(decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))), child: pw.Row(children: [
                   _cell("${ret.items.indexOf(i) + 1}", 25), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 60), _cell(i.packing, 40),
-                  pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: const pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
+                  pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                   _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.purchaseRate.toStringAsFixed(2), 55),
                   _cell(isLocal ? (taxAmt / 2).toStringAsFixed(1) : "0", 40), _cell(isLocal ? (taxAmt / 2).toStringAsFixed(1) : taxAmt.toStringAsFixed(1), 40), _cell(i.total.toStringAsFixed(2), 100),
               ]));
@@ -208,18 +208,18 @@ class DebitNotePdf {
 
   static pw.Widget _hBox(double w, bool b, pw.Widget child) => pw.Container(width: w, height: 105, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: b ? 0.5 : 0), bottom: const pw.BorderSide(width: 0.5))), child: child);
   static pw.Widget _tCol(String t, double w, {bool isLast = false, bool isLeft = false}) => pw.Container(width: w, height: 20, alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, padding: pw.EdgeInsets.only(left: 5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: isLast ? 0 : 0.5), bottom: const pw.BorderSide(width: 0.5))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
-  static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: const pw.TextStyle(fontSize: 7.5)));
+  static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
 
   static pw.Widget _buildFixedSyncFooter(String n, PurchaseReturn ret, bool local) {
     double taxable = ret.items.fold(0, (s, i) => s + (i.purchaseRate * i.qty));
     double tax = ret.totalAmount - taxable;
-    return pw.Container(height: 110, decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
-      pw.Container(width: 330, padding: const pw.EdgeInsets.all(5), decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+    return pw.Container(height: 110, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
+      pw.Container(width: 330, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(ret.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
         pw.Spacer(),
-        pw.Text("Note: Outward Debit Settlement with Distributor.", style: const pw.TextStyle(fontSize: 6)),
+        pw.Text("Note: Outward Debit Settlement with Distributor.", style: pw.TextStyle(fontSize: 6)),
       ])),
-      pw.Container(width: 250, padding: const pw.EdgeInsets.all(5), decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
+      pw.Container(width: 250, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
         _fRow("PUR. TAXABLE", taxable),
         if (ret.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", ret.extraDiscount),
         if (ret.roundOff != 0) _fRow("ROUND OFF", ret.roundOff),
@@ -233,9 +233,9 @@ class DebitNotePdf {
       pw.Container(width: 220, padding: const pw.EdgeInsets.all(5), child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
         pw.Text("For $n", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 30),
-        pw.Text("AUTHORISED SIGNATORY", style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
+        pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
       ])),
     ]));
   }
-  static pw.Widget _fRow(String l, double v) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text(l, style: const pw.TextStyle(fontSize: 7.5)), pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))]);
+  static pw.Widget _fRow(String l, double v) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text(l, style: pw.TextStyle(fontSize: 7.5)), pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))]);
 }

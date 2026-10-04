@@ -263,8 +263,12 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 40),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
         bool isWideScreen = constraints.maxWidth > 1100;
 
         return Column(
@@ -314,6 +318,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
           ],
         );
       },
+    ),
+    ),
     );
   }
 
@@ -612,11 +618,19 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
               ),
             )
           else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 700),
-                child: Table(
+            Container(
+              constraints: const BoxConstraints(minHeight: 220, maxHeight: 520),
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 700),
+                      child: Table(
                   columnWidths: const {
                     0: FixedColumnWidth(40),
                     1: FlexColumnWidth(3),
@@ -692,6 +706,9 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
         ],
       ),
     );

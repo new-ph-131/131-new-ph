@@ -73,7 +73,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-628 (SCROLL-FREEZE-PERMANENT-FIX)",
+                      "#PH-REV-629 (50-ITEMS-DUAL-AXIS-SCROLL-PERFECT-FIX)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),

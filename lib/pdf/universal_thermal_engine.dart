@@ -72,9 +72,9 @@ class UniversalThermalEngine {
     return pw.Center(child: pw.Column(children: [
       if (logo != null) pw.Container(width: 40, height: 40, margin: const pw.EdgeInsets.only(bottom: 3), child: pw.Image(logo)),
       pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-      pw.Text(shop.address.toUpperCase(), textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 6.5)),
+      pw.Text(shop.address.toUpperCase(), textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 6.5)),
       pw.Text("GST: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-      pw.Text("Ph: ${shop.phone}", style: const pw.TextStyle(fontSize: 7)),
+      pw.Text("Ph: ${shop.phone}", style: pw.TextStyle(fontSize: 7)),
     ]));
   }
 
@@ -86,8 +86,8 @@ class UniversalThermalEngine {
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
       pw.Text(label, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
       pw.Text(p.name.toUpperCase(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-      pw.Text("${p.city} | GST: ${p.gst}", style: const pw.TextStyle(fontSize: 7.5)),
-      if (p.dl.isNotEmpty && p.dl != "N/A") pw.Text("DL No: ${p.dl}", style: const pw.TextStyle(fontSize: 7)),
+      pw.Text("${p.city} | GST: ${p.gst}", style: pw.TextStyle(fontSize: 7.5)),
+      if (p.dl.isNotEmpty && p.dl != "N/A") pw.Text("DL No: ${p.dl}", style: pw.TextStyle(fontSize: 7)),
     ]);
   }
 
@@ -104,11 +104,11 @@ class UniversalThermalEngine {
     return pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
       pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text("${type.toUpperCase()}: $docNo", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-        pw.Text("MODE: $mode", style: const pw.TextStyle(fontSize: 7)),
+        pw.Text("MODE: $mode", style: pw.TextStyle(fontSize: 7)),
       ]),
       pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
         pw.Text("DATE: $date", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-        pw.Text("TIME: ${DateFormat('hh:mm a').format(DateTime.now())}", style: const pw.TextStyle(fontSize: 7)),
+        pw.Text("TIME: ${DateFormat('hh:mm a').format(DateTime.now())}", style: pw.TextStyle(fontSize: 7)),
       ]),
     ]);
   }
@@ -141,13 +141,13 @@ class UniversalThermalEngine {
           ]),
           // Row 2: Specs
           pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-            pw.Text("B: ${i.batch} | E: ${i.exp}", style: const pw.TextStyle(fontSize: 7)),
+            pw.Text("B: ${i.batch} | E: ${i.exp}", style: pw.TextStyle(fontSize: 7)),
             pw.Text("Qty: $qtyStr", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
           ]),
           // Row 3: Price
           pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-            pw.Text("MRP: ${i.mrp}", style: const pw.TextStyle(fontSize: 7)),
-            pw.Text("Rate: ${(i is PurchaseItem ? i.purchaseRate : i.rate).toStringAsFixed(2)}", style: const pw.TextStyle(fontSize: 7)),
+            pw.Text("MRP: ${i.mrp}", style: pw.TextStyle(fontSize: 7)),
+            pw.Text("Rate: ${(i is PurchaseItem ? i.purchaseRate : i.rate).toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 7)),
             pw.Text("Amt: ₹${i.total.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
           ]),
         ]),
@@ -166,9 +166,9 @@ class UniversalThermalEngine {
         child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text(DateFormat('dd/MM').format(row['date']), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-            pw.Text(row['ref'], style: const pw.TextStyle(fontSize: 7)),
+            pw.Text(row['ref'], style: pw.TextStyle(fontSize: 7)),
           ]),
-          pw.Text(row['dr'] > 0 ? "Dr: ${row['dr']}" : "Cr: ${row['cr']}", style: const pw.TextStyle(fontSize: 7.5)),
+          pw.Text(row['dr'] > 0 ? "Dr: ${row['dr']}" : "Cr: ${row['cr']}", style: pw.TextStyle(fontSize: 7.5)),
           pw.Text("₹${row['bal'].toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
         ]),
       );
@@ -179,11 +179,11 @@ class UniversalThermalEngine {
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
       pw.Center(child: pw.Text("AMOUNT RECEIVED: ₹${v.amount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
       pw.SizedBox(height: 5),
-      pw.Text("Narration: ${v.narration}", style: const pw.TextStyle(fontSize: 8, fontStyle: pw.FontStyle.italic)),
+      pw.Text("Narration: ${v.narration}", style: pw.TextStyle(fontSize: 8, fontStyle: pw.FontStyle.italic)),
       if (v.linkedBillNumbers.isNotEmpty) ...[
         pw.SizedBox(height: 5),
         pw.Text("ADJUSTED AGAINST BILLS:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-        pw.Text(v.linkedBillNumbers.join(", "), style: const pw.TextStyle(fontSize: 7)),
+        pw.Text(v.linkedBillNumbers.join(", "), style: pw.TextStyle(fontSize: 7)),
       ]
     ]);
   }
@@ -210,7 +210,7 @@ class UniversalThermalEngine {
         ]),
       ),
       pw.SizedBox(height: 3),
-      pw.Text("RUPEES ${PdfMasterService.numberToWords(totalAmt.round())} ONLY", textAlign: pw.TextAlign.center, style: const pw.TextStyle(fontSize: 7, fontStyle: pw.FontStyle.italic)),
+      pw.Text("RUPEES ${PdfMasterService.numberToWords(totalAmt.round())} ONLY", textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 7, fontStyle: pw.FontStyle.italic)),
       
       PdfMasterService.thermalDivider(),
 
@@ -224,16 +224,16 @@ class UniversalThermalEngine {
       pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
         pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
           pw.SizedBox(height: 15),
-          pw.Text("Receiver's Sign", style: const pw.TextStyle(fontSize: 7)),
+          pw.Text("Receiver's Sign", style: pw.TextStyle(fontSize: 7)),
         ]),
         pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
           pw.Text("For ${shop.name}", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 15),
-          pw.Text("Authorised Signatory", style: const pw.TextStyle(fontSize: 7)),
+          pw.Text("Authorised Signatory", style: pw.TextStyle(fontSize: 7)),
         ]),
       ]),
       pw.SizedBox(height: 5),
-      pw.Center(child: pw.Text("System Generated via Pharoah ERP", style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey600))),
+      pw.Center(child: pw.Text("System Generated via Pharoah ERP", style: pw.TextStyle(fontSize: 6, color: PdfColors.grey600))),
     ]);
   }
 }

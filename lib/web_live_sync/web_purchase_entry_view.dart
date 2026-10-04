@@ -977,12 +977,17 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
             )
           else
             Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 650),
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  physics: const AlwaysScrollableScrollPhysics(),
                   child: SingleChildScrollView(
-                    child: Table(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 650),
+                      child: Table(
                       columnWidths: const {
                         0: FixedColumnWidth(35),
                         1: FlexColumnWidth(3),
@@ -1060,6 +1065,7 @@ class _WebPurchaseEntryViewState extends State<WebPurchaseEntryView> with Single
                 ),
               ),
             ),
+          ),
         ],
       ),
     );

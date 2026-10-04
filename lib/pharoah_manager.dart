@@ -40,7 +40,8 @@ class PharoahManager with ChangeNotifier {
   final _secureStorage = const FlutterSecureStorage(); 
 
   // --- DATA LISTS ---
-  List<Medicine> medicines = []; 
+  List<Medicine> medicines = [];
+  List<Salesman> salesmen = []; 
   List<SystemUser> systemUsers = []; 
   SystemUser? loggedInStaff;
   List<Party> parties = []; 
@@ -233,6 +234,16 @@ class PharoahManager with ChangeNotifier {
     final root = await getApplicationDocumentsDirectory();
     await File('${root.path}/pharoah_registry.json').writeAsString(jsonEncode(companiesRegistry.map((e) => e.toMap()).toList()));
     notifyListeners();
+  }
+
+  
+  Future<void> switchYear(String year) async {
+    currentFY = year;
+    if (activeCompany != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('active_fy_${activeCompany!.id}', year);
+    }
+    await loadAllData();
   }
 
   Future<void> loginToCompany(CompanyProfile c, String fy) async { 
@@ -745,6 +756,28 @@ void registerBatchActivity({
     return pending;
   }
 
+  
+  List<BankTransaction> getBankStatement(String bankName, DateTime from, DateTime to) {
+    List<BankTransaction> list = [];
+    String bName = bankName.trim().toUpperCase();
+    for (var v in vouchers.where((v) => v.status == "Active" && v.depositedIn.trim().toUpperCase() == bName)) {
+      if (v.date.isAfter(from.subtract(const Duration(seconds: 1))) && v.date.isBefore(to.add(const Duration(days: 1)))) {
+        bool isRec = v.type.toUpperCase() == "RECEIPT";
+        list.add(BankTransaction(
+          id: v.id,
+          date: v.date,
+          particulars: v.partyName,
+          reference: v.voucherNo,
+          amountIn: isRec ? v.amount : 0.0,
+          amountOut: isRec ? 0.0 : v.amount,
+          type: v.type,
+        ));
+      }
+    }
+    list.sort((a, b) => a.date.compareTo(b.date));
+    return list;
+  }
+
   List<Party> getInternalAccounts() {
     return parties.where((p) => 
       p.group == "Bank Accounts" || p.group == "Cash in Hand"
@@ -790,6 +823,10 @@ void registerBatchActivity({
 
   String getOrCreateCompany(String n) { try { return companies.firstWhere((c) => c.name.toUpperCase() == n.trim().toUpperCase()).id; } catch (e) { String id = "CP-${1000 + companies.length + 1}"; companies.add(Company(id: id, name: n.trim().toUpperCase())); save(); return id; } }
   String getOrCreateSalt(String n) { try { return salts.firstWhere((s) => s.name.toUpperCase() == n.trim().toUpperCase()).id; } catch (e) { String id = "SL-${1000 + salts.length + 1}"; salts.add(Salt(id: id, name: n.trim().toUpperCase())); save(); return id; } }
+
+  
+  void addSalesman(Salesman s) { salesmen.add(s); save(); notifyListeners(); }
+  void deleteSalesman(String id) { salesmen.removeWhere((s) => s.id == id); save(); notifyListeners(); }
 
   void addMedicine(Medicine m, {bool doSave = true}) { medicines.add(m); if (!batchHistory.containsKey(m.identityKey)) batchHistory[m.identityKey] = []; if (doSave) save(); notifyListeners(); }
   void addRoute(RouteArea r) { routes.add(r); save(); }
@@ -884,6 +921,16 @@ void registerBatchActivity({
       if (i != -1) purchaseReturns[i].status = "Cancelled";
     }
     save().then((_) => loadAllData());
+  }
+
+  
+  void cancelBill(String id) {
+    int i = sales.indexWhere((x) => x.id == id);
+    if (i != -1) {
+      sales[i].status = "Cancelled";
+      save().then((_) => loadAllData());
+      notifyListeners();
+    }
   }
 
   void deleteBill(String id) { try { final s = sales.firstWhere((x) => x.id == id); if (s.linkedChallanIds.isNotEmpty) { for (var cid in s.linkedChallanIds) { int i = saleChallans.indexWhere((c) => c.id == cid); if (i != -1) saleChallans[i].status = "Pending"; } } sales.removeWhere((x) => x.id == id); save().then((_) => loadAllData()); } catch (e) {} }

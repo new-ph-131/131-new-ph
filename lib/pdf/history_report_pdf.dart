@@ -28,12 +28,12 @@ class HistoryReportPdf {
         pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.indigo900)),
-            pw.Text(shop.address, style: const pw.TextStyle(fontSize: 8)),
+            pw.Text(shop.address, style: pw.TextStyle(fontSize: 8)),
             pw.Text("GSTIN: ${shop.gstin} | Mob: ${shop.phone}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
           ]),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
             pw.Text("ACCOUNT STATEMENT", style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-            pw.Text("Period: ${DateFormat('dd/MM/yy').format(fDate)} to ${DateFormat('dd/MM/yy').format(tDate)}", style: const pw.TextStyle(fontSize: 9)),
+            pw.Text("Period: ${DateFormat('dd/MM/yy').format(fDate)} to ${DateFormat('dd/MM/yy').format(tDate)}", style: pw.TextStyle(fontSize: 9)),
           ]),
         ]),
         pw.SizedBox(height: 5),
@@ -42,7 +42,7 @@ class HistoryReportPdf {
         // OPENING FLOW DISPLAY
         pw.Container(
           padding: const pw.EdgeInsets.all(6),
-          decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+          decoration: pw.BoxDecoration(color: PdfColors.grey100),
           child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
             pw.Text("OPENING BALANCE (Vouchers before ${DateFormat('dd/MM/yy').format(fDate)})", 
               style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
@@ -55,8 +55,8 @@ class HistoryReportPdf {
         pw.SizedBox(height: 10),
         pw.TableHelper.fromTextArray(
           headerStyle: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-          headerDecoration: const pw.BoxDecoration(color: PdfColors.indigo900),
-          cellStyle: const pw.TextStyle(fontSize: 8),
+          headerDecoration: pw.BoxDecoration(color: PdfColors.indigo900),
+          cellStyle: pw.TextStyle(fontSize: 8),
           columnWidths: {
             0: const pw.FixedColumnWidth(50), // Date
             1: const pw.FixedColumnWidth(60), // ID
@@ -78,8 +78,8 @@ class HistoryReportPdf {
                   decoration: isCan ? pw.TextDecoration.lineThrough : null, 
                   color: isCan ? PdfColors.red900 : PdfColors.black
                 )),
-                pw.Text("${isReceipt ? 'INTO' : 'FROM'}: ${v.depositedIn.toUpperCase()}", style: const pw.TextStyle(fontSize: 6, color: PdfColors.blueGrey800)),
-                if(v.narration.isNotEmpty) pw.Text(v.narration, style: const pw.TextStyle(fontSize: 6, fontStyle: pw.FontStyle.italic)),
+                pw.Text("${isReceipt ? 'INTO' : 'FROM'}: ${v.depositedIn.toUpperCase()}", style: pw.TextStyle(fontSize: 6, color: PdfColors.blueGrey800)),
+                if(v.narration.isNotEmpty) pw.Text(v.narration, style: pw.TextStyle(fontSize: 6, fontStyle: pw.FontStyle.italic)),
               ]),
               v.paymentMode,
               isReceipt ? "" : (isCan ? "(Cancelled)" : v.amount.toStringAsFixed(2)),
@@ -91,7 +91,7 @@ class HistoryReportPdf {
       footer: (pw.Context context) => pw.Column(children: [
         pw.Divider(thickness: 0.5),
         pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Text("Pharoah ERP Audit History", style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
+          pw.Text("Pharoah ERP Audit History", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
           pw.Row(children: [
             _statTile("PERIOD REC: ", totalRec, PdfColors.green900),
             pw.SizedBox(width: 25),
@@ -105,7 +105,7 @@ class HistoryReportPdf {
   }
 
   static pw.Widget _statTile(String label, double val, PdfColor color) => pw.RichText(text: pw.TextSpan(children: [
-    pw.TextSpan(text: label, style: const pw.TextStyle(fontSize: 8)),
+    pw.TextSpan(text: label, style: pw.TextStyle(fontSize: 8)),
     pw.TextSpan(text: "Rs. ${val.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: color)),
   ]));
 }

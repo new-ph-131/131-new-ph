@@ -61,7 +61,7 @@ class _PurchaseModifyViewState extends State<PurchaseModifyView> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.print, color: Colors.blueGrey), 
-                        onPressed: () => PurchasePdf.generate(p, supplier)
+                        onPressed: () => PurchasePdf.generate(p, supplier, ph.activeCompany!)
                       ),
                       IconButton(
                         icon: const Icon(Icons.edit, color: Colors.blue), 
