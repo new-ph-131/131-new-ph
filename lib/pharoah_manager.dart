@@ -24,6 +24,7 @@ import 'batch_sync_engine.dart';
 import 'web_live_sync/web_sync_engine.dart';
 import 'web_live_sync/weblivetoken.dart';
 import 'app_date_logic.dart';
+import 'sync_bridge/engines/app_auto_sync_daemon.dart';
 
 class PharoahManager with ChangeNotifier {
   // ===========================================================================
@@ -267,6 +268,7 @@ class PharoahManager with ChangeNotifier {
     isAppLocked = false;
     _inactivityTimer?.cancel();
     loggedInStaff = null; 
+    AppAutoSyncDaemon.instance.stop();
     notifyListeners(); 
   }
 
@@ -306,6 +308,8 @@ class PharoahManager with ChangeNotifier {
     await File('$dir/bats.json').writeAsString(jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
     await File('$dir/config.json').writeAsString(jsonEncode(config.toMap()));
     notifyListeners();
+    // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Debounced Background Push)
+    AppAutoSyncDaemon.instance.triggerSilentPush(this);
   }
 
   Future<void> loadAllData() async {

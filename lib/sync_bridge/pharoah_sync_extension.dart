@@ -1,6 +1,6 @@
-import 'package:pharoah_erp/pharoah_manager.dart';
-import 'package:pharoah_erp/models.dart';
-import 'package:pharoah_erp/inventory_logic_center.dart';
+import '../pharoah_manager.dart';
+import '../models.dart';
+import '../inventory_logic_center.dart';
 import 'engines/app_auto_sync_daemon.dart';
 import 'interceptors/sync_action_orchestrator.dart';
 

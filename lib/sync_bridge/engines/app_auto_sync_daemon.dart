@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:pharoah_erp/pharoah_manager.dart';
-import 'package:pharoah_erp/web_live_sync/app_sync_engine.dart';
+import '../../pharoah_manager.dart';
+import '../../web_live_sync/app_sync_engine.dart';
 
 /// AppAutoSyncDaemon: Background daemon for the native App (iPad/Mobile).
 /// Provides 2-second debounced silent pushes whenever any record is created,

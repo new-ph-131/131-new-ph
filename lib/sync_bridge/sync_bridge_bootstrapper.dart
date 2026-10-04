@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:pharoah_erp/pharoah_manager.dart';
+import '../pharoah_manager.dart';
 import 'engines/app_auto_sync_daemon.dart';
 
 /// SyncBridgeBootstrapper: Binds the 2-Way Live Sync Daemon to PharoahManager
