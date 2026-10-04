@@ -102,7 +102,7 @@ class WebPdfRouterService {
                           _tCol("Product Description", 220, isLeft: true),
                           _tCol("Batch", 70), _tCol("Exp", 45), _tCol("HSN", 45),
                           _tCol("MRP", 55), _tCol("Rate", 55),
-                          if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else _tCol("IGST", 80),
+                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else _tCol("IGST%", 80),
                           _tCol("Net Amt", 100, isLast: true),
                         ],
                       ),
@@ -666,7 +666,7 @@ class WebPdfRouterService {
                           _tCol("Description", 210, isLeft: true),
                           _tCol("Batch", 70), _tCol("Exp", 45), _tCol("HSN", 45),
                           _tCol("MRP", 55), _tCol("Rate", 55),
-                          if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else _tCol("IGST", 80),
+                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else _tCol("IGST%", 80),
                           _tCol("Total", 125, isLast: true),
                         ],
                       ),
@@ -928,7 +928,7 @@ class WebPdfRouterService {
                           _tCol("Product Name", 220, isLeft: true),
                           _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
                           _tCol("MRP", 55), _tCol("Rate", 55),
-                          if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else _tCol("IGST", 80),
+                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else _tCol("IGST%", 80),
                           _tCol("Total", 100, isLast: true),
                         ],
                       ),
@@ -950,9 +950,6 @@ class WebPdfRouterService {
                           }
                           PurchaseItem i = entry as PurchaseItem;
                           int sNo = returnObj.items.indexOf(i) + 1;
-                          double taxableRow = i.purchaseRate * i.qty;
-                          double taxAmt = i.total - taxableRow;
-
                           return pw.Container(
                             height: 18,
                             decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
@@ -969,10 +966,10 @@ class WebPdfRouterService {
                                 _cell(i.mrp.toStringAsFixed(2), 55),
                                 _cell(i.purchaseRate.toStringAsFixed(2), 55),
                                 if (isLocal) ...[
-                                  _cell((taxAmt / 2).toStringAsFixed(1), 40),
-                                  _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
                                 ] else ...[
-                                  _cell(taxAmt.toStringAsFixed(1), 80),
+                                  _cell("${i.gstRate.toStringAsFixed(1)}%", 80),
                                 ],
                                 _cell(i.total.toStringAsFixed(2), 100),
                               ],

@@ -103,7 +103,7 @@ class WebPurchaseInvoicePdf {
                           _tCol("Product Name", 215, isLeft: true),
                           _tCol("Batch", 80), _tCol("Exp", 45), _tCol("HSN", 45),
                           _tCol("MRP", 55), _tCol("Pur.Rate", 55),
-                          if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else _tCol("IGST", 80),
+                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else _tCol("IGST%", 80),
                           _tCol("Net Amt", 100, isLast: true),
                         ],
                       ),
@@ -116,9 +116,6 @@ class WebPurchaseInvoicePdf {
                           int idx = entry.key;
                           PurchaseItem i = entry.value;
                           String qtyDisp = "${_formatQty(i.qty)}${i.freeQty > 0 ? ' + ' + _formatQty(i.freeQty) : ''}";
-                          double taxableRow = i.purchaseRate * i.qty - i.discountRupees;
-                          double taxAmt = i.total - taxableRow;
-
                           return pw.Container(
                             height: 18,
                             decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
@@ -137,10 +134,10 @@ class WebPurchaseInvoicePdf {
                                 _cell(i.mrp.toStringAsFixed(2), 55),
                                 _cell(i.purchaseRate.toStringAsFixed(2), 55),
                                 if (isLocal) ...[
-                                  _cell((taxAmt / 2).toStringAsFixed(1), 40),
-                                  _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
                                 ] else ...[
-                                  _cell(taxAmt.toStringAsFixed(1), 80),
+                                  _cell("${i.gstRate.toStringAsFixed(1)}%", 80),
                                 ],
                                 _cell(i.total.toStringAsFixed(2), 100),
                               ],
