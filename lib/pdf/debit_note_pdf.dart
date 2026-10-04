@@ -71,6 +71,8 @@ class DebitNotePdf {
                   pw.Text(supplier.name, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                   pw.Text("${supplier.address}, ${supplier.city}", style: const pw.TextStyle(fontSize: 7.5), maxLines: 2),
                   pw.Text("GST: ${supplier.gst} | DL: ${supplier.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                  pw.Text("PAN: ${supplier.pan} | Mob: ${supplier.phone}", style: pw.TextStyle(fontSize: 7)),
+                  if (supplier.email.isNotEmpty) pw.Text("Email: ${supplier.email.toLowerCase()}", style: pw.TextStyle(fontSize: 7)),
                 ])),
               ]),
 
