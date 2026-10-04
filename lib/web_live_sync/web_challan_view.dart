@@ -8,6 +8,8 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_challans/web_sale_challan_billing_view.dart';
+import 'sub_views/web_challans/web_purchase_challan_billing_view.dart';
 
 class WebChallanView extends StatefulWidget {
   final VoidCallback onBack;
@@ -102,7 +104,7 @@ class _WebChallanViewState extends State<WebChallanView> {
     );
   }
 
-  // --- SUB-SCREEN: SALE CHALLANS REGISTER (WITH WEB PORTAL BADGE) ---
+  // --- SUB-SCREEN: SALE CHALLANS REGISTER (WITH MODIFY & DELETE GUARDS) ---
   Widget _buildSaleRegister(PharoahWebManager webPh) {
     final activeShop = CompanyProfile.fromMap(webPh.companyProfile);
     final fDateOnly = _dateOnly(regFromDate);
@@ -126,7 +128,13 @@ class _WebChallanViewState extends State<WebChallanView> {
       children: [
         _buildRegisterFilterBar(
           webPh, 
-          onPrintReport: () => WebPdfRouterService.printChallanReport(challans: filtered, shop: activeShop, from: regFromDate, to: regToDate, isSaleChallan: true),
+          onPrintReport: () => WebPdfRouterService.printChallanReport(
+            challans: filtered, 
+            shop: activeShop, 
+            from: regFromDate, 
+            to: regToDate, 
+            isSaleChallan: true
+          ),
         ),
         const SizedBox(height: 12),
         filtered.isEmpty
@@ -138,21 +146,35 @@ class _WebChallanViewState extends State<WebChallanView> {
                 itemBuilder: (c, i) {
                   final item = filtered[i];
                   bool isPending = item.status == "Pending";
-                  bool isWeb = item.id.startsWith("SCH-WEB") || item.salesmanName == "WEB-PORTAL";
+                  bool isBilled = item.status == "Billed";
+                  bool isWeb = item.id.startsWith("SCH-WEB") || (item.salesmanName == "WEB-PORTAL");
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white10)),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isBilled ? Colors.teal.withOpacity(0.3) : Colors.white10),
+                    ),
                     child: ListTile(
                       dense: true,
                       leading: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: const BoxDecoration(color: Color(0x330F766E), borderRadius: BorderRadius.all(Radius.circular(6))),
-                        child: const Text("SALE CH", style: TextStyle(color: Color(0xFF2DD4BF), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isBilled ? const Color(0x3314B8A6) : const Color(0x33F59E0B), 
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text("${i + 1}", style: TextStyle(color: isBilled ? Colors.tealAccent : Colors.orangeAccent, fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                       title: Row(
                         children: [
-                          Text(item.partyName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          Flexible(
+                            child: Text(
+                              item.partyName, 
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           _statusBadge(item.status.toUpperCase(), isPending),
                           if (isWeb) ...[
@@ -160,47 +182,83 @@ class _WebChallanViewState extends State<WebChallanView> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                               decoration: BoxDecoration(
-                                color: const Color(0x3338BDF8),
+                                color: const Color(0x332DD4BF),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFF38BDF8), width: 0.5),
+                                border: Border.all(color: const Color(0xFF2DD4BF), width: 0.5),
                               ),
                               child: const Text(
                                 "WEB PORTAL",
-                                style: TextStyle(color: Color(0xFF38BDF8), fontSize: 7.5, fontWeight: FontWeight.w900),
+                                style: TextStyle(color: Color(0xFF2DD4BF), fontSize: 7.5, fontWeight: FontWeight.w900),
                               ),
                             ),
                           ],
                         ],
                       ),
-                      subtitle: Text("Challan No: ${item.billNo} • Date: ${DateFormat('dd/MM/yyyy').format(item.date)} • Items: ${item.items.length}", style: const TextStyle(color: Colors.white38, fontSize: 10.5)),
+                      subtitle: Text(
+                        "Challan No: ${item.billNo} • Date: ${DateFormat('dd/MM/yyyy').format(item.date)} • Items: ${item.items.length}", 
+                        style: const TextStyle(color: Colors.white38, fontSize: 10.5),
+                      ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text("₹${item.totalAmount.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontWeight: FontWeight.w900, fontSize: 14)),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
+                          // 👁️ VIEW ITEMS (READ-ONLY)
+                          IconButton(
+                            icon: const Icon(Icons.visibility_outlined, color: Colors.cyanAccent, size: 18),
+                            tooltip: "View Challan Items",
+                            onPressed: () => _openSaleChallanDetails(context, webPh, item, isReadOnly: true),
+                          ),
+                          // ✏️ EDIT / MODIFY CHALLAN (GUARDED)
+                          IconButton(
+                            icon: Icon(
+                              Icons.edit_note_rounded, 
+                              color: isBilled ? Colors.white24 : Colors.orangeAccent, 
+                              size: 20
+                            ),
+                            tooltip: isBilled ? "Locked: Already Billed" : "Modify Challan",
+                            onPressed: () {
+                              if (isBilled) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Sale Bill has already been generated from this Challan!"),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              _openSaleChallanDetails(context, webPh, item, isReadOnly: false);
+                            },
+                          ),
+                          // 🖨️ PRINT
                           IconButton(
                             icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18),
-                            tooltip: "Print Landscape Challan",
+                            tooltip: "Print Outward Note",
                             onPressed: () {
-                              final pObj = webPh.parties.firstWhere((p) => p.name == item.partyName, orElse: () => Party(id: 'temp', name: item.partyName));
+                              final pObj = webPh.parties.firstWhere(
+                                (p) => p.name == item.partyName, 
+                                orElse: () => Party(id: 'temp', name: item.partyName, gst: item.partyGstin, state: item.partyState)
+                              );
                               WebPdfRouterService.printSaleChallan(challan: item, party: pObj, shop: activeShop);
                             },
                           ),
+                          // 📥 DOWNLOAD PDF
                           IconButton(
                             icon: const Icon(Icons.download_rounded, color: Colors.greenAccent, size: 18),
                             tooltip: "Download PDF",
                             onPressed: () {
-                              final pObj = webPh.parties.firstWhere((p) => p.name == item.partyName, orElse: () => Party(id: 'temp', name: item.partyName));
+                              final pObj = webPh.parties.firstWhere(
+                                (p) => p.name == item.partyName, 
+                                orElse: () => Party(id: 'temp', name: item.partyName, gst: item.partyGstin, state: item.partyState)
+                              );
                               WebPdfRouterService.downloadSaleChallanPdf(challan: item, party: pObj, shop: activeShop);
                             },
                           ),
+                          // 🗑️ DELETE (WITH CONFIRMATION & BILL CHECK)
                           IconButton(
                             icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
                             tooltip: "Delete Challan",
-                            onPressed: () {
-                              webPh.deleteSaleChallan(item.id);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("🗑️ Sale Challan Removed!"), backgroundColor: Colors.redAccent));
-                            },
+                            onPressed: () => _confirmDeleteSaleChallan(context, webPh, item),
                           ),
                         ],
                       ),
@@ -215,7 +273,7 @@ class _WebChallanViewState extends State<WebChallanView> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("TOTAL SALE CHALLANS: ${filtered.length}", style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+              Text("TOTAL OUTWARD CHALLANS: ${filtered.length}", style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
               Text("REGISTER VALUE: ₹${totalVal.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 14, fontWeight: FontWeight.w900)),
             ],
           ),
@@ -224,7 +282,7 @@ class _WebChallanViewState extends State<WebChallanView> {
     );
   }
 
-  // --- SUB-SCREEN: PURCHASE CHALLANS REGISTER (WITH WEB PORTAL BADGE) ---
+  // --- SUB-SCREEN: PURCHASE CHALLANS REGISTER (WITH MODIFY & DELETE GUARDS) ---
   Widget _buildPurchaseRegister(PharoahWebManager webPh) {
     final activeShop = CompanyProfile.fromMap(webPh.companyProfile);
     final fDateOnly = _dateOnly(regFromDate);
@@ -238,8 +296,8 @@ class _WebChallanViewState extends State<WebChallanView> {
       bool dateMatch = !cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly);
       bool searchMatch = registerSearch.isEmpty ||
           c.distributorName.toLowerCase().contains(registerSearch.toLowerCase()) || 
-          c.internalNo.toString().toLowerCase().contains(registerSearch.toLowerCase()) ||
-          c.billNo.toString().toLowerCase().contains(registerSearch.toLowerCase());
+          c.internalNo.toLowerCase().contains(registerSearch.toLowerCase()) || 
+          c.billNo.toLowerCase().contains(registerSearch.toLowerCase());
       return dateMatch && searchMatch;
     }).toList();
 
@@ -249,11 +307,17 @@ class _WebChallanViewState extends State<WebChallanView> {
       children: [
         _buildRegisterFilterBar(
           webPh, 
-          onPrintReport: () => WebPdfRouterService.printChallanReport(challans: filtered, shop: activeShop, from: regFromDate, to: regToDate, isSaleChallan: false),
+          onPrintReport: () => WebPdfRouterService.printChallanReport(
+            challans: filtered, 
+            shop: activeShop, 
+            from: regFromDate, 
+            to: regToDate, 
+            isSaleChallan: false
+          ),
         ),
         const SizedBox(height: 12),
         filtered.isEmpty
-            ? const Center(child: Padding(padding: EdgeInsets.all(30), child: Text("No Inward Purchase Challans found.", style: TextStyle(color: Colors.white38))))
+            ? const Center(child: Padding(padding: EdgeInsets.all(30), child: Text("No Inward Challans found for selected date range.", style: TextStyle(color: Colors.white38))))
             : ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -261,21 +325,35 @@ class _WebChallanViewState extends State<WebChallanView> {
                 itemBuilder: (c, i) {
                   final item = filtered[i];
                   bool isPending = item.status == "Pending";
-                  bool isWeb = item.id.startsWith("PCH-WEB");
+                  bool isBilled = item.status == "Billed";
+                  bool isWeb = item.id.startsWith("PCH-WEB") || item.internalNo.startsWith("PCH-WEB") || item.remarks.contains("WEB-PORTAL");
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white10)),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isBilled ? Colors.amber.withOpacity(0.3) : Colors.white10),
+                    ),
                     child: ListTile(
                       dense: true,
                       leading: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: const BoxDecoration(color: Color(0x33D97706), borderRadius: BorderRadius.all(Radius.circular(6))),
-                        child: const Text("PUR CH", style: TextStyle(color: Color(0xFFFBBF24), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isBilled ? const Color(0x33F59E0B) : const Color(0x3338BDF8), 
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text("${i + 1}", style: TextStyle(color: isBilled ? Colors.amberAccent : const Color(0xFF38BDF8), fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                       title: Row(
                         children: [
-                          Text(item.distributorName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                          Flexible(
+                            child: Text(
+                              item.distributorName, 
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           _statusBadge(item.status.toUpperCase(), isPending),
                           if (isWeb) ...[
@@ -295,35 +373,71 @@ class _WebChallanViewState extends State<WebChallanView> {
                           ],
                         ],
                       ),
-                      subtitle: Text("ID: ${item.internalNo} • Ref: ${item.billNo} • Date: ${DateFormat('dd/MM/yyyy').format(item.date)} • Items: ${item.items.length}", style: const TextStyle(color: Colors.white38, fontSize: 10.5)),
+                      subtitle: Text(
+                        "ID: ${item.internalNo} • Ref: ${item.billNo} • Date: ${DateFormat('dd/MM/yyyy').format(item.date)} • Items: ${item.items.length}", 
+                        style: const TextStyle(color: Colors.white38, fontSize: 10.5),
+                      ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text("₹${item.totalAmount.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFFFBBF24), fontWeight: FontWeight.w900, fontSize: 14)),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 10),
+                          // 👁️ VIEW ITEMS (READ-ONLY)
+                          IconButton(
+                            icon: const Icon(Icons.visibility_outlined, color: Colors.cyanAccent, size: 18),
+                            tooltip: "View Inward Details",
+                            onPressed: () => _openPurchaseChallanDetails(context, webPh, item, isReadOnly: true),
+                          ),
+                          // ✏️ EDIT / MODIFY INWARD CHALLAN (GUARDED)
+                          IconButton(
+                            icon: Icon(
+                              Icons.edit_note_rounded, 
+                              color: isBilled ? Colors.white24 : Colors.orangeAccent, 
+                              size: 20
+                            ),
+                            tooltip: isBilled ? "Locked: Already Invoiced" : "Modify Inward Challan",
+                            onPressed: () {
+                              if (isBilled) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Purchase Invoice has already been generated from this Inward Challan!"),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              _openPurchaseChallanDetails(context, webPh, item, isReadOnly: false);
+                            },
+                          ),
+                          // 🖨️ PRINT
                           IconButton(
                             icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18),
                             tooltip: "Print Inward Slip",
                             onPressed: () {
-                              final pObj = webPh.parties.firstWhere((p) => p.name == item.distributorName, orElse: () => Party(id: 'temp', name: item.distributorName));
+                              final pObj = webPh.parties.firstWhere(
+                                (p) => p.name == item.distributorName, 
+                                orElse: () => Party(id: 'temp', name: item.distributorName)
+                              );
                               WebPdfRouterService.printPurchaseChallan(challan: item, party: pObj, shop: activeShop);
                             },
                           ),
+                          // 📥 DOWNLOAD PDF
                           IconButton(
                             icon: const Icon(Icons.download_rounded, color: Colors.greenAccent, size: 18),
                             tooltip: "Download PDF",
                             onPressed: () {
-                              final pObj = webPh.parties.firstWhere((p) => p.name == item.distributorName, orElse: () => Party(id: 'temp', name: item.distributorName));
+                              final pObj = webPh.parties.firstWhere(
+                                (p) => p.name == item.distributorName, 
+                                orElse: () => Party(id: 'temp', name: item.distributorName)
+                              );
                               WebPdfRouterService.downloadPurchaseChallanPdf(challan: item, party: pObj, shop: activeShop);
                             },
                           ),
+                          // 🗑️ DELETE (WITH CONFIRMATION & BILL CHECK)
                           IconButton(
                             icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                            tooltip: "Delete Challan",
-                            onPressed: () {
-                              webPh.deletePurchaseChallan(item.id);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("🗑️ Inward Challan Removed!"), backgroundColor: Colors.redAccent));
-                            },
+                            tooltip: "Delete Inward Challan",
+                            onPressed: () => _confirmDeletePurchaseChallan(context, webPh, item),
                           ),
                         ],
                       ),
@@ -344,6 +458,161 @@ class _WebChallanViewState extends State<WebChallanView> {
           ),
         ),
       ],
+    );
+  }
+
+  // --- ROUTING HANDLERS ---
+  void _openSaleChallanDetails(BuildContext context, PharoahWebManager webPh, SaleChallan ch, {required bool isReadOnly}) {
+    Party partyObj;
+    try {
+      partyObj = webPh.parties.firstWhere((p) => p.id == ch.partyId || p.name.trim().toUpperCase() == ch.partyName.trim().toUpperCase());
+    } catch (_) {
+      partyObj = Party(id: ch.partyId.isNotEmpty ? ch.partyId : 'temp', name: ch.partyName, gst: ch.partyGstin, state: ch.partyState);
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => WebSaleChallanBillingView(
+          party: partyObj,
+          challanNo: ch.billNo,
+          challanDate: ch.date,
+          existingRecord: ch,
+          isReadOnly: isReadOnly,
+        ),
+      ),
+    );
+  }
+
+  void _openPurchaseChallanDetails(BuildContext context, PharoahWebManager webPh, PurchaseChallan ch, {required bool isReadOnly}) {
+    Party supplierObj;
+    try {
+      supplierObj = webPh.parties.firstWhere((p) => p.id == ch.partyId || p.name.trim().toUpperCase() == ch.distributorName.trim().toUpperCase());
+    } catch (_) {
+      supplierObj = Party(id: ch.partyId.isNotEmpty ? ch.partyId : 'temp', name: ch.distributorName, group: "Sundry Creditors");
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => WebPurchaseChallanBillingView(
+          supplier: supplierObj,
+          internalNo: ch.internalNo,
+          supplierRefNo: ch.billNo,
+          challanDate: ch.date,
+          existingRecord: ch,
+          isReadOnly: isReadOnly,
+        ),
+      ),
+    );
+  }
+
+  // --- SAFE DELETION DIALOGS ---
+  void _confirmDeleteSaleChallan(BuildContext context, PharoahWebManager webPh, SaleChallan ch) {
+    bool isBilled = ch.status == "Billed";
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.white12)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            const SizedBox(width: 10),
+            const Text("Delete Sale Challan?", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Challan No: ${ch.billNo} • Customer: ${ch.partyName}",
+              style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isBilled
+                  ? "⚠️ WARNING: This challan is already marked as BILLED. Deleting it may cause mismatches with existing sale bills!"
+                  : "Are you sure you want to permanently delete this challan? This will remove the record and reverse stock impact.",
+              style: TextStyle(color: isBilled ? Colors.orangeAccent : Colors.white60, fontSize: 11.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () {
+              webPh.deleteSaleChallan(ch.id);
+              Navigator.pop(c);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("🗑️ Sale Challan Deleted Permanently!"), backgroundColor: Colors.redAccent),
+              );
+            },
+            icon: const Icon(Icons.delete_forever_rounded, size: 16),
+            label: const Text("YES, DELETE", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeletePurchaseChallan(BuildContext context, PharoahWebManager webPh, PurchaseChallan ch) {
+    bool isBilled = ch.status == "Billed";
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Colors.white12)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            const SizedBox(width: 10),
+            const Text("Delete Inward Challan?", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Inward Ref: ${ch.billNo} • Supplier: ${ch.distributorName}",
+              style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isBilled
+                  ? "⚠️ WARNING: This inward challan is already converted to a Purchase Bill. Deleting it may impact purchase records!"
+                  : "Are you sure you want to permanently delete this inward entry? This will reverse stock and delete the record.",
+              style: TextStyle(color: isBilled ? Colors.orangeAccent : Colors.white60, fontSize: 11.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () {
+              webPh.deletePurchaseChallan(ch.id);
+              Navigator.pop(c);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("🗑️ Inward Challan Deleted Permanently!"), backgroundColor: Colors.redAccent),
+              );
+            },
+            icon: const Icon(Icons.delete_forever_rounded, size: 16),
+            label: const Text("YES, DELETE", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -388,7 +657,6 @@ class _WebChallanViewState extends State<WebChallanView> {
   Widget _statusBadge(String text, bool isPending) {
     Color bg = isPending ? const Color(0x33F59E0B) : const Color(0x3310B981);
     Color fg = isPending ? Colors.orangeAccent : Colors.greenAccent;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4), border: Border.all(color: fg, width: 0.5)),
