@@ -73,7 +73,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-630 (FULL-PURCHASE-WORKFLOW-PARITY)",
+                      "#PH-REV-631 (PURCHASE-STEP1-INTELLIGENCE-RADAR)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),
