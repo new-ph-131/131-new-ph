@@ -34,6 +34,7 @@ class AppSyncEngine {
 
       // STEP 1: SNAP & DETECT (The Spy)
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
+      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
       List<String> newlyDeleted = await SnapshotWatcher.detectLocalDeletions(ph);
       if (newlyDeleted.isNotEmpty) {
         localTombstones.addAll(newlyDeleted);
@@ -64,7 +65,7 @@ class AppSyncEngine {
           TombstoneEngine.purgeDeletedRecords(ph, localTombstones);
 
           // STEP 4: DELTA MERGE (The Updater)
-          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localTombstones);
+          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localTombstones, localHashes);
 
           if (hasChanges || newlyDeleted.isNotEmpty || localTombstones.isNotEmpty) {
             InventoryLogicCenter.rebuildAllInventory(

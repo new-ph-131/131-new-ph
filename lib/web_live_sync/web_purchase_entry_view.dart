@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import '../models.dart';
 import 'sub_views/web_purchase/ui/web_purchase_entry_screen.dart';
-import 'sub_views/web_purchase/ui/web_purchase_billing_screen.dart';
 
 class WebPurchaseEntryView extends StatelessWidget {
   final VoidCallback onBack;
@@ -37,36 +36,28 @@ class WebPurchaseEntryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (initialSupplier != null && existingItems != null) {
-      return WebPurchaseBillingScreen(
-        supplier: initialSupplier!,
+    Purchase? reconstructedPurchase;
+    
+    // RECONSTRUCT PURCHASE OBJECT FOR STEP 1
+    if (modifyPurchaseId != null && initialSupplier != null && existingItems != null) {
+      reconstructedPurchase = Purchase(
+        id: modifyPurchaseId!,
         internalNo: initialInternalNo ?? "PUR-1",
-        supplierBillNo: initialBillNo ?? "",
-        billDate: initialDate ?? DateTime.now(),
+        billNo: initialBillNo ?? "",
+        partyId: initialSupplier!.id,
+        distributorName: initialSupplier!.name,
+        date: initialDate ?? DateTime.now(),
         entryDate: initialEntryDate ?? DateTime.now(),
         paymentMode: initialMode ?? "CREDIT",
-        existingPurchase: modifyPurchaseId != null
-            ? Purchase(
-                id: modifyPurchaseId!,
-                internalNo: initialInternalNo ?? "PUR-1",
-                billNo: initialBillNo ?? "",
-                partyId: initialSupplier!.id,
-                distributorName: initialSupplier!.name,
-                date: initialDate ?? DateTime.now(),
-                entryDate: initialEntryDate ?? DateTime.now(),
-                paymentMode: initialMode ?? "CREDIT",
-                totalAmount: 0.0,
-                items: existingItems ?? [],
-                linkedChallanIds: linkedChallanIds ?? [],
-              )
-            : null,
-        isReadOnly: isReadOnly,
-        onCompleted: onBack,
+        totalAmount: 0.0,
+        items: existingItems ?? [],
+        linkedChallanIds: linkedChallanIds ?? [],
       );
     }
 
     return WebPurchaseEntryScreen(
       onBack: onBack,
+      existingPurchase: reconstructedPurchase,
       isReadOnly: isReadOnly,
     );
   }
