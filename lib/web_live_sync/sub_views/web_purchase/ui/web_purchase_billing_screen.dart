@@ -240,8 +240,10 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("✅ Purchase Inward ${widget.internalNo} Saved & Cloud Synced!"), backgroundColor: Colors.green),
         );
-        // SMART POP: Clears only pushed overlay routes, leaves base state intact
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        // Safe pop: Pop Step 2 (Billing Screen) and trigger clean onCompleted callback
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
         widget.onCompleted();
       }
     }

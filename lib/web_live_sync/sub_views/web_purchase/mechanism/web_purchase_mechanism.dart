@@ -92,6 +92,7 @@ class WebPurchaseMechanism {
     webPh.updateParty(supplier);
 
     webPh.rebuildInventory();
+    webPh.notifyListeners();
     return await webPh.pushUpdatedDataToCloud();
   }
 }
