@@ -191,7 +191,11 @@ class _SaleEntryViewState extends State<SaleEntryView> {
       leading: const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.person, color: Colors.white)),
       title: Text(selectedParty!.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), 
       subtitle: Text("${selectedParty!.city} | GST: ${selectedParty!.gst}"), 
-      trailing: widget.isReadOnly ? null : IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => setState(() => selectedParty = null))
+      trailing: widget.isReadOnly ? null : TextButton.icon(
+        icon: const Icon(Icons.swap_horiz, color: Colors.blue),
+        label: const Text("Change Party", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+        onPressed: () => setState(() => selectedParty = null),
+      ),
     )
   );
   

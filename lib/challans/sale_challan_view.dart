@@ -190,7 +190,11 @@ class _SaleChallanViewState extends State<SaleChallanView> {
       leading: const CircleAvatar(backgroundColor: Colors.blueGrey, child: Icon(Icons.person, color: Colors.white)),
       title: Text(selectedParty!.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), 
       subtitle: Text("${selectedParty!.city} | GST: ${selectedParty!.gst}"), 
-      trailing: widget.isReadOnly ? null : IconButton(icon: const Icon(Icons.cancel_outlined, color: Colors.red, size: 28), onPressed: () => setState(() => selectedParty = null))
+      trailing: widget.isReadOnly ? null : TextButton.icon(
+        icon: const Icon(Icons.swap_horiz, color: Colors.blueGrey),
+        label: const Text("Change Party", style: TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold)),
+        onPressed: () => setState(() => selectedParty = null),
+      ),
     )
   );
 
