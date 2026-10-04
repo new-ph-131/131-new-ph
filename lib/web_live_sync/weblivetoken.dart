@@ -50,4 +50,11 @@ class WebLiveToken {
     final clean = token.trim().toUpperCase();
     return RegExp(r'^PH-LIVE-[A-Z0-9]{4}-[A-Z0-9]{4}$').hasMatch(clean);
   }
+
+  /// 6. Save or assign a specific token for a company ID
+  static Future<void> saveToken(String token, {required String companyId}) async {
+    if (companyId.isEmpty || token.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('web_live_token_$companyId', token.trim().toUpperCase());
+  }
 }
