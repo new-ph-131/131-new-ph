@@ -12,6 +12,7 @@ import "pdf/web_voucher_pdf.dart";
 import "package:pharoah_erp/pdf/pdf_master_service.dart";
 import "pdf/web_sale_report_pdf.dart";
 import "pdf/web_purchase_report_pdf.dart";
+import "pdf/web_purchase_invoice_pdf.dart";
 import "pdf/web_party_ledger_pdf.dart";
 
 class WebPdfRouterService {
@@ -1105,8 +1106,17 @@ class WebPdfRouterService {
   static Future<void> downloadSaleReport({required List<Sale> sales, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
     await WebSaleReportPdf.downloadReport(sales: sales, shop: shop, from: from, to: to);
   }
-  static Future<Uint8List> generatePurchaseBytes({required Purchase purchase, required Party party, required CompanyProfile shop}) async => pw.Document().save();
-  static Future<void> printPurchaseInvoice({required Purchase purchase, required Party party, required CompanyProfile shop}) async {}
+  static Future<Uint8List> generatePurchaseBytes({required Purchase purchase, required Party party, required CompanyProfile shop}) async {
+    return await WebPurchaseInvoicePdf.generateBytes(purchase: purchase, party: party, shop: shop);
+  }
+
+  static Future<void> printPurchaseInvoice({required Purchase purchase, required Party party, required CompanyProfile shop}) async {
+    await WebPurchaseInvoicePdf.printInvoice(purchase: purchase, party: party, shop: shop);
+  }
+
+  static Future<void> downloadPurchasePdf({required Purchase purchase, required Party party, required CompanyProfile shop}) async {
+    await WebPurchaseInvoicePdf.downloadPdf(purchase: purchase, party: party, shop: shop);
+  }
   static Future<Uint8List> generatePurchaseReportBytes({required List<Purchase> purchases, required CompanyProfile shop, required DateTime from, required DateTime to}) async {
     return await WebPurchaseReportPdf.generateBytes(purchases: purchases, shop: shop, from: from, to: to);
   }
