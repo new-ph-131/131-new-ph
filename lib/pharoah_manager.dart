@@ -1061,7 +1061,7 @@ void registerBatchActivity({
 
       return {
         "success": true,
-        "message": "Cloud Store "$compName" connected & restored successfully!",
+        "message": "Cloud Store '" + compName + "' connected & restored successfully!",
         "companyName": compName,
       };
     } catch (e) {
