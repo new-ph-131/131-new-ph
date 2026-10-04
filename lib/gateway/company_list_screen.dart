@@ -40,8 +40,14 @@ class _CompanyListScreenState extends State<CompanyListScreen> {
             },
           ),
           IconButton(
+            icon: const Icon(Icons.cloud_download_rounded, size: 26),
+            tooltip: "Connect Cloud Store",
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MultiSetupView(isFirstRun: false, initialTab: 1))),
+          ),
+          IconButton(
             icon: const Icon(Icons.add_business_rounded, size: 28),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MultiSetupView(isFirstRun: false))),
+            tooltip: "Create New Business",
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MultiSetupView(isFirstRun: false, initialTab: 0))),
           ),
           const SizedBox(width: 10),
         ],

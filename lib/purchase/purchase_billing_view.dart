@@ -239,35 +239,21 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
   void _handleSave(PharoahManager ph, double itemTotal, double extraDisc, double roundOffVal, double finalGrandTotal) {
     List<String> links = widget.linkedChallanIds ?? [];
     if (widget.modifyPurchaseId != null) {
-      ph.updatePurchase(
-        id: widget.modifyPurchaseId!, 
-        internalNo: internalNoC.text, 
-        billNo: distBillNoC.text.trim(), 
-        date: selectedBillDate, 
-        entryDate: widget.entryDate, 
-        party: widget.distributor, 
-        items: items, 
-        total: finalGrandTotal, // Passed net total
-        mode: widget.mode, 
-        linkedChallanIds: links,
-        extraDiscount: extraDisc, // 🆕 Mapped
-        roundOff: roundOffVal,     // 🆕 Mapped
-      );
-    } else {
-      ph.finalizePurchase(
-        internalNo: internalNoC.text, 
-        billNo: distBillNoC.text.trim(), 
-        date: selectedBillDate, 
-        entryDate: widget.entryDate, 
-        party: widget.distributor, 
-        items: items, 
-        total: finalGrandTotal, // Passed net total
-        mode: widget.mode, 
-        linkedChallanIds: links,
-        extraDiscount: extraDisc, // 🆕 Mapped
-        roundOff: roundOffVal,     // 🆕 Mapped
-      );
+      ph.deletePurchase(widget.modifyPurchaseId!);
     }
+    ph.finalizePurchase(
+      internalNo: internalNoC.text, 
+      billNo: distBillNoC.text.trim(), 
+      date: selectedBillDate, 
+      entryDate: widget.entryDate, 
+      party: widget.distributor, 
+      items: items, 
+      total: finalGrandTotal, // Passed net total
+      mode: widget.mode, 
+      linkedChallanIds: links,
+      extraDiscount: extraDisc, // 🆕 Mapped
+      roundOff: roundOffVal,     // 🆕 Mapped
+    );
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 }

@@ -21,6 +21,9 @@ import 'logic/app_settings_model.dart';
 import 'logic/pharoah_numbering_engine.dart';
 import 'master_data_library.dart';
 import 'batch_sync_engine.dart';
+import 'web_live_sync/web_sync_engine.dart';
+import 'web_live_sync/weblivetoken.dart';
+import 'app_date_logic.dart';
 
 class PharoahManager with ChangeNotifier {
   // ===========================================================================
@@ -934,7 +937,7 @@ void registerBatchActivity({
   }
 
   void deleteBill(String id) { try { final s = sales.firstWhere((x) => x.id == id); if (s.linkedChallanIds.isNotEmpty) { for (var cid in s.linkedChallanIds) { int i = saleChallans.indexWhere((c) => c.id == cid); if (i != -1) saleChallans[i].status = "Pending"; } } sales.removeWhere((x) => x.id == id); save().then((_) => loadAllData()); } catch (e) {} }
-  void deletePurchase(String id) { purchases.removeWhere((p) => p.id == id); save().then((_) => loadAllData()); }
+  void deletePurchase(String id) { try { final p = purchases.firstWhere((x) => x.id == id); if (p.linkedChallanIds.isNotEmpty) { for (var cid in p.linkedChallanIds) { int i = purchaseChallans.indexWhere((c) => c.id == cid); if (i != -1) purchaseChallans[i].status = "Pending"; } } purchases.removeWhere((p) => p.id == id); save().then((_) => loadAllData()); } catch (e) {} }
   void deleteSaleChallan(String id) { saleChallans.removeWhere((c) => c.id == id); save(); }
   void deletePurchaseChallan(String id) { purchaseChallans.removeWhere((c) => c.id == id); save(); }
   void deleteSaleReturn(String id) { saleReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }
@@ -961,6 +964,114 @@ void registerBatchActivity({
   // ===========================================================================
 
   Future<void> setupNewCompanyEnvironment(CompanyProfile p, String f) async { activeCompany = p; currentFY = f; numberingSeries = [NumberingSeries(id: 's1', name: "Standard Retail", type: "SALE", prefix: "INV-", isDefault: true)]; medicines = DemoData.getMedicines(); companies = MasterDataLibrary.getTopCompanies(); salts = MasterDataLibrary.getTopSalts(); drugTypes = MasterDataLibrary.getDrugTypes(); parties = [DemoData.getDemoParty(), Party(id: 'cash', name: "CASH", group: "Cash in Hand")]; await save(); if (!companiesRegistry.any((c) => c.id == p.id)) { companiesRegistry.add(p); await saveRegistry(); } notifyListeners(); }
+
+  Future<Map<String, dynamic>> restoreCompanyFromCloud({
+    required String storeToken,
+    required String username,
+    required String password,
+  }) async {
+    try {
+      final res = await WebSyncEngine.fetchStoreData(
+        storeToken: storeToken,
+        username: username,
+        password: password,
+      );
+
+      if (res["success"] != true) {
+        return {
+          "success": false,
+          "message": res["message"] ?? "Failed to connect to Cloud Store.",
+        };
+      }
+
+      final profileData = (res["profile"] is Map) ? (res["profile"] as Map<String, dynamic>) : <String, dynamic>{};
+      final cleanToken = storeToken.trim().toUpperCase();
+      final String compId = profileData["id"]?.toString() ?? "COMP-${cleanToken.replaceAll(RegExp(r"[^A-Za-z0-9]"), "")}";
+      final String compName = profileData["name"]?.toString() ?? res["companyName"]?.toString() ?? "CLOUD STORE";
+      final String bType = profileData["businessType"]?.toString() ?? "WHOLESALE";
+      final String fy = (res["fy"] != null && res["fy"].toString().isNotEmpty)
+          ? res["fy"].toString()
+          : (profileData["fYears"] != null && (profileData["fYears"] as List).isNotEmpty
+              ? (profileData["fYears"] as List).last.toString()
+              : AppDateLogic.getCurrentFYString());
+
+      final List<String> allFys = profileData["fYears"] != null && (profileData["fYears"] as List).isNotEmpty
+          ? List<String>.from(profileData["fYears"])
+          : [fy];
+
+      if (!allFys.contains(fy)) {
+        allFys.add(fy);
+      }
+
+      final CompanyProfile restoredProfile = CompanyProfile(
+        id: compId,
+        name: compName,
+        businessType: bType,
+        createdAt: profileData["createdAt"] != null
+            ? DateTime.tryParse(profileData["createdAt"].toString()) ?? DateTime.now()
+            : DateTime.now(),
+        address: profileData["address"]?.toString() ?? "",
+        state: profileData["state"]?.toString() ?? "Rajasthan",
+        gstin: profileData["gstin"]?.toString() ?? "N/A",
+        dlNo: profileData["dlNo"]?.toString() ?? "N/A",
+        phone: profileData["phone"]?.toString() ?? "",
+        email: profileData["email"]?.toString() ?? "",
+        adminUser: username.trim().toLowerCase(),
+        password: password.trim(),
+        isBiometricEnabled: profileData["isBiometricEnabled"] == true,
+        recoveryKey: profileData["recoveryKey"]?.toString() ?? "",
+        autoLockMinutes: (profileData["autoLockMinutes"] is int) ? profileData["autoLockMinutes"] : 5,
+        fYears: allFys,
+      );
+
+      final root = await getApplicationDocumentsDirectory();
+      final workingDir = Directory("${root.path}/${restoredProfile.id}/$fy");
+      if (!await workingDir.exists()) {
+        await workingDir.create(recursive: true);
+      }
+
+      final Map<String, dynamic> files = (res["files"] is Map) ? (res["files"] as Map<String, dynamic>) : {};
+      for (var entry in files.entries) {
+        final filename = entry.key;
+        final fileContent = entry.value;
+        if (fileContent == null) continue;
+        final file = File("${workingDir.path}/$filename");
+        if (fileContent is String) {
+          await file.writeAsString(fileContent);
+        } else {
+          await file.writeAsString(jsonEncode(fileContent));
+        }
+      }
+
+      int existIdx = companiesRegistry.indexWhere((c) => c.id == restoredProfile.id);
+      if (existIdx != -1) {
+        companiesRegistry[existIdx] = restoredProfile;
+      } else {
+        companiesRegistry.add(restoredProfile);
+      }
+      await saveRegistry();
+
+      await WebLiveToken.saveToken(cleanToken, companyId: restoredProfile.id);
+
+      activeCompany = restoredProfile;
+      currentFY = fy;
+      isAdminAuthenticated = true;
+      await loadAllData();
+      notifyListeners();
+
+      return {
+        "success": true,
+        "message": "Cloud Store "$compName" connected & restored successfully!",
+        "companyName": compName,
+      };
+    } catch (e) {
+      debugPrint("restoreCompanyFromCloud Error: $e");
+      return {
+        "success": false,
+        "message": "Restore Error: $e",
+      };
+    }
+  }
   
   Future<bool> startNewFinancialYear(String n, {bool filterZeroStock = false, bool filterExpired = false}) async { 
     await save(); 
