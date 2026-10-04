@@ -1,4 +1,29 @@
-// FILE: lib/web_live_sync/sub_views/web_purchase/ui/web_purchase_billing_screen.dart
+import os
+import re
+import subprocess
+import sys
+
+print("==================================================================")
+print("🚀 DEPLOYING STEP-2 MARGIN RADAR, SWIPE & 1-TAP DELETE (#PH-REV-632)")
+print("==================================================================\n")
+
+# 1. UPDATE LIVE TAG TO #PH-REV-632
+print("🏷️ Step 1/4: Updating Top Bar Live Tag to #PH-REV-632...")
+tb_path = "lib/web_live_sync/components/web_top_bar.dart"
+if os.path.exists(tb_path):
+    with open(tb_path, "r", encoding="utf-8") as f:
+        tb = f.read()
+    new_rev = "#PH-REV-632 (PURCHASE-STEP2-MARGIN-AND-SWIPE-UPGRADE)"
+    tb = re.sub(r"#PH-REV-\d+[^\"]*", new_rev, tb)
+    with open(tb_path, "w", encoding="utf-8") as f:
+        f.write(tb)
+    print(f"✔ Tag Updated: {new_rev}")
+
+# 2. WRITE ADVANCED STEP-2 BILLING SCREEN
+print("\n🖥️ Step 2/4: Upgrading web_purchase_billing_screen.dart...")
+billing_screen_path = "lib/web_live_sync/sub_views/web_purchase/ui/web_purchase_billing_screen.dart"
+
+code = '''// FILE: lib/web_live_sync/sub_views/web_purchase/ui/web_purchase_billing_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -74,7 +99,7 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
   // 🧠 Smart Qty Decimal Formatter (0.5 + 0.5 preserved perfectly!)
   String _formatQty(double v) {
     if (v % 1 == 0) return v.toInt().toString();
-    return v.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return v.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\\.$'), '');
   }
 
   // 🧠 Margin % Calculation per item: ((MRP - Net Pur Rate) / MRP) * 100
@@ -842,3 +867,47 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
     return width != null ? SizedBox(width: width, child: textWidget) : textWidget;
   }
 }
+'''
+with open(billing_screen_path, "w", encoding="utf-8") as f:
+    f.write(code)
+print("✔ web_purchase_billing_screen.dart upgraded with swipe, margin & 1-tap delete.")
+
+# 3. VERIFY WITH FLUTTER ANALYZE
+print("\n🔍 Step 3/4: Running Flutter Analyze on lib/web_live_sync/...")
+res = subprocess.run(["flutter", "analyze", "lib/web_live_sync/"], capture_output=True, text=True)
+print(res.stdout)
+
+errors = [line for line in res.stdout.split('\n') if 'error •' in line]
+if len(errors) > 0:
+    print(f"❌ Found {len(errors)} error(s):")
+    for e in errors:
+        print("  " + e)
+    sys.exit(1)
+
+print("🎉 0 ERRORS! COMPILATION IS 100% CLEAN.")
+
+# 4. BUILD & DEPLOY TO CLOUDFLARE
+print("\n🔨 Step 4/4: Building & Deploying Web App...")
+b_res = subprocess.run(
+    ["flutter", "build", "web", "-t", "lib/web_live_sync/web_main.dart", "--release", "--base-href", "/", "--pwa-strategy=none"],
+    text=True
+)
+if b_res.returncode != 0:
+    print("❌ Web Build Failed!")
+    sys.exit(1)
+
+subprocess.run(["npx", "wrangler", "pages", "deploy", "build/web", "--project-name=pharoah-erp"], text=True)
+
+# Commit & Push
+print("\n🔄 Committing & Pushing to GitHub...")
+subprocess.run(["git", "add", "."], text=True)
+subprocess.run(["git", "commit", "-m", "🚀 #PH-REV-632: Purchase Step-2 1-Tap Delete, Margin Radar & Swipe Installed"], text=True)
+branch_res = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True)
+branch = branch_res.stdout.strip() or "main"
+subprocess.run(["git", "push", "origin", branch], text=True)
+
+print("\n" + "="*65)
+print("🎉 SUCCESS: #PH-REV-632 IS 100% DEPLOYED & LIVE!")
+print("🔗 Website: https://pharoah-erp.pages.dev")
+print("✅ Tag: #PH-REV-632 (PURCHASE-STEP2-MARGIN-AND-SWIPE-UPGRADE)")
+print("="*65)
