@@ -317,6 +317,11 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                           onPressed: () => WebPdfRouterService.printPurchaseInvoice(purchase: p, party: supplierObj, shop: activeShop),
                         ),
                         IconButton(
+                          icon: const Icon(Icons.download_rounded, color: Colors.greenAccent, size: 18), 
+                          tooltip: "Download PDF File",
+                          onPressed: () => WebPdfRouterService.downloadPurchasePdf(purchase: p, party: supplierObj, shop: activeShop),
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent, size: 20), 
                           tooltip: "Edit / Modify Inward",
                           onPressed: () {

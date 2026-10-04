@@ -206,7 +206,13 @@ class WebPurchaseInvoicePdf {
                 ] else ...[
                   _fRow("IGST (ITC)", gst),
                 ],
-                if (pur.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", pur.extraDiscount),
+                if (pur.extraDiscount > 0) ...[
+                  pw.Builder(builder: (context) {
+                    double discPer = taxable > 0 ? ((pur.extraDiscount / taxable) * 100) : 0.0;
+                    String label = discPer > 0 ? "BILL DISCOUNT (${discPer.toStringAsFixed(1)}%) (-)" : "EXTRA DISCOUNT (-)";
+                    return _fRow(label, pur.extraDiscount);
+                  }),
+                ],
                 if (pur.roundOff != 0) _fRow("ROUND OFF", pur.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
