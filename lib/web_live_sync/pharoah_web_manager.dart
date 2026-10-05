@@ -98,6 +98,7 @@ class PharoahWebManager with ChangeNotifier {
           isAuthenticated = true;
           isLoading = false;
           isAutoLoggingIn = false;
+          _autoSyncService.startRealtimeSync();
           notifyListeners();
           return true;
         }
@@ -139,6 +140,7 @@ class PharoahWebManager with ChangeNotifier {
       isAuthenticated = true;
       isLoading = false;
       successMessage = "Store connected successfully!";
+      _autoSyncService.startRealtimeSync();
       notifyListeners();
       return true;
     } else {

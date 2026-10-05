@@ -25,6 +25,7 @@ import 'web_live_sync/web_sync_engine.dart';
 import 'web_live_sync/weblivetoken.dart';
 import 'app_date_logic.dart';
 import 'sync_bridge/engines/app_auto_sync_daemon.dart';
+import 'realtime_signaling/coordinators/app_realtime_coordinator.dart';
 
 class PharoahManager with ChangeNotifier {
   // ===========================================================================
@@ -268,6 +269,7 @@ class PharoahManager with ChangeNotifier {
     isAppLocked = false;
     _inactivityTimer?.cancel();
     loggedInStaff = null; 
+    AppRealtimeCoordinator.instance.stop();
     AppAutoSyncDaemon.instance.stop();
     notifyListeners(); 
   }
@@ -309,7 +311,7 @@ class PharoahManager with ChangeNotifier {
     await File('$dir/config.json').writeAsString(jsonEncode(config.toMap()));
     notifyListeners();
     // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Debounced Background Push)
-    AppAutoSyncDaemon.instance.triggerSilentPush(this);
+    AppRealtimeCoordinator.instance.notifyAppMutation(this);
   }
 
   Future<void> loadAllData() async {
