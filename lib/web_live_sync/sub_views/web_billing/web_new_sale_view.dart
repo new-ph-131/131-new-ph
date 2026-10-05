@@ -229,14 +229,14 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     );
 
     if (widget.modifySaleId != null) webPh.sales.removeWhere((s) => s.id == widget.modifySaleId!);
-    webPh.addSaleAndSync(newSale);
+    await webPh.addSaleAndSync(newSale);
     
     if (widget.linkedChallanIds != null) {
       for (var id in widget.linkedChallanIds!) {
         int idx = webPh.saleChallans.indexWhere((c) => c.id == id);
         if (idx != -1) webPh.saleChallans[idx].status = "Billed";
       }
-      webPh.pushUpdatedDataToCloud();
+      await webPh.pushUpdatedDataToCloud();
     }
 
     setState(() => isSaving = false);

@@ -2,10 +2,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/app_sync_engine.dart';
+import '../../realtime_signaling/engines/fast_pull_engine.dart';
 
 /// AppAutoSyncDaemon: Background daemon for the native App (iPad/Mobile).
 /// Provides 2-second debounced silent pushes whenever any record is created,
-/// edited, or deleted, plus an automated background heartbeat.
+/// edited, or deleted, plus an automated background heartbeat pull.
 class AppAutoSyncDaemon {
   static final AppAutoSyncDaemon instance = AppAutoSyncDaemon._internal();
   AppAutoSyncDaemon._internal();
@@ -17,7 +18,6 @@ class AppAutoSyncDaemon {
   /// Triggers a debounced (2 seconds) background push to Cloud Relay.
   void triggerSilentPush(PharoahManager ph) {
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
-
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(seconds: 2), () async {
       if (_isSyncing) return;
@@ -37,15 +37,16 @@ class AppAutoSyncDaemon {
     });
   }
 
-  /// Starts a periodic background heartbeat to pull & merge cloud changes (every 2 minutes)
+  /// Starts a periodic background heartbeat to pull & merge cloud changes (every 30 seconds)
   void startHeartbeat(PharoahManager ph) {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_isSyncing || ph.activeCompany == null || ph.currentFY.isEmpty) return;
       _isSyncing = true;
       try {
-        await AppSyncEngine.pushStoreData(ph);
-        debugPrint("💓 [AppAutoSyncDaemon] Periodic cloud heartbeat sync completed.");
+        // 🔥 Heartbeat MUST pull and merge from cloud, NEVER blindly push and overwrite!
+        await FastPullEngine.pullAndMerge(ph);
+        debugPrint("💓 [AppAutoSyncDaemon] Periodic cloud pull heartbeat completed.");
       } catch (e) {
         debugPrint("⚠ [AppAutoSyncDaemon] Heartbeat error: $e");
       } finally {

@@ -1,11 +1,10 @@
 // FILE: lib/web_live_sync/sync_protocol/delta_merge_engine.dart
-
 import 'dart:convert';
 import '../../../pharoah_manager.dart';
 import '../../../models.dart';
 
 class DeltaMergeEngine {
-  /// Smartly merges cloud data. Prioritizes local edits if hash differs from last sync.
+  /// Smartly merges cloud data. Accepts incoming edits from peer client atomically.
   static bool processCloudData(PharoahManager ph, Map<String, dynamic> cloudFiles, Set<String> tombstones, Map<String, String> localHashes) {
     bool hasChanges = false;
 
@@ -46,18 +45,10 @@ class DeltaMergeEngine {
           String cloudJson = jsonEncode(cloudMap);
           
           if (localJson != cloudJson) {
-            String currentHash = localJson.hashCode.toString();
-            String baselineHash = localHashes[id] ?? '';
-
-            if (baselineHash.isNotEmpty && currentHash != baselineHash) {
-              // 🛡️ LOCAL EDIT SUPREMACY: Local record was edited offline!
-              // DO NOT overwrite. Let the push step upload the local version.
-              changed = true; 
-            } else {
-              // Cloud has newer data, Local was untouched. CLOUD WINS.
-              localList[idx] = fromMap(cloudMap);
-              changed = true;
-            }
+            // ⚡ Cloud has newer modified transaction from peer client!
+            // Update local memory with the peer's modification!
+            localList[idx] = fromMap(cloudMap);
+            changed = true;
           }
         }
       }

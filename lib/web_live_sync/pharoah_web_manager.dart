@@ -394,32 +394,42 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
-  void addSaleAndSync(Sale sale) {
-    sales.add(sale);
-    for (var item in sale.items) {
-      String resolvedKey = item.medicineID;
-      try {
-        final med = medicines.firstWhere((m) => m.id == item.medicineID);
-        resolvedKey = med.identityKey;
-      } catch (_) {}
+  Future<bool> addSaleAndSync(Sale sale) async {
+    isCloudPushInProgress = true;
+    try {
+      sales.removeWhere((s) => s.id == sale.id);
+      sales.add(sale);
+      for (var item in sale.items) {
+        String resolvedKey = item.medicineID;
+        try {
+          final med = medicines.firstWhere((m) => m.id == item.medicineID);
+          resolvedKey = med.identityKey;
+        } catch (_) {}
 
-      registerBatchActivity(
-        productKey: resolvedKey,
-        batchNo: item.batch,
-        exp: item.exp,
-        packing: item.packing,
-        mrp: item.mrp,
-        rate: item.rate,
-        rateA: item.appliedRateType == "A" ? item.rate : 0.0,
-        rateB: item.appliedRateType == "B" ? item.rate : 0.0,
-        rateC: item.appliedRateType == "C" ? item.rate : 0.0,
-        rateCFormula: item.rateCFormula,
-        appliedRateType: item.appliedRateType,
-      );
+        registerBatchActivity(
+          productKey: resolvedKey,
+          batchNo: item.batch,
+          exp: item.exp,
+          packing: item.packing,
+          mrp: item.mrp,
+          rate: item.rate,
+          rateA: item.appliedRateType == "A" ? item.rate : 0.0,
+          rateB: item.appliedRateType == "B" ? item.rate : 0.0,
+          rateC: item.appliedRateType == "C" ? item.rate : 0.0,
+          rateCFormula: item.rateCFormula,
+          appliedRateType: item.appliedRateType,
+        );
+      }
+      rebuildInventory();
+      notifyListeners();
+
+      // ⚡ Atomic Direct Cloud Push (Awaited!)
+      final success = await pushUpdatedDataToCloud();
+      _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: sale.id);
+      return success;
+    } finally {
+      isCloudPushInProgress = false;
     }
-    rebuildInventory();
-    notifyListeners();
-    _autoSyncService.triggerAutoSync(); // ⚡ Silent Debounced Push
   }
 
   void deleteSale(String saleId) {
@@ -749,7 +759,7 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   Future<void> refreshStoreData() async {
-    if (!isAuthenticated || activeStoreToken.isEmpty) return;
+    if (!isAuthenticated || activeStoreToken.isEmpty || isCloudPushInProgress) return;
     isLoading = true;
     notifyListeners();
 

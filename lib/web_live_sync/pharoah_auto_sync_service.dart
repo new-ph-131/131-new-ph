@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-645 (EVENT-DRIVEN-2-WAY-SYNC-ACTIVE)
+// Live Revision: #PH-REV-646 (ATOMIC-2-WAY-EDIT-SYNC)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'pharoah_web_manager.dart';
