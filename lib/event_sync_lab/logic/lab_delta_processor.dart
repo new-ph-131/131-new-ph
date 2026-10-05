@@ -2,8 +2,7 @@
 import 'package:flutter/foundation.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
-import '../../web_live_sync/app_sync_engine.dart';
-import '../../web_live_sync/web_sync_engine.dart';
+import '../../realtime_signaling/engines/fast_pull_engine.dart';
 import '../models/lab_sync_event.dart';
 
 /// Delta Processing Logic: Executes fast atomic pull and in-memory merge
@@ -24,15 +23,14 @@ class LabDeltaProcessor {
     try {
       debugPrint("📥 [LabDeltaProcessor] Processing incoming event on App: ${event.action} (${event.entityId})");
       
-      // Pull latest snapshot from Google Drive Cloud Relay
-      final success = await AppSyncEngine.pushStoreData(ph);
+      // Pull latest snapshot from Google Drive Cloud Relay using FastPullEngine
+      final success = await FastPullEngine.pullAndMerge(ph);
       
       stopwatch.stop();
       lastSyncDurationMs = stopwatch.elapsedMilliseconds;
-      lastSyncStatus = success ? "SUCCESS" : "FAILED";
+      lastSyncStatus = success ? "SUCCESS" : "NO_NEW_DATA";
 
       if (success) {
-        ph.notifyListeners();
         debugPrint("✅ [LabDeltaProcessor] App memory updated & UI notified in ${lastSyncDurationMs}ms!");
       }
       return success;
@@ -56,25 +54,14 @@ class LabDeltaProcessor {
     try {
       debugPrint("📥 [LabDeltaProcessor] Processing incoming event on Web: ${event.action} (${event.entityId})");
 
-      final result = await WebSyncEngine.fetchStoreData(
-        storeToken: webPh.activeStoreToken,
-        username: webPh.activeUsername,
-        password: webPh.activePassword,
-      );
+      // Refresh Web Workstation data from Google Drive Cloud Relay
+      await webPh.refreshStoreData();
 
       stopwatch.stop();
       lastSyncDurationMs = stopwatch.elapsedMilliseconds;
-
-      if (result['success'] == true && result['files'] != null) {
-        // Load into Web Workstation memory
-        webPh.loadFromCloudSnapshot(result['files']);
-        lastSyncStatus = "SUCCESS";
-        debugPrint("✅ [LabDeltaProcessor] Web workstation updated in ${lastSyncDurationMs}ms!");
-        return true;
-      } else {
-        lastSyncStatus = "FAILED: ${result['message']}";
-        return false;
-      }
+      lastSyncStatus = "SUCCESS";
+      debugPrint("✅ [LabDeltaProcessor] Web workstation updated in ${lastSyncDurationMs}ms!");
+      return true;
     } catch (e) {
       stopwatch.stop();
       lastSyncDurationMs = stopwatch.elapsedMilliseconds;
