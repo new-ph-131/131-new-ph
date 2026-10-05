@@ -74,7 +74,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-648 (INSTANT-SAVE-AND-FY-LOCK-RESTORED)",
+                      "#PH-REV-649 (ERP-UNIVERSAL-SYNC-PLUGINS-LIVE)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),
