@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-641 (CHALLAN-SYNC-FINISH-RETURN-FIX)
+// Live Revision: #PH-REV-642 (2WAY-10S-AUTO-SYNC-ACTIVE)
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -39,7 +39,7 @@ class PharoahAutoSyncService {
   /// 💓 2. PERIODIC BACKGROUND HEARTBEAT (Silent Pull & Merge every 2 minutes)
   void _startPeriodicHeartbeat() {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty || _isSyncing) return;
       _isSyncing = true;
       try {

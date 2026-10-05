@@ -40,7 +40,7 @@ class AppAutoSyncDaemon {
   /// Starts a periodic background heartbeat to pull & merge cloud changes (every 2 minutes)
   void startHeartbeat(PharoahManager ph) {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (_isSyncing || ph.activeCompany == null || ph.currentFY.isEmpty) return;
       _isSyncing = true;
       try {

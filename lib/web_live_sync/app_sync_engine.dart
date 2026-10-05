@@ -77,6 +77,7 @@ class AppSyncEngine {
               purchaseReturns: ph.purchaseReturns,
             );
             await ph.save();
+            ph.notifyListeners();
           }
         }
       }
