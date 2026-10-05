@@ -61,11 +61,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
         }
         setState(() => isLoading = false);
       } else {
-        String nextNo = webPh.getNextNumber(
-          "CHALLAN",
-          defaultPrefix: "SCH-",
-          defaultStart: 101,
-        );
+        String nextNo = webPh.getNextBillNumber("CHALLAN", "SCH-", 101);
         setState(() {
           challanNoC.text = nextNo;
           selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
