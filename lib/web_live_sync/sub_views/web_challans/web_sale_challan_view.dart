@@ -1,9 +1,7 @@
 // FILE: lib/web_live_sync/sub_views/web_challans/web_sale_challan_view.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-
 import '../../web_models.dart';
 import '../../pharoah_web_manager.dart';
 import '../../web_app_date_logic.dart';
@@ -43,16 +41,23 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
 
   void _initChallanFlow() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final webPh = Provider.of<PharoahWebManager>(context, listen: false);
-
       if (widget.existingRecord != null) {
         final ex = widget.existingRecord!;
         challanNoC.text = ex.billNo;
         selectedDate = ex.date;
         try {
-          selectedParty = webPh.parties.firstWhere((p) => p.id == ex.partyId || p.name == ex.partyName);
+          selectedParty = webPh.parties.firstWhere(
+            (p) => p.id == ex.partyId || p.name.trim().toLowerCase() == ex.partyName.trim().toLowerCase(),
+          );
         } catch (_) {
-          selectedParty = Party(id: ex.partyId, name: ex.partyName, gst: ex.partyGstin, state: ex.partyState);
+          selectedParty = Party(
+            id: ex.partyId.isNotEmpty ? ex.partyId : 'temp',
+            name: ex.partyName,
+            gst: ex.partyGstin,
+            state: ex.partyState.isNotEmpty ? ex.partyState : 'Rajasthan',
+          );
         }
         setState(() => isLoading = false);
       } else {
@@ -94,210 +99,244 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
     final webPh = Provider.of<PharoahWebManager>(context);
 
     if (isLoading) {
-      return const Center(child: Padding(padding: EdgeInsets.all(50), child: CircularProgressIndicator(color: Color(0xFF2DD4BF))));
+      return const Scaffold(
+        backgroundColor: Color(0xFF0F172A),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF2DD4BF)),
+        ),
+      );
     }
 
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 860),
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white12,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  elevation: 0,
-                ),
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text("BACK TO CHALLANS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 860),
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white10),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black38, blurRadius: 16, offset: Offset(0, 6)),
+                ],
               ),
-              const SizedBox(width: 15),
-              const Icon(Icons.local_shipping_rounded, color: Color(0xFF2DD4BF), size: 24),
-              const SizedBox(width: 10),
-              Text(
-                widget.isReadOnly ? "VIEW SALE CHALLAN" : (widget.existingRecord != null ? "MODIFY SALE CHALLAN" : "NEW OUTWARD DELIVERY CHALLAN"),
-                style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // Header Box: Challan Number & Date
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: challanNoC,
-                    readOnly: true,
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF2DD4BF), fontSize: 14),
-                    decoration: InputDecoration(
-                      labelText: "CHALLAN NUMBER",
-                      labelStyle: const TextStyle(color: Colors.white54, fontSize: 9.5),
-                      filled: true,
-                      fillColor: Colors.black26,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: InkWell(
-                    onTap: widget.isReadOnly
-                        ? null
-                        : () async {
-                            final picked = await showDatePicker(
-                              context: context,
-                              initialDate: selectedDate,
-                              firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
-                              lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
-                            );
-                            if (picked != null) setState(() => selectedDate = picked);
-                          },
-                    child: Container(
-                      height: 48,
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Navigation & Title Header
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white12,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                        onPressed: widget.onBack,
+                        icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                        label: const Text("BACK TO CHALLANS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text("DISPATCH DATE", style: TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
-                              Text(DateFormat('dd/MM/yyyy').format(selectedDate), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ],
+                      const SizedBox(width: 15),
+                      const Icon(Icons.local_shipping_rounded, color: Color(0xFF2DD4BF), size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          widget.isReadOnly
+                              ? "VIEW SALE CHALLAN"
+                              : (widget.existingRecord != null ? "MODIFY SALE CHALLAN" : "NEW OUTWARD DELIVERY CHALLAN"),
+                          style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Header Box: Challan Number & Date
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: challanNoC,
+                            readOnly: true,
+                            style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF2DD4BF), fontSize: 14),
+                            decoration: InputDecoration(
+                              labelText: "CHALLAN NUMBER",
+                              labelStyle: const TextStyle(color: Colors.white54, fontSize: 9.5),
+                              filled: true,
+                              fillColor: Colors.black26,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            ),
                           ),
-                          const Icon(Icons.calendar_month_rounded, color: Color(0xFF2DD4BF), size: 20),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: InkWell(
+                            onTap: widget.isReadOnly
+                                ? null
+                                : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: selectedDate,
+                                      firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
+                                      lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
+                                    );
+                                    if (picked != null) setState(() => selectedDate = picked);
+                                  },
+                            child: Container(
+                              height: 48,
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              decoration: BoxDecoration(
+                                color: Colors.black26,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Text("DISPATCH DATE", style: TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
+                                      Text(DateFormat('dd/MM/yyyy').format(selectedDate), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                    ],
+                                  ),
+                                  const Icon(Icons.calendar_month_rounded, color: Color(0xFF2DD4BF), size: 20),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 22),
 
-          const Text(
-            "SELECT CUSTOMER / CONSIGNEE",
-            style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-          ),
-          const SizedBox(height: 10),
+                  const SizedBox(height: 22),
+                  const Text(
+                    "SELECT CUSTOMER / CONSIGNEE",
+                    style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                  ),
+                  const SizedBox(height: 10),
 
-          // Party Selection View
-          if (selectedParty != null) 
-            _buildSelectedPartyCard() 
-          else 
-            _buildPartySearchList(webPh),
+                  // Party Selection View
+                  if (selectedParty != null)
+                    _buildSelectedPartyCard()
+                  else
+                    _buildPartySearchList(webPh),
 
-          // Proceed Button
-          if (selectedParty != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.only(top: 18),
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0F766E),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (c) => WebSaleChallanBillingView(
-                        party: selectedParty!,
-                        challanNo: challanNoC.text.trim(),
-                        challanDate: selectedDate,
-                        existingRecord: widget.existingRecord,
-                        isReadOnly: widget.isReadOnly,
+                  // Proceed Button
+                  if (selectedParty != null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.only(top: 18),
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (c) => WebSaleChallanBillingView(
+                                party: selectedParty!,
+                                challanNo: challanNoC.text.trim(),
+                                challanDate: selectedDate,
+                                existingRecord: widget.existingRecord,
+                                isReadOnly: widget.isReadOnly,
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 20),
+                        label: const Text(
+                          "PROCEED TO ITEM ENTRY ➔",
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
+                        ),
                       ),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.arrow_forward_rounded, size: 20),
-                label: const Text(
-                  "PROCEED TO ITEM ENTRY ➔",
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5),
-                ),
+                ],
               ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildSelectedPartyCard() => Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1E293B),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFF2DD4BF), width: 1.5),
-      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
-    ),
-    child: Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: const BoxDecoration(color: Color(0x332DD4BF), shape: BoxShape.circle),
-          child: const Icon(Icons.person_rounded, color: Color(0xFF2DD4BF), size: 26),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF2DD4BF), width: 1.5),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(selectedParty!.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)),
-              const SizedBox(height: 4),
-              Text("${selectedParty!.city} | GST: ${selectedParty!.gst} | State: ${selectedParty!.state}", style: const TextStyle(color: Colors.white54, fontSize: 11.5)),
-            ],
-          ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(color: Color(0x332DD4BF), shape: BoxShape.circle),
+              child: const Icon(Icons.person_rounded, color: Color(0xFF2DD4BF), size: 26),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(selectedParty!.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17)),
+                  const SizedBox(height: 4),
+                  Text(
+                    "${selectedParty!.city.isEmpty ? 'No City' : selectedParty!.city} | GST: ${selectedParty!.gst.isEmpty ? 'N/A' : selectedParty!.gst} | State: ${selectedParty!.state.isEmpty ? 'Rajasthan' : selectedParty!.state}",
+                    style: const TextStyle(color: Colors.white54, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            if (!widget.isReadOnly)
+              IconButton(
+                icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 28),
+                tooltip: "Change Customer",
+                onPressed: () {
+                  setState(() {
+                    selectedParty = null;
+                    searchQuery = "";
+                    searchController.clear();
+                  });
+                },
+              ),
+          ],
         ),
-        if (!widget.isReadOnly)
-          IconButton(
-            icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 28),
-            tooltip: "Change Customer",
-            onPressed: () => setState(() => selectedParty = null),
-          ),
-      ],
-    ),
-  );
+      );
 
   Widget _buildPartySearchList(PharoahWebManager webPh) {
     final query = searchQuery.trim().toLowerCase();
     final matchingParties = webPh.parties.where((p) {
       if (query.isEmpty) return true;
-      return p.name.toLowerCase().contains(query) ||
-          p.city.toLowerCase().contains(query) ||
-          p.gst.toLowerCase().contains(query) ||
-          p.phone.toLowerCase().contains(query);
+      final name = p.name.toLowerCase();
+      final city = p.city.toLowerCase();
+      final gst = p.gst.toLowerCase();
+      final phone = p.phone.toLowerCase();
+      return name.contains(query) || city.contains(query) || gst.contains(query) || phone.contains(query);
     }).toList();
 
     return Column(
@@ -323,7 +362,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                         )
                       : null,
                   filled: true,
-                  fillColor: const Color(0xFF1E293B),
+                  fillColor: const Color(0xFF0F172A),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
@@ -346,9 +385,9 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
         ),
         const SizedBox(height: 12),
         Container(
-          constraints: const BoxConstraints(minHeight: 180, maxHeight: 360),
+          constraints: const BoxConstraints(minHeight: 120, maxHeight: 320),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: const Color(0xFF0F172A),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.white10),
           ),
@@ -357,9 +396,9 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      searchQuery.isEmpty 
-                        ? "No parties found in store database." 
-                        : "No party found matching '$searchQuery'.",
+                      searchQuery.isEmpty
+                          ? "No parties found in store database."
+                          : "No party found matching '$searchQuery'.",
                       style: const TextStyle(color: Colors.white38, fontSize: 12),
                     ),
                   ),
