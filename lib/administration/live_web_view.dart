@@ -1,3 +1,4 @@
+import '../event_sync_lab/ui/lab_sync_test_bench.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -381,6 +382,25 @@ class _LiveWebViewState extends State<LiveWebView> {
               onPressed: isSyncing ? null : () => _runManualSync(ph),
               icon: const Icon(Icons.sync_rounded, size: 18),
               label: const Text("SYNC NOW TO CLOUD", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (c) => const LabSyncTestBench(isWebEnvironment: false)),
+              ),
+              icon: const Icon(Icons.science_rounded, size: 18),
+              label: const Text("🧪 OPEN EVENT-DRIVEN SYNC LAB (PLAN 1 TEST)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
           ),
         ],

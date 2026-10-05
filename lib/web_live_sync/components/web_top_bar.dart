@@ -1,3 +1,4 @@
+import '../../event_sync_lab/ui/lab_sync_test_bench.dart';
 // FILE: lib/web_live_sync/components/web_top_bar.dart
 
 import 'package:flutter/material.dart';
@@ -108,6 +109,16 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
           else
             const Spacer(),
           const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.science_rounded, color: Colors.cyanAccent, size: 20),
+            tooltip: "Plan 1 Sync Lab Test",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (c) => const LabSyncTestBench(isWebEnvironment: true)),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.sync_rounded, color: Colors.white70, size: 20),
             tooltip: "Refresh Live Cloud",
