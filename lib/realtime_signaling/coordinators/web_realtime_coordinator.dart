@@ -58,7 +58,7 @@ class WebRealtimeCoordinator {
               source: 'web',
               action: action,
               entityId: entityId,
-              companyId: webManager.currentCompanyId,
+              companyId: webManager.companyProfile['id']?.toString() ?? '',
             ),
           );
           debugPrint("⚡ [WebRealtimeCoordinator] Pushed to cloud and broadcast signal to App!");
