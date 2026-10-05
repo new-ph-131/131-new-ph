@@ -4,42 +4,39 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/sync_signal_event.dart';
-import '../../web_live_sync/web_cloud_config.dart';
 
 /// CloudSignalChannel: Low-latency event signaling bus between App & Web.
-/// Delivers wake-up coordination signals in milliseconds without transmitting heavy files.
+/// Routes through Cloudflare Edge (<20ms) to preserve Google Drive Apps Script quotas.
 class CloudSignalChannel {
   static final CloudSignalChannel instance = CloudSignalChannel._internal();
   CloudSignalChannel._internal();
+
+  static const String edgeSignalEndpoint = "https://pharoah-erp.pages.dev/api/lab_signal";
 
   Timer? _pollTimer;
   int _lastKnownSignalTime = 0;
   bool _isChecking = false;
 
-  /// Broadcasts a fast wake-up signal to Cloud Relay
+  /// Broadcasts a fast wake-up signal to Cloudflare Edge Relay
   Future<bool> broadcastSignal(SyncSignalEvent event) async {
     try {
       if (event.storeToken.isEmpty) return false;
       
       final payload = {
-        "action": "BROADCAST_SIGNAL",
         "storeToken": event.storeToken,
-        "source": event.source,
-        "signalAction": event.action,
+        "source": event.source.toUpperCase(),
+        "action": event.action,
         "entityId": event.entityId,
-        "companyId": event.companyId,
         "timestamp": event.timestamp,
       };
 
-      final client = http.Client();
-      final request = http.Request('POST', Uri.parse(WebCloudConfig.cloudRelayEndpoint))
-        ..headers.addAll(WebCloudConfig.standardHeaders)
-        ..body = jsonEncode(payload)
-        ..followRedirects = true;
+      final response = await http.post(
+        Uri.parse(edgeSignalEndpoint),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 4));
 
-      final streamedResponse = await client.send(request).timeout(const Duration(seconds: 10));
-      final response = await http.Response.fromStream(streamedResponse);
-      return response.statusCode == 200 || response.body.contains("SUCCESS");
+      return response.statusCode == 200;
     } catch (e) {
       debugPrint("⚠ [CloudSignalChannel] Broadcast error: $e");
       return false;
@@ -51,32 +48,37 @@ class CloudSignalChannel {
     required String storeToken,
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
-    Duration interval = const Duration(seconds: 3),
+    Duration interval = const Duration(milliseconds: 1500),
   }) {
     stopListening();
     if (storeToken.isEmpty) return;
 
     _lastKnownSignalTime = DateTime.now().millisecondsSinceEpoch;
+    final cleanToken = storeToken.trim().toUpperCase();
+    final cleanSource = mySource.trim().toUpperCase();
 
     _pollTimer = Timer.periodic(interval, (_) async {
       if (_isChecking) return;
       _isChecking = true;
       try {
         final uri = Uri.parse(
-          "${WebCloudConfig.cloudRelayEndpoint}?action=GET_SIGNAL"
-          "&storeToken=${Uri.encodeComponent(storeToken)}"
-          "&since=$_lastKnownSignalTime"
+          "$edgeSignalEndpoint?storeToken=${Uri.encodeComponent(cleanToken)}"
+          "&lastSeenTs=$_lastKnownSignalTime"
         );
 
-        final response = await http.get(uri).timeout(const Duration(seconds: 5));
-        if (response.statusCode == 200 && !response.body.contains("ERROR")) {
+        final response = await http.get(uri).timeout(const Duration(seconds: 3));
+
+        if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          if (data['status'] == 'SUCCESS' && data['signal'] != null) {
-            final event = SyncSignalEvent.fromMap(data['signal']);
-            if (event.timestamp > _lastKnownSignalTime && event.source != mySource) {
+          if (data['status'] == 'SUCCESS' && data['hasUpdate'] == true && data['event'] != null) {
+            final sig = data['event'];
+            final event = SyncSignalEvent.fromMap(sig);
+            if (event.timestamp > _lastKnownSignalTime && event.source.toUpperCase() != cleanSource) {
               _lastKnownSignalTime = event.timestamp;
-              debugPrint("⚡ [CloudSignalChannel] Incoming signal received from ${event.source}: ${event.action}");
+              debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${event.source}: ${event.action}");
               onSignal(event);
+            } else if (event.timestamp > _lastKnownSignalTime) {
+              _lastKnownSignalTime = event.timestamp;
             }
           }
         }

@@ -1,3 +1,4 @@
+import 'event_sync_lab/workflow/lab_sync_orchestrator.dart';
 // FILE: lib/pharoah_manager.dart (FULLY INTEGRATED, COMPILE-SAFE VERSION)
 
 import 'dart:convert';
@@ -312,6 +313,7 @@ class PharoahManager with ChangeNotifier {
     notifyListeners();
     // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Debounced Background Push)
     AppRealtimeCoordinator.instance.notifyAppMutation(this);
+    LabSyncOrchestrator.instance.notifyAppRealMutation(this, action: 'DATA_SAVED');
   }
 
   Future<void> loadAllData() async {
@@ -354,6 +356,9 @@ class PharoahManager with ChangeNotifier {
       purchaseReturns: purchaseReturns 
     );
     notifyListeners();
+    // ⚡ Live Event Bus Listener Active for App
+    AppRealtimeCoordinator.instance.start(this);
+    LabSyncOrchestrator.instance.bindApp(this);
   }
 
   // ===========================================================================
