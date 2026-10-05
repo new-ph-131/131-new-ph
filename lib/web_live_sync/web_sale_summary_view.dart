@@ -221,8 +221,8 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
               itemBuilder: (c, i) {
                 final s = filteredSales[i];
                 final p = webPh.parties.firstWhere(
-                  (x) => x.name == s.partyName, 
-                  orElse: () => Party(id: "temp", name: s.partyName, gst: s.partyGstin, state: s.partyState, address: s.partyAddress, city: s.partyCity, phone: s.partyPhone, email: s.partyEmail, dl: s.partyDl),
+                  (x) => (s.partyId.isNotEmpty && x.id == s.partyId) || x.name.trim().toLowerCase() == s.partyName.trim().toLowerCase(), 
+                  orElse: () => Party(id: s.partyId.isNotEmpty ? s.partyId : "temp", name: s.partyName, gst: s.partyGstin, state: s.partyState, address: s.partyAddress, city: s.partyCity, phone: s.partyPhone, email: s.partyEmail, dl: s.partyDl),
                 );
 
                 return Container(
@@ -296,8 +296,8 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
                           IconButton(
                             icon: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent, size: 20), 
                             tooltip: "Edit / Modify Bill",
-                            onPressed: () {
-                              Navigator.push(context, MaterialPageRoute(builder: (ctx) => Scaffold(
+                            onPressed: () async {
+                              await Navigator.push(context, MaterialPageRoute(builder: (ctx) => Scaffold(
                                 backgroundColor: const Color(0xFF0F172A),
                                 body: WebNewSaleView(
                                   onBack: () => Navigator.pop(ctx),
@@ -311,6 +311,7 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
                                   isReadOnly: false,
                                 ),
                               )));
+                              if (context.mounted) setState(() {});
                             },
                           ),
                           IconButton(
@@ -480,6 +481,8 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
           children: [
             Text("Bill: ${s.billNo} • ${DateFormat('dd/MM/yyyy').format(s.date)}", style: const TextStyle(fontSize: 10.5, color: Colors.white54)),
             const SizedBox(width: 8),
+            if (s.extraDiscount > 0)
+              _badge("DISC: ₹${s.extraDiscount.toStringAsFixed(2)}", Colors.redAccent),
             if (s.linkedChallanIds.isNotEmpty)
               _badge("MERGED", Colors.orangeAccent),
             if (s.sourceTag.isNotEmpty)
@@ -509,8 +512,8 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
         DateTime? p = await showDatePicker(
           context: context,
           initialDate: d,
-          firstDate: WebAppDateLogic.getFYStart(fy),
-          lastDate: WebAppDateLogic.getFYEnd(fy),
+          firstDate: DateTime(2000, 1, 1),
+          lastDate: DateTime(2100, 12, 31),
         ); 
         if (p != null) onPick(p); 
       },

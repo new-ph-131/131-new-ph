@@ -398,7 +398,7 @@ class PharoahWebManager with ChangeNotifier {
   Future<bool> addSaleAndSync(Sale sale) async {
     isCloudPushInProgress = true;
     try {
-      sales.removeWhere((s) => s.id == sale.id);
+      sales.removeWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
       sales.add(sale);
       for (var item in sale.items) {
         String resolvedKey = item.medicineID;
@@ -471,7 +471,7 @@ class PharoahWebManager with ChangeNotifier {
   Future<bool> addPurchaseAndSync(Purchase purchase) async {
     isCloudPushInProgress = true;
     try {
-      purchases.removeWhere((p) => p.id == purchase.id);
+      purchases.removeWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
       purchases.add(purchase);
       for (var item in purchase.items) {
         String resolvedKey = item.medicineID;

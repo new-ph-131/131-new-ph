@@ -43,7 +43,8 @@ class WebNewSaleView extends StatefulWidget {
 
 class _WebNewSaleViewState extends State<WebNewSaleView> {
   final billNoC = TextEditingController();
-  final extraDiscC = TextEditingController(text: "0");
+  final extraDiscC = TextEditingController(text: "0.0");
+  final extraDiscPercentC = TextEditingController(text: "0.0");
   final productSearchC = TextEditingController();
   final customerSearchC = TextEditingController();
 
@@ -75,8 +76,34 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       
       if (widget.modifySaleId != null) {
         try {
-          final exSale = webPh.sales.firstWhere((s) => s.id == widget.modifySaleId);
-          extraDiscC.text = exSale.extraDiscount.toString();
+          final exSale = webPh.sales.firstWhere(
+            (s) => s.id == widget.modifySaleId || s.billNo == widget.initialBillNo,
+          );
+          extraDiscC.text = exSale.extraDiscount.toStringAsFixed(2);
+          if (subTotal > 0 && exSale.extraDiscount > 0) {
+            extraDiscPercentC.text = ((exSale.extraDiscount / subTotal) * 100.0).toStringAsFixed(2);
+          }
+          if (exSale.partyName.isNotEmpty) {
+            try {
+              selectedParty = webPh.parties.firstWhere(
+                (p) => p.id == exSale.partyId || p.name.trim().toLowerCase() == exSale.partyName.trim().toLowerCase(),
+                orElse: () => selectedParty ?? Party(
+                  id: exSale.partyId.isNotEmpty ? exSale.partyId : 'party_${DateTime.now().millisecondsSinceEpoch}',
+                  name: exSale.partyName,
+                  gst: exSale.partyGstin,
+                  state: exSale.partyState,
+                  address: exSale.partyAddress,
+                  city: exSale.partyCity,
+                  phone: exSale.partyPhone,
+                  email: exSale.partyEmail,
+                  dl: exSale.partyDl,
+                  pan: exSale.partyPan,
+                ),
+              );
+            } catch (_) {}
+          }
+          billDate = exSale.date;
+          paymentMode = exSale.paymentMode;
         } catch (_) {}
       }
     } else {
@@ -117,6 +144,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
   void dispose() {
     billNoC.dispose();
     extraDiscC.dispose();
+    extraDiscPercentC.dispose();
     productSearchC.dispose();
     customerSearchC.dispose();
     super.dispose();
@@ -152,6 +180,151 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
           Navigator.pop(context);
         },
         onCancel: () => Navigator.pop(context),
+      ),
+    );
+  }
+
+
+  void _onExtraDiscPercentChanged(String v) {
+    double p = double.tryParse(v) ?? 0.0;
+    if (subTotal > 0) {
+      double rupees = subTotal * (p / 100.0);
+      extraDiscC.text = rupees.toStringAsFixed(2);
+    }
+    setState(() {});
+  }
+
+  void _onExtraDiscAmountChanged(String v) {
+    double amt = double.tryParse(v) ?? 0.0;
+    if (subTotal > 0) {
+      double pct = (amt / subTotal) * 100.0;
+      extraDiscPercentC.text = pct.toStringAsFixed(2);
+    }
+    setState(() {});
+  }
+
+  void _openPartyPickerModal(PharoahWebManager webPh) {
+    if (widget.isReadOnly) return;
+    String searchTxt = "";
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          final list = webPh.parties.where((p) {
+            if (searchTxt.isEmpty) return true;
+            final q = searchTxt.toLowerCase();
+            return p.name.toLowerCase().contains(q) ||
+                p.city.toLowerCase().contains(q) ||
+                p.gst.toLowerCase().contains(q) ||
+                p.phone.toLowerCase().contains(q);
+          }).toList();
+
+          return Dialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              width: 550,
+              height: 520,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.people_alt_rounded, color: Color(0xFF38BDF8), size: 22),
+                      const SizedBox(width: 10),
+                      const Text(
+                        "SELECT CUSTOMER / PARTY",
+                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white54),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: "Search customer by name, city, GST, phone...",
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                      prefixIcon: const Icon(Icons.search, color: Color(0xFF38BDF8), size: 20),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
+                    onChanged: (v) => setDlgState(() => searchTxt = v.trim()),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () {
+                      _handlePartySelected(webPh, Party(id: 'cash', name: 'CASH', group: 'Cash in Hand'));
+                      Navigator.pop(ctx);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withAlpha(30),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.greenAccent.withAlpha(100)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.payments_rounded, color: Colors.greenAccent, size: 18),
+                          SizedBox(width: 10),
+                          Text("CASH CUSTOMER (Walk-in)", style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: list.isEmpty
+                        ? const Center(child: Text("No customers found.", style: TextStyle(color: Colors.white38)))
+                        : ListView.separated(
+                            itemCount: list.length,
+                            separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                            itemBuilder: (context, idx) {
+                              final p = list[idx];
+                              final isSelected = selectedParty?.id == p.id;
+                              return ListTile(
+                                dense: true,
+                                selected: isSelected,
+                                selectedTileColor: Colors.blue.withAlpha(40),
+                                leading: CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: isSelected ? const Color(0xFF2563EB) : Colors.white12,
+                                  child: Text(
+                                    p.name.isNotEmpty ? p.name[0].toUpperCase() : "P",
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                  ),
+                                ),
+                                title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                subtitle: Text(
+                                  "${p.city.isNotEmpty ? p.city : 'Local'} • GST: ${p.gst.isNotEmpty ? p.gst : 'Unregistered'}",
+                                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                                ),
+                                trailing: Text(
+                                  "Bal: ₹${p.opBal.toStringAsFixed(0)}",
+                                  style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                                ),
+                                onTap: () {
+                                  _handlePartySelected(webPh, p);
+                                  Navigator.pop(ctx);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -202,11 +375,14 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     }
 
     setState(() => isSaving = true);
+
     final Party activeParty = selectedParty ?? Party(id: 'cash', name: 'CASH', group: 'Cash in Hand');
+    final String targetSaleId = widget.modifySaleId ?? "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}";
+    final String targetBillNo = billNoC.text.trim();
 
     final newSale = Sale(
-      id: widget.modifySaleId ?? "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}",
-      billNo: billNoC.text.trim(),
+      id: targetSaleId,
+      billNo: targetBillNo,
       partyId: activeParty.id,
       partyName: activeParty.name,
       partyGstin: activeParty.gst,
@@ -228,7 +404,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       partyPan: activeParty.pan,
     );
 
-    if (widget.modifySaleId != null) webPh.sales.removeWhere((s) => s.id == widget.modifySaleId!);
+    // Atomically purge previous versions (by ID or Bill No) so modifications are 100% clean
+    webPh.sales.removeWhere((s) => s.id == targetSaleId || s.billNo == targetBillNo);
     await webPh.addSaleAndSync(newSale);
     
     if (widget.linkedChallanIds != null) {
@@ -415,8 +592,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: billDate,
-                    firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
-                    lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
+                    firstDate: DateTime(2000, 1, 1),
+                    lastDate: DateTime(2100, 12, 31),
                   );
                   if (picked != null) {
                     setState(() => billDate = picked);
@@ -725,16 +902,6 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
   );
 
   Widget _buildCustomerCard(PharoahWebManager webPh) {
-    final custQuery = customerSearchC.text.trim().toLowerCase();
-    final matchingParties = custQuery.isEmpty
-        ? <Party>[]
-        : webPh.parties
-            .where((p) =>
-                p.name.toLowerCase().contains(custQuery) ||
-                p.city.toLowerCase().contains(custQuery))
-            .take(5)
-            .toList();
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -773,108 +940,97 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 ],
               ),
               if (!widget.isReadOnly)
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    elevation: 0,
-                  ),
-                  onPressed: () => _openQuickAddCustomer(webPh),
-                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
-                  label: const Text("+ CUSTOMER", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF38BDF8),
+                        side: const BorderSide(color: Color(0xFF38BDF8), width: 1.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () => _openPartyPickerModal(webPh),
+                      icon: const Icon(Icons.swap_horiz_rounded, size: 14),
+                      label: const Text("CHANGE PARTY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                    const SizedBox(width: 6),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2563EB),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        elevation: 0,
+                      ),
+                      onPressed: () => _openQuickAddCustomer(webPh),
+                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
+                      label: const Text("+ NEW", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
             ],
           ),
           const Divider(color: Colors.white10, height: 20),
-
           if (selectedParty != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0x662563EB)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          selectedParty!.name.toUpperCase(),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          "GST: ${selectedParty!.gst} | State: ${selectedParty!.state} | Bal: ₹${selectedParty!.opBal.toStringAsFixed(0)}",
-                          style: const TextStyle(color: Colors.white54, fontSize: 10),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+            InkWell(
+              onTap: widget.isReadOnly ? null : () => _openPartyPickerModal(webPh),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0x662563EB)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selectedParty!.name.toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            "GST: ${selectedParty!.gst.isNotEmpty ? selectedParty!.gst : 'N/A'} | State: ${selectedParty!.state} | Bal: ₹${selectedParty!.opBal.toStringAsFixed(0)}",
+                            style: const TextStyle(color: Colors.white54, fontSize: 10),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (!widget.isReadOnly)
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18, color: Colors.redAccent),
-                      onPressed: () {
-                        setState(() => selectedParty = null);
-                        _refreshBillNumber(webPh);
-                      },
-                    ),
-                ],
+                    if (!widget.isReadOnly) ...[
+                      const Icon(Icons.edit_note_rounded, size: 18, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18, color: Colors.redAccent),
+                        tooltip: "Reset to Cash",
+                        onPressed: () {
+                          setState(() => selectedParty = Party(id: 'cash', name: 'CASH', group: 'Cash in Hand'));
+                          _refreshBillNumber(webPh);
+                        },
+                      ),
+                    ],
+                  ],
+                ),
               ),
             )
           else ...[
-            TextField(
-              controller: customerSearchC,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-              decoration: InputDecoration(
-                hintText: "Search Customer by Name or City (Default: CASH)...",
-                hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
-                prefixIcon: const Icon(Icons.person_search, color: Colors.cyanAccent, size: 18),
-                suffixIcon: customerSearchC.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
-                        onPressed: () => setState(() => customerSearchC.clear()),
-                      )
-                    : null,
-                filled: true,
-                fillColor: Colors.black26,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+                foregroundColor: const Color(0xFF38BDF8),
+                side: const BorderSide(color: Color(0xFF38BDF8)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onChanged: (v) => setState(() {}),
+              onPressed: () => _openPartyPickerModal(webPh),
+              icon: const Icon(Icons.person_search_rounded, size: 18),
+              label: const Text("TAP TO SELECT CUSTOMER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
             ),
-
-            if (matchingParties.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 180),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0x3338BDF8)),
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  itemCount: matchingParties.length,
-                  itemBuilder: (context, idx) {
-                    final party = matchingParties[idx];
-                    return ListTile(
-                      dense: true,
-                      title: Text(party.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      subtitle: Text("${party.city} | GST: ${party.gst}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
-                      onTap: () => _handlePartySelected(webPh, party),
-                    );
-                  },
-                ),
-              ),
-            ],
           ],
         ],
       ),
@@ -909,23 +1065,51 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text("Extra Discount (-)", style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-              SizedBox(
-                width: 80,
-                height: 30,
-                child: TextField(
-                  controller: extraDiscC,
-                  readOnly: widget.isReadOnly,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.right,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.black38,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 65,
+                    height: 30,
+                    child: TextField(
+                      controller: extraDiscPercentC,
+                      readOnly: widget.isReadOnly,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textAlign: TextAlign.right,
+                      onChanged: _onExtraDiscPercentChanged,
+                      style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                      decoration: InputDecoration(
+                        suffixText: "%",
+                        suffixStyle: const TextStyle(color: Colors.orangeAccent, fontSize: 10),
+                        filled: true,
+                        fillColor: Colors.black38,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    width: 75,
+                    height: 30,
+                    child: TextField(
+                      controller: extraDiscC,
+                      readOnly: widget.isReadOnly,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textAlign: TextAlign.right,
+                      onChanged: _onExtraDiscAmountChanged,
+                      style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                      decoration: InputDecoration(
+                        prefixText: "₹",
+                        prefixStyle: const TextStyle(color: Colors.redAccent, fontSize: 10),
+                        filled: true,
+                        fillColor: Colors.black38,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
