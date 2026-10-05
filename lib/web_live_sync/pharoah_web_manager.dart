@@ -18,6 +18,7 @@ class PharoahWebManager with ChangeNotifier {
   bool isLoading = false;
   bool isAutoLoggingIn = true;
   bool isAuthenticated = false;
+  bool isCloudPushInProgress = false;
   String errorMessage = "";
   String successMessage = "";
 
@@ -467,32 +468,42 @@ class PharoahWebManager with ChangeNotifier {
     _autoSyncService.triggerAutoSync();
   }
 
-  void addPurchaseAndSync(Purchase purchase) {
-    purchases.add(purchase);
-    for (var item in purchase.items) {
-      String resolvedKey = item.medicineID;
-      try {
-        final med = medicines.firstWhere((m) => m.id == item.medicineID);
-        resolvedKey = med.identityKey;
-      } catch (_) {}
+  Future<bool> addPurchaseAndSync(Purchase purchase) async {
+    isCloudPushInProgress = true;
+    try {
+      purchases.removeWhere((p) => p.id == purchase.id);
+      purchases.add(purchase);
+      for (var item in purchase.items) {
+        String resolvedKey = item.medicineID;
+        try {
+          final med = medicines.firstWhere((m) => m.id == item.medicineID);
+          resolvedKey = med.identityKey;
+        } catch (_) {}
 
-      registerBatchActivity(
-        productKey: resolvedKey,
-        batchNo: item.batch,
-        exp: item.exp,
-        packing: item.packing,
-        mrp: item.mrp,
-        rate: item.purchaseRate,
-        rateA: item.rateA,
-        rateB: item.rateB,
-        rateC: item.rateC,
-        rateCFormula: item.rateCFormula,
-        appliedRateType: item.appliedRateType,
-      );
+        registerBatchActivity(
+          productKey: resolvedKey,
+          batchNo: item.batch,
+          exp: item.exp,
+          packing: item.packing,
+          mrp: item.mrp,
+          rate: item.purchaseRate,
+          rateA: item.rateA,
+          rateB: item.rateB,
+          rateC: item.rateC,
+          rateCFormula: item.rateCFormula,
+          appliedRateType: item.appliedRateType,
+        );
+      }
+      rebuildInventory();
+      notifyListeners();
+
+      // ⚡ Atomic Direct Cloud Push (Awaited!)
+      final success = await pushUpdatedDataToCloud();
+      _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: purchase.id);
+      return success;
+    } finally {
+      isCloudPushInProgress = false;
     }
-    rebuildInventory();
-    notifyListeners();
-    _autoSyncService.triggerAutoSync(); // ⚡ Silent Debounced Push
   }
 
   void deletePurchase(String purId) {
