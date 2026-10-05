@@ -10,6 +10,8 @@ import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_challans/web_sale_challan_billing_view.dart';
 import 'sub_views/web_challans/web_purchase_challan_billing_view.dart';
+import 'sub_views/web_challans/web_sale_challan_view.dart';
+import 'sub_views/web_challans/web_purchase_challan_view.dart';
 
 class WebChallanView extends StatefulWidget {
   final VoidCallback onBack;
@@ -463,20 +465,11 @@ class _WebChallanViewState extends State<WebChallanView> {
 
   // --- ROUTING HANDLERS ---
   void _openSaleChallanDetails(BuildContext context, PharoahWebManager webPh, SaleChallan ch, {required bool isReadOnly}) {
-    Party partyObj;
-    try {
-      partyObj = webPh.parties.firstWhere((p) => p.id == ch.partyId || p.name.trim().toUpperCase() == ch.partyName.trim().toUpperCase());
-    } catch (_) {
-      partyObj = Party(id: ch.partyId.isNotEmpty ? ch.partyId : 'temp', name: ch.partyName, gst: ch.partyGstin, state: ch.partyState);
-    }
-
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (c) => WebSaleChallanBillingView(
-          party: partyObj,
-          challanNo: ch.billNo,
-          challanDate: ch.date,
+        builder: (c) => WebSaleChallanView(
+          onBack: () => Navigator.pop(c),
           existingRecord: ch,
           isReadOnly: isReadOnly,
         ),
@@ -485,21 +478,11 @@ class _WebChallanViewState extends State<WebChallanView> {
   }
 
   void _openPurchaseChallanDetails(BuildContext context, PharoahWebManager webPh, PurchaseChallan ch, {required bool isReadOnly}) {
-    Party supplierObj;
-    try {
-      supplierObj = webPh.parties.firstWhere((p) => p.id == ch.partyId || p.name.trim().toUpperCase() == ch.distributorName.trim().toUpperCase());
-    } catch (_) {
-      supplierObj = Party(id: ch.partyId.isNotEmpty ? ch.partyId : 'temp', name: ch.distributorName, group: "Sundry Creditors");
-    }
-
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (c) => WebPurchaseChallanBillingView(
-          supplier: supplierObj,
-          internalNo: ch.internalNo,
-          supplierRefNo: ch.billNo,
-          challanDate: ch.date,
+        builder: (c) => WebPurchaseChallanView(
+          onBack: () => Navigator.pop(c),
           existingRecord: ch,
           isReadOnly: isReadOnly,
         ),
