@@ -144,6 +144,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
     if (widget.existingRecord != null) { webPh.saleChallans.removeWhere((c) => c.id == widget.existingRecord!.id); }
     
     webPh.saleChallans.add(newChallan);
+    webPh.notifyListeners();
 
     // 2-Way Batch Inventory Activity
     for (var item in items) {
@@ -181,7 +182,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("✅ Outward Delivery Challan ${widget.challanNo} Saved & Synced!"), backgroundColor: Colors.green),
       );
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     }
   }
 

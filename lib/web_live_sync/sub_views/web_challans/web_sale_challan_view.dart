@@ -61,10 +61,10 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
         }
         setState(() => isLoading = false);
       } else {
-        String nextNo = WebPharoahNumberingEngine.getNextNumber(
-          prefix: "SCH-",
-          startFrom: 101,
-          currentList: webPh.saleChallans,
+        String nextNo = webPh.getNextNumber(
+          "CHALLAN",
+          defaultPrefix: "SCH-",
+          defaultStart: 101,
         );
         setState(() {
           challanNoC.text = nextNo;
@@ -253,8 +253,8 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           elevation: 0,
                         ),
-                        onPressed: () {
-                          Navigator.push(
+                        onPressed: () async {
+                          final res = await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (c) => WebSaleChallanBillingView(
@@ -266,6 +266,9 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                               ),
                             ),
                           );
+                          if (res == true && mounted) {
+                            widget.onBack();
+                          }
                         },
                         icon: const Icon(Icons.arrow_forward_rounded, size: 20),
                         label: const Text(

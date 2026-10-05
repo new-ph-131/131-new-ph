@@ -612,6 +612,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     if (widget.existingRecord != null) { webPh.purchaseChallans.removeWhere((c) => c.id == widget.existingRecord!.id); }
     
     webPh.purchaseChallans.add(newChallan);
+    webPh.notifyListeners();
 
     // 2-Way Batch Inventory Activity + Medicine Master Auto-Update
     for (var item in items) {
@@ -660,7 +661,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("✅ Inward Challan ${widget.internalNo} Saved & Master L.P.R. Updated!"), backgroundColor: Colors.green),
       );
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     }
   }
 

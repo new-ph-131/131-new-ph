@@ -47,10 +47,13 @@ class _WebChallanViewState extends State<WebChallanView> {
     if (!_isInit) {
       final webPh = Provider.of<PharoahWebManager>(context, listen: false);
       final now = DateTime.now();
-      regToDate = DateTime(now.year, now.month, now.day);
-      DateTime thirtyDaysAgo = regToDate.subtract(const Duration(days: 30));
       DateTime fyStart = WebAppDateLogic.getFYStart(webPh.financialYear);
-      regFromDate = thirtyDaysAgo.isBefore(fyStart) ? fyStart : thirtyDaysAgo;
+      DateTime fyEnd = WebAppDateLogic.getFYEnd(webPh.financialYear);
+      regFromDate = fyStart;
+      regToDate = now.isAfter(fyEnd) ? fyEnd : DateTime(now.year, now.month, now.day);
+      if (regToDate.isBefore(regFromDate)) {
+        regToDate = fyEnd;
+      }
       _isInit = true;
     }
   }

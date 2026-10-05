@@ -63,10 +63,10 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
         }
         setState(() => isLoading = false);
       } else {
-        String nextNo = WebPharoahNumberingEngine.getNextNumber(
-          prefix: "PCH-",
-          startFrom: 1,
-          currentList: webPh.purchaseChallans,
+        String nextNo = webPh.getNextNumber(
+          "PURCHASE_CHALLAN",
+          defaultPrefix: "PCH-",
+          defaultStart: 1,
         );
         setState(() {
           internalNoC.text = nextNo;
@@ -277,14 +277,14 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           elevation: 0,
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           if (supplierRefC.text.trim().isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text("Supplier Ref / Challan No is required!"), backgroundColor: Colors.red),
                             );
                             return;
                           }
-                          Navigator.push(
+                          final res = await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (c) => WebPurchaseChallanBillingView(
@@ -297,6 +297,9 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                               ),
                             ),
                           );
+                          if (res == true && mounted) {
+                            widget.onBack();
+                          }
                         },
                         icon: Icon(widget.isReadOnly ? Icons.visibility : Icons.arrow_forward_rounded, size: 20),
                         label: Text(
