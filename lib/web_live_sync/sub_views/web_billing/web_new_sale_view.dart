@@ -118,7 +118,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
 
   void _refreshBillNumber(PharoahWebManager webPh) {
     if (widget.initialBillNo != null && widget.initialBillNo != "DRAFT") return;
-    String prefix = selectedSeries?.prefix ?? "INV-";
+    String prefix = selectedSeries != null && selectedSeries!.prefix != "INV-" ? selectedSeries!.prefix : "W-";
     int start = selectedSeries?.startNumber ?? 101;
     billNoC.text = WebPharoahNumberingEngine.getNextNumber(
       prefix: prefix,
