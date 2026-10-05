@@ -193,20 +193,82 @@ class BatchInfo {
 class Medicine {
   String id, systemId, uniqueCode, name, packing, companyId, saltId, drugTypeId, rackNo, hsnCode, drugForm, storageCondition; 
   int conversion; double reorderLevel, gst, mrp, purRate, rateA, rateB, rateC, stock; bool isNarcotic, isScheduleH1;
+  int updatedAt, version;
   String get identityKey => systemId.isNotEmpty ? systemId : id;
 
-  Medicine({required this.id, this.systemId = "", this.uniqueCode = "", required this.name, required this.packing, this.companyId = "", this.saltId = "", this.drugTypeId = "", this.rackNo = "", this.hsnCode = "N/A", this.conversion = 1, this.reorderLevel = 0.0, this.gst = 12.0, this.mrp = 0.0, this.purRate = 0.0, this.rateA = 0.0, this.rateB = 0.0, this.rateC = 0.0, this.stock = 0.0, this.drugForm = "TAB", this.isNarcotic = false, this.isScheduleH1 = false, this.storageCondition = "Room Temp"});
+  Medicine({
+    required this.id, this.systemId = "", this.uniqueCode = "", required this.name, required this.packing,
+    this.companyId = "", this.saltId = "", this.drugTypeId = "", this.rackNo = "", this.hsnCode = "N/A",
+    this.conversion = 1, this.reorderLevel = 0.0, this.gst = 12.0, this.mrp = 0.0, this.purRate = 0.0,
+    this.rateA = 0.0, this.rateB = 0.0, this.rateC = 0.0, this.stock = 0.0, this.drugForm = "TAB",
+    this.isNarcotic = false, this.isScheduleH1 = false, this.storageCondition = "Room Temp",
+    this.updatedAt = 0, this.version = 1,
+  });
 
-  Map<String, dynamic> toMap() => {'id': id, 'systemId': systemId, 'uniqueCode': uniqueCode, 'name': name, 'packing': packing, 'companyId': companyId, 'saltId': saltId, 'drugTypeId': drugTypeId, 'rackNo': rackNo, 'hsnCode': hsnCode, 'conversion': conversion, 'reorderLevel': reorderLevel, 'gst': gst, 'mrp': mrp, 'purRate': purRate, 'rateA': rateA, 'rateB': rateB, 'rateC': rateC, 'stock': stock, 'drugForm': drugForm, 'isNarcotic': isNarcotic, 'isScheduleH1': isScheduleH1, 'storageCondition': storageCondition};
-  factory Medicine.fromMap(Map<String, dynamic> map) => Medicine(id: map['id'] ?? "", systemId: map['systemId'] ?? "", uniqueCode: map['uniqueCode'] ?? "", name: map['name'] ?? "", packing: map['packing'] ?? "", companyId: map['companyId'] ?? "", saltId: map['saltId'] ?? "", drugTypeId: map['drugTypeId'] ?? "", rackNo: map['rackNo'] ?? "", hsnCode: map['hsnCode'] ?? "N/A", conversion: map['conversion'] ?? 1, reorderLevel: (map['reorderLevel'] ?? 0.0).toDouble(), gst: (map['gst'] ?? 12).toDouble(), mrp: (map['mrp'] ?? 0.0).toDouble(), purRate: (map['purRate'] ?? 0.0).toDouble(), rateA: (map['rateA'] ?? 0.0).toDouble(), rateB: (map['rateB'] ?? 0.0).toDouble(), rateC: (map['rateC'] ?? 0.0).toDouble(), stock: (map['stock'] ?? 0.0).toDouble(), drugForm: map['drugForm'] ?? "TAB", isNarcotic: map['isNarcotic'] ?? false, isScheduleH1: map['isScheduleH1'] ?? false, storageCondition: map['storageCondition'] ?? "Room Temp");
+  Map<String, dynamic> toMap() => {
+    'id': id, 'systemId': systemId, 'uniqueCode': uniqueCode, 'name': name, 'packing': packing,
+    'companyId': companyId, 'saltId': saltId, 'drugTypeId': drugTypeId, 'rackNo': rackNo,
+    'hsnCode': hsnCode, 'conversion': conversion, 'reorderLevel': reorderLevel, 'gst': gst,
+    'mrp': mrp, 'purRate': purRate, 'rateA': rateA, 'rateB': rateB, 'rateC': rateC,
+    'stock': stock, 'drugForm': drugForm, 'isNarcotic': isNarcotic, 'isScheduleH1': isScheduleH1,
+    'storageCondition': storageCondition,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
+  };
+
+  factory Medicine.fromMap(Map<String, dynamic> map) => Medicine(
+    id: map['id'] ?? "", systemId: map['systemId'] ?? "", uniqueCode: map['uniqueCode'] ?? "",
+    name: map['name'] ?? "", packing: map['packing'] ?? "", companyId: map['companyId'] ?? "",
+    saltId: map['saltId'] ?? "", drugTypeId: map['drugTypeId'] ?? "", rackNo: map['rackNo'] ?? "",
+    hsnCode: map['hsnCode'] ?? "N/A", conversion: map['conversion'] ?? 1,
+    reorderLevel: (map['reorderLevel'] ?? 0.0).toDouble(), gst: (map['gst'] ?? 12).toDouble(),
+    mrp: (map['mrp'] ?? 0.0).toDouble(), purRate: (map['purRate'] ?? 0.0).toDouble(),
+    rateA: (map['rateA'] ?? 0.0).toDouble(), rateB: (map['rateB'] ?? 0.0).toDouble(),
+    rateC: (map['rateC'] ?? 0.0).toDouble(), stock: (map['stock'] ?? 0.0).toDouble(),
+    drugForm: map['drugForm'] ?? "TAB", isNarcotic: map['isNarcotic'] ?? false,
+    isScheduleH1: map['isScheduleH1'] ?? false,
+    storageCondition: map['storageCondition'] ?? "Room Temp",
+    updatedAt: (map['updatedAt'] ?? 0).toInt(),
+    version: (map['version'] ?? 1).toInt(),
+  );
 }
 
 class Party {
   String id, name, group, phone, email, address, city, state, route, gst, dl, dlExp, pan, transport, priceLevel, defaultSeriesId, hsnCode; 
   double opBal, creditLimit; int creditDays;
-  Party({required this.id, required this.name, this.group = "Sundry Debtors", this.phone = "", this.email = "", this.address = "", this.city = "", this.state = "Rajasthan", this.route = "", this.gst = "", this.dl = "", this.dlExp = "", this.pan = "", this.transport = "", this.priceLevel = "A", this.defaultSeriesId = "", this.hsnCode = "N/A", this.opBal = 0.0, this.creditLimit = 0.0, this.creditDays = 0});
-  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'group': group, 'phone': phone, 'email': email, 'address': address, 'city': city, 'state': state, 'route': route, 'gst': gst, 'dl': dl, 'dlExp': dlExp, 'pan': pan, 'transport': transport, 'priceLevel': priceLevel, 'defaultSeriesId': defaultSeriesId, 'hsnCode': hsnCode, 'opBal': opBal, 'creditLimit': creditLimit, 'creditDays': creditDays};
-  factory Party.fromMap(Map<String, dynamic> map) => Party(id: map['id'] ?? "", name: map['name'] ?? "", group: map['group'] ?? "Sundry Debtors", phone: map['phone'] ?? "", email: map['email'] ?? "", address: map['address'] ?? "", city: map['city'] ?? "", state: map['state'] ?? "Rajasthan", route: map['route'] ?? "", gst: map['gst'] ?? "", dl: map['dl'] ?? "", dlExp: map['dlExp'] ?? "", pan: map['pan'] ?? "", transport: map['transport'] ?? "", priceLevel: map['priceLevel'] ?? "A", defaultSeriesId: map['defaultSeriesId'] ?? "", hsnCode: map['hsnCode'] ?? "N/A", opBal: (map['opBal'] ?? 0.0).toDouble(), creditLimit: (map['creditLimit'] ?? 0.0).toDouble(), creditDays: map['creditDays'] ?? 0);
+  int updatedAt, version;
+
+  Party({
+    required this.id, required this.name, this.group = "Sundry Debtors", this.phone = "",
+    this.email = "", this.address = "", this.city = "", this.state = "Rajasthan", this.route = "",
+    this.gst = "", this.dl = "", this.dlExp = "", this.pan = "", this.transport = "",
+    this.priceLevel = "A", this.defaultSeriesId = "", this.hsnCode = "N/A", this.opBal = 0.0,
+    this.creditLimit = 0.0, this.creditDays = 0,
+    this.updatedAt = 0, this.version = 1,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id, 'name': name, 'group': group, 'phone': phone, 'email': email, 'address': address,
+    'city': city, 'state': state, 'route': route, 'gst': gst, 'dl': dl, 'dlExp': dlExp,
+    'pan': pan, 'transport': transport, 'priceLevel': priceLevel,
+    'defaultSeriesId': defaultSeriesId, 'hsnCode': hsnCode, 'opBal': opBal,
+    'creditLimit': creditLimit, 'creditDays': creditDays,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
+  };
+
+  factory Party.fromMap(Map<String, dynamic> map) => Party(
+    id: map['id'] ?? "", name: map['name'] ?? "", group: map['group'] ?? "Sundry Debtors",
+    phone: map['phone'] ?? "", email: map['email'] ?? "", address: map['address'] ?? "",
+    city: map['city'] ?? "", state: map['state'] ?? "Rajasthan", route: map['route'] ?? "",
+    gst: map['gst'] ?? "", dl: map['dl'] ?? "", dlExp: map['dlExp'] ?? "", pan: map['pan'] ?? "",
+    transport: map['transport'] ?? "", priceLevel: map['priceLevel'] ?? "A",
+    defaultSeriesId: map['defaultSeriesId'] ?? "", hsnCode: map['hsnCode'] ?? "N/A",
+    opBal: (map['opBal'] ?? 0.0).toDouble(), creditLimit: (map['creditLimit'] ?? 0.0).toDouble(),
+    creditDays: map['creditDays'] ?? 0,
+    updatedAt: (map['updatedAt'] ?? 0).toInt(),
+    version: (map['version'] ?? 1).toInt(),
+  );
 }
 
 // ===========================================================================
@@ -300,35 +362,58 @@ class PurchaseItem {
 class Sale { 
   String id, billNo, partyId, partyName, partyGstin, partyState, status, invoiceType, paymentMode, transporterName, transporterId, vehicleNo, salesmanName, sourceTag, partyPhone, partyEmail, partyAddress, partyCity, partyDl, partyPan; 
   DateTime date; List<BillItem> items; double totalAmount, extraDiscount, roundOff; List<String> linkedChallanIds; 
-  Sale({required this.id, required this.billNo, required this.partyId, required this.date, required this.partyName, required this.partyGstin, required this.partyState, required this.items, required this.totalAmount, required this.paymentMode, this.status = "Active", this.invoiceType = "B2C", this.transporterName = "", this.transporterId = "", this.vehicleNo = "", this.salesmanName = "", this.sourceTag = "", this.partyPhone = "", this.partyEmail = "", this.partyAddress = "", this.partyCity = "", this.partyDl = "", this.partyPan = "", this.extraDiscount = 0.0, this.roundOff = 0.0, this.linkedChallanIds = const []});
-  
+  int updatedAt, version;
+
+  Sale({
+    required this.id, required this.billNo, required this.partyId, required this.date,
+    required this.partyName, required this.partyGstin, required this.partyState,
+    required this.items, required this.totalAmount, required this.paymentMode,
+    this.status = "Active", this.invoiceType = "B2C", this.transporterName = "",
+    this.transporterId = "", this.vehicleNo = "", this.salesmanName = "", this.sourceTag = "",
+    this.partyPhone = "", this.partyEmail = "", this.partyAddress = "", this.partyCity = "",
+    this.partyDl = "", this.partyPan = "", this.extraDiscount = 0.0, this.roundOff = 0.0,
+    this.linkedChallanIds = const [],
+    this.updatedAt = 0, this.version = 1,
+  });  
+
   Map<String, dynamic> toMap() => {
     'id': id, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(), 'partyName': partyName, 
     'partyGstin': partyGstin, 'partyState': partyState, 'paymentMode': paymentMode, 'totalAmount': totalAmount, 
     'status': status, 'invoiceType': invoiceType, 'transporterName': transporterName, 'transporterId': transporterId, 
     'vehicleNo': vehicleNo, 'salesmanName': salesmanName, 'items': items.map((i) => i.toMap()).toList(), 
     'linkedChallanIds': linkedChallanIds, 'extraDiscount': extraDiscount, 'roundOff': roundOff,
-    'partyAddress': partyAddress, 'partyPhone': partyPhone, 'partyEmail': partyEmail, 'partyDl': partyDl, 'partyPan': partyPan, 'partyCity': partyCity, 'sourceTag': sourceTag
-  };
-  
+    'partyAddress': partyAddress, 'partyPhone': partyPhone, 'partyEmail': partyEmail, 'partyDl': partyDl,
+    'partyPan': partyPan, 'partyCity': partyCity, 'sourceTag': sourceTag,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
+  };  
+
   factory Sale.fromMap(Map<String, dynamic> map) => Sale(
-    id: map['id'] ?? '', billNo: map['billNo'] ?? '', partyId: map['partyId'] ?? '', date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), 
-    partyName: map['partyName'] ?? '', partyGstin: map['partyGstin'] ?? "", partyState: map['partyState'] ?? "Rajasthan", paymentMode: map['paymentMode'] ?? "CASH", 
-    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), status: map['status'] ?? "Active", invoiceType: map['invoiceType'] ?? "B2C", 
-    transporterName: map['transporterName'] ?? "", transporterId: map['transporterId'] ?? "", vehicleNo: map['vehicleNo'] ?? "", salesmanName: map['salesmanName'] ?? "", 
-    items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [], linkedChallanIds: List<String>.from(map['linkedChallanIds'] ?? []),
+    id: map['id'] ?? '', billNo: map['billNo'] ?? '', partyId: map['partyId'] ?? '',
+    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), 
+    partyName: map['partyName'] ?? '', partyGstin: map['partyGstin'] ?? "",
+    partyState: map['partyState'] ?? "Rajasthan", paymentMode: map['paymentMode'] ?? "CASH", 
+    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), status: map['status'] ?? "Active",
+    invoiceType: map['invoiceType'] ?? "B2C", 
+    transporterName: map['transporterName'] ?? "", transporterId: map['transporterId'] ?? "",
+    vehicleNo: map['vehicleNo'] ?? "", salesmanName: map['salesmanName'] ?? "", 
+    items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
+    linkedChallanIds: List<String>.from(map['linkedChallanIds'] ?? []),
     extraDiscount: (map['extraDiscount'] ?? 0.0).toDouble(), roundOff: (map['roundOff'] ?? 0.0).toDouble(),
-    partyAddress: map['partyAddress'] ?? "", partyPhone: map['partyPhone'] ?? "", partyEmail: map['partyEmail'] ?? "", partyDl: map['partyDl'] ?? "", partyPan: map['partyPan'] ?? "", partyCity: map['partyCity'] ?? "", sourceTag: map['sourceTag'] ?? ""
+    partyAddress: map['partyAddress'] ?? "", partyPhone: map['partyPhone'] ?? "",
+    partyEmail: map['partyEmail'] ?? "", partyDl: map['partyDl'] ?? "",
+    partyPan: map['partyPan'] ?? "", partyCity: map['partyCity'] ?? "", sourceTag: map['sourceTag'] ?? "",
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
   ); 
 }
 
 class Purchase { 
   String id, internalNo, billNo, partyId, distributorName, paymentMode, gstStatus, sourceTag; 
-  DateTime date, entryDate; List<PurchaseItem> items; double totalAmount; List<String> linkedChallanIds;
-  
-  // 🆕 PURCHASE EXTRA DISCOUNT & ROUND OFF
+  DateTime date, entryDate; List<PurchaseItem> items; double totalAmount; List<String> linkedChallanIds; 
   double extraDiscount;
   double roundOff;
+  int updatedAt, version;
 
   Purchase({
     required this.id, 
@@ -346,49 +431,119 @@ class Purchase {
     this.sourceTag = "",
     this.extraDiscount = 0.0,
     this.roundOff = 0.0,
-  });
-  
+    this.updatedAt = 0,
+    this.version = 1,
+  });  
+
   Map<String, dynamic> toMap() => {
     'id': id, 'internalNo': internalNo, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(), 
     'entryDate': entryDate.toIso8601String(), 'distributorName': distributorName, 'paymentMode': paymentMode, 
     'gstStatus': gstStatus, 'totalAmount': totalAmount, 'items': items.map((i) => i.toMap()).toList(), 
     'linkedChallanIds': linkedChallanIds, 'sourceTag': sourceTag,
-    'extraDiscount': extraDiscount, 'roundOff': roundOff
-  };
-  
+    'extraDiscount': extraDiscount, 'roundOff': roundOff,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
+  };  
+
   factory Purchase.fromMap(Map<String, dynamic> map) => Purchase(
-    id: map['id'] ?? "", internalNo: map['internalNo'] ?? "", billNo: map['billNo'] ?? "", distributorName: map['distributorName'] ?? "", partyId: map['partyId'] ?? "", paymentMode: map['paymentMode'] ?? "CREDIT", gstStatus: map['gstStatus'] ?? "Pending", date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), entryDate: DateTime.parse(map['entryDate'] ?? DateTime.now().toIso8601String()), totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [], sourceTag: map['sourceTag'] ?? "", linkedChallanIds: List<String>.from(map['linkedChallanIds'] ?? []),
-    // 🆕 Fallbacks to load older purchase files safely
+    id: map['id'] ?? "", internalNo: map['internalNo'] ?? "", billNo: map['billNo'] ?? "",
+    distributorName: map['distributorName'] ?? "", partyId: map['partyId'] ?? "",
+    paymentMode: map['paymentMode'] ?? "CREDIT", gstStatus: map['gstStatus'] ?? "Pending",
+    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
+    entryDate: DateTime.parse(map['entryDate'] ?? DateTime.now().toIso8601String()),
+    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(),
+    items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
+    sourceTag: map['sourceTag'] ?? "",
+    linkedChallanIds: List<String>.from(map['linkedChallanIds'] ?? []),
     extraDiscount: (map['extraDiscount'] ?? 0.0).toDouble(),
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
   ); 
 }
 
 class SaleChallan { 
   String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks; DateTime date; List<BillItem> items; double totalAmount; List<ChallanSignature> sigHistory; bool isSigned;
-  SaleChallan({required this.id, required this.billNo, required this.partyId, required this.date, required this.partyName, required this.partyGstin, required this.partyState, required this.items, required this.totalAmount, this.status = "Pending", this.salesmanName = "", this.remarks = "", this.sigHistory = const [], this.isSigned = false});
-  Map<String, dynamic> toMap() => {'id': id, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(), 'partyName': partyName, 'partyGstin': partyGstin, 'partyState': partyState, 'totalAmount': totalAmount, 'status': status, 'salesmanName': salesmanName, 'remarks': remarks, 'items': items.map((i) => i.toMap()).toList(), 'sigHistory': sigHistory.map((s) => s.toMap()).toList(), 'isSigned': isSigned};
-  factory SaleChallan.fromMap(Map<String, dynamic> map) => SaleChallan(id: map['id'] ?? "", billNo: map['billNo'] ?? "", partyId: map['partyId'] ?? "", date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), partyName: map['partyName'] ?? "", partyGstin: map['partyGstin'] ?? "", partyState: map['partyState'] ?? "Rajasthan", totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), status: map['status'] ?? "Pending", salesmanName: map['salesmanName'] ?? "", remarks: map['remarks'] ?? "", items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [], isSigned: map['isSigned'] ?? false, sigHistory: (map['sigHistory'] as List?)?.map((s) => ChallanSignature.fromMap(s)).toList() ?? []); 
+  int updatedAt, version;
+
+  SaleChallan({
+    required this.id, required this.billNo, required this.partyId, required this.date,
+    required this.partyName, required this.partyGstin, required this.partyState,
+    required this.items, required this.totalAmount, this.status = "Pending",
+    this.salesmanName = "", this.remarks = "", this.sigHistory = const [], this.isSigned = false,
+    this.updatedAt = 0, this.version = 1,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(),
+    'partyName': partyName, 'partyGstin': partyGstin, 'partyState': partyState,
+    'totalAmount': totalAmount, 'status': status, 'salesmanName': salesmanName,
+    'remarks': remarks, 'items': items.map((i) => i.toMap()).toList(),
+    'sigHistory': sigHistory.map((s) => s.toMap()).toList(), 'isSigned': isSigned,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
+  };
+
+  factory SaleChallan.fromMap(Map<String, dynamic> map) => SaleChallan(
+    id: map['id'] ?? "", billNo: map['billNo'] ?? "", partyId: map['partyId'] ?? "",
+    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
+    partyName: map['partyName'] ?? "", partyGstin: map['partyGstin'] ?? "",
+    partyState: map['partyState'] ?? "Rajasthan", totalAmount: (map['totalAmount'] ?? 0.0).toDouble(),
+    status: map['status'] ?? "Pending", salesmanName: map['salesmanName'] ?? "",
+    remarks: map['remarks'] ?? "",
+    items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
+    isSigned: map['isSigned'] ?? false,
+    sigHistory: (map['sigHistory'] as List?)?.map((s) => ChallanSignature.fromMap(s)).toList() ?? [],
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
+  ); 
 }
 
 class PurchaseChallan { 
   String id, internalNo, billNo, partyId, distributorName, status, remarks; DateTime date; List<PurchaseItem> items; double totalAmount;
-  PurchaseChallan({required this.id, required this.internalNo, required this.billNo, required this.partyId, required this.date, required this.distributorName, required this.items, required this.totalAmount, this.status = "Pending", this.remarks = ""});
-  Map<String, dynamic> toMap() => {'id': id, 'internalNo': internalNo, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(), 'distributorName': distributorName, 'totalAmount': totalAmount, 'status': status, 'remarks': remarks, 'items': items.map((i) => i.toMap()).toList()};
-  factory PurchaseChallan.fromMap(Map<String, dynamic> map) => PurchaseChallan(id: map['id'] ?? "", internalNo: map['internalNo'] ?? "", billNo: map['billNo'] ?? "", partyId: map['partyId'] ?? "", distributorName: map['distributorName'] ?? "", date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), status: map['status'] ?? "Pending", remarks: map['remarks'] ?? "", items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? []); 
+  int updatedAt, version;
+
+  PurchaseChallan({
+    required this.id, required this.internalNo, required this.billNo, required this.partyId,
+    required this.date, required this.distributorName, required this.items, required this.totalAmount,
+    this.status = "Pending", this.remarks = "",
+    this.updatedAt = 0, this.version = 1,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id, 'internalNo': internalNo, 'billNo': billNo, 'partyId': partyId,
+    'date': date.toIso8601String(), 'distributorName': distributorName,
+    'totalAmount': totalAmount, 'status': status, 'remarks': remarks,
+    'items': items.map((i) => i.toMap()).toList(),
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
+  };
+
+  factory PurchaseChallan.fromMap(Map<String, dynamic> map) => PurchaseChallan(
+    id: map['id'] ?? "", internalNo: map['internalNo'] ?? "", billNo: map['billNo'] ?? "",
+    partyId: map['partyId'] ?? "", distributorName: map['distributorName'] ?? "",
+    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
+    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), status: map['status'] ?? "Pending",
+    remarks: map['remarks'] ?? "",
+    items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
+  ); 
 }
 
 class SaleReturn { 
   String id, billNo, partyName, status, returnType; 
   DateTime date; 
   List<BillItem> items; 
-  double totalAmount, extraDiscount, roundOff; // Naya Fields jode gaye
+  double totalAmount, extraDiscount, roundOff;
+  int updatedAt, version;
 
   SaleReturn({
     required this.id, required this.billNo, required this.date, 
     required this.partyName, required this.items, required this.totalAmount, 
     this.status = "Active", this.returnType = "Sellable",
-    this.extraDiscount = 0.0, this.roundOff = 0.0
+    this.extraDiscount = 0.0, this.roundOff = 0.0,
+    this.updatedAt = 0, this.version = 1,
   }); 
 
   Map<String, dynamic> toMap() => {
@@ -396,7 +551,9 @@ class SaleReturn {
     'partyName': partyName, 'totalAmount': totalAmount, 
     'status': status, 'returnType': returnType, 
     'extraDiscount': extraDiscount, 'roundOff': roundOff,
-    'items': items.map((i) => i.toMap()).toList()
+    'items': items.map((i) => i.toMap()).toList(),
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
   }; 
 
   factory SaleReturn.fromMap(Map<String, dynamic> map) => SaleReturn(
@@ -408,7 +565,9 @@ class SaleReturn {
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
     status: map['status'] ?? "Active", 
     returnType: map['returnType'] ?? "Sellable", 
-    items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? []
+    items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
   ); 
 }
 
@@ -416,13 +575,15 @@ class PurchaseReturn {
   String id, billNo, distributorName, status, returnType; 
   DateTime date; 
   List<PurchaseItem> items; 
-  double totalAmount, extraDiscount, roundOff; // Naya Fields
+  double totalAmount, extraDiscount, roundOff;
+  int updatedAt, version;
 
   PurchaseReturn({
     required this.id, required this.billNo, required this.distributorName, 
     required this.items, required this.totalAmount, required this.date, 
     this.status = "Active", this.returnType = "Sellable",
-    this.extraDiscount = 0.0, this.roundOff = 0.0
+    this.extraDiscount = 0.0, this.roundOff = 0.0,
+    this.updatedAt = 0, this.version = 1,
   }); 
 
   Map<String, dynamic> toMap() => {
@@ -430,7 +591,9 @@ class PurchaseReturn {
     'distributorName': distributorName, 'totalAmount': totalAmount, 
     'status': status, 'returnType': returnType, 
     'items': items.map((i) => i.toMap()).toList(),
-    'extraDiscount': extraDiscount, 'roundOff': roundOff
+    'extraDiscount': extraDiscount, 'roundOff': roundOff,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
   }; 
 
   factory PurchaseReturn.fromMap(Map<String, dynamic> map) => PurchaseReturn(
@@ -442,7 +605,9 @@ class PurchaseReturn {
     returnType: map['returnType'] ?? "Sellable", 
     extraDiscount: (map['extraDiscount'] ?? 0.0).toDouble(),
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
-    items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? []
+    items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
   ); 
 }
 
@@ -454,11 +619,12 @@ class Voucher {
   String partyId, partyName, paymentMode, narration;
   double amount;
   List<String> linkedBillNumbers; 
-  String chequeNo;               
-  String bankName;               
-  String depositedIn;            
-  DateTime? chequeDate;          
+  String chequeNo;                 
+  String bankName;                 
+  String depositedIn;              
+  DateTime? chequeDate;            
   double roundOff;
+  int updatedAt, version;
 
   Voucher({
     required this.id,
@@ -477,6 +643,8 @@ class Voucher {
     this.depositedIn = "",
     this.chequeDate,
     this.roundOff = 0.0,
+    this.updatedAt = 0,
+    this.version = 1,
   });
 
   Map<String, dynamic> toMap() => {
@@ -485,7 +653,9 @@ class Voucher {
     'paymentMode': paymentMode, 'narration': narration, 'status': status,
     'linkedBillNumbers': linkedBillNumbers,
     'chequeNo': chequeNo, 'bankName': bankName, 'depositedIn': depositedIn,
-    'chequeDate': chequeDate?.toIso8601String(), 'roundOff': roundOff
+    'chequeDate': chequeDate?.toIso8601String(), 'roundOff': roundOff,
+    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+    'version': version,
   };
 
   factory Voucher.fromMap(Map<String, dynamic> map) => Voucher(
@@ -502,6 +672,8 @@ class Voucher {
     depositedIn: map['depositedIn'] ?? "",
     chequeDate: map['chequeDate'] != null ? DateTime.parse(map['chequeDate']) : null,
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
+    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+    version: (map['version'] ?? 1).toInt(),
   );
 }
   

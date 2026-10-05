@@ -76,6 +76,23 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Atomically purges deleted IDs across all transaction collections in memory
+  void purgeDeletedIds(List<String> ids) {
+    if (ids.isEmpty) return;
+    final set = ids.map((e) => e.trim()).toSet();
+    deletedRecordIds.addAll(set);
+    _saveLocalTombstones();
+    sales.removeWhere((s) => set.contains(s.id) || set.contains(s.billNo));
+    purchases.removeWhere((p) => set.contains(p.id) || set.contains(p.billNo) || set.contains(p.internalNo));
+    saleChallans.removeWhere((c) => set.contains(c.id) || set.contains(c.billNo));
+    purchaseChallans.removeWhere((c) => set.contains(c.id) || set.contains(c.billNo) || set.contains(c.internalNo));
+    saleReturns.removeWhere((r) => set.contains(r.id) || set.contains(r.billNo));
+    purchaseReturns.removeWhere((r) => set.contains(r.id) || set.contains(r.billNo));
+    vouchers.removeWhere((v) => set.contains(v.id) || set.contains(v.voucherNo));
+    rebuildInventory();
+    notifyListeners();
+  }
+
   Future<bool> tryAutoLogin() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -426,6 +443,8 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void addSaleAndSync(Sale sale) {
+    sale.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    sale.version += 1;
     sales.removeWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
     sales.add(sale);
     for (var item in sale.items) {
@@ -457,12 +476,13 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deleteSale(String saleId) {
+    String foundBillNo = '';
     try {
       final s = sales.firstWhere(
         (x) => x.id == saleId || x.billNo == saleId,
         orElse: () => sales.firstWhere((x) => x.id == saleId),
       );
-
+      foundBillNo = s.billNo;
       Set<String> targetChallanKeys = {};
       for (var cid in s.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -483,15 +503,22 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
 
     deletedRecordIds.add(saleId);
+    if (foundBillNo.isNotEmpty) deletedRecordIds.add(foundBillNo);
     _saveLocalTombstones();
 
-    sales.removeWhere((s) => s.id == saleId || s.billNo == saleId);
+    sales.removeWhere((s) => s.id == saleId || (foundBillNo.isNotEmpty && s.billNo == foundBillNo));
     rebuildInventory();
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: saleId,
+      deletedIds: [saleId, if (foundBillNo.isNotEmpty) foundBillNo],
+    );
   }
 
   void addPurchaseAndSync(Purchase purchase) {
+    purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    purchase.version += 1;
     purchases.removeWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
     purchases.add(purchase);
     for (var item in purchase.items) {
@@ -523,12 +550,15 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deletePurchase(String purId) {
+    String foundInternalNo = '';
+    String foundBillNo = '';
     try {
       final p = purchases.firstWhere(
         (x) => x.id == purId || x.internalNo == purId || x.billNo == purId,
         orElse: () => purchases.firstWhere((x) => x.id == purId),
       );
-
+      foundInternalNo = p.internalNo;
+      foundBillNo = p.billNo;
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -550,59 +580,78 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
 
     deletedRecordIds.add(purId);
+    if (foundInternalNo.isNotEmpty) deletedRecordIds.add(foundInternalNo);
+    if (foundBillNo.isNotEmpty) deletedRecordIds.add(foundBillNo);
     _saveLocalTombstones();
 
-    purchases.removeWhere((p) => p.id == purId || p.internalNo == purId || p.billNo == purId);
+    purchases.removeWhere((p) => p.id == purId || (foundInternalNo.isNotEmpty && p.internalNo == foundInternalNo) || (foundBillNo.isNotEmpty && p.billNo == foundBillNo));
     rebuildInventory();
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: purId,
+      deletedIds: [purId, if (foundInternalNo.isNotEmpty) foundInternalNo, if (foundBillNo.isNotEmpty) foundBillNo],
+    );
   }
 
   void deleteVoucher(String voucherId) {
     deletedRecordIds.add(voucherId);
     _saveLocalTombstones();
-
-    vouchers.removeWhere((v) => v.id == voucherId);
+    vouchers.removeWhere((item) => item.id == voucherId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: voucherId,
+      deletedIds: [voucherId],
+    );
   }
 
   void deleteSaleChallan(String challanId) {
     deletedRecordIds.add(challanId);
     _saveLocalTombstones();
-
-    saleChallans.removeWhere((c) => c.id == challanId);
+    saleChallans.removeWhere((item) => item.id == challanId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: challanId,
+      deletedIds: [challanId],
+    );
   }
 
   void deletePurchaseChallan(String challanId) {
     deletedRecordIds.add(challanId);
     _saveLocalTombstones();
-
-    purchaseChallans.removeWhere((c) => c.id == challanId);
+    purchaseChallans.removeWhere((item) => item.id == challanId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: challanId,
+      deletedIds: [challanId],
+    );
   }
 
   void deleteSaleReturn(String returnId) {
     deletedRecordIds.add(returnId);
     _saveLocalTombstones();
-
-    saleReturns.removeWhere((r) => r.id == returnId);
-    rebuildInventory();
+    saleReturns.removeWhere((item) => item.id == returnId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: returnId,
+      deletedIds: [returnId],
+    );
   }
 
   void deletePurchaseReturn(String returnId) {
     deletedRecordIds.add(returnId);
     _saveLocalTombstones();
-
-    purchaseReturns.removeWhere((r) => r.id == returnId);
-    rebuildInventory();
+    purchaseReturns.removeWhere((item) => item.id == returnId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(
+      action: 'RECORD_DELETED',
+      entityId: returnId,
+      deletedIds: [returnId],
+    );
   }
 
   String getOrCreateCompany(String name) {

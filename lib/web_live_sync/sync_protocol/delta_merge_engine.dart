@@ -4,7 +4,7 @@ import '../../../pharoah_manager.dart';
 import '../../../models.dart';
 
 class DeltaMergeEngine {
-  /// Smartly merges cloud data with ERP Multi-Node collision prevention and LWW safeguards.
+  /// Smartly merges cloud data with ERP Multi-Node collision prevention and true LWW safeguards.
   static bool processCloudData(PharoahManager ph, Map<String, dynamic> cloudFiles, Set<String> tombstones, Map<String, String> localHashes) {
     bool hasChanges = false;
 
@@ -15,7 +15,7 @@ class DeltaMergeEngine {
       return null;
     }
 
-    // Advanced Deep-Compare & Deduplicating Merge Function
+    // Advanced Deep-Compare & Deduplicating Merge Function with True LWW
     bool mergeList<T>(
       List<dynamic>? cloudList,
       List<T> localList,
@@ -27,9 +27,13 @@ class DeltaMergeEngine {
       if (cloudList == null) return false;
       bool changed = false;
 
-      // 1. Purge any tombstoned records
+      // 1. Purge any tombstoned records (checking both ID and BillNo to kill ghost bills)
       final beforeLen = localList.length;
-      localList.removeWhere((item) => tombstones.contains(getId(item)));
+      localList.removeWhere((item) {
+        final id = getId(item).trim();
+        final bNo = getBillNo(item).trim();
+        return tombstones.contains(id) || (bNo.isNotEmpty && tombstones.contains(bNo));
+      });
       if (localList.length != beforeLen) changed = true;
 
       // 2. Merge Cloud Records
@@ -39,34 +43,46 @@ class DeltaMergeEngine {
         String id = (cloudMap['id'] ?? '').toString().trim();
         String billNo = (cloudMap['billNo'] ?? cloudMap['internalNo'] ?? cloudMap['voucherNo'] ?? '').toString().trim();
 
-        // Skip if deleted
-        if (id.isEmpty || tombstones.contains(id)) continue;
+        // Skip if deleted or in tombstones
+        if (id.isEmpty || tombstones.contains(id) || (billNo.isNotEmpty && tombstones.contains(billNo))) continue;
 
         // Match by exact ID or same Bill Number to prevent duplicate cards
         int idx = localList.indexWhere((e) => getId(e) == id || (billNo.isNotEmpty && getBillNo(e) == billNo));
-
         if (idx == -1) {
           // ADD NEW RECORD FROM CLOUD
           localList.add(fromMap(cloudMap));
           changed = true;
         } else {
-          // In-Place Replace if content differs
-          String localJson = jsonEncode(toMap(localList[idx]));
+          // In-Place Replace ONLY if cloud is newer or equal (Last-Write-Wins)
+          var localMap = toMap(localList[idx]);
+          String localJson = jsonEncode(localMap);
           String cloudJson = jsonEncode(cloudMap);
-
           if (localJson != cloudJson) {
-            localList[idx] = fromMap(cloudMap);
-            changed = true;
+            int cloudUpdated = (cloudMap['updatedAt'] ?? 0).toInt();
+            int localUpdated = (localMap['updatedAt'] ?? 0).toInt();
+            if (cloudUpdated >= localUpdated) {
+              localList[idx] = fromMap(cloudMap);
+              changed = true;
+            }
           }
         }
       }
 
-      // 3. Final De-duplication Pass: Keep only 1 record per BillNo
+      // 3. Final De-duplication Pass: Keep only 1 record per BillNo (keep newest)
       Map<String, T> uniqueByBillNo = {};
       for (var item in localList) {
         String bNo = getBillNo(item);
         if (bNo.isNotEmpty) {
-          uniqueByBillNo[bNo] = item;
+          if (!uniqueByBillNo.containsKey(bNo)) {
+            uniqueByBillNo[bNo] = item;
+          } else {
+            var existing = uniqueByBillNo[bNo]!;
+            int existingUpdated = (toMap(existing)['updatedAt'] ?? 0).toInt();
+            int currentUpdated = (toMap(item)['updatedAt'] ?? 0).toInt();
+            if (currentUpdated >= existingUpdated) {
+              uniqueByBillNo[bNo] = item;
+            }
+          }
         }
       }
       if (uniqueByBillNo.length < localList.length) {
@@ -141,7 +157,7 @@ class DeltaMergeEngine {
       (e) => e.toMap()
     );
 
-    // Master Records Sync
+    // Master Records Sync with LWW
     var rawParts = decodeJson('parts.json') as List?;
     if (rawParts != null) {
       for (var rawPart in rawParts) {
@@ -152,8 +168,18 @@ class DeltaMergeEngine {
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.parties[existingIdx].toMap());
           String cJson = jsonEncode(partMap);
-          if (lJson != cJson) { ph.parties[existingIdx] = Party.fromMap(partMap); hasChanges = true; }
-        } else { ph.parties.add(Party.fromMap(partMap)); hasChanges = true; }
+          if (lJson != cJson) {
+            int cUpdated = (partMap['updatedAt'] ?? 0).toInt();
+            int lUpdated = ph.parties[existingIdx].updatedAt;
+            if (cUpdated >= lUpdated) {
+              ph.parties[existingIdx] = Party.fromMap(partMap);
+              hasChanges = true;
+            }
+          }
+        } else {
+          ph.parties.add(Party.fromMap(partMap));
+          hasChanges = true;
+        }
       }
     }
 
@@ -167,8 +193,18 @@ class DeltaMergeEngine {
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.medicines[existingIdx].toMap());
           String cJson = jsonEncode(medMap);
-          if (lJson != cJson) { ph.medicines[existingIdx] = Medicine.fromMap(medMap); hasChanges = true; }
-        } else { ph.medicines.add(Medicine.fromMap(medMap)); hasChanges = true; }
+          if (lJson != cJson) {
+            int cUpdated = (medMap['updatedAt'] ?? 0).toInt();
+            int lUpdated = ph.medicines[existingIdx].updatedAt;
+            if (cUpdated >= lUpdated) {
+              ph.medicines[existingIdx] = Medicine.fromMap(medMap);
+              hasChanges = true;
+            }
+          }
+        } else {
+          ph.medicines.add(Medicine.fromMap(medMap));
+          hasChanges = true;
+        }
       }
     }
 

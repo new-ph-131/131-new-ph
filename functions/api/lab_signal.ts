@@ -1,14 +1,17 @@
 // FILE: functions/api/lab_signal.ts
-// Cloudflare Pages Function: High-Speed Edge Signal Bus for Event-Driven 2-Way Sync
+// Cloudflare Pages Function: High-Speed Edge Signal & Delta Mutation Bus (<30ms)
 
 interface SignalRecord {
   id: string;
   storeToken: string;
   source: string;
   action: string;
+  entityType?: string;
   entityId: string;
   timestamp: number;
   serverReceivedAt: number;
+  deletedIds?: string[];
+  delta?: any;
   payload?: any;
 }
 
@@ -35,7 +38,6 @@ export async function onRequestPost(context: any) {
 
     const body = JSON.parse(raw);
     const storeToken = (body.storeToken || "").trim().toUpperCase();
-
     if (!storeToken) {
       return new Response(JSON.stringify({ status: "ERROR", message: "storeToken required" }), {
         status: 400,
@@ -48,17 +50,51 @@ export async function onRequestPost(context: any) {
       storeToken,
       source: (body.source || "UNKNOWN").toUpperCase(),
       action: body.action || "DELTA_MUTATION",
+      entityType: body.entityType || "",
       entityId: body.entityId || "",
       timestamp: body.timestamp || Date.now(),
       serverReceivedAt: Date.now(),
+      deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
+      delta: body.delta || null,
       payload: body.payload || {},
     };
 
-    // Store in Cloudflare KV (instant global replication across all edge datacenters)
     if (context.env && context.env.SIGNAL_KV) {
-      await context.env.SIGNAL_KV.put(`sig_${storeToken}`, JSON.stringify(record), {
-        expirationTtl: 3600,
-      });
+      const kv = context.env.SIGNAL_KV;
+
+      // 1. Store latest signal
+      await kv.put(`sig_${storeToken}`, JSON.stringify(record), { expirationTtl: 86400 });
+
+      // 2. Manage circular mutation log (last 50 mutations)
+      let events: SignalRecord[] = [];
+      const rawEvents = await kv.get(`events_${storeToken}`);
+      if (rawEvents) {
+        try { events = JSON.parse(rawEvents); } catch (_) {}
+      }
+      events.push(record);
+      if (events.length > 50) {
+        events = events.slice(events.length - 50);
+      }
+      await kv.put(`events_${storeToken}`, JSON.stringify(events), { expirationTtl: 86400 });
+
+      // 3. Update persistent edge tombstone registry
+      if (record.deletedIds && record.deletedIds.length > 0) {
+        let tombstones: string[] = [];
+        const rawT = await kv.get(`tomb_${storeToken}`);
+        if (rawT) {
+          try { tombstones = JSON.parse(rawT); } catch (_) {}
+        }
+        const tSet = new Set(tombstones);
+        for (const d of record.deletedIds) {
+          if (d && typeof d === 'string' && d.trim().length > 0) {
+            tSet.add(d.trim());
+          }
+        }
+        if (record.entityId && record.action.includes('DELETE')) {
+          tSet.add(record.entityId.trim());
+        }
+        await kv.put(`tomb_${storeToken}`, JSON.stringify(Array.from(tSet)), { expirationTtl: 604800 }); // 7 days
+      }
     }
 
     return new Response(JSON.stringify({ status: "SUCCESS", event: record }), {
@@ -87,25 +123,48 @@ export async function onRequestGet(context: any) {
     }
 
     let current: SignalRecord | null = null;
+    let mutations: SignalRecord[] = [];
+    let tombstones: string[] = [];
+
     if (context.env && context.env.SIGNAL_KV) {
-      const raw = await context.env.SIGNAL_KV.get(`sig_${storeToken}`);
-      if (raw) {
+      const kv = context.env.SIGNAL_KV;
+
+      const [rawSig, rawEvents, rawTomb] = await Promise.all([
+        kv.get(`sig_${storeToken}`),
+        kv.get(`events_${storeToken}`),
+        kv.get(`tomb_${storeToken}`),
+      ]);
+
+      if (rawSig) {
+        try { current = JSON.parse(rawSig); } catch (_) {}
+      }
+      if (rawEvents) {
         try {
-          current = JSON.parse(raw);
+          const allEvts: SignalRecord[] = JSON.parse(rawEvents);
+          mutations = allEvts.filter((e) => e.timestamp > lastSeenTs);
         } catch (_) {}
+      }
+      if (rawTomb) {
+        try { tombstones = JSON.parse(rawTomb); } catch (_) {}
       }
     }
 
     if (!current) {
-      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null }), {
+      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], tombstones: [] }), {
         status: 200,
         headers: CORS_HEADERS,
       });
     }
 
-    const hasUpdate = current.timestamp > lastSeenTs;
+    const hasUpdate = current.timestamp > lastSeenTs || mutations.length > 0;
 
-    return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate, event: hasUpdate ? current : null }), {
+    return new Response(JSON.stringify({
+      status: "SUCCESS",
+      hasUpdate,
+      event: hasUpdate ? current : null,
+      mutations,
+      tombstones,
+    }), {
       status: 200,
       headers: CORS_HEADERS,
     });

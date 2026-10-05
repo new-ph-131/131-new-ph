@@ -6,18 +6,17 @@ import 'package:http/http.dart' as http;
 import '../models/sync_signal_event.dart';
 
 /// CloudSignalChannel: Low-latency event signaling bus between App & Web.
-/// Routes through Cloudflare Edge (<20ms) to preserve Google Drive Apps Script quotas.
+/// Routes through Cloudflare Edge (<30ms) to bypass Google Drive latency.
 class CloudSignalChannel {
   static final CloudSignalChannel instance = CloudSignalChannel._internal();
   CloudSignalChannel._internal();
 
   static const String edgeSignalEndpoint = "https://pharoah-erp.pages.dev/api/lab_signal";
-
   Timer? _pollTimer;
   int _lastKnownSignalTime = 0;
   bool _isChecking = false;
 
-  /// Broadcasts a fast wake-up signal to Cloudflare Edge Relay
+  /// Broadcasts a fast mutation signal to Cloudflare Edge Relay
   Future<bool> broadcastSignal(SyncSignalEvent event) async {
     try {
       if (event.storeToken.isEmpty) return false;
@@ -28,6 +27,8 @@ class CloudSignalChannel {
         "action": event.action,
         "entityId": event.entityId,
         "timestamp": event.timestamp,
+        "deletedIds": event.deletedIds,
+        "delta": event.delta,
       };
 
       final response = await http.post(
@@ -48,7 +49,7 @@ class CloudSignalChannel {
     required String storeToken,
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
-    Duration interval = const Duration(milliseconds: 1500),
+    Duration interval = const Duration(milliseconds: 1200),
   }) {
     stopListening();
     if (storeToken.isEmpty) return;
@@ -65,9 +66,7 @@ class CloudSignalChannel {
           "$edgeSignalEndpoint?storeToken=${Uri.encodeComponent(cleanToken)}"
           "&lastSeenTs=$_lastKnownSignalTime"
         );
-
         final response = await http.get(uri).timeout(const Duration(seconds: 3));
-
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['status'] == 'SUCCESS' && data['hasUpdate'] == true && data['event'] != null) {

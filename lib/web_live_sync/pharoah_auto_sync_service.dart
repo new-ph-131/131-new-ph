@@ -1,5 +1,4 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-650 (ERP-MULTI-COUNTER-LWW-SYNC-LIVE)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'pharoah_web_manager.dart';
@@ -22,9 +21,13 @@ class PharoahAutoSyncService {
 
   /// 🔄 1. AUTO-PUSH + INSTANT WAKE-UP SIGNAL DISPATCH
   /// Pushes changed real data to cloud and immediately sends an ultra-fast event signal to the Native App
-  void triggerAutoSync({String action = 'DATA_MUTATED', String entityId = ''}) {
+  void triggerAutoSync({
+    String action = 'DATA_MUTATED',
+    String entityId = '',
+    List<String> deletedIds = const [],
+  }) {
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
-    _coordinator.notifyWebMutation(action: action, entityId: entityId);
+    _coordinator.notifyWebMutation(action: action, entityId: entityId, deletedIds: deletedIds);
     LabSyncOrchestrator.instance.notifyWebRealMutation(webManager, action: action, entityId: entityId);
   }
 

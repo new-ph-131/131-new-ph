@@ -6,11 +6,14 @@ import '../models/sync_signal_event.dart';
 import '../transport/cloud_signal_channel.dart';
 
 /// WebRealtimeCoordinator: Coordinates real-time signaling & sync for Web Portal.
+/// Features non-dropping Sequential Execution Queue & Batch Deletion Accumulator.
 class WebRealtimeCoordinator {
   final PharoahWebManager webManager;
   Timer? _safetyHeartbeatTimer;
   Timer? _pushDebounceTimer;
   bool _isPushing = false;
+  bool _hasPendingPush = false;
+  final List<String> _pendingDeletedIds = [];
 
   WebRealtimeCoordinator({required this.webManager});
 
@@ -18,51 +21,74 @@ class WebRealtimeCoordinator {
   void start() {
     stop();
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
-
     final token = webManager.activeStoreToken;
 
     // 1. Connect to Real-time Signal Channel
     CloudSignalChannel.instance.listenToSignals(
       storeToken: token,
       mySource: 'web',
-      interval: const Duration(seconds: 3),
+      interval: const Duration(milliseconds: 1200),
       onSignal: (event) async {
-        debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}). Refreshing immediately...");
+        debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}). Processing...");
+        if (event.deletedIds.isNotEmpty) {
+          webManager.purgeDeletedIds(event.deletedIds);
+        }
         await webManager.refreshStoreData();
       },
     );
 
-    // 2. Fallback Safety Net (refreshes every 10s if signal missed)
-    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-      if (webManager.isAuthenticated && webManager.activeStoreToken.isNotEmpty) {
+    // 2. Fallback Safety Net (refreshes every 15s if signal missed)
+    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+      if (webManager.isAuthenticated && webManager.activeStoreToken.isNotEmpty && !_isPushing) {
         await webManager.refreshStoreData();
       }
     });
   }
 
-  /// Triggers a push to cloud and sends instant wake-up signal to App
-  void notifyWebMutation({String action = 'DATA_MUTATED', String entityId = ''}) {
+  /// Triggers a non-dropping queued push with atomic batch deletion support
+  void notifyWebMutation({
+    String action = 'DATA_MUTATED',
+    String entityId = '',
+    List<String> deletedIds = const [],
+  }) {
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
 
+    if (deletedIds.isNotEmpty) {
+      _pendingDeletedIds.addAll(deletedIds);
+    }
+    if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
+      _pendingDeletedIds.add(entityId);
+    }
+
     _pushDebounceTimer?.cancel();
-    _pushDebounceTimer = Timer(const Duration(milliseconds: 800), () async {
-      if (_isPushing) return;
+    _pushDebounceTimer = Timer(const Duration(milliseconds: 350), () async {
+      if (_isPushing) {
+        _hasPendingPush = true;
+        return;
+      }
       _isPushing = true;
       try {
-        final success = await webManager.pushUpdatedDataToCloud();
-        if (success) {
-          // Broadcast signal to App immediately
+        do {
+          _hasPendingPush = false;
+          final batchDeleted = List<String>.from(_pendingDeletedIds);
+          _pendingDeletedIds.clear();
+
+          // 1. Broadcast instant event to Cloudflare Edge (<30ms)
           await CloudSignalChannel.instance.broadcastSignal(
             SyncSignalEvent(
               storeToken: webManager.activeStoreToken,
               source: 'web',
               action: action,
               entityId: entityId,
+              deletedIds: batchDeleted,
               companyId: webManager.companyProfile['id']?.toString() ?? '',
             ),
           );
-          debugPrint("⚡ [WebRealtimeCoordinator] Pushed to cloud and broadcast signal to App!");
-        }
+
+          // 2. Push full snapshot to Cloud Relay (Google Drive)
+          await webManager.pushUpdatedDataToCloud();
+          debugPrint("⚡ [WebRealtimeCoordinator] Batch mutation synchronized successfully.");
+        } while (_hasPendingPush);
       } catch (e) {
         debugPrint("⚠ [WebRealtimeCoordinator] Push error: $e");
       } finally {
@@ -76,5 +102,7 @@ class WebRealtimeCoordinator {
     _safetyHeartbeatTimer?.cancel();
     CloudSignalChannel.instance.stopListening();
     _isPushing = false;
+    _hasPendingPush = false;
+    _pendingDeletedIds.clear();
   }
 }

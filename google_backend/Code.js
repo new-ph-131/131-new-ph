@@ -1,20 +1,19 @@
 // FILE: google_backend/Code.js
-// PHAROAH ERP - DEEP GLOBAL SCAN ENGINE
+// PHAROAH ERP - ATOMIC CLOUD RELAY & CONCURRENCY LOCK ENGINE
 
 function findStoreFile(cleanToken) {
   var fileName = cleanToken + ".json";
   
-  // 1. Search in all Pharoah_ERP_Cloud folders
-  var folders = DriveApp.getFoldersByName("Pharoah_ERP_Cloud");
-  while (folders.hasNext()) {
-    var f = folders.next();
-    var files = f.getFilesByName(fileName);
+  // 1. Direct fast lookup in Pharoah_ERP_Cloud folder
+  var folder = getCloudFolder();
+  if (folder) {
+    var files = folder.getFilesByName(fileName);
     if (files.hasNext()) {
-      return { folder: f, file: files.next() };
+      return { folder: folder, file: files.next() };
     }
   }
-  
-  // 2. Global search across entire Google Drive
+
+  // 2. Global search fallback across Drive if not in main folder
   var allFiles = DriveApp.getFilesByName(fileName);
   if (allFiles.hasNext()) {
     return { folder: null, file: allFiles.next() };
@@ -27,21 +26,18 @@ function doGet(e) {
   if (e && e.parameter) {
     var action = e.parameter.action;
 
-    // 🔍 DEEP GLOBAL SCAN: Sabhi 15-20 stores ko Drive se dhoondhna
+    // 🔍 DEEP GLOBAL SCAN: Sabhi stores ko Drive se dhoondhna
     if (action === "LIST_ALL_STORES") {
       try {
         var storeList = [];
         var seenTokens = {};
         var totalBytes = 0;
 
-        // Search all .json files in Google Drive containing PH-LIVE or store data
         var fileIterator = DriveApp.searchFiles("title contains '.json'");
-
         while (fileIterator.hasNext()) {
           var file = fileIterator.next();
           var name = file.getName();
 
-          // Skip non-store system json files
           if (name === "appsscript.json" || name === "package.json" || name === "manifest.json") {
             continue;
           }
@@ -53,7 +49,6 @@ function doGet(e) {
               var contentStr = file.getBlob().getDataAsString();
               var data = JSON.parse(contentStr);
 
-              // Check if valid Pharoah ERP store file
               if (data.storeToken || data.companyName || data.files) {
                 var salesCount = 0;
                 var medsCount = 0;
@@ -85,7 +80,7 @@ function doGet(e) {
                 });
               }
             } catch(err) {
-              // Ignore corrupted or non-pharoah json
+              // Ignore corrupted json
             }
           }
         }
@@ -113,13 +108,19 @@ function doGet(e) {
   return createJsonResponse({
     status: "ACTIVE",
     service: "Pharoah ERP Cloud Relay Engine",
-    version: "1.0.9",
+    version: "1.1.0-ATOMIC",
     timestamp: new Date().toISOString()
   });
 }
 
 function doPost(e) {
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
+
   try {
+    // 🛡️ CRITICAL: 15-second lock prevents race condition collisions
+    hasLock = lock.waitLock(15000);
+
     if (!e || !e.postData || !e.postData.contents) {
       return createJsonResponse({ status: "ERROR", message: "Empty request payload." });
     }
@@ -135,6 +136,29 @@ function doPost(e) {
 
       var fileObj = findStoreFile(storeToken);
       request.syncedAt = new Date().toISOString();
+
+      // Cumulative Tombstone Protection: Merge incoming tombstones with existing tombstones
+      if (fileObj && fileObj.file && request.files) {
+        try {
+          var existingContent = JSON.parse(fileObj.file.getBlob().getDataAsString());
+          if (existingContent.files && existingContent.files["tombstones.json"]) {
+            var existingTombstones = JSON.parse(existingContent.files["tombstones.json"]) || [];
+            var incomingTombstones = [];
+            if (request.files["tombstones.json"]) {
+              incomingTombstones = JSON.parse(request.files["tombstones.json"]) || [];
+            }
+            var mergedTombMap = {};
+            for (var i = 0; i < existingTombstones.length; i++) {
+              mergedTombMap[existingTombstones[i]] = true;
+            }
+            for (var j = 0; j < incomingTombstones.length; j++) {
+              mergedTombMap[incomingTombstones[j]] = true;
+            }
+            request.files["tombstones.json"] = JSON.stringify(Object.keys(mergedTombMap));
+          }
+        } catch(mergeErr) {}
+      }
+
       var jsonPayload = JSON.stringify(request);
 
       if (fileObj && fileObj.file) {
@@ -158,6 +182,10 @@ function doPost(e) {
     return createJsonResponse({ status: "ERROR", message: "Unknown action: " + action });
   } catch (err) {
     return createJsonResponse({ status: "ERROR", message: err.toString() });
+  } finally {
+    if (hasLock) {
+      lock.releaseLock();
+    }
   }
 }
 
@@ -171,7 +199,6 @@ function handlePullRequest(storeToken, username, password) {
   }
 
   var fileObj = findStoreFile(cleanToken);
-
   if (!fileObj || !fileObj.file) {
     return createJsonResponse({
       status: "ERROR",
