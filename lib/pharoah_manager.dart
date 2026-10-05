@@ -27,6 +27,7 @@ import 'web_live_sync/weblivetoken.dart';
 import 'app_date_logic.dart';
 import 'sync_bridge/engines/app_auto_sync_daemon.dart';
 import 'realtime_signaling/coordinators/app_realtime_coordinator.dart';
+import 'web_live_sync/sync_protocol/tombstone_engine.dart';
 
 class PharoahManager with ChangeNotifier {
   // ===========================================================================
@@ -313,6 +314,7 @@ class PharoahManager with ChangeNotifier {
     notifyListeners();
     // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Debounced Background Push)
     AppRealtimeCoordinator.instance.notifyAppMutation(this);
+    AppAutoSyncDaemon.instance.triggerSilentPush(this, action: 'DATA_SAVED');
     LabSyncOrchestrator.instance.notifyAppRealMutation(this, action: 'DATA_SAVED');
   }
 
@@ -380,8 +382,36 @@ Future<void> finalizeSale({
   }) async { 
     final p = parties.firstWhere((pt) => pt.id == party.id, orElse: () => party);
     final String sId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    int currentVer = 1;
+    final int existingIdx = sales.indexWhere((s) => s.id == sId || s.billNo == billNo);
+    if (existingIdx != -1) {
+      currentVer = sales[existingIdx].version + 1;
+    }
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
-    sales.add(Sale(id: sId, billNo: billNo, partyId: p.id, date: date, partyName: p.name, partyGstin: p.gst, partyState: p.state, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedIds ?? [], extraDiscount: extraDiscount, roundOff: roundOff, partyAddress: p.address, partyPhone: p.phone, partyEmail: p.email, partyDl: p.dl, partyPan: p.pan, partyCity: p.city, sourceTag: sourceTag)); 
+    sales.add(Sale(
+      id: sId, 
+      billNo: billNo, 
+      partyId: p.id, 
+      date: date, 
+      partyName: p.name, 
+      partyGstin: p.gst, 
+      partyState: p.state, 
+      items: items, 
+      totalAmount: total, 
+      paymentMode: mode, 
+      linkedChallanIds: linkedIds ?? [], 
+      extraDiscount: extraDiscount, 
+      roundOff: roundOff, 
+      partyAddress: p.address, 
+      partyPhone: p.phone, 
+      partyEmail: p.email, 
+      partyDl: p.dl, 
+      partyPan: p.pan, 
+      partyCity: p.city, 
+      sourceTag: sourceTag,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
+    )); 
     
     if (linkedIds != null) { 
       for (var id in linkedIds) { 
@@ -441,8 +471,30 @@ Future<void> finalizePurchase({
     String? existingId
   }) async { 
     final String pId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
-    purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo);
-    purchases.add(Purchase(id: pId, internalNo: internalNo, billNo: billNo, partyId: party.id, date: date, entryDate: entryDate ?? DateTime.now(), distributorName: party.name, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedChallanIds ?? [], sourceTag: sourceTag, extraDiscount: extraDiscount, roundOff: roundOff)); 
+    int currentVer = 1;
+    final int existingIdx = purchases.indexWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+    if (existingIdx != -1) {
+      currentVer = purchases[existingIdx].version + 1;
+    }
+    purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+    purchases.add(Purchase(
+      id: pId, 
+      internalNo: internalNo, 
+      billNo: billNo, 
+      partyId: party.id, 
+      date: date, 
+      entryDate: entryDate ?? DateTime.now(), 
+      distributorName: party.name, 
+      items: items, 
+      totalAmount: total, 
+      paymentMode: mode, 
+      linkedChallanIds: linkedChallanIds ?? [], 
+      sourceTag: sourceTag, 
+      extraDiscount: extraDiscount, 
+      roundOff: roundOff,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
+    )); 
     
     if (linkedChallanIds != null) { 
       for (var id in linkedChallanIds) { 
@@ -812,6 +864,14 @@ void registerBatchActivity({
   }
 
   Future<String> finalizeVoucher(Voucher v) async {
+    int currentVer = 1;
+    final int existingIdx = vouchers.indexWhere((x) => x.id == v.id || x.voucherNo == v.voucherNo);
+    if (existingIdx != -1) {
+      currentVer = vouchers[existingIdx].version + 1;
+    }
+    v.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    v.version = currentVer;
+    vouchers.removeWhere((x) => x.id == v.id || x.voucherNo == v.voucherNo);
     vouchers.add(v);
     if (activeCompany != null) {
       String seriesType = v.type.toUpperCase();
@@ -878,8 +938,19 @@ void registerBatchActivity({
   void deleteVoucher(String id) {
     int i = vouchers.indexWhere((v) => v.id == id);
     if (i != -1) {
-      _reverseVoucherImpact(vouchers[i]);
+      final v = vouchers[i];
+      _reverseVoucherImpact(v);
+      final vNo = v.voucherNo;
       vouchers.removeAt(i);
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [id, if (vNo.isNotEmpty) vNo]);
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_VOUCHER',
+          entityId: id,
+          deletedIds: [id, if (vNo.isNotEmpty) vNo],
+        );
+      }
       save();
       notifyListeners();
     }
@@ -953,8 +1024,57 @@ void registerBatchActivity({
     }
   }
 
-  void deleteBill(String id) { try { final s = sales.firstWhere((x) => x.id == id); if (s.linkedChallanIds.isNotEmpty) { for (var cid in s.linkedChallanIds) { int i = saleChallans.indexWhere((c) => c.id == cid); if (i != -1) saleChallans[i].status = "Pending"; } } sales.removeWhere((x) => x.id == id); save(); notifyListeners(); } catch (e) {} }
-  void deletePurchase(String id) { try { final p = purchases.firstWhere((x) => x.id == id); if (p.linkedChallanIds.isNotEmpty) { for (var cid in p.linkedChallanIds) { int i = purchaseChallans.indexWhere((c) => c.id == cid); if (i != -1) purchaseChallans[i].status = "Pending"; } } purchases.removeWhere((p) => p.id == id); save(); notifyListeners(); } catch (e) {} }
+  void deleteBill(String id) {
+    try {
+      final s = sales.firstWhere((x) => x.id == id || x.billNo == id);
+      if (s.linkedChallanIds.isNotEmpty) {
+        for (var cid in s.linkedChallanIds) {
+          int i = saleChallans.indexWhere((c) => c.id == cid);
+          if (i != -1) saleChallans[i].status = "Pending";
+        }
+      }
+      final String realId = s.id;
+      final String bNo = s.billNo;
+      sales.removeWhere((x) => x.id == realId || (bNo.isNotEmpty && x.billNo == bNo));
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [realId, if (bNo.isNotEmpty) bNo]);
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_SALE',
+          entityId: realId,
+          deletedIds: [realId, if (bNo.isNotEmpty) bNo],
+        );
+      }
+      save();
+      notifyListeners();
+    } catch (e) {}
+  }
+  void deletePurchase(String id) {
+    try {
+      final p = purchases.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
+      if (p.linkedChallanIds.isNotEmpty) {
+        for (var cid in p.linkedChallanIds) {
+          int i = purchaseChallans.indexWhere((c) => c.id == cid);
+          if (i != -1) purchaseChallans[i].status = "Pending";
+        }
+      }
+      final String pId = p.id;
+      final String iNo = p.internalNo;
+      final String bNo = p.billNo;
+      purchases.removeWhere((x) => x.id == pId || x.internalNo == iNo || (bNo.isNotEmpty && x.billNo == bNo));
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [pId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo]);
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_PURCHASE',
+          entityId: pId,
+          deletedIds: [pId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo],
+        );
+      }
+      save();
+      notifyListeners();
+    } catch (e) {}
+  }
   void deleteSaleChallan(String id) { saleChallans.removeWhere((c) => c.id == id); save(); }
   void deletePurchaseChallan(String id) { purchaseChallans.removeWhere((c) => c.id == id); save(); }
   void deleteSaleReturn(String id) { saleReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }

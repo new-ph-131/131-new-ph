@@ -521,6 +521,8 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       finalSourceTag += " $auditNote"; // Append audit log to sourceTag
     }
 
+    final String cleanBillNo = (partyInfoInFile['billNo']?.toString() ?? "").trim();
+
     if (widget.importType == "PURCHASE") {
       List<PurchaseItem> items = [];
       for (var it in reviewedItems.where((e) => e['isSelected'])) {
@@ -532,7 +534,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       // FIXED: Using already parsed and adjusted DateTime object (adjustedBillDate)
       ph.finalizePurchase(
         internalNo: "MIR-PUR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}", 
-        billNo: partyInfoInFile['billNo'], 
+        billNo: cleanBillNo.isNotEmpty ? cleanBillNo : "DRAFT", 
         date: adjustedBillDate, 
         entryDate: DateTime.now(), 
         party: matchedParty!, 
@@ -551,7 +553,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       
       // FIXED: Using adjustedBillDate
       await ph.finalizeSale(
-        billNo: partyInfoInFile['billNo'], 
+        billNo: cleanBillNo.isNotEmpty ? cleanBillNo : "DRAFT", 
         date: adjustedBillDate, 
         party: matchedParty!, 
         items: items, 

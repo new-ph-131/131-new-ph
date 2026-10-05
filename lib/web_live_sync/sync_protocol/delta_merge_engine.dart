@@ -60,7 +60,10 @@ class DeltaMergeEngine {
           if (localJson != cloudJson) {
             int cloudUpdated = (cloudMap['updatedAt'] ?? 0).toInt();
             int localUpdated = (localMap['updatedAt'] ?? 0).toInt();
-            if (cloudUpdated >= localUpdated) {
+            int cloudVer = (cloudMap['version'] ?? 1).toInt();
+            int localVer = (localMap['version'] ?? 1).toInt();
+            // LWW Protection: Only overwrite local if cloud is strictly newer, or same timestamp with higher version
+            if (cloudUpdated > localUpdated || (cloudUpdated == localUpdated && cloudVer > localVer)) {
               localList[idx] = fromMap(cloudMap);
               changed = true;
             }
@@ -171,7 +174,7 @@ class DeltaMergeEngine {
           if (lJson != cJson) {
             int cUpdated = (partMap['updatedAt'] ?? 0).toInt();
             int lUpdated = ph.parties[existingIdx].updatedAt;
-            if (cUpdated >= lUpdated) {
+            if (cUpdated > lUpdated) {
               ph.parties[existingIdx] = Party.fromMap(partMap);
               hasChanges = true;
             }
@@ -196,7 +199,7 @@ class DeltaMergeEngine {
           if (lJson != cJson) {
             int cUpdated = (medMap['updatedAt'] ?? 0).toInt();
             int lUpdated = ph.medicines[existingIdx].updatedAt;
-            if (cUpdated >= lUpdated) {
+            if (cUpdated > lUpdated) {
               ph.medicines[existingIdx] = Medicine.fromMap(medMap);
               hasChanges = true;
             }

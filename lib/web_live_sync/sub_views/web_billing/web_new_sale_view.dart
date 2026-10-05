@@ -380,6 +380,12 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     final String targetSaleId = widget.modifySaleId ?? "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}";
     final String targetBillNo = billNoC.text.trim();
 
+    int currentVer = 1;
+    try {
+      final existingSale = webPh.sales.firstWhere((s) => s.id == targetSaleId || s.billNo == targetBillNo);
+      currentVer = existingSale.version + 1;
+    } catch (_) {}
+
     final newSale = Sale(
       id: targetSaleId,
       billNo: targetBillNo,
@@ -402,6 +408,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       partyEmail: activeParty.email,
       partyDl: activeParty.dl,
       partyPan: activeParty.pan,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
     );
 
     // Atomically purge previous versions (by ID or Bill No) so modifications are 100% clean
