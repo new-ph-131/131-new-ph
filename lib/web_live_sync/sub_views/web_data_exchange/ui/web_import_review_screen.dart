@@ -411,7 +411,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         items: items,
       );
 
-      await webPh.addPurchaseAndSync(newPur);
+      webPh.addPurchaseAndSync(newPur);
     } else {
       String nextBillNo = partyInfoInFile['billNo'];
       List<BillItem> items = [];
@@ -468,7 +468,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         items: items,
       );
 
-      await webPh.addSaleAndSync(newSale);
+      webPh.addSaleAndSync(newSale);
     }
 
     setState(() => isSaving = false);

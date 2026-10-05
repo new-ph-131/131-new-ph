@@ -406,7 +406,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
 
     // Atomically purge previous versions (by ID or Bill No) so modifications are 100% clean
     webPh.sales.removeWhere((s) => s.id == targetSaleId || s.billNo == targetBillNo);
-    await webPh.addSaleAndSync(newSale);
+    webPh.addSaleAndSync(newSale);
     
     if (widget.linkedChallanIds != null) {
       for (var id in widget.linkedChallanIds!) {
@@ -592,8 +592,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: billDate,
-                    firstDate: DateTime(2000, 1, 1),
-                    lastDate: DateTime(2100, 12, 31),
+                    firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
+                    lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
                   );
                   if (picked != null) {
                     setState(() => billDate = picked);

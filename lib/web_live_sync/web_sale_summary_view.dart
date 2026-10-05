@@ -512,8 +512,8 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
         DateTime? p = await showDatePicker(
           context: context,
           initialDate: d,
-          firstDate: DateTime(2000, 1, 1),
-          lastDate: DateTime(2100, 12, 31),
+          firstDate: WebAppDateLogic.getFYStart(fy),
+          lastDate: WebAppDateLogic.getFYEnd(fy),
         ); 
         if (p != null) onPick(p); 
       },

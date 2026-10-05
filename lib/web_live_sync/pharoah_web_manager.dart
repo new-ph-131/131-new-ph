@@ -215,15 +215,45 @@ class PharoahWebManager with ChangeNotifier {
     }
     parties = uniqueParties.values.toList();
 
-    sales = (decodeJson('sales.json') as List?)
+    var rawSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
         .where((s) => !deletedRecordIds.contains(s.id))
-        .toList() ?? [];
+        .toList();
+    if (rawSales != null) {
+      if (sales.isEmpty) {
+        sales = rawSales;
+      } else {
+        for (var s in rawSales) {
+          int idx = sales.indexWhere((ls) => ls.id == s.id || ls.billNo == s.billNo);
+          if (idx != -1) {
+            sales[idx] = s;
+          } else {
+            sales.add(s);
+          }
+        }
+        sales.removeWhere((s) => deletedRecordIds.contains(s.id));
+      }
+    }
 
-    purchases = (decodeJson('purc.json') as List?)
+    var rawPurc = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
         .where((p) => !deletedRecordIds.contains(p.id))
-        .toList() ?? [];
+        .toList();
+    if (rawPurc != null) {
+      if (purchases.isEmpty) {
+        purchases = rawPurc;
+      } else {
+        for (var p in rawPurc) {
+          int idx = purchases.indexWhere((lp) => lp.id == p.id || lp.billNo == p.billNo || lp.internalNo == p.internalNo);
+          if (idx != -1) {
+            purchases[idx] = p;
+          } else {
+            purchases.add(p);
+          }
+        }
+        purchases.removeWhere((p) => deletedRecordIds.contains(p.id));
+      }
+    }
 
     vouchers = (decodeJson('vouc.json') as List?)
         ?.map((e) => Voucher.fromMap(e))
@@ -395,42 +425,35 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
-  Future<bool> addSaleAndSync(Sale sale) async {
-    isCloudPushInProgress = true;
-    try {
-      sales.removeWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
-      sales.add(sale);
-      for (var item in sale.items) {
-        String resolvedKey = item.medicineID;
-        try {
-          final med = medicines.firstWhere((m) => m.id == item.medicineID);
-          resolvedKey = med.identityKey;
-        } catch (_) {}
+  void addSaleAndSync(Sale sale) {
+    sales.removeWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
+    sales.add(sale);
+    for (var item in sale.items) {
+      String resolvedKey = item.medicineID;
+      try {
+        final med = medicines.firstWhere((m) => m.id == item.medicineID);
+        resolvedKey = med.identityKey;
+      } catch (_) {}
 
-        registerBatchActivity(
-          productKey: resolvedKey,
-          batchNo: item.batch,
-          exp: item.exp,
-          packing: item.packing,
-          mrp: item.mrp,
-          rate: item.rate,
-          rateA: item.appliedRateType == "A" ? item.rate : 0.0,
-          rateB: item.appliedRateType == "B" ? item.rate : 0.0,
-          rateC: item.appliedRateType == "C" ? item.rate : 0.0,
-          rateCFormula: item.rateCFormula,
-          appliedRateType: item.appliedRateType,
-        );
-      }
-      rebuildInventory();
-      notifyListeners();
-
-      // ⚡ Atomic Direct Cloud Push (Awaited!)
-      final success = await pushUpdatedDataToCloud();
-      _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: sale.id);
-      return success;
-    } finally {
-      isCloudPushInProgress = false;
+      registerBatchActivity(
+        productKey: resolvedKey,
+        batchNo: item.batch,
+        exp: item.exp,
+        packing: item.packing,
+        mrp: item.mrp,
+        rate: item.rate,
+        rateA: item.appliedRateType == "A" ? item.rate : 0.0,
+        rateB: item.appliedRateType == "B" ? item.rate : 0.0,
+        rateC: item.appliedRateType == "C" ? item.rate : 0.0,
+        rateCFormula: item.rateCFormula,
+        appliedRateType: item.appliedRateType,
+      );
     }
+    rebuildInventory();
+    notifyListeners();
+
+    // ⚡ Fast Non-Blocking Background Cloud Push
+    _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: sale.id);
   }
 
   void deleteSale(String saleId) {
@@ -468,42 +491,35 @@ class PharoahWebManager with ChangeNotifier {
     _autoSyncService.triggerAutoSync();
   }
 
-  Future<bool> addPurchaseAndSync(Purchase purchase) async {
-    isCloudPushInProgress = true;
-    try {
-      purchases.removeWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
-      purchases.add(purchase);
-      for (var item in purchase.items) {
-        String resolvedKey = item.medicineID;
-        try {
-          final med = medicines.firstWhere((m) => m.id == item.medicineID);
-          resolvedKey = med.identityKey;
-        } catch (_) {}
+  void addPurchaseAndSync(Purchase purchase) {
+    purchases.removeWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
+    purchases.add(purchase);
+    for (var item in purchase.items) {
+      String resolvedKey = item.medicineID;
+      try {
+        final med = medicines.firstWhere((m) => m.id == item.medicineID);
+        resolvedKey = med.identityKey;
+      } catch (_) {}
 
-        registerBatchActivity(
-          productKey: resolvedKey,
-          batchNo: item.batch,
-          exp: item.exp,
-          packing: item.packing,
-          mrp: item.mrp,
-          rate: item.purchaseRate,
-          rateA: item.rateA,
-          rateB: item.rateB,
-          rateC: item.rateC,
-          rateCFormula: item.rateCFormula,
-          appliedRateType: item.appliedRateType,
-        );
-      }
-      rebuildInventory();
-      notifyListeners();
-
-      // ⚡ Atomic Direct Cloud Push (Awaited!)
-      final success = await pushUpdatedDataToCloud();
-      _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: purchase.id);
-      return success;
-    } finally {
-      isCloudPushInProgress = false;
+      registerBatchActivity(
+        productKey: resolvedKey,
+        batchNo: item.batch,
+        exp: item.exp,
+        packing: item.packing,
+        mrp: item.mrp,
+        rate: item.purchaseRate,
+        rateA: item.rateA,
+        rateB: item.rateB,
+        rateC: item.rateC,
+        rateCFormula: item.rateCFormula,
+        appliedRateType: item.appliedRateType,
+      );
     }
+    rebuildInventory();
+    notifyListeners();
+
+    // ⚡ Fast Non-Blocking Background Cloud Push
+    _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: purchase.id);
   }
 
   void deletePurchase(String purId) {

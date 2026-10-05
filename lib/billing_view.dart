@@ -231,8 +231,7 @@ class _BillingViewState extends State<BillingView> {
     double finalGrandTotal = rawTotal.roundToDouble();
     double roundOffVal = finalGrandTotal - rawTotal;
 
-    if (widget.modifySaleId != null) ph.deleteBill(widget.modifySaleId!);
-    ph.finalizeSale(billNo: billNoC.text, date: selectedBillDate, party: widget.party, items: items, total: finalGrandTotal, mode: widget.mode, linkedIds: widget.linkedChallanIds, extraDiscount: extraDisc, roundOff: roundOffVal);
+    ph.finalizeSale(billNo: billNoC.text, date: selectedBillDate, party: widget.party, items: items, total: finalGrandTotal, mode: widget.mode, linkedIds: widget.linkedChallanIds, extraDiscount: extraDisc, roundOff: roundOffVal, existingId: widget.modifySaleId);
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 

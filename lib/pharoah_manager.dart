@@ -375,10 +375,13 @@ Future<void> finalizeSale({
     List<String>? linkedIds, 
     double extraDiscount = 0.0, 
     double roundOff = 0.0, 
-    String sourceTag = ""
+    String sourceTag = "",
+    String? existingId
   }) async { 
     final p = parties.firstWhere((pt) => pt.id == party.id, orElse: () => party);
-    sales.add(Sale(id: DateTime.now().toString(), billNo: billNo, partyId: p.id, date: date, partyName: p.name, partyGstin: p.gst, partyState: p.state, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedIds ?? [], extraDiscount: extraDiscount, roundOff: roundOff, partyAddress: p.address, partyPhone: p.phone, partyEmail: p.email, partyDl: p.dl, partyPan: p.pan, partyCity: p.city, sourceTag: sourceTag)); 
+    final String sId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
+    sales.add(Sale(id: sId, billNo: billNo, partyId: p.id, date: date, partyName: p.name, partyGstin: p.gst, partyState: p.state, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedIds ?? [], extraDiscount: extraDiscount, roundOff: roundOff, partyAddress: p.address, partyPhone: p.phone, partyEmail: p.email, partyDl: p.dl, partyPan: p.pan, partyCity: p.city, sourceTag: sourceTag)); 
     
     if (linkedIds != null) { 
       for (var id in linkedIds) { 
@@ -435,8 +438,11 @@ Future<void> finalizePurchase({
     String sourceTag = "",
     double extraDiscount = 0.0, // 🆕 Mapped
     double roundOff = 0.0,      // 🆕 Mapped
+    String? existingId
   }) async { 
-    purchases.add(Purchase(id: DateTime.now().toString(), internalNo: internalNo, billNo: billNo, partyId: party.id, date: date, entryDate: entryDate ?? DateTime.now(), distributorName: party.name, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedChallanIds ?? [], sourceTag: sourceTag, extraDiscount: extraDiscount, roundOff: roundOff)); 
+    final String pId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo);
+    purchases.add(Purchase(id: pId, internalNo: internalNo, billNo: billNo, partyId: party.id, date: date, entryDate: entryDate ?? DateTime.now(), distributorName: party.name, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedChallanIds ?? [], sourceTag: sourceTag, extraDiscount: extraDiscount, roundOff: roundOff)); 
     
     if (linkedChallanIds != null) { 
       for (var id in linkedChallanIds) { 
@@ -947,8 +953,8 @@ void registerBatchActivity({
     }
   }
 
-  void deleteBill(String id) { try { final s = sales.firstWhere((x) => x.id == id); if (s.linkedChallanIds.isNotEmpty) { for (var cid in s.linkedChallanIds) { int i = saleChallans.indexWhere((c) => c.id == cid); if (i != -1) saleChallans[i].status = "Pending"; } } sales.removeWhere((x) => x.id == id); save().then((_) => loadAllData()); } catch (e) {} }
-  void deletePurchase(String id) { try { final p = purchases.firstWhere((x) => x.id == id); if (p.linkedChallanIds.isNotEmpty) { for (var cid in p.linkedChallanIds) { int i = purchaseChallans.indexWhere((c) => c.id == cid); if (i != -1) purchaseChallans[i].status = "Pending"; } } purchases.removeWhere((p) => p.id == id); save().then((_) => loadAllData()); } catch (e) {} }
+  void deleteBill(String id) { try { final s = sales.firstWhere((x) => x.id == id); if (s.linkedChallanIds.isNotEmpty) { for (var cid in s.linkedChallanIds) { int i = saleChallans.indexWhere((c) => c.id == cid); if (i != -1) saleChallans[i].status = "Pending"; } } sales.removeWhere((x) => x.id == id); save(); notifyListeners(); } catch (e) {} }
+  void deletePurchase(String id) { try { final p = purchases.firstWhere((x) => x.id == id); if (p.linkedChallanIds.isNotEmpty) { for (var cid in p.linkedChallanIds) { int i = purchaseChallans.indexWhere((c) => c.id == cid); if (i != -1) purchaseChallans[i].status = "Pending"; } } purchases.removeWhere((p) => p.id == id); save(); notifyListeners(); } catch (e) {} }
   void deleteSaleChallan(String id) { saleChallans.removeWhere((c) => c.id == id); save(); }
   void deletePurchaseChallan(String id) { purchaseChallans.removeWhere((c) => c.id == id); save(); }
   void deleteSaleReturn(String id) { saleReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }

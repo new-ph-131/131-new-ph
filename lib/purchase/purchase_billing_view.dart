@@ -238,10 +238,8 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
 
   void _handleSave(PharoahManager ph, double itemTotal, double extraDisc, double roundOffVal, double finalGrandTotal) {
     List<String> links = widget.linkedChallanIds ?? [];
-    if (widget.modifyPurchaseId != null) {
-      ph.deletePurchase(widget.modifyPurchaseId!);
-    }
     ph.finalizePurchase(
+      existingId: widget.modifyPurchaseId,
       internalNo: internalNoC.text, 
       billNo: distBillNoC.text.trim(), 
       date: selectedBillDate, 
