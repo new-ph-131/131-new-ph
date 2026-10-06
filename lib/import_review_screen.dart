@@ -497,24 +497,96 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   }
 
   Widget _buildAnalyticsFooter(PharoahManager ph) {
-    double sT = reviewedItems.where((e)=>e['isSelected']).fold(0.0, (s, e)=>s+e['sysTotal']);
-    double cT = reviewedItems.where((e)=>e['isSelected']).fold(0.0, (s, e)=>s+e['csvTotal']);
-    double dF = sT - cT;
-    return Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.vertical(top: Radius.circular(25))), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ _footStat("SYSTEM NET", sT), _footStat("CSV NET", cT), _footStat("DIFF", dF, color: dF.abs() > 0.1 ? Colors.redAccent : Colors.greenAccent), ]),
-      const Divider(color: Colors.white10, height: 25),
-      SizedBox(width: double.infinity, height: 55, child: ElevatedButton.icon(onPressed: () => _handleFinalImport(ph), icon: const Icon(Icons.cloud_done), label: const Text("FINALIZE MIRROR DATA"), style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)))))
-    ]));
+    List<BillItem> tempItems = [];
+    int sNo = 1;
+    for (var it in reviewedItems.where((e) => e['isSelected'])) {
+      Medicine? m = it['match'];
+      tempItems.add(BillItem(
+        id: "TMP-$sNo",
+        srNo: sNo++,
+        medicineID: m?.id ?? '',
+        name: it['name'],
+        packing: it['pack'],
+        batch: it['batch'],
+        exp: it['exp'],
+        hsn: it['hsn'],
+        mrp: (it['mrp'] as num).toDouble(),
+        qty: (it['qty'] as num).toDouble(),
+        freeQty: (it['free'] as num).toDouble(),
+        rate: (it['rate'] as num).toDouble(),
+        gstRate: (it['gstPer'] as num).toDouble(),
+        total: (it['sysTotal'] as num).toDouble(),
+        discountRupees: (it['discAmt'] as num).toDouble(),
+        discountPer: (it['itemDiscPer'] as num).toDouble(),
+      ));
+    }
+    double extraDisc = (partyInfoInFile['extraDisc'] as num?)?.toDouble() ?? 0.0;
+    bool isLoc = matchedParty != null
+        ? (matchedParty!.state.toLowerCase() == (ph.activeCompany?.state.toLowerCase() ?? "rajasthan"))
+        : (partyInfoInFile['state'].toString().toLowerCase() == (ph.activeCompany?.state.toLowerCase() ?? "rajasthan"));
+
+    final summary = AppBillingGstEngine.calculate(
+      items: tempItems,
+      extraDiscount: extraDisc,
+      isLocal: isLoc,
+    );
+
+    double cT = reviewedItems.where((e) => e['isSelected']).fold(0.0, (s, e) => s + (e['csvTotal'] as num).toDouble());
+    double dF = summary.finalGrandTotal - cT;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E293B),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 14,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _footStat("NET TAXABLE", summary.netTaxable),
+              _footStat(isLoc ? "CGST + SGST" : "IGST TAX", summary.totalTax),
+              if (summary.extraDiscount > 0)
+                _footStat("EXTRA DISC (-)", summary.extraDiscount, color: Colors.orangeAccent),
+              if (summary.roundOff != 0)
+                _footStat("ROUND OFF", summary.roundOff),
+              _footStat("SYSTEM NET", summary.finalGrandTotal, color: Colors.cyanAccent),
+              _footStat("CSV NET", cT),
+              _footStat("DIFF", dF, color: dF.abs() > 0.1 ? Colors.redAccent : Colors.greenAccent),
+            ],
+          ),
+          const Divider(color: Colors.white10, height: 25),
+          SizedBox(
+            width: double.infinity,
+            height: 55,
+            child: ElevatedButton.icon(
+              onPressed: () => _handleFinalImport(ph),
+              icon: const Icon(Icons.cloud_done),
+              label: const Text("FINALIZE MIRROR DATA"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blueAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handleFinalImport(PharoahManager ph) async {
     if (matchedParty == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link/Create Party first!"))); return; }
     if (reviewedItems.any((it) => it['isSelected'] && it['match'] == null)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link all products first!"))); return; }
     setState(() => isLoading = true);
-    double curST = reviewedItems.where((e)=>e['isSelected']).fold(0.0, (s, e)=>s+e['sysTotal']);
+
     bool isLoc = matchedParty!.state.toLowerCase() == (ph.activeCompany?.state.toLowerCase() ?? "rajasthan");
 
-   // Adjusted Date Fetch karna jo Step 1 mein set hui thi
+    // Adjusted Date Fetch karna jo Step 1 mein set hui thi
     DateTime adjustedBillDate = partyInfoInFile['date'] as DateTime;
     String auditNote = partyInfoInFile['dateAdjustmentNote'] ?? "";
     
@@ -537,16 +609,71 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
 
     if (widget.importType == "PURCHASE") {
       List<PurchaseItem> items = [];
+      List<BillItem> tempItemsForGst = [];
+      int sNo = 1;
       for (var it in reviewedItems.where((e) => e['isSelected'])) {
         Medicine m = it['match'];
-        ph.registerBatchActivity(productKey: m.identityKey, batchNo: it['batch'], exp: it['exp'], packing: m.packing, mrp: it['mrp'], rate: it['rate']);
-        items.add(PurchaseItem(id: DateTime.now().toString() + m.id, srNo: items.length + 1, medicineID: m.id, name: m.name, packing: m.packing, batch: it['batch'], exp: it['exp'], hsn: it['hsn'], mrp: it['mrp'], qty: it['qty'], freeQty: it['free'], purchaseRate: it['rate'], gstRate: it['gstPer'], total: it['sysTotal'], discountPer: it['itemDiscPer'], discountRupees: it['discAmt']));
+        double pRate = (it['rate'] as num).toDouble();
+        double q = (it['qty'] as num).toDouble();
+        double freeQ = (it['free'] as num).toDouble();
+        double discAmt = (it['discAmt'] as num).toDouble();
+        double discPer = (it['itemDiscPer'] as num).toDouble();
+        double gstR = (it['gstPer'] as num).toDouble();
+
+        ph.registerBatchActivity(
+          productKey: m.identityKey,
+          batchNo: it['batch'],
+          exp: it['exp'],
+          packing: m.packing,
+          mrp: (it['mrp'] as num).toDouble(),
+          rate: pRate,
+        );
+
+        items.add(PurchaseItem(
+          id: DateTime.now().toString() + m.id,
+          srNo: sNo++,
+          medicineID: m.id,
+          name: m.name,
+          packing: m.packing,
+          batch: it['batch'],
+          exp: it['exp'],
+          hsn: it['hsn'],
+          mrp: (it['mrp'] as num).toDouble(),
+          qty: q,
+          freeQty: freeQ,
+          purchaseRate: pRate,
+          gstRate: gstR,
+          total: (it['sysTotal'] as num).toDouble(),
+          discountPer: discPer,
+          discountRupees: discAmt,
+        ));
+
+        tempItemsForGst.add(BillItem(
+          id: "TEMP-$sNo",
+          srNo: sNo,
+          medicineID: m.id,
+          name: m.name,
+          packing: m.packing,
+          batch: it['batch'],
+          exp: it['exp'],
+          hsn: it['hsn'],
+          mrp: (it['mrp'] as num).toDouble(),
+          qty: q,
+          freeQty: freeQ,
+          rate: pRate,
+          gstRate: gstR,
+          total: (it['sysTotal'] as num).toDouble(),
+          discountRupees: discAmt,
+          discountPer: discPer,
+        ));
       }
       
       double purExtraDisc = (partyInfoInFile['extraDisc'] as num?)?.toDouble() ?? 0.0;
-      double purRoundOff = (partyInfoInFile['roundOff'] as num?)?.toDouble() ?? 0.0;
-      double purGross = items.fold(0.0, (s, e) => s + e.total);
-      double purFinalTotal = purGross - purExtraDisc + purRoundOff;
+      final summary = AppBillingGstEngine.calculate(
+        items: tempItemsForGst,
+        extraDiscount: purExtraDisc,
+        isLocal: isLoc,
+      );
 
       await ph.finalizePurchase(
         internalNo: "MIR-PUR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}", 
@@ -555,34 +682,98 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         entryDate: DateTime.now(), 
         party: matchedParty!, 
         items: items, 
-        total: purFinalTotal, 
+        total: summary.finalGrandTotal, 
         mode: "CREDIT", 
         sourceTag: finalSourceTag,
-        extraDiscount: purExtraDisc,
-        roundOff: purRoundOff,
+        extraDiscount: summary.extraDiscount,
+        roundOff: summary.roundOff,
       );
       
       AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo);
     } else {
-      List<BillItem> items = [];
+      List<BillItem> rawItems = [];
+      int sNo = 1;
       for (var it in reviewedItems.where((e) => e['isSelected'])) {
         Medicine m = it['match'];
-        double tVal = it['taxable']; double tTax = it['sysTotal'] - tVal;
-        items.add(BillItem(id: DateTime.now().toString() + m.id, srNo: items.length + 1, medicineID: m.id, name: m.name, packing: m.packing, batch: it['batch'], exp: it['exp'], hsn: it['hsn'], mrp: it['mrp'], qty: it['qty'], freeQty: it['free'], rate: it['rate'], gstRate: it['gstPer'], cgst: isLoc ? tTax/2 : 0, sgst: isLoc ? tTax/2 : 0, igst: isLoc ? 0 : tTax, total: it['sysTotal'], discountRupees: it['discAmt'], discountPer: it['itemDiscPer']));
+        double sRate = (it['rate'] as num).toDouble();
+        double q = (it['qty'] as num).toDouble();
+        double freeQ = (it['free'] as num).toDouble();
+        double discAmt = (it['discAmt'] as num).toDouble();
+        double discPer = (it['itemDiscPer'] as num).toDouble();
+        double gstR = (it['gstPer'] as num).toDouble();
+
+        rawItems.add(BillItem(
+          id: DateTime.now().toString() + m.id,
+          srNo: sNo++,
+          medicineID: m.id,
+          name: m.name,
+          packing: m.packing,
+          batch: it['batch'],
+          exp: it['exp'],
+          hsn: it['hsn'],
+          mrp: (it['mrp'] as num).toDouble(),
+          qty: q,
+          freeQty: freeQ,
+          rate: sRate,
+          gstRate: gstR,
+          total: (it['sysTotal'] as num).toDouble(),
+          discountRupees: discAmt,
+          discountPer: discPer,
+        ));
       }
       
       double saleExtraDisc = (partyInfoInFile['extraDisc'] as num?)?.toDouble() ?? 0.0;
       final summary = AppBillingGstEngine.calculate(
-        items: items,
+        items: rawItems,
         extraDiscount: saleExtraDisc,
         isLocal: isLoc,
       );
+
+      double totalGrossTaxable = rawItems.fold(0.0, (sum, it) => sum + ((it.qty * it.rate) - it.discountRupees));
+      double discountRatio = totalGrossTaxable > 0 ? (summary.extraDiscount / totalGrossTaxable) : 0.0;
+
+      List<BillItem> finalizedItems = [];
+      for (var it in rawItems) {
+        double itemGross = (it.qty * it.rate) - it.discountRupees;
+        if (itemGross < 0) itemGross = 0.0;
+        double itemNetTaxable = itemGross * (1.0 - discountRatio);
+        double itemTax = itemNetTaxable * (it.gstRate / 100.0);
+        double cgstVal = isLoc ? (itemTax / 2.0) : 0.0;
+        double sgstVal = isLoc ? (itemTax / 2.0) : 0.0;
+        double igstVal = isLoc ? 0.0 : itemTax;
+
+        finalizedItems.add(BillItem(
+          id: it.id,
+          srNo: it.srNo,
+          medicineID: it.medicineID,
+          name: it.name,
+          packing: it.packing,
+          batch: it.batch,
+          exp: it.exp,
+          hsn: it.hsn,
+          mrp: it.mrp,
+          qty: it.qty,
+          freeQty: it.freeQty,
+          rate: it.rate,
+          gstRate: it.gstRate,
+          cgst: double.parse(cgstVal.toStringAsFixed(2)),
+          sgst: double.parse(sgstVal.toStringAsFixed(2)),
+          igst: double.parse(igstVal.toStringAsFixed(2)),
+          total: it.total,
+          discountRupees: it.discountRupees,
+          discountPer: it.discountPer,
+          sourceChallanNo: it.sourceChallanNo,
+          sourceChallanId: it.sourceChallanId,
+          appliedRateType: it.appliedRateType,
+          rateCFormula: it.rateCFormula,
+        ));
+      }
 
       await ph.finalizeSale(
         billNo: cleanBillNo.isNotEmpty ? cleanBillNo : "DRAFT", 
         date: adjustedBillDate, 
         party: matchedParty!, 
-        items: items, 
+        items: finalizedItems, 
         total: summary.finalGrandTotal, 
         mode: "CREDIT", 
         sourceTag: finalSourceTag, 
