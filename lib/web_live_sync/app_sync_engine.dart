@@ -57,9 +57,14 @@ class AppSyncEngine {
           if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
             try {
               List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
-              localTombstones.addAll(cloudT.map((e) => e.toString()));
+              final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
+                companyId,
+                cloudT.map((e) => e.toString()),
+              );
+              localTombstones.addAll(sanitizedCloudT);
             } catch (_) {}
           }
+          localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
 
           // STEP 3: EXECUTE DEATH (The Graveyard)
           TombstoneEngine.purgeDeletedRecords(ph, localTombstones);

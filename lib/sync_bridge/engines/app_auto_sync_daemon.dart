@@ -97,8 +97,11 @@ class AppAutoSyncDaemon {
           onSignal: (event) async {
             debugPrint("🔔 [AppAutoSyncDaemon] Remote Web Mutation Received: ${event.action}");
             if (event.deletedIds.isNotEmpty) {
-              TombstoneEngine.purgeDeletedRecords(ph, event.deletedIds.toSet());
-              ph.notifyListeners();
+              final sanitizedDeleted = await TombstoneEngine.sanitizeCloudTombstones(ph.activeCompany!.id, event.deletedIds);
+              if (sanitizedDeleted.isNotEmpty) {
+                TombstoneEngine.purgeDeletedRecords(ph, sanitizedDeleted);
+                ph.notifyListeners();
+              }
             }
             await FastPullEngine.pullAndMerge(ph);
           },

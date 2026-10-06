@@ -387,6 +387,9 @@ Future<void> finalizeSale({
     if (existingIdx != -1) {
       currentVer = sales[existingIdx].version + 1;
     }
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: sId, secondaryKey: billNo);
+    }
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
     sales.add(Sale(
       id: sId, 
@@ -475,6 +478,12 @@ Future<void> finalizePurchase({
     final int existingIdx = purchases.indexWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
+    }
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: billNo);
+      if (internalNo.isNotEmpty) {
+        TombstoneEngine.unmarkTombstone(activeCompany!.id, id: internalNo);
+      }
     }
     purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
     purchases.add(Purchase(

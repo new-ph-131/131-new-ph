@@ -33,6 +33,7 @@ class PharoahWebManager with ChangeNotifier {
 
   // 🛡️ TOMBSTONE DELETION REGISTRY
   Set<String> deletedRecordIds = {};
+  Set<String> unmarkedRecordIds = {};
 
   // Auto-Sync Background Watchdog
   late final PharoahAutoSyncService _autoSyncService;
@@ -66,6 +67,8 @@ class PharoahWebManager with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList('web_tombstone_ids') ?? [];
       deletedRecordIds = list.toSet();
+      final uList = prefs.getStringList('web_unmarked_ids') ?? [];
+      unmarkedRecordIds = uList.toSet();
     } catch (_) {}
   }
 
@@ -73,13 +76,14 @@ class PharoahWebManager with ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('web_tombstone_ids', deletedRecordIds.toList());
+      await prefs.setStringList('web_unmarked_ids', unmarkedRecordIds.toList());
     } catch (_) {}
   }
 
   /// Atomically purges deleted IDs across all transaction collections in memory
   void purgeDeletedIds(List<String> ids) {
     if (ids.isEmpty) return;
-    final set = ids.map((e) => e.trim()).toSet();
+    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty && !unmarkedRecordIds.contains(e)).toSet();
     deletedRecordIds.addAll(set);
     _saveLocalTombstones();
     sales.removeWhere((s) => set.contains(s.id) || set.contains(s.billNo));
@@ -198,7 +202,12 @@ class PharoahWebManager with ChangeNotifier {
 
     var tData = decodeJson('tombstones.json');
     if (tData != null && tData is List) {
-      deletedRecordIds.addAll(tData.map((e) => e.toString()));
+      for (var e in tData) {
+        final k = e.toString().trim();
+        if (k.isNotEmpty && !unmarkedRecordIds.contains(k)) {
+          deletedRecordIds.add(k);
+        }
+      }
       _saveLocalTombstones();
     }
 
@@ -547,9 +556,15 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void unmarkDeletedId(String id, {String? referenceNo}) {
-    if (id.trim().isNotEmpty) deletedRecordIds.remove(id.trim());
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty) {
+      deletedRecordIds.remove(cleanId);
+      unmarkedRecordIds.add(cleanId);
+    }
     if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-      deletedRecordIds.remove(referenceNo.trim());
+      final cleanRef = referenceNo.trim();
+      deletedRecordIds.remove(cleanRef);
+      unmarkedRecordIds.add(cleanRef);
     }
     _saveLocalTombstones();
   }
@@ -621,7 +636,11 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
 
     deletedRecordIds.add(saleId);
-    if (foundBillNo.isNotEmpty) deletedRecordIds.add(foundBillNo);
+    unmarkedRecordIds.remove(saleId);
+    if (foundBillNo.isNotEmpty) {
+      deletedRecordIds.add(foundBillNo);
+      unmarkedRecordIds.remove(foundBillNo);
+    }
     _saveLocalTombstones();
 
     sales.removeWhere((s) => s.id == saleId || (foundBillNo.isNotEmpty && s.billNo == foundBillNo));
@@ -705,8 +724,15 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
 
     deletedRecordIds.add(purId);
-    if (foundInternalNo.isNotEmpty) deletedRecordIds.add(foundInternalNo);
-    if (foundBillNo.isNotEmpty) deletedRecordIds.add(foundBillNo);
+    unmarkedRecordIds.remove(purId);
+    if (foundInternalNo.isNotEmpty) {
+      deletedRecordIds.add(foundInternalNo);
+      unmarkedRecordIds.remove(foundInternalNo);
+    }
+    if (foundBillNo.isNotEmpty) {
+      deletedRecordIds.add(foundBillNo);
+      unmarkedRecordIds.remove(foundBillNo);
+    }
     _saveLocalTombstones();
 
     purchases.removeWhere((p) => p.id == purId || (foundInternalNo.isNotEmpty && p.internalNo == foundInternalNo) || (foundBillNo.isNotEmpty && p.billNo == foundBillNo));

@@ -53,6 +53,14 @@ class SyncTombstoneHub {
         localList.add(referenceNo.trim());
       }
       await prefs.setStringList(key, localList.toList());
+
+      final uKey = 'unmarked_tombstones_$companyId';
+      final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
+      if (cleanId.isNotEmpty) uList.remove(cleanId);
+      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
+        uList.remove(referenceNo.trim());
+      }
+      await prefs.setStringList(uKey, uList.toList());
     } catch (_) {}
 
     // 2. Update tombstones.json in working directory
@@ -83,6 +91,14 @@ class SyncTombstoneHub {
         localList.remove(referenceNo.trim());
       }
       await prefs.setStringList(key, localList.toList());
+
+      final uKey = 'unmarked_tombstones_$companyId';
+      final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
+      if (cleanId.isNotEmpty) uList.add(cleanId);
+      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
+        uList.add(referenceNo.trim());
+      }
+      await prefs.setStringList(uKey, uList.toList());
     } catch (_) {}
     if (workingDir.isNotEmpty) {
       final diskSet = await loadFromDisk(workingDir);
