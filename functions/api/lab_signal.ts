@@ -1,6 +1,6 @@
 // FILE: functions/api/lab_signal.ts
-// Cloudflare Pages Function: High-Speed Edge Signal & Delta Mutation Bus (<30ms)
-// Consolidated Single-Key KV Architecture (Prevents KV Free Tier Expiry)
+// Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal Bus (<30ms)
+// Equipped with 100,000 writes/day & 5,000,000 reads/day quota.
 
 interface SignalRecord {
   id: string;
@@ -53,7 +53,7 @@ export async function onRequestPost(context: any) {
     }
 
     const record: SignalRecord = {
-      id: body.id || `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: body.id || ("evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7)),
       storeToken,
       source: (body.source || "UNKNOWN").toUpperCase(),
       action: body.action || "DELTA_MUTATION",
@@ -66,57 +66,65 @@ export async function onRequestPost(context: any) {
       payload: body.payload || {},
     };
 
-    if (context.env && context.env.SIGNAL_KV) {
-      const kv = context.env.SIGNAL_KV;
-      const chanKey = `chan_${storeToken}`;
+    let channelData: ChannelData = {
+      latest: null,
+      events: [],
+      tombstones: [],
+    };
 
-      // Single-Key Read
-      let channelData: ChannelData = {
-        latest: null,
-        events: [],
-        tombstones: [],
-      };
+    // 1. PRIMARY ENGINE: CLOUDFLARE D1 (100,000 Writes/Day Quota)
+    if (context.env && context.env.SIGNAL_DB) {
+      try {
+        const db = context.env.SIGNAL_DB;
+        // Self-healing table creation
+        await db.prepare(
+          "CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"
+        ).run().catch(() => {});
 
-      const rawChan = await kv.get(chanKey);
-      if (rawChan) {
-        try {
-          channelData = JSON.parse(rawChan);
-        } catch (_) {}
-      } else {
-        // Fallback for seamless transition from old multi-key schema
-        try {
-          const rawSig = await kv.get(`sig_${storeToken}`);
-          if (rawSig) channelData.latest = JSON.parse(rawSig);
-        } catch (_) {}
-      }
+        const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
+        if (row && row.data) {
+          try {
+            channelData = JSON.parse(row.data);
+          } catch (_) {}
+        }
 
-      // Update Latest Signal
-      channelData.latest = record;
+        channelData.latest = record;
+        if (!channelData.events) channelData.events = [];
+        channelData.events.push(record);
+        if (channelData.events.length > 40) {
+          channelData.events = channelData.events.slice(channelData.events.length - 40);
+        }
 
-      // Update Circular Mutations Queue (last 40 events)
-      if (!channelData.events) channelData.events = [];
-      channelData.events.push(record);
-      if (channelData.events.length > 40) {
-        channelData.events = channelData.events.slice(channelData.events.length - 40);
-      }
-
-      // Update Edge Tombstones
-      if (!channelData.tombstones) channelData.tombstones = [];
-      const tSet = new Set(channelData.tombstones);
-      if (record.deletedIds && record.deletedIds.length > 0) {
-        for (const d of record.deletedIds) {
-          if (d && typeof d === "string" && d.trim().length > 0) {
-            tSet.add(d.trim());
+        if (!channelData.tombstones) channelData.tombstones = [];
+        const tSet = new Set(channelData.tombstones);
+        if (record.deletedIds && record.deletedIds.length > 0) {
+          for (const d of record.deletedIds) {
+            if (d && typeof d === "string" && d.trim().length > 0) {
+              tSet.add(d.trim());
+            }
           }
         }
-      }
-      if (record.entityId && record.action.includes("DELETE")) {
-        tSet.add(record.entityId.trim());
-      }
-      channelData.tombstones = Array.from(tSet);
+        if (record.entityId && record.action.includes("DELETE")) {
+          tSet.add(record.entityId.trim());
+        }
+        channelData.tombstones = Array.from(tSet);
 
-      // Single-Key Atomic Write (Conserves KV Write Quota)
-      await kv.put(chanKey, JSON.stringify(channelData), { expirationTtl: 604800 });
+        // Atomic Upsert to D1
+        await db.prepare(
+          "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+        ).bind(storeToken, JSON.stringify(channelData), Date.now()).run();
+      } catch (d1Err) {
+        console.error("D1 Write Exception:", d1Err);
+      }
+    }
+
+    // 2. SECONDARY / TRANSITIONAL FALLBACK: KV (Silent catch if KV quota exhausted)
+    if (context.env && context.env.SIGNAL_KV) {
+      try {
+        const kv = context.env.SIGNAL_KV;
+        const chanKey = "chan_" + storeToken;
+        await kv.put(chanKey, JSON.stringify(channelData), { expirationTtl: 604800 }).catch(() => {});
+      } catch (_) {}
     }
 
     return new Response(JSON.stringify({ status: "SUCCESS", event: record }), {
@@ -147,15 +155,36 @@ export async function onRequestGet(context: any) {
     let current: SignalRecord | null = null;
     let mutations: SignalRecord[] = [];
     let tombstones: string[] = [];
+    let foundInD1 = false;
 
-    if (context.env && context.env.SIGNAL_KV) {
-      const kv = context.env.SIGNAL_KV;
-      const chanKey = `chan_${storeToken}`;
+    // 1. PRIMARY ENGINE: CLOUDFLARE D1 (5,000,000 Reads/Day Quota)
+    if (context.env && context.env.SIGNAL_DB) {
+      try {
+        const db = context.env.SIGNAL_DB;
+        const row: any = await db.prepare("SELECT data, timestamp FROM signals WHERE storeToken = ?").bind(storeToken).first();
+        if (row && row.data) {
+          const chanData: ChannelData = JSON.parse(row.data);
+          current = chanData.latest;
+          if (Array.isArray(chanData.events)) {
+            mutations = chanData.events.filter((e) => e.timestamp > lastSeenTs);
+          }
+          if (Array.isArray(chanData.tombstones)) {
+            tombstones = chanData.tombstones;
+          }
+          foundInD1 = true;
+        }
+      } catch (d1Err) {
+        console.error("D1 Read Exception:", d1Err);
+      }
+    }
 
-      // SINGLE KV READ (Reduces 3 reads to exactly 1 read per request)
-      const rawChan = await kv.get(chanKey);
-      if (rawChan) {
-        try {
+    // 2. SECONDARY FALLBACK: KV (Only if not found in D1)
+    if (!foundInD1 && context.env && context.env.SIGNAL_KV) {
+      try {
+        const kv = context.env.SIGNAL_KV;
+        const chanKey = "chan_" + storeToken;
+        const rawChan = await kv.get(chanKey);
+        if (rawChan) {
           const chanData: ChannelData = JSON.parse(rawChan);
           current = chanData.latest;
           if (Array.isArray(chanData.events)) {
@@ -164,14 +193,8 @@ export async function onRequestGet(context: any) {
           if (Array.isArray(chanData.tombstones)) {
             tombstones = chanData.tombstones;
           }
-        } catch (_) {}
-      } else {
-        // Fallback for legacy keys during rolling deployment
-        const rawSig = await kv.get(`sig_${storeToken}`);
-        if (rawSig) {
-          try { current = JSON.parse(rawSig); } catch (_) {}
         }
-      }
+      } catch (_) {}
     }
 
     if (!current) {
@@ -185,7 +208,6 @@ export async function onRequestGet(context: any) {
     }
 
     const hasUpdate = current.timestamp > lastSeenTs || mutations.length > 0;
-
     return new Response(JSON.stringify({
       status: "SUCCESS",
       hasUpdate,
