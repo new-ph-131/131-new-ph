@@ -352,7 +352,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
 
     DateTime adjustedDate = partyInfoInFile['date'] as DateTime;
     String auditTag = "${widget.exchangeMode} ${partyInfoInFile['dateAdjustmentNote'] ?? ''}".trim();
-    bool isLocal = (partyInfoInFile['state']?.toString().toLowerCase() ?? '') == (webPh.companyProfile.state.isEmpty ? 'rajasthan' : webPh.companyProfile.state.toLowerCase());
+    bool isLocal = (partyInfoInFile['state']?.toString().toLowerCase() ?? '') == ((webPh.companyProfile['state']?.toString() ?? 'Rajasthan').toLowerCase());
 
     if (widget.importType == "PURCHASE") {
       String internalNo = WebPharoahNumberingEngine.getNextNumber(
@@ -515,10 +515,30 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         double sgstVal = isLocal ? (itemTax / 2.0) : 0.0;
         double igstVal = isLocal ? 0.0 : itemTax;
 
-        finalizedItems.add(it.copyWith(
+        finalizedItems.add(BillItem(
+          id: it.id,
+          srNo: it.srNo,
+          medicineID: it.medicineID,
+          name: it.name,
+          packing: it.packing,
+          batch: it.batch,
+          exp: it.exp,
+          hsn: it.hsn,
+          mrp: it.mrp,
+          qty: it.qty,
+          freeQty: it.freeQty,
+          rate: it.rate,
+          gstRate: it.gstRate,
           cgst: double.parse(cgstVal.toStringAsFixed(2)),
           sgst: double.parse(sgstVal.toStringAsFixed(2)),
           igst: double.parse(igstVal.toStringAsFixed(2)),
+          total: it.total,
+          discountRupees: it.discountRupees,
+          discountPer: it.discountPer,
+          sourceChallanNo: it.sourceChallanNo,
+          sourceChallanId: it.sourceChallanId,
+          appliedRateType: it.appliedRateType,
+          rateCFormula: it.rateCFormula,
         ));
       }
 
@@ -566,7 +586,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
     }
 
     int unlinkedCount = reviewedItems.where((it) => it['match'] == null).length;
-    bool isLocal = (partyInfoInFile['state']?.toString().toLowerCase() ?? '') == (webPh.companyProfile.state.isEmpty ? 'rajasthan' : webPh.companyProfile.state.toLowerCase());
+    bool isLocal = (partyInfoInFile['state']?.toString().toLowerCase() ?? '') == ((webPh.companyProfile['state']?.toString() ?? 'Rajasthan').toLowerCase());
 
     List<BillItem> selectedTempItems = [];
     int sIndex = 1;
@@ -908,7 +928,8 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
                         'mfg': it['mfg'],
                         'salt': it['salt'],
                       },
-                      onProductCreated: (newM) {
+                      onProductCreated: (newMedMap) {
+                        final newM = Medicine.fromMap(newMedMap);
                         setState(() {
                           it['match'] = newM;
                           it['status'] = 'exact';
