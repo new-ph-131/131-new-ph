@@ -60,11 +60,15 @@ class WebRealtimeCoordinator {
     String action = 'DATA_MUTATED',
     String entityId = '',
     List<String> deletedIds = const [],
+    List<String> unmarkedIds = const [],
   }) {
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
 
     if (deletedIds.isNotEmpty) {
       _pendingDeletedIds.addAll(deletedIds);
+    }
+    if (unmarkedIds.isNotEmpty) {
+      _pendingUnmarkedIds.addAll(unmarkedIds);
     }
     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
       _pendingDeletedIds.add(entityId);
