@@ -4,15 +4,76 @@ import '../../../pharoah_manager.dart';
 import '../../../models.dart';
 
 class DeltaMergeEngine {
+  /// 🛡️ Dedicated Incoming Delta Batch Merger for Sales/Vouchers/Purchases
+  static List<Sale> mergeIncomingDelta({
+    required List<Sale> localList,               // Active working List<Sale> on screen
+    required List<dynamic> incomingCloudBatch,   // Can be from D1 or Google Drive JSON
+    required Map<String, int> localTombstoneRegistry, // 🧠 { 'sync_id': deleted_timestamp }
+  }) {
+    for (var cloudMap in incomingCloudBatch) {
+      if (cloudMap is! Map<String, dynamic>) continue;
+      String syncId = (cloudMap['sync_id'] ?? cloudMap['id'] ?? '').toString();
+      int cloudVersion = int.tryParse(cloudMap['version']?.toString() ?? '1') ?? 1;
+      int cloudTimestamp = int.tryParse(cloudMap['updated_at']?.toString() ?? cloudMap['updatedAt']?.toString() ?? '0') ?? 0;
+      int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
+
+      // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check
+      if (syncId.isNotEmpty && localTombstoneRegistry.containsKey(syncId)) {
+        int localDeleteTime = localTombstoneRegistry[syncId]!;
+        if (localDeleteTime >= cloudTimestamp) {
+          // Google Drive / Cloud data is older than delete event -> Skip / Drop
+          continue; 
+        } else if (cloudIsDeleted == 0) {
+          localTombstoneRegistry.remove(syncId);
+        }
+      }
+
+      // Local active screen list me check karo
+      int idx = localList.indexWhere((s) => s.syncId == syncId || s.id == syncId);
+
+      if (idx != -1) {
+        Sale localSale = localList[idx];
+
+        // 🛡️ SHIELD 2: Last-Write-Wins (LWW) Clock Auditing
+        if (cloudTimestamp > localSale.updatedAt || (cloudTimestamp == localSale.updatedAt && cloudVersion >= localSale.version)) {
+          if (cloudIsDeleted == 1) {
+            localList.removeAt(idx);
+            if (syncId.isNotEmpty) localTombstoneRegistry[syncId] = cloudTimestamp;
+          } else {
+            localList[idx] = Sale.fromEnvelope(cloudMap);
+          }
+        }
+      } else {
+        if (cloudIsDeleted == 0) {
+          localList.insert(0, Sale.fromEnvelope(cloudMap));
+        }
+      }
+    }
+    return localList;
+  }
+
   /// 🛡️ Smartly merges cloud data with ERP Multi-Node collision prevention,
   /// Anti-Zombie Timestamp Shields, and True LWW safeguards.
   static bool processCloudData(
     PharoahManager ph, 
     Map<String, dynamic> cloudFiles, 
-    Map<String, int> localTombstoneRegistry, 
+    dynamic localTombstonesOrRegistry, 
     Map<String, String> localHashes
   ) {
     bool hasChanges = false;
+
+    Map<String, int> tombstoneRegistry = {};
+    if (localTombstonesOrRegistry is Map<String, int>) {
+      tombstoneRegistry = Map<String, int>.from(localTombstonesOrRegistry);
+    } else if (localTombstonesOrRegistry is Set<String>) {
+      for (var k in localTombstonesOrRegistry) {
+        tombstoneRegistry[k] = 0;
+      }
+    } else if (localTombstonesOrRegistry is Iterable) {
+      for (var k in localTombstonesOrRegistry) {
+        tombstoneRegistry[k.toString()] = 0;
+      }
+    }
 
     dynamic decodeJson(String fileName) {
       if (cloudFiles.containsKey(fileName) && cloudFiles[fileName] != null) {
@@ -44,17 +105,19 @@ class DeltaMergeEngine {
         int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
         // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check with Microsecond/Millisecond Timestamp
-        // Agar ye bill local me delete ho chuka hai aur uski delete time remote clock se nayi hai,
-        // to Google Drive ke purane snapshot ko direct DROP (Ignore) kar do!
-        int? localDeleteTime = localTombstoneRegistry[id] ?? (billNo.isNotEmpty ? localTombstoneRegistry[billNo] : null);
+        int? localDeleteTime = tombstoneRegistry[id] ?? (billNo.isNotEmpty ? tombstoneRegistry[billNo] : null);
         if (localDeleteTime != null) {
-          if (localDeleteTime >= cloudTimestamp) {
-            // Google Drive ka data purana hai, aur bill delete ho chuka hai -> Skip / Drop
+          if (localDeleteTime == 0 || localDeleteTime >= cloudTimestamp) {
+            // Google Drive data is older than delete event -> Skip / Drop
             continue; 
           } else if (cloudIsDeleted == 0) {
-            // Agar remote timestamp sach me naya hai aur status active hai, tabhi tombstone se azad karo
-            localTombstoneRegistry.remove(id);
-            if (billNo.isNotEmpty) localTombstoneRegistry.remove(billNo);
+            // Legitimate newer update found -> unmark tombstone
+            tombstoneRegistry.remove(id);
+            if (billNo.isNotEmpty) tombstoneRegistry.remove(billNo);
+            if (localTombstonesOrRegistry is Set<String>) {
+              localTombstonesOrRegistry.remove(id);
+              if (billNo.isNotEmpty) localTombstonesOrRegistry.remove(billNo);
+            }
           }
         }
 
@@ -70,23 +133,18 @@ class DeltaMergeEngine {
           // 🛡️ SHIELD 2: Last-Write-Wins (LWW) Clock Auditing
           if (cloudTimestamp > localTimestamp || (cloudTimestamp == localTimestamp && cloudVersion >= localVer) || localTimestamp == 0) {
             if (cloudIsDeleted == 1) {
-              // Server ya backup se delete confirm hua -> List se udao
               localList.removeAt(idx);
-              localTombstoneRegistry[id] = cloudTimestamp;
-              if (billNo.isNotEmpty) localTombstoneRegistry[billNo] = cloudTimestamp;
+              tombstoneRegistry[id] = cloudTimestamp;
+              if (billNo.isNotEmpty) tombstoneRegistry[billNo] = cloudTimestamp;
               changed = true;
             } else {
-              // Legitimate newer update found -> Overwrite local model state
               localList[idx] = fromMap(cloudMap);
               changed = true;
             }
           }
         } else {
           // 🧠 THE TRAP BYPASSED LOGIC:
-          // Agar remote data local list me nahi hai, to direct add mat karo!
-          // Pehle check karo ki kya wo deleted packet to nahi hai?
           if (cloudIsDeleted == 0) {
-            // Google Drive se aaya data tabhi add hoga agar wo deleted nahi hai
             localList.add(fromMap(cloudMap));
             changed = true;
           }
@@ -190,6 +248,7 @@ class DeltaMergeEngine {
         final partMap = rawPart as Map<String, dynamic>;
         String cleanName = (partMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
         if (cleanName.isEmpty) continue;
+
         int existingIdx = ph.parties.indexWhere((p) => p.id == partMap['id']);
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.parties[existingIdx].toMap());
@@ -215,6 +274,7 @@ class DeltaMergeEngine {
         final medMap = rawMed as Map<String, dynamic>;
         String cleanName = (medMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
         if (cleanName.isEmpty) continue;
+
         int existingIdx = ph.medicines.indexWhere((m) => m.id == medMap['id']);
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.medicines[existingIdx].toMap());
