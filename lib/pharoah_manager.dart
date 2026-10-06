@@ -1038,6 +1038,11 @@ void registerBatchActivity({
       sales.removeWhere((x) => x.id == realId || (bNo.isNotEmpty && x.billNo == bNo));
       if (activeCompany != null) {
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, [realId, if (bNo.isNotEmpty) bNo]);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_SALE',
+          entityId: realId,
+        );
         AppAutoSyncDaemon.instance.triggerSilentPush(
           this,
           action: 'DELETE_SALE',
@@ -1064,6 +1069,11 @@ void registerBatchActivity({
       purchases.removeWhere((x) => x.id == pId || x.internalNo == iNo || (bNo.isNotEmpty && x.billNo == bNo));
       if (activeCompany != null) {
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, [pId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo]);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_PURCHASE',
+          entityId: pId,
+        );
         AppAutoSyncDaemon.instance.triggerSilentPush(
           this,
           action: 'DELETE_PURCHASE',
