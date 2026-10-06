@@ -202,23 +202,54 @@ class _BillingViewState extends State<BillingView> {
 
   Widget _buildFooter() {
     double itemTotal = items.fold(0.0, (sum, it) => sum + it.total);
+    double totalTaxable = items.fold(0.0, (sum, it) => sum + (it.qty * it.rate - it.discountRupees));
+    double totalCGST = items.fold(0.0, (sum, it) => sum + it.cgst);
+    double totalSGST = items.fold(0.0, (sum, it) => sum + it.sgst);
+    double totalIGST = items.fold(0.0, (sum, it) => sum + it.igst);
     double extraDisc = double.tryParse(discountC.text) ?? 0.0;
     double rawBillTotal = itemTotal - extraDisc;
     double roundedGrandTotal = rawBillTotal.roundToDouble();
     double autoRoundOff = roundedGrandTotal - rawBillTotal;
 
     return Container(
-      padding: const EdgeInsets.all(15), decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
-      child: Column(children: [
-          _row("Items Total", "₹${itemTotal.toStringAsFixed(2)}"),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+      padding: const EdgeInsets.all(15),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+      ),
+      child: Column(
+        children: [
+          _row("Taxable Value", "₹${totalTaxable.toStringAsFixed(2)}"),
+          if (totalCGST > 0) _row("CGST (+)", "₹${totalCGST.toStringAsFixed(2)}"),
+          if (totalSGST > 0) _row("SGST (+)", "₹${totalSGST.toStringAsFixed(2)}"),
+          if (totalIGST > 0) _row("IGST (+)", "₹${totalIGST.toStringAsFixed(2)}"),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
               const Text("Extra Discount (-)", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-              SizedBox(width: 100, child: TextField(controller: discountC, keyboardType: TextInputType.number, textAlign: TextAlign.right, onChanged: (v) => setState(() {}), decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.all(8), border: OutlineInputBorder()), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red))),
-          ]),
-          _row("Round Off", autoRoundOff.toStringAsFixed(2)),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: discountC,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.right,
+                  onChanged: (v) => setState(() {}),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.all(8),
+                    border: OutlineInputBorder(),
+                  ),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red),
+                ),
+              ),
+            ],
+          ),
+          if (autoRoundOff != 0.0) _row("Round Off", autoRoundOff.toStringAsFixed(2)),
           const Divider(),
           _row("GRAND TOTAL", "₹${roundedGrandTotal.toStringAsFixed(0)}.00", bold: true, size: 22, color: widget.isReadOnly ? Colors.purple.shade900 : Colors.teal.shade900),
-      ]),
+        ],
+      ),
     );
   }
 

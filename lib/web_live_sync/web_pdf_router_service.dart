@@ -744,7 +744,7 @@ class WebPdfRouterService {
   }
 
   static pw.Widget _buildCreditNoteFooter(String shopName, SaleReturn returnObj, bool isLocal) {
-    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate));
+    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate - i.discountRupees));
     double totalTax = returnObj.totalAmount - taxable;
 
     return pw.Container(
@@ -1006,7 +1006,7 @@ class WebPdfRouterService {
 
   // Exact 3-Box Footer matching App Layout
   static pw.Widget _buildFixedSyncFooter(String shopName, PurchaseReturn returnObj, bool isLocal) {
-    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.purchaseRate * i.qty));
+    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.purchaseRate * i.qty - i.discountRupees));
     double tax = returnObj.totalAmount - taxable;
 
     return pw.Container(
@@ -1167,7 +1167,7 @@ class WebPdfRouterService {
   static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
 
   static pw.Widget _buildSaleFooter(String shopName, Sale sale, bool isLocal) {
-    double taxableTotal = sale.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate));
+    double taxableTotal = sale.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate - i.discountRupees));
     double totalTax = sale.items.fold(0.0, (sum, i) => sum + (i.cgst + i.sgst + i.igst));
 
     return pw.Container(

@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-652 (ATOMIC-CSV-MUTATION-LWW-LIVE)
+// Live Revision: #PH-REV-653 (GST-RULES-COMPLIANT-FOOTER-AND-TAX-FIX)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'pharoah_web_manager.dart';
