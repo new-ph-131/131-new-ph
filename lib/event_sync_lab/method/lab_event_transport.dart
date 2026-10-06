@@ -66,7 +66,7 @@ class LabEventTransport {
     debugPrint("🟢 [LabEventTransport] Started Event Listener for $_activeStoreToken (Role: $_mySource)");
 
     // Ultra-lightweight edge ping check (10-byte micro payload on Cloudflare Edge, 0 Google Drive calls)
-    _edgeListenTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
+    _edgeListenTimer = Timer.periodic(const Duration(milliseconds: 3500), (_) async {
       await _checkEdgeUpdate();
     });
   }

@@ -49,7 +49,7 @@ class CloudSignalChannel {
     required String storeToken,
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
-    Duration interval = const Duration(milliseconds: 1200),
+    Duration interval = const Duration(milliseconds: 3500),
   }) {
     stopListening();
     if (storeToken.isEmpty) return;

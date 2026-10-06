@@ -27,7 +27,7 @@ class WebRealtimeCoordinator {
     CloudSignalChannel.instance.listenToSignals(
       storeToken: token,
       mySource: 'web',
-      interval: const Duration(milliseconds: 1200),
+      interval: const Duration(milliseconds: 3500),
       onSignal: (event) async {
         debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}). Processing...");
         if (event.deletedIds.isNotEmpty) {
@@ -38,7 +38,7 @@ class WebRealtimeCoordinator {
     );
 
     // 2. Fallback Safety Net (refreshes every 15s if signal missed)
-    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (webManager.isAuthenticated && webManager.activeStoreToken.isNotEmpty && !_isPushing) {
         await webManager.refreshStoreData();
       }

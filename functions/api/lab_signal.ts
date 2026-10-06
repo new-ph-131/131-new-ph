@@ -1,5 +1,6 @@
 // FILE: functions/api/lab_signal.ts
 // Cloudflare Pages Function: High-Speed Edge Signal & Delta Mutation Bus (<30ms)
+// Consolidated Single-Key KV Architecture (Prevents KV Free Tier Expiry)
 
 interface SignalRecord {
   id: string;
@@ -13,6 +14,12 @@ interface SignalRecord {
   deletedIds?: string[];
   delta?: any;
   payload?: any;
+}
+
+interface ChannelData {
+  latest: SignalRecord | null;
+  events: SignalRecord[];
+  tombstones: string[];
 }
 
 const CORS_HEADERS = {
@@ -61,40 +68,55 @@ export async function onRequestPost(context: any) {
 
     if (context.env && context.env.SIGNAL_KV) {
       const kv = context.env.SIGNAL_KV;
+      const chanKey = `chan_${storeToken}`;
 
-      // 1. Store latest signal
-      await kv.put(`sig_${storeToken}`, JSON.stringify(record), { expirationTtl: 86400 });
+      // Single-Key Read
+      let channelData: ChannelData = {
+        latest: null,
+        events: [],
+        tombstones: [],
+      };
 
-      // 2. Manage circular mutation log (last 50 mutations)
-      let events: SignalRecord[] = [];
-      const rawEvents = await kv.get(`events_${storeToken}`);
-      if (rawEvents) {
-        try { events = JSON.parse(rawEvents); } catch (_) {}
+      const rawChan = await kv.get(chanKey);
+      if (rawChan) {
+        try {
+          channelData = JSON.parse(rawChan);
+        } catch (_) {}
+      } else {
+        // Fallback for seamless transition from old multi-key schema
+        try {
+          const rawSig = await kv.get(`sig_${storeToken}`);
+          if (rawSig) channelData.latest = JSON.parse(rawSig);
+        } catch (_) {}
       }
-      events.push(record);
-      if (events.length > 50) {
-        events = events.slice(events.length - 50);
-      }
-      await kv.put(`events_${storeToken}`, JSON.stringify(events), { expirationTtl: 86400 });
 
-      // 3. Update persistent edge tombstone registry
+      // Update Latest Signal
+      channelData.latest = record;
+
+      // Update Circular Mutations Queue (last 40 events)
+      if (!channelData.events) channelData.events = [];
+      channelData.events.push(record);
+      if (channelData.events.length > 40) {
+        channelData.events = channelData.events.slice(channelData.events.length - 40);
+      }
+
+      // Update Edge Tombstones
+      if (!channelData.tombstones) channelData.tombstones = [];
+      const tSet = new Set(channelData.tombstones);
       if (record.deletedIds && record.deletedIds.length > 0) {
-        let tombstones: string[] = [];
-        const rawT = await kv.get(`tomb_${storeToken}`);
-        if (rawT) {
-          try { tombstones = JSON.parse(rawT); } catch (_) {}
-        }
-        const tSet = new Set(tombstones);
         for (const d of record.deletedIds) {
-          if (d && typeof d === 'string' && d.trim().length > 0) {
+          if (d && typeof d === "string" && d.trim().length > 0) {
             tSet.add(d.trim());
           }
         }
-        if (record.entityId && record.action.includes('DELETE')) {
-          tSet.add(record.entityId.trim());
-        }
-        await kv.put(`tomb_${storeToken}`, JSON.stringify(Array.from(tSet)), { expirationTtl: 604800 }); // 7 days
       }
+      if (record.entityId && record.action.includes("DELETE")) {
+        tSet.add(record.entityId.trim());
+      }
+      channelData.tombstones = Array.from(tSet);
+
+      // Single-Key Atomic Write (Conserves KV Write Quota)
+      await kv.put(chanKey, JSON.stringify(channelData), { expirationTtl: 604800 });
     }
 
     return new Response(JSON.stringify({ status: "SUCCESS", event: record }), {
@@ -128,31 +150,37 @@ export async function onRequestGet(context: any) {
 
     if (context.env && context.env.SIGNAL_KV) {
       const kv = context.env.SIGNAL_KV;
+      const chanKey = `chan_${storeToken}`;
 
-      const [rawSig, rawEvents, rawTomb] = await Promise.all([
-        kv.get(`sig_${storeToken}`),
-        kv.get(`events_${storeToken}`),
-        kv.get(`tomb_${storeToken}`),
-      ]);
-
-      if (rawSig) {
-        try { current = JSON.parse(rawSig); } catch (_) {}
-      }
-      if (rawEvents) {
+      // SINGLE KV READ (Reduces 3 reads to exactly 1 read per request)
+      const rawChan = await kv.get(chanKey);
+      if (rawChan) {
         try {
-          const allEvts: SignalRecord[] = JSON.parse(rawEvents);
-          mutations = allEvts.filter((e) => e.timestamp > lastSeenTs);
+          const chanData: ChannelData = JSON.parse(rawChan);
+          current = chanData.latest;
+          if (Array.isArray(chanData.events)) {
+            mutations = chanData.events.filter((e) => e.timestamp > lastSeenTs);
+          }
+          if (Array.isArray(chanData.tombstones)) {
+            tombstones = chanData.tombstones;
+          }
         } catch (_) {}
-      }
-      if (rawTomb) {
-        try { tombstones = JSON.parse(rawTomb); } catch (_) {}
+      } else {
+        // Fallback for legacy keys during rolling deployment
+        const rawSig = await kv.get(`sig_${storeToken}`);
+        if (rawSig) {
+          try { current = JSON.parse(rawSig); } catch (_) {}
+        }
       }
     }
 
     if (!current) {
       return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], tombstones: [] }), {
         status: 200,
-        headers: CORS_HEADERS,
+        headers: {
+          ...CORS_HEADERS,
+          "Cache-Control": "public, max-age=1, stale-while-revalidate=2",
+        },
       });
     }
 
@@ -166,7 +194,10 @@ export async function onRequestGet(context: any) {
       tombstones,
     }), {
       status: 200,
-      headers: CORS_HEADERS,
+      headers: {
+        ...CORS_HEADERS,
+        "Cache-Control": "public, max-age=1, stale-while-revalidate=2",
+      },
     });
   } catch (err: any) {
     return new Response(JSON.stringify({ status: "ERROR", message: err.toString() }), {

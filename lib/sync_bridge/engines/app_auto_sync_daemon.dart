@@ -93,7 +93,7 @@ class AppAutoSyncDaemon {
         CloudSignalChannel.instance.listenToSignals(
           storeToken: storeToken,
           mySource: 'app',
-          interval: const Duration(milliseconds: 1200),
+          interval: const Duration(milliseconds: 4000),
           onSignal: (event) async {
             debugPrint("🔔 [AppAutoSyncDaemon] Remote Web Mutation Received: ${event.action}");
             if (event.deletedIds.isNotEmpty) {
@@ -106,7 +106,7 @@ class AppAutoSyncDaemon {
       }
     }
 
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (_isSyncing || ph.activeCompany == null || ph.currentFY.isEmpty) return;
       _isSyncing = true;
       try {

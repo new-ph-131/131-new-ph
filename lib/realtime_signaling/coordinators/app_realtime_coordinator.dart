@@ -31,7 +31,7 @@ class AppRealtimeCoordinator {
     CloudSignalChannel.instance.listenToSignals(
       storeToken: token,
       mySource: 'app',
-      interval: const Duration(seconds: 3),
+      interval: const Duration(milliseconds: 4000),
       onSignal: (event) async {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
         await FastPullEngine.pullAndMerge(ph);
@@ -39,7 +39,7 @@ class AppRealtimeCoordinator {
     );
 
     // 3. Fallback Safety Net (pulls every 10s if signal missed)
-    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (ph.activeCompany != null && ph.currentFY.isNotEmpty) {
         await FastPullEngine.pullAndMerge(ph);
       }
