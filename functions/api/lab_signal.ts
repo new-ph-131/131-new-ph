@@ -138,6 +138,46 @@ export async function onRequestPost(context: any) {
         await db.prepare(
           "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
         ).bind(storeToken, JSON.stringify(channelData), Date.now()).run();
+
+        // 🚀 SECTION 1: CLOUDFLARE D1 BATCH ENGINE FOR ERP_MASTER_SYNC
+        if (body.operations && Array.isArray(body.operations) && body.operations.length > 0) {
+          try {
+            await db.prepare(
+              "CREATE TABLE IF NOT EXISTS erp_master_sync (sync_id TEXT PRIMARY KEY, store_token TEXT NOT NULL, document_type TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL, is_deleted INTEGER NOT NULL, bill_data TEXT NOT NULL)"
+            ).run().catch(() => {});
+            await db.prepare(
+              "CREATE INDEX IF NOT EXISTS idx_doc_type_updated ON erp_master_sync (store_token, document_type, updated_at)"
+            ).run().catch(() => {});
+
+            const sqlStatements = [];
+            for (const op of body.operations) {
+              const sId = (op.sync_id || "").toString().trim();
+              if (!sId) continue;
+              const dType = (op.document_type || "SALE").toString().toUpperCase();
+              const ver = parseInt(op.version || 1, 10);
+              const uAt = parseInt(op.updated_at || Date.now(), 10);
+              const isDel = op.is_deleted ? 1 : 0;
+              const bData = typeof op.bill_data === "string" ? op.bill_data : JSON.stringify(op.bill_data || {});
+
+              const stmt = db.prepare(
+                "INSERT INTO erp_master_sync (sync_id, store_token, document_type, version, updated_at, is_deleted, bill_data) " +
+                "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) " +
+                "ON CONFLICT(sync_id) DO UPDATE SET " +
+                "bill_data = CASE WHEN ?5 > updated_at AND ?4 >= version THEN ?7 ELSE bill_data END, " +
+                "is_deleted = CASE WHEN ?5 > updated_at AND ?4 >= version THEN ?6 ELSE is_deleted END, " +
+                "version = CASE WHEN ?4 > version THEN ?4 ELSE version END, " +
+                "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END"
+              ).bind(sId, storeToken, dType, ver, uAt, isDel, bData);
+              sqlStatements.push(stmt);
+            }
+
+            if (sqlStatements.length > 0) {
+              await db.batch(sqlStatements);
+            }
+          } catch (batchErr) {
+            console.error("D1 Master Sync Batch Exception:", batchErr);
+          }
+        }
       } catch (d1Err) {
         console.error("D1 Write Exception:", d1Err);
       }
