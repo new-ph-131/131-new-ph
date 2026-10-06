@@ -1,10 +1,10 @@
 // FILE: lib/web_live_sync/sub_views/web_data_exchange/engine/web_csv_engine.dart
-
 import 'package:csv/csv.dart';
 import 'package:intl/intl.dart';
 import '../../../web_models.dart';
 
 class WebCsvEngine {
+  /// UNIVERSAL 39-COLUMN HEADER (Index 0 to 38)
   static List<String> get universal39Header => [
     "DATE", "BILL_NO",
     "PARTY_NAME", "PARTY_GST", "PARTY_DL", "PARTY_PAN", "PARTY_MOBILE", "PARTY_EMAIL", "PARTY_ADDRESS", "PARTY_CITY", "PARTY_STATE",
@@ -26,37 +26,55 @@ class WebCsvEngine {
     List<List<dynamic>> rows = [universal39Header];
     for (var s in sales) {
       Party masterParty = allParties.firstWhere(
-        (p) => p.name == s.partyName,
+        (p) => p.name == s.partyName || (s.partyGstin.isNotEmpty && p.gst == s.partyGstin),
         orElse: () => Party(id: '', name: s.partyName),
       );
-      String finalMobile = s.partyPhone.isNotEmpty ? s.partyPhone : (masterParty.phone.isNotEmpty ? masterParty.phone : "N/A");
+
+      String finalMobile = s.partyPhone.isNotEmpty 
+          ? s.partyPhone 
+          : (masterParty.phone.isNotEmpty ? masterParty.phone : "N/A");
+      String finalGst = s.partyGstin.isNotEmpty ? s.partyGstin : (masterParty.gst.isNotEmpty ? masterParty.gst : "");
+      String finalDl = s.partyDl.isNotEmpty ? s.partyDl : (masterParty.dl.isNotEmpty ? masterParty.dl : "");
+      String finalPan = s.partyPan.isNotEmpty ? s.partyPan : (masterParty.pan.isNotEmpty ? masterParty.pan : "");
+      String finalEmail = s.partyEmail.isNotEmpty ? s.partyEmail : (masterParty.email.isNotEmpty ? masterParty.email : "");
+      String finalAddress = s.partyAddress.isNotEmpty ? s.partyAddress : (masterParty.address.isNotEmpty ? masterParty.address : "");
+      String finalCity = s.partyCity.isNotEmpty ? s.partyCity : (masterParty.city.isNotEmpty ? masterParty.city : "");
+      String finalState = s.partyState.isNotEmpty ? s.partyState : (masterParty.state.isNotEmpty ? masterParty.state : (shop.state.isNotEmpty ? shop.state : "Rajasthan"));
 
       for (var i in s.items) {
         Medicine med = allMeds.firstWhere(
           (m) => m.id == i.medicineID || m.name == i.name,
           orElse: () => Medicine(id: '', name: i.name, packing: i.packing),
         );
+
         String mfg = allComps.firstWhere(
           (c) => c.id == med.companyId,
           orElse: () => Company(id: '', name: 'N/A'),
         ).name;
+
         String salt = allSalts.firstWhere(
           (sl) => sl.id == med.saltId,
           orElse: () => Salt(id: '', name: 'N/A'),
         ).name;
 
-        double discPer = 0.0;
-        if (i.qty > 0 && i.rate > 0) {
-          discPer = (i.discountRupees / (i.rate * i.qty)) * 100;
-        }
+        double discAmt = i.discountRupees;
+        double grossAmt = i.qty * i.rate;
+        double discPer = i.discountPer > 0 
+            ? i.discountPer 
+            : (grossAmt > 0 ? double.parse(((discAmt / grossAmt) * 100).toStringAsFixed(2)) : 0.0);
+
+        double taxable = grossAmt - discAmt;
+        if (taxable < 0) taxable = 0.0;
+        double taxAmt = taxable * (i.gstRate / 100.0);
+        double lineTotal = double.parse((taxable + taxAmt).toStringAsFixed(2));
 
         rows.add([
           DateFormat('dd/MM/yyyy').format(s.date), s.billNo,
-          s.partyName, s.partyGstin, s.partyDl, s.partyPan, finalMobile, s.partyEmail, s.partyAddress, s.partyCity, s.partyState,
+          s.partyName, finalGst, finalDl, finalPan, finalMobile, finalEmail, finalAddress, finalCity, finalState,
           shop.name, shop.gstin, shop.dlNo, "N/A", shop.phone, shop.email, shop.address,
           i.name, i.packing, i.hsn, mfg, salt, med.drugForm, med.isNarcotic ? "YES" : "NO", med.isScheduleH1 ? "YES" : "NO",
           i.batch, i.exp, i.qty, i.freeQty, i.mrp, maskPurchaseRate ? 0.0 : med.purRate, i.rate, i.gstRate,
-          i.total, discPer, i.discountRupees, s.extraDiscount, s.roundOff
+          lineTotal, discPer, discAmt, s.extraDiscount, s.roundOff
         ]);
       }
     }
@@ -77,19 +95,33 @@ class WebCsvEngine {
         (pt) => pt.id == p.partyId || pt.name == p.distributorName,
         orElse: () => Party(id: '', name: p.distributorName),
       );
+
       for (var i in p.items) {
         Medicine med = allMeds.firstWhere(
           (m) => m.id == i.medicineID || m.name == i.name,
           orElse: () => Medicine(id: '', name: i.name, packing: i.packing),
         );
+
         String mfg = allComps.firstWhere(
           (c) => c.id == med.companyId,
           orElse: () => Company(id: '', name: 'N/A'),
         ).name;
+
         String salt = allSalts.firstWhere(
           (sl) => sl.id == med.saltId,
           orElse: () => Salt(id: '', name: 'N/A'),
         ).name;
+
+        double discAmt = i.discountRupees;
+        double grossAmt = i.qty * i.purchaseRate;
+        double discPer = i.discountPer > 0
+            ? i.discountPer
+            : (grossAmt > 0 ? double.parse(((discAmt / grossAmt) * 100).toStringAsFixed(2)) : 0.0);
+
+        double taxable = grossAmt - discAmt;
+        if (taxable < 0) taxable = 0.0;
+        double taxAmt = taxable * (i.gstRate / 100.0);
+        double lineTotal = double.parse((taxable + taxAmt).toStringAsFixed(2));
 
         rows.add([
           DateFormat('dd/MM/yyyy').format(p.date), p.billNo,
@@ -97,7 +129,7 @@ class WebCsvEngine {
           shop.name, shop.gstin, shop.dlNo, "N/A", shop.phone, shop.email, shop.address,
           i.name, i.packing, i.hsn, mfg, salt, med.drugForm, med.isNarcotic ? "YES" : "NO", med.isScheduleH1 ? "YES" : "NO",
           i.batch, i.exp, i.qty, i.freeQty, i.mrp, i.purchaseRate, i.rateA, i.gstRate,
-          i.total, i.discountPer, i.discountRupees, p.extraDiscount, p.roundOff
+          lineTotal, discPer, discAmt, p.extraDiscount, p.roundOff
         ]);
       }
     }
