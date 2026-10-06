@@ -139,52 +139,12 @@ class TombstoneEngine {
 
   static void purgeDeletedRecords(PharoahManager ph, Set<String> allTombstones) {
     if (allTombstones.isEmpty) return;
-    final List<String> revivedSales = [];
-    for (var s in ph.sales) {
-      if (!allTombstones.contains(s.id)) {
-        if (s.billNo.isNotEmpty && allTombstones.contains(s.billNo)) {
-          revivedSales.add(s.billNo);
-        }
-      }
-    }
-    for (var b in revivedSales) allTombstones.remove(b);
-    ph.sales.removeWhere((e) => allTombstones.contains(e.id));
 
-    final List<String> revivedPurchases = [];
-    for (var p in ph.purchases) {
-      if (!allTombstones.contains(p.id)) {
-        if (p.internalNo.isNotEmpty && allTombstones.contains(p.internalNo)) {
-          revivedPurchases.add(p.internalNo);
-        }
-        if (p.billNo.isNotEmpty && allTombstones.contains(p.billNo)) {
-          revivedPurchases.add(p.billNo);
-        }
-      }
-    }
-    for (var b in revivedPurchases) allTombstones.remove(b);
-    ph.purchases.removeWhere((e) => allTombstones.contains(e.id));
-
-    final List<String> otherRevivals = [];
-    for (var c in ph.saleChallans) {
-      if (!allTombstones.contains(c.id) && c.billNo.isNotEmpty && allTombstones.contains(c.billNo)) otherRevivals.add(c.billNo);
-    }
-    for (var c in ph.purchaseChallans) {
-      if (!allTombstones.contains(c.id) && c.internalNo.isNotEmpty && allTombstones.contains(c.internalNo)) otherRevivals.add(c.internalNo);
-    }
-    for (var r in ph.saleReturns) {
-      if (!allTombstones.contains(r.id) && r.billNo.isNotEmpty && allTombstones.contains(r.billNo)) otherRevivals.add(r.billNo);
-    }
-    for (var r in ph.purchaseReturns) {
-      if (!allTombstones.contains(r.id) && r.billNo.isNotEmpty && allTombstones.contains(r.billNo)) otherRevivals.add(r.billNo);
-    }
-    for (var v in ph.vouchers) {
-      if (!allTombstones.contains(v.id) && v.voucherNo.isNotEmpty && allTombstones.contains(v.voucherNo)) otherRevivals.add(v.voucherNo);
-    }
-    for (var b in otherRevivals) allTombstones.remove(b);
-    ph.saleChallans.removeWhere((e) => allTombstones.contains(e.id));
-    ph.purchaseChallans.removeWhere((e) => allTombstones.contains(e.id));
-    ph.saleReturns.removeWhere((e) => allTombstones.contains(e.id));
-    ph.purchaseReturns.removeWhere((e) => allTombstones.contains(e.id));
-    ph.vouchers.removeWhere((e) => allTombstones.contains(e.id));
+    ph.sales.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
+    ph.purchases.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)) || (e.internalNo.isNotEmpty && allTombstones.contains(e.internalNo)));
+    ph.saleChallans.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
+    ph.purchaseChallans.removeWhere((e) => allTombstones.contains(e.id) || (e.internalNo.isNotEmpty && allTombstones.contains(e.internalNo)) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
+    ph.saleReturns.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
+    ph.purchaseReturns.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
+    ph.vouchers.removeWhere((e) => allTombstones.contains(e.id) || (e.voucherNo.isNotEmpty && allTombstones.contains(e.voucherNo)));
   }
-}

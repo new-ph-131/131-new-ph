@@ -245,20 +245,12 @@ class PharoahWebManager with ChangeNotifier {
     }
     parties = uniqueParties.values.toList();
 
-    // 1. Sales Sync with Active Auto-Revival & LWW Guard
+    // 1. Sales Sync with Anti-Zombie Shield & Strict LWW Guard
     var allParsedSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
         .toList();
-    if (allParsedSales != null) {
-      for (var s in allParsedSales) {
-        if (s.status.toLowerCase() != 'deleted') {
-          deletedRecordIds.remove(s.id);
-          if (s.billNo.isNotEmpty) deletedRecordIds.remove(s.billNo);
-        }
-      }
-    }
     var rawSales = allParsedSales
-        ?.where((s) => !deletedRecordIds.contains(s.id))
+        ?.where((s) => !deletedRecordIds.contains(s.id) && (s.billNo.isEmpty || !deletedRecordIds.contains(s.billNo)))
         .toList();
     if (rawSales != null) {
       if (sales.isEmpty) {
@@ -280,19 +272,12 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 2. Purchases Sync with Active Auto-Revival & LWW Guard
+    // 2. Purchases Sync with Anti-Zombie Shield & Strict LWW Guard
     var allParsedPurc = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
         .toList();
-    if (allParsedPurc != null) {
-      for (var p in allParsedPurc) {
-        deletedRecordIds.remove(p.id);
-        if (p.internalNo.isNotEmpty) deletedRecordIds.remove(p.internalNo);
-        if (p.billNo.isNotEmpty) deletedRecordIds.remove(p.billNo);
-      }
-    }
     var rawPurc = allParsedPurc
-        ?.where((p) => !deletedRecordIds.contains(p.id))
+        ?.where((p) => !deletedRecordIds.contains(p.id) && (p.internalNo.isEmpty || !deletedRecordIds.contains(p.internalNo)) && (p.billNo.isEmpty || !deletedRecordIds.contains(p.billNo)))
         .toList();
     if (rawPurc != null) {
       if (purchases.isEmpty) {
