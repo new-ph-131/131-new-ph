@@ -50,6 +50,7 @@ class CloudSignalChannel {
     required String storeToken,
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
+    Function(List<dynamic>)? onBatchReceived,
     Duration interval = const Duration(milliseconds: 3500),
   }) {
     stopListening();
@@ -62,23 +63,33 @@ class CloudSignalChannel {
     _pollTimer = Timer.periodic(interval, (_) async {
       if (_isChecking) return;
       _isChecking = true;
+
       try {
         final uri = Uri.parse(
           "$edgeSignalEndpoint?storeToken=${Uri.encodeComponent(cleanToken)}"
           "&lastSeenTs=$_lastKnownSignalTime"
         );
+
         final response = await http.get(uri).timeout(const Duration(seconds: 3));
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          if (data['status'] == 'SUCCESS' && data['hasUpdate'] == true && data['event'] != null) {
-            final sig = data['event'];
-            final event = SyncSignalEvent.fromMap(sig);
-            if (event.timestamp > _lastKnownSignalTime && event.source.toUpperCase() != cleanSource) {
-              _lastKnownSignalTime = event.timestamp;
-              debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${event.source}: ${event.action}");
-              onSignal(event);
-            } else if (event.timestamp > _lastKnownSignalTime) {
-              _lastKnownSignalTime = event.timestamp;
+          if (data['status'] == 'SUCCESS') {
+            // 🚀 Step 4: Atomic Batch Delta Processing
+            if (data['batch_operations'] is List && (data['batch_operations'] as List).isNotEmpty) {
+              final batchOps = List<dynamic>.from(data['batch_operations']);
+              onBatchReceived?.call(batchOps);
+            }
+
+            if (data['hasUpdate'] == true && data['event'] != null) {
+              final sig = data['event'];
+              final event = SyncSignalEvent.fromMap(sig);
+              if (event.timestamp > _lastKnownSignalTime && event.source.toUpperCase() != cleanSource) {
+                _lastKnownSignalTime = event.timestamp;
+                debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${event.source}: ${event.action}");
+                onSignal(event);
+              } else if (event.timestamp > _lastKnownSignalTime) {
+                _lastKnownSignalTime = event.timestamp;
+              }
             }
           }
         }

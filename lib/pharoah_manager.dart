@@ -1,4 +1,7 @@
 import 'sync_core/modules/sales_sync_module.dart';
+import 'sync_core/modules/purchase_sync_module.dart';
+import 'sync_core/modules/challan_sync_module.dart';
+import 'sync_core/modules/voucher_sync_module.dart';
 import 'event_sync_lab/workflow/lab_sync_orchestrator.dart';
 // FILE: lib/pharoah_manager.dart (FULLY INTEGRATED, COMPILE-SAFE VERSION)
 
@@ -493,7 +496,7 @@ Future<void> finalizePurchase({
       }
     }
     purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
-    purchases.add(Purchase(
+    final newFinalPurchase = Purchase(
       id: pId, 
       internalNo: internalNo, 
       billNo: billNo, 
@@ -510,7 +513,13 @@ Future<void> finalizePurchase({
       roundOff: roundOff,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       version: currentVer,
-    )); 
+    );
+    purchases.add(newFinalPurchase);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, t);
+      });
+    } 
     
     if (linkedChallanIds != null) { 
       for (var id in linkedChallanIds) { 
@@ -603,7 +612,26 @@ Future<void> finalizePurchase({
     String remarks = "", 
     required String partyId
   }) { 
-    saleChallans.add(SaleChallan(id: DateTime.now().toString(), billNo: billNo, partyId: partyId, date: date, partyName: party.name, partyGstin: party.gst, partyState: party.state, items: items, totalAmount: total, remarks: remarks)); 
+    final newChallan = SaleChallan(
+      id: DateTime.now().toString(), 
+      billNo: billNo, 
+      partyId: partyId, 
+      date: date, 
+      partyName: party.name, 
+      partyGstin: party.gst, 
+      partyState: party.state, 
+      items: items, 
+      totalAmount: total, 
+      remarks: remarks,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: 1,
+    );
+    saleChallans.add(newChallan);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) ChallanSyncModule.onChallanSaved(newChallan, t);
+      });
+    } 
     
     // 🆕 STRICT TWO-WAY SYNC: Sale Challan items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
@@ -890,6 +918,9 @@ void registerBatchActivity({
     vouchers.removeWhere((x) => x.id == v.id || x.voucherNo == v.voucherNo);
     vouchers.add(v);
     if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) VoucherSyncModule.onVoucherSaved(v, t);
+      });
       String seriesType = v.type.toUpperCase();
       String prefix = v.voucherNo.split(RegExp(r'\d')).first;
       await PharoahNumberingEngine.updateSeriesCounter(
@@ -955,6 +986,11 @@ void registerBatchActivity({
     int i = vouchers.indexWhere((v) => v.id == id);
     if (i != -1) {
       final v = vouchers[i];
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) VoucherSyncModule.onVoucherDeleted(v, t);
+        });
+      }
       _reverseVoucherImpact(v);
       final vNo = v.voucherNo;
       vouchers.removeAt(i);
@@ -1089,6 +1125,9 @@ void registerBatchActivity({
       final String bNo = p.billNo;
       purchases.removeWhere((x) => x.id == pId || x.internalNo == iNo || (bNo.isNotEmpty && x.billNo == bNo));
       if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) PurchaseSyncModule.onPurchaseDeleted(p, t);
+        });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, [pId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo]);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
@@ -1106,7 +1145,18 @@ void registerBatchActivity({
       notifyListeners();
     } catch (e) {}
   }
-  void deleteSaleChallan(String id) { saleChallans.removeWhere((c) => c.id == id); save(); }
+  void deleteSaleChallan(String id) {
+    try {
+      final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) ChallanSyncModule.onChallanDeleted(c, t);
+        });
+      }
+    } catch (_) {}
+    saleChallans.removeWhere((c) => c.id == id); 
+    save(); 
+  }
   void deletePurchaseChallan(String id) { purchaseChallans.removeWhere((c) => c.id == id); save(); }
   void deleteSaleReturn(String id) { saleReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }
   void deletePurchaseReturn(String id) { purchaseReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }

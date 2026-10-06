@@ -96,7 +96,7 @@ class _PurchaseSummaryViewState extends State<PurchaseSummaryView> {
                        p.date.isBefore(toDate.add(const Duration(days: 1)));
       bool searchMatch = p.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
                          p.billNo.toLowerCase().contains(searchQuery.toLowerCase());
-      return dateMatch && searchMatch;
+      return p.isDeleted != 1 && dateMatch && searchMatch;
     }).toList();
 
     // Summary Totals

@@ -1,4 +1,7 @@
 import '../sync_core/modules/sales_sync_module.dart';
+import '../sync_core/modules/purchase_sync_module.dart';
+import '../sync_core/modules/challan_sync_module.dart';
+import '../sync_core/modules/voucher_sync_module.dart';
 // FILE: lib/web_live_sync/pharoah_web_manager.dart
 
 import 'dart:convert';
@@ -697,6 +700,7 @@ class PharoahWebManager with ChangeNotifier {
     purchase.version = currentVer;
     purchases.removeWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
     purchases.add(purchase);
+    PurchaseSyncModule.onPurchaseSaved(purchase, activeStoreToken);
     for (var item in purchase.items) {
       String resolvedKey = item.medicineID;
       try {
@@ -743,6 +747,7 @@ class PharoahWebManager with ChangeNotifier {
       );
       foundInternalNo = p.internalNo;
       foundBillNo = p.billNo;
+      PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -786,6 +791,10 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deleteVoucher(String voucherId) {
+    try {
+      final targetV = vouchers.firstWhere((item) => item.id == voucherId);
+      VoucherSyncModule.onVoucherDeleted(targetV, activeStoreToken);
+    } catch (_) {}
     deletedRecordIds.add(voucherId);
     _saveLocalTombstones();
     vouchers.removeWhere((item) => item.id == voucherId);
@@ -798,6 +807,10 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deleteSaleChallan(String challanId) {
+    try {
+      final targetC = saleChallans.firstWhere((item) => item.id == challanId);
+      ChallanSyncModule.onChallanDeleted(targetC, activeStoreToken);
+    } catch (_) {}
     deletedRecordIds.add(challanId);
     _saveLocalTombstones();
     saleChallans.removeWhere((item) => item.id == challanId);

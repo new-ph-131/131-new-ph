@@ -5,14 +5,13 @@ import '../models/sync_envelope.dart';
 import '../outbox/sync_queue_manager.dart';
 
 /// SalesSyncModule: Isolated Synchronization & Conflict Resolution Engine for Sales.
-/// Strictly decoupled from Purchases, Challans, and Vouchers.
+/// Strictly decoupled from Purchases, Challans, and Vouchers (File Separation Rule).
 class SalesSyncModule {
   static const String documentType = "SALE";
 
   /// Dispatches a sale creation or modification to the Outbox queue
   static void onSaleSaved(Sale sale, String storeToken) {
     if (storeToken.trim().isEmpty) return;
-
     SyncQueueManager.enqueueMutation(
       syncId: sale.id,
       storeToken: storeToken,
@@ -26,7 +25,6 @@ class SalesSyncModule {
   /// Dispatches a soft-delete operation to the Outbox queue
   static void onSaleDeleted(Sale sale, String storeToken) {
     if (storeToken.trim().isEmpty) return;
-
     sale.isDeleted = 1;
     sale.status = "Deleted";
     sale.version += 1;
@@ -40,6 +38,12 @@ class SalesSyncModule {
       isDelete: true,
       rawPayload: sale.toMap(),
     );
+  }
+
+  /// handleIncomingSync conforming to Step 3 Frontend State Optimization
+  static List<Sale> handleIncomingSync(List<Sale> currentUIStateList, SyncEnvelope incomingEvent) {
+    mergeIncomingSaleEnvelope(currentUIStateList, incomingEvent);
+    return currentUIStateList;
   }
 
   /// Merges an incoming SyncEnvelope into the active in-memory Sales List.
@@ -80,10 +84,14 @@ class SalesSyncModule {
     // Case 2: Incoming is Active (isDeleted == 0)
     if (idx != -1) {
       final local = currentSales[idx];
-      // LWW Concurrency Evaluation
-      if (incoming.updatedAt > local.updatedAt || 
-         (incoming.updatedAt == local.updatedAt && incoming.version >= local.version) ||
-         local.updatedAt == 0) {
+      // LWW Concurrency Evaluation:
+      // If incoming version is less or equal AND updated_at is older, ignore stale data
+      if (incoming.version <= local.version && incoming.updatedAt < local.updatedAt) {
+        return false;
+      }
+      if (incoming.updatedAt > local.updatedAt ||
+          (incoming.updatedAt == local.updatedAt && incoming.version >= local.version) ||
+          local.updatedAt == 0) {
         currentSales[idx] = incoming;
         debugPrint("🔄 [SalesSyncModule] In-place updated sale: ${incoming.billNo} (v${incoming.version})");
         return true;
@@ -91,10 +99,10 @@ class SalesSyncModule {
       return false;
     } else {
       // Record does not exist locally -> Insert it!
-      int billNoIdx = incoming.billNo.isNotEmpty 
-          ? currentSales.indexWhere((s) => s.billNo.trim() == incoming.billNo.trim()) 
+      int billNoIdx = incoming.billNo.isNotEmpty
+          ? currentSales.indexWhere((s) => s.billNo.trim() == incoming.billNo.trim())
           : -1;
-      
+
       if (billNoIdx != -1) {
         final existingWithBillNo = currentSales[billNoIdx];
         if (incoming.updatedAt >= existingWithBillNo.updatedAt) {

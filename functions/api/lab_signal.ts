@@ -156,8 +156,10 @@ export async function onRequestPost(context: any) {
               const dType = (op.document_type || "SALE").toString().toUpperCase();
               const ver = parseInt(op.version || 1, 10);
               const uAt = parseInt(op.updated_at || Date.now(), 10);
-              const isDel = op.is_deleted ? 1 : 0;
-              const bData = typeof op.bill_data === "string" ? op.bill_data : JSON.stringify(op.bill_data || {});
+              const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
+              const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+              const rawData = op.data !== undefined ? op.data : op.bill_data;
+              const bData = typeof rawData === "string" ? rawData : JSON.stringify(rawData || {});
 
               const stmt = db.prepare(
                 "INSERT INTO erp_master_sync (sync_id, store_token, document_type, version, updated_at, is_deleted, bill_data) " +
@@ -266,8 +268,33 @@ export async function onRequestGet(context: any) {
       } catch (_) {}
     }
 
-    if (!current) {
-      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], tombstones: [] }), {
+    // Query D1 Master Sync for Delta Batch Operations
+    let batchOperations: any[] = [];
+    if (context.env && context.env.SIGNAL_DB) {
+      try {
+        const db = context.env.SIGNAL_DB;
+        const deltaRows: any = await db.prepare(
+          "SELECT sync_id, document_type, version, updated_at, is_deleted, bill_data FROM erp_master_sync WHERE store_token = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 150"
+        ).bind(storeToken, lastSeenTs).all().catch(() => null);
+        if (deltaRows && Array.isArray(deltaRows.results) && deltaRows.results.length > 0) {
+          batchOperations = deltaRows.results.map((r: any) => ({
+            sync_id: r.sync_id,
+            document_type: r.document_type,
+            version: r.version,
+            updated_at: r.updated_at,
+            is_deleted: r.is_deleted,
+            action: r.is_deleted === 1 ? 'DELETE' : 'UPDATE',
+            data: typeof r.bill_data === 'string' ? JSON.parse(r.bill_data) : (r.bill_data || {}),
+            bill_data: r.bill_data,
+          }));
+        }
+      } catch (err) {
+        console.error("D1 Delta Read Exception:", err);
+      }
+    }
+
+    if (!current && batchOperations.length === 0) {
+      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], tombstones: [], batch_operations: [] }), {
         status: 200,
         headers: {
           ...CORS_HEADERS,
@@ -276,13 +303,14 @@ export async function onRequestGet(context: any) {
       });
     }
 
-    const hasUpdate = current.timestamp > lastSeenTs || mutations.length > 0;
+    const hasUpdate = (current && current.timestamp > lastSeenTs) || mutations.length > 0 || batchOperations.length > 0;
     return new Response(JSON.stringify({
       status: "SUCCESS",
       hasUpdate,
-      event: hasUpdate ? current : null,
+      event: (current && current.timestamp > lastSeenTs) ? current : null,
       mutations,
       tombstones,
+      batch_operations: batchOperations,
       serverTime: Date.now(),
     }), {
       status: 200,

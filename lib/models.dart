@@ -443,6 +443,7 @@ class Purchase {
     this.roundOff = 0.0,
     this.updatedAt = 0,
     this.version = 1,
+    this.isDeleted = 0,
   });  
 
   Map<String, dynamic> toMap() => {
@@ -675,6 +676,7 @@ class Voucher {
     this.roundOff = 0.0,
     this.updatedAt = 0,
     this.version = 1,
+    this.isDeleted = 0,
   });
 
   Map<String, dynamic> toMap() => {

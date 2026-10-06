@@ -1,3 +1,4 @@
+import '../../sync_core/orchestrator/master_sync_orchestrator.dart';
 // FILE: lib/realtime_signaling/coordinators/app_realtime_coordinator.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -32,6 +33,9 @@ class AppRealtimeCoordinator {
       storeToken: token,
       mySource: 'app',
       interval: const Duration(milliseconds: 4000),
+      onBatchReceived: (batchOps) {
+        MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phApp: ph);
+      },
       onSignal: (event) async {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
         if (event.unmarkedIds.isNotEmpty && ph.activeCompany != null) {

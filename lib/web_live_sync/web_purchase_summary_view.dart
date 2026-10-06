@@ -64,7 +64,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
           p.billNo.toLowerCase().contains(searchQuery.toLowerCase()) ||
           p.internalNo.toLowerCase().contains(searchQuery.toLowerCase());
 
-      return dateMatch && searchMatch;
+      return p.isDeleted != 1 && dateMatch && searchMatch;
     }).toList();
 
     double totalTaxable = 0.0;

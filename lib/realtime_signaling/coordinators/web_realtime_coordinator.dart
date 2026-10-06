@@ -1,3 +1,4 @@
+import '../../sync_core/orchestrator/master_sync_orchestrator.dart';
 // FILE: lib/realtime_signaling/coordinators/web_realtime_coordinator.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -29,6 +30,9 @@ class WebRealtimeCoordinator {
       storeToken: token,
       mySource: 'web',
       interval: const Duration(milliseconds: 3500),
+      onBatchReceived: (batchOps) {
+        MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phWeb: webManager);
+      },
       onSignal: (event) async {
         debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}). Processing...");
         if (event.unmarkedIds.isNotEmpty) {
