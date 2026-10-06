@@ -1,3 +1,4 @@
+import 'logic/app_billing_gst_engine.dart';
 // FILE: lib/billing_view.dart
 
 import 'package:flutter/material.dart';
@@ -157,7 +158,7 @@ class _BillingViewState extends State<BillingView> {
         _buildHeader(),
         _buildSearchBarTrigger(ph),
         Expanded(child: items.isEmpty ? const Center(child: Text("Bill is empty")) : ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), itemCount: items.length, itemBuilder: (c, i) => _buildItemCard(items[i], i, ph))),
-        _buildFooter(),
+        _buildFooter(ph),
       ]),
     );
   }
@@ -200,16 +201,14 @@ class _BillingViewState extends State<BillingView> {
     return Dismissible(key: Key(it.id), direction: DismissDirection.endToStart, background: Container(decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(12)), alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)), onDismissed: (d) { setState(() { items.removeAt(index); }); _recalculateSR(); }, child: card);
   }
 
-  Widget _buildFooter() {
-    double itemTotal = items.fold(0.0, (sum, it) => sum + it.total);
-    double totalTaxable = items.fold(0.0, (sum, it) => sum + (it.qty * it.rate - it.discountRupees));
-    double totalCGST = items.fold(0.0, (sum, it) => sum + it.cgst);
-    double totalSGST = items.fold(0.0, (sum, it) => sum + it.sgst);
-    double totalIGST = items.fold(0.0, (sum, it) => sum + it.igst);
+  Widget _buildFooter(PharoahManager ph) {
+    bool isLoc = widget.party.state.trim().toLowerCase() == (ph.activeCompany?.state.trim().toLowerCase() ?? "rajasthan");
     double extraDisc = double.tryParse(discountC.text) ?? 0.0;
-    double rawBillTotal = itemTotal - extraDisc;
-    double roundedGrandTotal = rawBillTotal.roundToDouble();
-    double autoRoundOff = roundedGrandTotal - rawBillTotal;
+    final summary = AppBillingGstEngine.calculate(
+      items: items,
+      extraDiscount: extraDisc,
+      isLocal: isLoc,
+    );
 
     return Container(
       padding: const EdgeInsets.all(15),
@@ -219,10 +218,11 @@ class _BillingViewState extends State<BillingView> {
       ),
       child: Column(
         children: [
-          _row("Taxable Value", "₹${totalTaxable.toStringAsFixed(2)}"),
-          if (totalCGST > 0) _row("CGST (+)", "₹${totalCGST.toStringAsFixed(2)}"),
-          if (totalSGST > 0) _row("SGST (+)", "₹${totalSGST.toStringAsFixed(2)}"),
-          if (totalIGST > 0) _row("IGST (+)", "₹${totalIGST.toStringAsFixed(2)}"),
+          _row("Items Gross Taxable", "₹${summary.grossTaxable.toStringAsFixed(2)}"),
+          if (summary.extraDiscount > 0) _row("Net Taxable (Post-Disc)", "₹${summary.netTaxable.toStringAsFixed(2)}"),
+          if (summary.totalCGST > 0) _row("CGST (+)", "₹${summary.totalCGST.toStringAsFixed(2)}"),
+          if (summary.totalSGST > 0) _row("SGST (+)", "₹${summary.totalSGST.toStringAsFixed(2)}"),
+          if (summary.totalIGST > 0) _row("IGST (+)", "₹${summary.totalIGST.toStringAsFixed(2)}"),
           const SizedBox(height: 4),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -245,9 +245,9 @@ class _BillingViewState extends State<BillingView> {
               ),
             ],
           ),
-          if (autoRoundOff != 0.0) _row("Round Off", autoRoundOff.toStringAsFixed(2)),
+          if (summary.roundOff != 0.0) _row("Round Off", summary.roundOff.toStringAsFixed(2)),
           const Divider(),
-          _row("GRAND TOTAL", "₹${roundedGrandTotal.toStringAsFixed(0)}.00", bold: true, size: 22, color: widget.isReadOnly ? Colors.purple.shade900 : Colors.teal.shade900),
+          _row("GRAND TOTAL", "₹${summary.finalGrandTotal.toStringAsFixed(0)}.00", bold: true, size: 22, color: widget.isReadOnly ? Colors.purple.shade900 : Colors.teal.shade900),
         ],
       ),
     );
@@ -256,13 +256,22 @@ class _BillingViewState extends State<BillingView> {
   Widget _row(String l, String v, {bool bold = false, double size = 15, Color? color}) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(l, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal)), Text(v, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal, fontSize: size, color: color))]);
 
   void _handleSave(PharoahManager ph) {
-    double itemTotal = items.fold(0.0, (sum, it) => sum + it.total);
+    bool isLoc = widget.party.state.trim().toLowerCase() == (ph.activeCompany?.state.trim().toLowerCase() ?? "rajasthan");
     double extraDisc = double.tryParse(discountC.text) ?? 0.0;
-    double rawTotal = itemTotal - extraDisc;
-    double finalGrandTotal = rawTotal.roundToDouble();
-    double roundOffVal = finalGrandTotal - rawTotal;
+    final summary = AppBillingGstEngine.calculate(items: items, extraDiscount: extraDisc, isLocal: isLoc);
 
-    ph.finalizeSale(billNo: billNoC.text, date: selectedBillDate, party: widget.party, items: items, total: finalGrandTotal, mode: widget.mode, linkedIds: widget.linkedChallanIds, extraDiscount: extraDisc, roundOff: roundOffVal, existingId: widget.modifySaleId);
+    ph.finalizeSale(
+      billNo: billNoC.text,
+      date: selectedBillDate,
+      party: widget.party,
+      items: items,
+      total: summary.finalGrandTotal,
+      mode: widget.mode,
+      linkedIds: widget.linkedChallanIds,
+      extraDiscount: summary.extraDiscount,
+      roundOff: summary.roundOff,
+      existingId: widget.modifySaleId,
+    );
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 

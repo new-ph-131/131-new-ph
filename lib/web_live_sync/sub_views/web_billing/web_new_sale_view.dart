@@ -1,3 +1,4 @@
+import 'mechanism/web_billing_gst_engine.dart';
 // FILE: lib/web_live_sync/sub_views/web_billing/web_new_sale_view.dart
 
 import 'package:flutter/material.dart';
@@ -356,15 +357,30 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     );
   }
 
-  double get subTotal => billItems.fold(0.0, (sum, it) => sum + it.total);
-  double get totalTaxable => billItems.fold(0.0, (sum, it) => sum + (it.qty * it.rate - it.discountRupees));
-  double get totalCGST => billItems.fold(0.0, (sum, it) => sum + it.cgst);
-  double get totalSGST => billItems.fold(0.0, (sum, it) => sum + it.sgst);
-  double get totalIGST => billItems.fold(0.0, (sum, it) => sum + it.igst);
+  bool get _isLocalState {
+    final ph = Provider.of<PharoahWebManager>(context, listen: false);
+    String shopState = (ph.companyProfile['state'] ?? 'Rajasthan').toString().trim().toLowerCase();
+    String partyState = (selectedParty?.state ?? 'Rajasthan').toString().trim().toLowerCase();
+    return shopState == partyState;
+  }
+
   double get extraDiscount => double.tryParse(extraDiscC.text) ?? 0.0;
-  double get rawGrandTotal => (subTotal - extraDiscount);
-  double get finalGrandTotal => rawGrandTotal.roundToDouble();
-  double get roundOff => double.parse((finalGrandTotal - rawGrandTotal).toStringAsFixed(2));
+
+  BillGstSummary get _gstSummary => WebBillingGstEngine.calculate(
+    items: billItems,
+    extraDiscount: extraDiscount,
+    isLocal: _isLocalState,
+  );
+
+  double get grossTaxable => _gstSummary.grossTaxable;
+  double get totalTaxable => _gstSummary.netTaxable;
+  double get totalCGST => _gstSummary.totalCGST;
+  double get totalSGST => _gstSummary.totalSGST;
+  double get totalIGST => _gstSummary.totalIGST;
+  double get subTotal => _gstSummary.grossTaxable;
+  double get rawGrandTotal => _gstSummary.rawGrandTotal;
+  double get finalGrandTotal => _gstSummary.finalGrandTotal;
+  double get roundOff => _gstSummary.roundOff;
 
   void _saveInvoice(PharoahWebManager webPh, {bool andPrint = false}) async {
     if (billItems.isEmpty) {

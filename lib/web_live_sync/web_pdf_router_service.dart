@@ -1,3 +1,4 @@
+import 'sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
 // FILE: lib/web_live_sync/web_pdf_router_service.dart
 // ignore_for_file: prefer_const_constructors, unnecessary_const, prefer_interpolation_to_compose_strings
 
@@ -1167,8 +1168,11 @@ class WebPdfRouterService {
   static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
 
   static pw.Widget _buildSaleFooter(String shopName, Sale sale, bool isLocal) {
-    double taxableTotal = sale.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate - i.discountRupees));
-    double totalTax = sale.items.fold(0.0, (sum, i) => sum + (i.cgst + i.sgst + i.igst));
+    final summary = WebBillingGstEngine.calculate(
+      items: sale.items,
+      extraDiscount: sale.extraDiscount,
+      isLocal: isLocal,
+    );
 
     return pw.Container(
       height: 100, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
@@ -1180,7 +1184,7 @@ class WebPdfRouterService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text("Amount in Words:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                pw.Text("RUPEES ${PdfMasterService.numberToWords(sale.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                pw.Text("RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
                 pw.Spacer(),
                 pw.Text("Terms: Goods once sold will not be taken back.", style: pw.TextStyle(fontSize: 6)),
               ],
@@ -1190,16 +1194,22 @@ class WebPdfRouterService {
             width: 250, padding: const pw.EdgeInsets.all(4), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
-                _fRow("TAXABLE TOTAL", taxableTotal),
-                if (isLocal) ...[_fRow("CGST TOTAL", totalTax / 2), _fRow("SGST TOTAL", totalTax / 2)] else _fRow("IGST TOTAL", totalTax),
-                if (sale.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", sale.extraDiscount),
-                _fRow("ROUND OFF", sale.roundOff),
+                _fRow("GROSS TAXABLE", summary.grossTaxable),
+                if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
+                if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
+                if (isLocal) ...[
+                  if (summary.totalCGST > 0) _fRow("CGST TOTAL", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow("SGST TOTAL", summary.totalSGST),
+                ] else ...[
+                  if (summary.totalIGST > 0) _fRow("IGST TOTAL", summary.totalIGST),
+                ],
+                if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text("GRAND TOTAL", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${sale.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
                   ],
                 ),
               ],
