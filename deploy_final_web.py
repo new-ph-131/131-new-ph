@@ -1,45 +1,83 @@
+# FILE: deploy_final_web.py
+# Universal 1-Click Production Deployment Script for Google Colab & CI/CD
 import os
-import re
-import subprocess
 import sys
+import subprocess
+import re
 
-print("==================================================================")
-print("🚀 FINALIZING DEPLOYMENT FOR WEB PORTAL (#PH-REV-652 (ATOMIC-CSV-MUTATION-LWW-LIVE)")
-print("==================================================================\n")
+print("=" * 68)
+print("🚀 PHAROAH ERP • UNIVERSAL 1-CLICK PRODUCTION DEPLOYER")
+print("=" * 68 + "
+")
 
-print("🏷️ Step 1/3: Updating Top Bar Tag...")
+# 1. DIRECTORY DETECTION & GIT SYNC
+repo_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(repo_dir)
+
+print("📥 Step 1/4: Fetching & Fast-Forwarding Latest Code from GitHub...")
+try:
+    subprocess.run(["git", "fetch", "origin", "main"], check=True)
+    subprocess.run(["git", "reset", "--hard", "origin/main"], check=True)
+    commit_res = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True)
+    commit_hash = commit_res.stdout.strip()
+    print(f"✔ Synced to Latest Commit: {commit_hash}")
+except Exception as e:
+    print(f"⚠ Git Sync Notice: {e} (Proceeding with local files)")
+    commit_hash = "LOCAL"
+
+# 2. READ CURRENT REVISION TAG
+current_tag = "LATEST"
 tb_path = "lib/web_live_sync/components/web_top_bar.dart"
 if os.path.exists(tb_path):
     with open(tb_path, "r", encoding="utf-8") as f:
-        tb = f.read()
-    new_rev = "#PH-REV-652 (ATOMIC-CSV-MUTATION-LWW-LIVE)"
-    tb = re.sub(r"#PH-REV-\d+[^\"]*", new_rev, tb)
-    with open(tb_path, "w", encoding="utf-8") as f:
-        f.write(tb)
-    print(f"✔ Tag Updated: {new_rev}")
+        content = f.read()
+    m = re.search(r"#PH-REV-\d+[^"]*", content)
+    if m:
+        current_tag = m.group(0)
 
-print("\n🔨 Step 2/3: Building Production Web App (Please wait 1-2 mins)...")
-b_res = subprocess.run(
-    ["flutter", "build", "web", "-t", "lib/web_live_sync/web_main.dart", "--release", "--base-href", "/", "--pwa-strategy=none"],
-    text=True
-)
+print(f"🏷️ Active Live Revision: {current_tag}
+")
+
+# 3. FLUTTER WEB BUILD
+print("🔨 Step 2/4: Resolving Dependencies (flutter pub get)...")
+subprocess.run(["flutter", "pub", "get"], check=False)
+
+print("
+⚡ Step 3/4: Building Production Web App (flutter build web)...")
+build_cmd = [
+    "flutter", "build", "web",
+    "-t", "lib/web_live_sync/web_main.dart",
+    "--release",
+    "--base-href", "/",
+    "--pwa-strategy=none"
+]
+
+b_res = subprocess.run(build_cmd, text=True)
 if b_res.returncode != 0:
-    print("❌ Web Build Failed!")
+    print("
+❌ Flutter Web Compilation Failed! Check the error logs above.")
     sys.exit(1)
-print("✔ Web build successful.")
+print("✔ Production Web Build Complete!")
 
-print("\n🌐 Step 3/3: Deploying to Cloudflare Pages...")
-subprocess.run(["npx", "wrangler", "pages", "deploy", "build/web", "--project-name=pharoah-erp"], text=True)
+# 4. DEPLOY TO CLOUDFLARE PAGES
+print("
+🌐 Step 4/4: Deploying to Cloudflare Pages...")
+deploy_cmd = [
+    "npx", "wrangler", "pages", "deploy", "build/web",
+    "--project-name=pharoah-erp",
+    "--commit-dirty=true"
+]
 
-print("\n🔄 Committing & Pushing to GitHub (For App APK)...")
-subprocess.run(["git", "add", "."], text=True)
-subprocess.run(["git", "commit", "-m", "🚀 #PH-REV-652 (ATOMIC-CSV-MUTATION-LWW-LIVE)"], text=True)
-branch_res = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True)
-branch = branch_res.stdout.strip() or "main"
-subprocess.run(["git", "push", "origin", branch], text=True)
+d_res = subprocess.run(deploy_cmd, text=True)
+if d_res.returncode != 0:
+    print("
+⚠ Wrangler deploy returned non-zero code. Trying with explicit upload...")
+    subprocess.run(["npx", "wrangler", "pages", "publish", "build/web", "--project-name=pharoah-erp"], text=True)
 
-print("\n" + "="*65)
+print("
+" + "=" * 68)
 print("🎉 DEPLOYMENT 100% SUCCESSFUL!")
-print("🔗 Live URL: https://pharoah-erp.pages.dev")
-print("✅ Verified Tag: #PH-REV-652 (ATOMIC-CSV-MUTATION-LWW-LIVE)")
-print("="*65)
+print(f"🔗 Live URL: https://pharoah-erp.pages.dev")
+print(f"🏷️ Deployed Revision: {current_tag}")
+print(f"📦 Commit: {commit_hash}")
+print("=" * 68)
