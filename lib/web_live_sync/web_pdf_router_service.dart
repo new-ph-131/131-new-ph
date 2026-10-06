@@ -1,4 +1,4 @@
-import 'sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
 // FILE: lib/web_live_sync/web_pdf_router_service.dart
 // ignore_for_file: prefer_const_constructors, unnecessary_const, prefer_interpolation_to_compose_strings
 

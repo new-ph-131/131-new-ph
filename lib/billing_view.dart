@@ -1,4 +1,4 @@
-import 'logic/app_billing_gst_engine.dart';
+import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
 // FILE: lib/billing_view.dart
 
 import 'package:flutter/material.dart';

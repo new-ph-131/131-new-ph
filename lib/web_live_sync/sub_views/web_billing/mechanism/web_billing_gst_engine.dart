@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart
-import '../../web_models.dart';
+import 'package:pharoah_erp/web_live_sync/web_models.dart';
 
 /// BillGstSummary: Immutable Data Capsule containing exact Section 15 GST calculations
 class BillGstSummary {

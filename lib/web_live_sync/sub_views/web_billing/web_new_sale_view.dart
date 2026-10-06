@@ -1,4 +1,4 @@
-import 'mechanism/web_billing_gst_engine.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
 // FILE: lib/web_live_sync/sub_views/web_billing/web_new_sale_view.dart
 
 import 'package:flutter/material.dart';
