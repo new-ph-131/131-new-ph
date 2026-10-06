@@ -4,8 +4,14 @@ import '../../../pharoah_manager.dart';
 import '../../../models.dart';
 
 class DeltaMergeEngine {
-  /// Smartly merges cloud data with ERP Multi-Node collision prevention and true LWW safeguards.
-  static bool processCloudData(PharoahManager ph, Map<String, dynamic> cloudFiles, Set<String> tombstones, Map<String, String> localHashes) {
+  /// 🛡️ Smartly merges cloud data with ERP Multi-Node collision prevention,
+  /// Anti-Zombie Timestamp Shields, and True LWW safeguards.
+  static bool processCloudData(
+    PharoahManager ph, 
+    Map<String, dynamic> cloudFiles, 
+    Map<String, int> localTombstoneRegistry, 
+    Map<String, String> localHashes
+  ) {
     bool hasChanges = false;
 
     dynamic decodeJson(String fileName) {
@@ -15,7 +21,7 @@ class DeltaMergeEngine {
       return null;
     }
 
-    // Advanced Deep-Compare & Deduplicating Merge Function with True LWW
+    // 🛡️ Advanced Deep-Compare & Deduplicating Merge Function with True LWW & Anti-Zombie Shields
     bool mergeList<T>(
       List<dynamic>? cloudList,
       List<T> localList,
@@ -27,57 +33,67 @@ class DeltaMergeEngine {
       if (cloudList == null) return false;
       bool changed = false;
 
-      // 1. Purge genuinely deleted records by exact ID
-      final beforeLen = localList.length;
-      localList.removeWhere((item) {
-        final id = getId(item).trim();
-        return tombstones.contains(id);
-      });
-      if (localList.length != beforeLen) changed = true;
-
-      // 2. Merge Cloud Records
+      // 1. Process Cloud Records with Anti-Zombie Shield
       for (var rawMap in cloudList) {
         if (rawMap is! Map<String, dynamic>) continue;
         final cloudMap = rawMap;
-        String id = (cloudMap['id'] ?? '').toString().trim();
+        String id = (cloudMap['id'] ?? cloudMap['sync_id'] ?? '').toString().trim();
         String billNo = (cloudMap['billNo'] ?? cloudMap['internalNo'] ?? cloudMap['voucherNo'] ?? '').toString().trim();
+        int cloudVersion = int.tryParse(cloudMap['version']?.toString() ?? '1') ?? 1;
+        int cloudTimestamp = int.tryParse(cloudMap['updated_at']?.toString() ?? cloudMap['updatedAt']?.toString() ?? '0') ?? 0;
+        int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
-        // 🛡️ Active Record Auto-Revival Protocol:
-        final status = (cloudMap['status'] ?? 'Active').toString().toLowerCase();
-        final isAlive = status != 'deleted' && status != 'cancelled';
-        if (isAlive) {
-          tombstones.remove(id);
-          if (billNo.isNotEmpty) tombstones.remove(billNo);
-        } else {
-          if (id.isEmpty || tombstones.contains(id) || (billNo.isNotEmpty && tombstones.contains(billNo))) continue;
+        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check with Microsecond/Millisecond Timestamp
+        // Agar ye bill local me delete ho chuka hai aur uski delete time remote clock se nayi hai,
+        // to Google Drive ke purane snapshot ko direct DROP (Ignore) kar do!
+        int? localDeleteTime = localTombstoneRegistry[id] ?? (billNo.isNotEmpty ? localTombstoneRegistry[billNo] : null);
+        if (localDeleteTime != null) {
+          if (localDeleteTime >= cloudTimestamp) {
+            // Google Drive ka data purana hai, aur bill delete ho chuka hai -> Skip / Drop
+            continue; 
+          } else if (cloudIsDeleted == 0) {
+            // Agar remote timestamp sach me naya hai aur status active hai, tabhi tombstone se azad karo
+            localTombstoneRegistry.remove(id);
+            if (billNo.isNotEmpty) localTombstoneRegistry.remove(billNo);
+          }
         }
 
-        // Match by exact ID or same Bill Number to prevent duplicate cards
+        // Local active screen list me check karo
         int idx = localList.indexWhere((e) => getId(e) == id || (billNo.isNotEmpty && getBillNo(e) == billNo));
-        if (idx == -1) {
-          // ADD NEW RECORD FROM CLOUD
-          localList.add(fromMap(cloudMap));
-          changed = true;
-        } else {
-          // In-Place Replace ONLY if cloud is newer or equal (Last-Write-Wins)
-          var localMap = toMap(localList[idx]);
-          String localJson = jsonEncode(localMap);
-          String cloudJson = jsonEncode(cloudMap);
-          if (localJson != cloudJson) {
-            int cloudUpdated = (cloudMap['updatedAt'] ?? 0).toInt();
-            int localUpdated = (localMap['updatedAt'] ?? 0).toInt();
-            int cloudVer = (cloudMap['version'] ?? 1).toInt();
-            int localVer = (localMap['version'] ?? 1).toInt();
-            // LWW Protection: Only overwrite local if cloud is strictly newer, or same timestamp with higher version
-            if (cloudUpdated > localUpdated || (cloudUpdated == localUpdated && cloudVer > localVer)) {
+
+        if (idx != -1) {
+          var localItem = localList[idx];
+          var localMap = toMap(localItem);
+          int localTimestamp = (localMap['updated_at'] ?? localMap['updatedAt'] ?? 0).toInt();
+          int localVer = (localMap['version'] ?? 1).toInt();
+
+          // 🛡️ SHIELD 2: Last-Write-Wins (LWW) Clock Auditing
+          if (cloudTimestamp > localTimestamp || (cloudTimestamp == localTimestamp && cloudVersion >= localVer) || localTimestamp == 0) {
+            if (cloudIsDeleted == 1) {
+              // Server ya backup se delete confirm hua -> List se udao
+              localList.removeAt(idx);
+              localTombstoneRegistry[id] = cloudTimestamp;
+              if (billNo.isNotEmpty) localTombstoneRegistry[billNo] = cloudTimestamp;
+              changed = true;
+            } else {
+              // Legitimate newer update found -> Overwrite local model state
               localList[idx] = fromMap(cloudMap);
               changed = true;
             }
           }
+        } else {
+          // 🧠 THE TRAP BYPASSED LOGIC:
+          // Agar remote data local list me nahi hai, to direct add mat karo!
+          // Pehle check karo ki kya wo deleted packet to nahi hai?
+          if (cloudIsDeleted == 0) {
+            // Google Drive se aaya data tabhi add hoga agar wo deleted nahi hai
+            localList.add(fromMap(cloudMap));
+            changed = true;
+          }
         }
       }
 
-      // 3. Final De-duplication Pass: Keep only 1 record per BillNo (keep newest)
+      // 2. Final De-duplication Pass: Keep only 1 record per BillNo (keep newest)
       Map<String, T> uniqueByBillNo = {};
       for (var item in localList) {
         String bNo = getBillNo(item);
@@ -86,14 +102,15 @@ class DeltaMergeEngine {
             uniqueByBillNo[bNo] = item;
           } else {
             var existing = uniqueByBillNo[bNo]!;
-            int existingUpdated = (toMap(existing)['updatedAt'] ?? 0).toInt();
-            int currentUpdated = (toMap(item)['updatedAt'] ?? 0).toInt();
+            int existingUpdated = (toMap(existing)['updated_at'] ?? toMap(existing)['updatedAt'] ?? 0).toInt();
+            int currentUpdated = (toMap(item)['updated_at'] ?? toMap(item)['updatedAt'] ?? 0).toInt();
             if (currentUpdated >= existingUpdated) {
               uniqueByBillNo[bNo] = item;
             }
           }
         }
       }
+
       if (uniqueByBillNo.length < localList.length) {
         localList.clear();
         localList.addAll(uniqueByBillNo.values);
@@ -178,7 +195,7 @@ class DeltaMergeEngine {
           String lJson = jsonEncode(ph.parties[existingIdx].toMap());
           String cJson = jsonEncode(partMap);
           if (lJson != cJson) {
-            int cUpdated = (partMap['updatedAt'] ?? 0).toInt();
+            int cUpdated = (partMap['updated_at'] ?? partMap['updatedAt'] ?? 0).toInt();
             int lUpdated = ph.parties[existingIdx].updatedAt;
             if (cUpdated > lUpdated) {
               ph.parties[existingIdx] = Party.fromMap(partMap);
@@ -203,7 +220,7 @@ class DeltaMergeEngine {
           String lJson = jsonEncode(ph.medicines[existingIdx].toMap());
           String cJson = jsonEncode(medMap);
           if (lJson != cJson) {
-            int cUpdated = (medMap['updatedAt'] ?? 0).toInt();
+            int cUpdated = (medMap['updated_at'] ?? medMap['updatedAt'] ?? 0).toInt();
             int lUpdated = ph.medicines[existingIdx].updatedAt;
             if (cUpdated > lUpdated) {
               ph.medicines[existingIdx] = Medicine.fromMap(medMap);

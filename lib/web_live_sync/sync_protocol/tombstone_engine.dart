@@ -1,8 +1,60 @@
 // FILE: lib/web_live_sync/sync_protocol/tombstone_engine.dart
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../pharoah_manager.dart';
 
 class TombstoneEngine {
+  /// 🛡️ Persistent high-precision Timestamp-backed Tombstone Registry: { "sync_id": epoch_millis }
+  static Future<Map<String, int>> getTombstoneRegistry(String companyId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('tombstone_registry_$companyId');
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, int.tryParse(v.toString()) ?? 0));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveTombstoneRegistry(String companyId, Map<String, int> registry) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tombstone_registry_$companyId', jsonEncode(registry));
+  }
+
+  /// Records a deletion with high-precision timestamp into registry
+  static Future<void> recordTombstoneWithTimestamp(
+    String companyId, {
+    required String id,
+    String? secondaryKey,
+    int? timestamp,
+  }) async {
+    final registry = await getTombstoneRegistry(companyId);
+    final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+    if (id.trim().isNotEmpty) {
+      registry[id.trim()] = ts;
+    }
+    if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
+      registry[secondaryKey.trim()] = ts;
+    }
+    await saveTombstoneRegistry(companyId, registry);
+    await recordTombstone(companyId, id: id, secondaryKey: secondaryKey);
+  }
+
+  /// Unmarks a tombstone when a bill is explicitly re-created with a newer timestamp
+  static Future<void> unmarkTombstoneWithTimestamp(String companyId, {required String id, String? secondaryKey}) async {
+    final registry = await getTombstoneRegistry(companyId);
+    if (id.trim().isNotEmpty) {
+      registry.remove(id.trim());
+    }
+    if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
+      registry.remove(secondaryKey.trim());
+    }
+    await saveTombstoneRegistry(companyId, registry);
+    await unmarkTombstone(companyId, id: id, secondaryKey: secondaryKey);
+  }
+
+  // --- Existing Legacy Set-based APIs (Kept for Full Compatibility) ---
   static Future<Set<String>> getLocalTombstones(String companyId) async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getStringList('tombstones_$companyId') ?? []).toSet();
@@ -13,7 +65,6 @@ class TombstoneEngine {
     await prefs.setStringList('tombstones_$companyId', tombstones.toList());
   }
 
-  /// Persistent registry of keys that were explicitly unmarked / revived by user import/action
   static Future<Set<String>> getUnmarkedKeys(String companyId) async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getStringList('unmarked_tombstones_$companyId') ?? []).toSet();
@@ -24,12 +75,9 @@ class TombstoneEngine {
     await prefs.setStringList('unmarked_tombstones_$companyId', keys.toList());
   }
 
-  /// Atomically unmarks a tombstone when a record is newly imported or explicitly recreated.
-  /// Also registers key in unmarked registry to shield against incoming cloud tombstones.
   static Future<void> unmarkTombstone(String companyId, {required String id, String? secondaryKey}) async {
     final tombstones = await getLocalTombstones(companyId);
     final unmarked = await getUnmarkedKeys(companyId);
-
     if (id.trim().isNotEmpty) {
       tombstones.remove(id.trim());
       unmarked.add(id.trim());
@@ -38,17 +86,13 @@ class TombstoneEngine {
       tombstones.remove(secondaryKey.trim());
       unmarked.add(secondaryKey.trim());
     }
-
     await saveLocalTombstones(companyId, tombstones);
     await saveUnmarkedKeys(companyId, unmarked);
   }
 
-  /// Atomically registers a deleted record with its ID and optional secondary key (e.g. BillNo).
-  /// Removes any previous unmark shield for these keys.
   static Future<Set<String>> recordTombstone(String companyId, {required String id, String? secondaryKey}) async {
     final tombstones = await getLocalTombstones(companyId);
     final unmarked = await getUnmarkedKeys(companyId);
-
     if (id.trim().isNotEmpty) {
       tombstones.add(id.trim());
       unmarked.remove(id.trim());
@@ -57,32 +101,30 @@ class TombstoneEngine {
       tombstones.add(secondaryKey.trim());
       unmarked.remove(secondaryKey.trim());
     }
-
     await saveLocalTombstones(companyId, tombstones);
     await saveUnmarkedKeys(companyId, unmarked);
     return tombstones;
   }
 
-  /// Atomically registers a batch of deleted records for high-speed bulk deletion.
-  static Future<Set<String>> recordBatchTombstones(String companyId, Iterable<String> keys) async {
+  static Future<Set<String>> recordBatchTombstones(String companyId, Iterable<String> keys, {int? timestamp}) async {
+    final registry = await getTombstoneRegistry(companyId);
+    final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final tombstones = await getLocalTombstones(companyId);
     final unmarked = await getUnmarkedKeys(companyId);
-
     for (var k in keys) {
       final cleanK = k.trim();
       if (cleanK.isNotEmpty) {
+        registry[cleanK] = ts;
         tombstones.add(cleanK);
         unmarked.remove(cleanK);
       }
     }
-
+    await saveTombstoneRegistry(companyId, registry);
     await saveLocalTombstones(companyId, tombstones);
     await saveUnmarkedKeys(companyId, unmarked);
     return tombstones;
   }
 
-  /// 🛡️ Filters incoming cloud tombstones against explicitly unmarked keys
-  /// so old deletions stored on Cloud can NEVER kill a newly imported/revived record!
   static Future<Set<String>> sanitizeCloudTombstones(String companyId, Iterable<String> incomingCloudTombstones) async {
     final unmarked = await getUnmarkedKeys(companyId);
     final sanitized = <String>{};
@@ -95,11 +137,8 @@ class TombstoneEngine {
     return sanitized;
   }
 
-  /// Removes deleted records while auto-reviving newly imported/active bills
   static void purgeDeletedRecords(PharoahManager ph, Set<String> allTombstones) {
     if (allTombstones.isEmpty) return;
-
-    // 1. Sales: Exact ID deletion only; revive active bill numbers
     final List<String> revivedSales = [];
     for (var s in ph.sales) {
       if (!allTombstones.contains(s.id)) {
@@ -111,7 +150,6 @@ class TombstoneEngine {
     for (var b in revivedSales) allTombstones.remove(b);
     ph.sales.removeWhere((e) => allTombstones.contains(e.id));
 
-    // 2. Purchases: Exact ID deletion only; revive active bills/internal numbers
     final List<String> revivedPurchases = [];
     for (var p in ph.purchases) {
       if (!allTombstones.contains(p.id)) {
@@ -126,7 +164,6 @@ class TombstoneEngine {
     for (var b in revivedPurchases) allTombstones.remove(b);
     ph.purchases.removeWhere((e) => allTombstones.contains(e.id));
 
-    // 3. Challans, Returns, Vouchers: Exact ID deletion with revival
     final List<String> otherRevivals = [];
     for (var c in ph.saleChallans) {
       if (!allTombstones.contains(c.id) && c.billNo.isNotEmpty && allTombstones.contains(c.billNo)) otherRevivals.add(c.billNo);
@@ -144,7 +181,6 @@ class TombstoneEngine {
       if (!allTombstones.contains(v.id) && v.voucherNo.isNotEmpty && allTombstones.contains(v.voucherNo)) otherRevivals.add(v.voucherNo);
     }
     for (var b in otherRevivals) allTombstones.remove(b);
-
     ph.saleChallans.removeWhere((e) => allTombstones.contains(e.id));
     ph.purchaseChallans.removeWhere((e) => allTombstones.contains(e.id));
     ph.saleReturns.removeWhere((e) => allTombstones.contains(e.id));
