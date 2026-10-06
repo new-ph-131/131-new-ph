@@ -1,3 +1,5 @@
+import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
+import 'package:pharoah_erp/realtime_signaling/coordinators/app_realtime_coordinator.dart';
 import 'sync_bridge/core/sync_tombstone_hub.dart';
 // FILE: lib/import_review_screen.dart
 
@@ -541,18 +543,26 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         items.add(PurchaseItem(id: DateTime.now().toString() + m.id, srNo: items.length + 1, medicineID: m.id, name: m.name, packing: m.packing, batch: it['batch'], exp: it['exp'], hsn: it['hsn'], mrp: it['mrp'], qty: it['qty'], freeQty: it['free'], purchaseRate: it['rate'], gstRate: it['gstPer'], total: it['sysTotal'], discountPer: it['itemDiscPer'], discountRupees: it['discAmt']));
       }
       
-      // FIXED: Using already parsed and adjusted DateTime object (adjustedBillDate)
-      ph.finalizePurchase(
+      double purExtraDisc = (partyInfoInFile['extraDisc'] as num?)?.toDouble() ?? 0.0;
+      double purRoundOff = (partyInfoInFile['roundOff'] as num?)?.toDouble() ?? 0.0;
+      double purGross = items.fold(0.0, (s, e) => s + e.total);
+      double purFinalTotal = purGross - purExtraDisc + purRoundOff;
+
+      await ph.finalizePurchase(
         internalNo: "MIR-PUR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}", 
         billNo: cleanBillNo.isNotEmpty ? cleanBillNo : "DRAFT", 
         date: adjustedBillDate, 
         entryDate: DateTime.now(), 
         party: matchedParty!, 
         items: items, 
-        total: items.fold(0, (s, e)=>s+e.total), 
+        total: purFinalTotal, 
         mode: "CREDIT", 
-        sourceTag: finalSourceTag
+        sourceTag: finalSourceTag,
+        extraDiscount: purExtraDisc,
+        roundOff: purRoundOff,
       );
+      
+      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo);
     } else {
       List<BillItem> items = [];
       for (var it in reviewedItems.where((e) => e['isSelected'])) {
@@ -561,18 +571,26 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         items.add(BillItem(id: DateTime.now().toString() + m.id, srNo: items.length + 1, medicineID: m.id, name: m.name, packing: m.packing, batch: it['batch'], exp: it['exp'], hsn: it['hsn'], mrp: it['mrp'], qty: it['qty'], freeQty: it['free'], rate: it['rate'], gstRate: it['gstPer'], cgst: isLoc ? tTax/2 : 0, sgst: isLoc ? tTax/2 : 0, igst: isLoc ? 0 : tTax, total: it['sysTotal'], discountRupees: it['discAmt'], discountPer: it['itemDiscPer']));
       }
       
-      // FIXED: Using adjustedBillDate
+      double saleExtraDisc = (partyInfoInFile['extraDisc'] as num?)?.toDouble() ?? 0.0;
+      final summary = AppBillingGstEngine.calculate(
+        items: items,
+        extraDiscount: saleExtraDisc,
+        isLocal: isLoc,
+      );
+
       await ph.finalizeSale(
         billNo: cleanBillNo.isNotEmpty ? cleanBillNo : "DRAFT", 
         date: adjustedBillDate, 
         party: matchedParty!, 
         items: items, 
-        total: (curST - partyInfoInFile['extraDisc'] + partyInfoInFile['roundOff']), 
+        total: summary.finalGrandTotal, 
         mode: "CREDIT", 
         sourceTag: finalSourceTag, 
-        extraDiscount: partyInfoInFile['extraDisc'], 
-        roundOff: partyInfoInFile['roundOff']
+        extraDiscount: summary.extraDiscount, 
+        roundOff: summary.roundOff,
       );
+      
+      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo);
     }
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ C2C Data Sync Successful!"), backgroundColor: Colors.green));
