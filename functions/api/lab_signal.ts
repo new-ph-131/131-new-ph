@@ -1,6 +1,6 @@
 // FILE: functions/api/lab_signal.ts
-// Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal Bus (<30ms)
-// Equipped with 100,000 writes/day & 5,000,000 reads/day quota.
+// Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal & Tombstone Resolution Bus (<30ms)
+// Features: Server-Authoritative Tombstone Sanitization, 100,000 Writes/Day, 5,000,000 Reads/Day.
 
 interface SignalRecord {
   id: string;
@@ -52,13 +52,16 @@ export async function onRequestPost(context: any) {
       });
     }
 
+    const action = (body.action || "DELTA_MUTATION").toUpperCase();
+    const isDeleteAction = action.includes("DELETE") || action.includes("REMOVE");
+
     const record: SignalRecord = {
       id: body.id || ("evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7)),
       storeToken,
       source: (body.source || "UNKNOWN").toUpperCase(),
       action: body.action || "DELTA_MUTATION",
       entityType: body.entityType || "",
-      entityId: body.entityId || "",
+      entityId: (body.entityId || "").trim(),
       timestamp: body.timestamp || Date.now(),
       serverReceivedAt: Date.now(),
       deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
@@ -97,16 +100,38 @@ export async function onRequestPost(context: any) {
 
         if (!channelData.tombstones) channelData.tombstones = [];
         const tSet = new Set(channelData.tombstones);
-        if (record.deletedIds && record.deletedIds.length > 0) {
-          for (const d of record.deletedIds) {
-            if (d && typeof d === "string" && d.trim().length > 0) {
-              tSet.add(d.trim());
+
+        if (isDeleteAction) {
+          // 🛑 DELETION OPERATION: Add to tombstones
+          if (record.deletedIds && record.deletedIds.length > 0) {
+            for (const d of record.deletedIds) {
+              if (d && typeof d === "string" && d.trim().length > 0) {
+                tSet.add(d.trim());
+              }
+            }
+          }
+          if (record.entityId && record.entityId.length > 0) {
+            tSet.add(record.entityId);
+          }
+        } else {
+          // 🛡️ RE-IMPORT / SAVE / UPDATE OPERATION: Server-side Tombstone Purification!
+          // If a record is being saved or imported, it is ALIVE. It must be evicted from tombstones!
+          if (record.entityId && record.entityId.length > 0) {
+            tSet.delete(record.entityId);
+          }
+          if (record.payload && typeof record.payload === "object") {
+            if (record.payload.billNo) tSet.delete(record.payload.billNo.toString().trim());
+            if (record.payload.internalNo) tSet.delete(record.payload.internalNo.toString().trim());
+            if (record.payload.id) tSet.delete(record.payload.id.toString().trim());
+          }
+          // Also if explicit unmark list provided in body
+          if (Array.isArray(body.unmarkedIds)) {
+            for (const u of body.unmarkedIds) {
+              if (u && typeof u === "string") tSet.delete(u.trim());
             }
           }
         }
-        if (record.entityId && record.action.includes("DELETE")) {
-          tSet.add(record.entityId.trim());
-        }
+
         channelData.tombstones = Array.from(tSet);
 
         // Atomic Upsert to D1
@@ -127,7 +152,11 @@ export async function onRequestPost(context: any) {
       } catch (_) {}
     }
 
-    return new Response(JSON.stringify({ status: "SUCCESS", event: record }), {
+    return new Response(JSON.stringify({
+      status: "SUCCESS",
+      event: record,
+      activeTombstonesCount: channelData.tombstones.length,
+    }), {
       status: 200,
       headers: CORS_HEADERS,
     });
@@ -214,6 +243,7 @@ export async function onRequestGet(context: any) {
       event: hasUpdate ? current : null,
       mutations,
       tombstones,
+      serverTime: Date.now(),
     }), {
       status: 200,
       headers: {

@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-662 (CLOUDFLARE-D1-HIGH-CAPACITY-SIGNAL-ENGINE)
+// Live Revision: #PH-REV-663 (SERVER-AUTHORITATIVE-D1-REVIVAL-ENGINE)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'pharoah_web_manager.dart';
