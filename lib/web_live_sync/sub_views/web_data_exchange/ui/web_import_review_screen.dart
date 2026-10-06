@@ -10,6 +10,7 @@ import '../../../web_app_date_logic.dart';
 import '../../../web_pharoah_numbering_engine.dart';
 import '../../web_billing/quick_add_party_modal.dart';
 import '../../web_billing/quick_add_product_modal.dart';
+import '../../web_billing/mechanism/web_billing_gst_engine.dart';
 
 class WebImportReviewScreen extends StatefulWidget {
   final List<List<dynamic>> csvData;
@@ -134,10 +135,13 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
       double gstPer = double.tryParse(row[33].toString()) ?? 12.0;
       double csvTotal = double.tryParse(row[34].toString()) ?? 0.0;
       double itemDiscPer = row.length > 35 ? (double.tryParse(row[35].toString()) ?? 0.0) : 0.0;
-
       double gross = qty * rate;
-      double discAmt = gross * (itemDiscPer / 100);
+      double discAmt = row.length > 36 
+          ? (double.tryParse(row[36].toString()) ?? (gross * (itemDiscPer / 100))) 
+          : (gross * (itemDiscPer / 100));
+
       double taxable = gross - discAmt;
+      if (taxable < 0) taxable = 0.0;
       double taxAmt = taxable * (gstPer / 100);
       double systemTotal = double.parse((taxable + taxAmt).toStringAsFixed(2));
 
@@ -348,6 +352,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
 
     DateTime adjustedDate = partyInfoInFile['date'] as DateTime;
     String auditTag = "${widget.exchangeMode} ${partyInfoInFile['dateAdjustmentNote'] ?? ''}".trim();
+    bool isLocal = (partyInfoInFile['state']?.toString().toLowerCase() ?? '') == (webPh.companyProfile.state.isEmpty ? 'rajasthan' : webPh.companyProfile.state.toLowerCase());
 
     if (widget.importType == "PURCHASE") {
       String internalNo = WebPharoahNumberingEngine.getNextNumber(
@@ -357,6 +362,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
       );
 
       List<PurchaseItem> items = [];
+      List<BillItem> tempItemsForGst = [];
       int sNo = 1;
 
       for (var it in reviewedItems.where((e) => e['isSelected'])) {
@@ -364,6 +370,9 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         double pRate = (it['rate'] as num).toDouble();
         double q = (it['qty'] as num).toDouble();
         double freeQ = (it['free'] as num).toDouble();
+        double discAmt = (it['discAmt'] as num).toDouble();
+        double discPer = (it['itemDiscPer'] as num).toDouble();
+        double gstR = (it['gstPer'] as num).toDouble();
 
         items.add(PurchaseItem(
           id: "PITM-CSV-${DateTime.now().millisecondsSinceEpoch}-$sNo",
@@ -378,10 +387,29 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
           qty: q,
           freeQty: freeQ,
           purchaseRate: pRate,
-          gstRate: (it['gstPer'] as num).toDouble(),
+          gstRate: gstR,
           total: (it['sysTotal'] as num).toDouble(),
-          discountPer: (it['itemDiscPer'] as num).toDouble(),
-          discountRupees: (it['discAmt'] as num).toDouble(),
+          discountPer: discPer,
+          discountRupees: discAmt,
+        ));
+
+        tempItemsForGst.add(BillItem(
+          id: "TEMP-$sNo",
+          srNo: sNo,
+          medicineID: m.id,
+          name: m.name,
+          packing: m.packing,
+          batch: it['batch'],
+          exp: it['exp'],
+          hsn: it['hsn'],
+          mrp: (it['mrp'] as num).toDouble(),
+          qty: q,
+          freeQty: freeQ,
+          rate: pRate,
+          gstRate: gstR,
+          total: (it['sysTotal'] as num).toDouble(),
+          discountRupees: discAmt,
+          discountPer: discPer,
         ));
 
         webPh.registerBatchActivity(
@@ -395,10 +423,12 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         );
       }
 
-      final double grossItemsPur = items.fold(0.0, (s, e) => s + e.total);
       final double exDiscPur = (partyInfoInFile['extraDisc'] as num).toDouble();
-      final double rOffPur = (partyInfoInFile['roundOff'] as num).toDouble();
-      final double finalPurTotal = grossItemsPur - exDiscPur + rOffPur;
+      final summary = WebBillingGstEngine.calculate(
+        items: tempItemsForGst,
+        extraDiscount: exDiscPur,
+        isLocal: isLocal,
+      );
 
       final newPur = Purchase(
         id: "PUR-CSV-${DateTime.now().millisecondsSinceEpoch}",
@@ -409,9 +439,9 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         date: adjustedDate,
         entryDate: DateTime.now(),
         paymentMode: "CREDIT",
-        totalAmount: finalPurTotal,
-        extraDiscount: exDiscPur,
-        roundOff: rOffPur,
+        totalAmount: summary.finalGrandTotal,
+        extraDiscount: summary.extraDiscount,
+        roundOff: summary.roundOff,
         sourceTag: auditTag,
         items: items,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -423,7 +453,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
       webPh.addPurchaseAndSync(newPur);
     } else {
       String nextBillNo = partyInfoInFile['billNo'];
-      List<BillItem> items = [];
+      List<BillItem> rawItems = [];
       int sNo = 1;
 
       for (var it in reviewedItems.where((e) => e['isSelected'])) {
@@ -431,8 +461,11 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         double sRate = (it['rate'] as num).toDouble();
         double q = (it['qty'] as num).toDouble();
         double freeQ = (it['free'] as num).toDouble();
+        double discAmt = (it['discAmt'] as num).toDouble();
+        double discPer = (it['itemDiscPer'] as num).toDouble();
+        double gstR = (it['gstPer'] as num).toDouble();
 
-        items.add(BillItem(
+        rawItems.add(BillItem(
           id: "SITM-CSV-${DateTime.now().millisecondsSinceEpoch}-$sNo",
           srNo: sNo++,
           medicineID: m.id,
@@ -445,10 +478,10 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
           qty: q,
           freeQty: freeQ,
           rate: sRate,
-          gstRate: (it['gstPer'] as num).toDouble(),
+          gstRate: gstR,
           total: (it['sysTotal'] as num).toDouble(),
-          discountRupees: (it['discAmt'] as num).toDouble(),
-          discountPer: (it['itemDiscPer'] as num).toDouble(),
+          discountRupees: discAmt,
+          discountPer: discPer,
         ));
 
         webPh.registerBatchActivity(
@@ -461,10 +494,33 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         );
       }
 
-      final double grossItemsSale = items.fold(0.0, (s, e) => s + e.total);
       final double exDiscSale = (partyInfoInFile['extraDisc'] as num).toDouble();
-      final double rOffSale = (partyInfoInFile['roundOff'] as num).toDouble();
-      final double finalSaleTotal = grossItemsSale - exDiscSale + rOffSale;
+      final summary = WebBillingGstEngine.calculate(
+        items: rawItems,
+        extraDiscount: exDiscSale,
+        isLocal: isLocal,
+      );
+
+      // Map accurate GST tax components per item
+      double totalGrossTaxable = rawItems.fold(0.0, (sum, it) => sum + ((it.qty * it.rate) - it.discountRupees));
+      double discountRatio = totalGrossTaxable > 0 ? (summary.extraDiscount / totalGrossTaxable) : 0.0;
+
+      List<BillItem> finalizedItems = [];
+      for (var it in rawItems) {
+        double itemGross = (it.qty * it.rate) - it.discountRupees;
+        if (itemGross < 0) itemGross = 0.0;
+        double itemNetTaxable = itemGross * (1.0 - discountRatio);
+        double itemTax = itemNetTaxable * (it.gstRate / 100.0);
+        double cgstVal = isLocal ? (itemTax / 2.0) : 0.0;
+        double sgstVal = isLocal ? (itemTax / 2.0) : 0.0;
+        double igstVal = isLocal ? 0.0 : itemTax;
+
+        finalizedItems.add(it.copyWith(
+          cgst: double.parse(cgstVal.toStringAsFixed(2)),
+          sgst: double.parse(sgstVal.toStringAsFixed(2)),
+          igst: double.parse(igstVal.toStringAsFixed(2)),
+        ));
+      }
 
       final newSale = Sale(
         id: "SALE-CSV-${DateTime.now().millisecondsSinceEpoch}",
@@ -475,11 +531,11 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         partyState: matchedParty!.state,
         date: adjustedDate,
         paymentMode: "CREDIT",
-        totalAmount: finalSaleTotal,
-        extraDiscount: exDiscSale,
-        roundOff: rOffSale,
+        totalAmount: summary.finalGrandTotal,
+        extraDiscount: summary.extraDiscount,
+        roundOff: summary.roundOff,
         sourceTag: auditTag,
-        items: items,
+        items: finalizedItems,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         version: 1,
       );
@@ -510,9 +566,41 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
     }
 
     int unlinkedCount = reviewedItems.where((it) => it['match'] == null).length;
-    double sysTotalSum = reviewedItems.where((e) => e['isSelected']).fold(0.0, (s, e) => s + (e['sysTotal'] as double));
+    bool isLocal = (partyInfoInFile['state']?.toString().toLowerCase() ?? '') == (webPh.companyProfile.state.isEmpty ? 'rajasthan' : webPh.companyProfile.state.toLowerCase());
+
+    List<BillItem> selectedTempItems = [];
+    int sIndex = 1;
+    for (var it in reviewedItems.where((e) => e['isSelected'])) {
+      Medicine? m = it['match'];
+      selectedTempItems.add(BillItem(
+        id: "TMP-$sIndex",
+        srNo: sIndex++,
+        medicineID: m?.id ?? '',
+        name: it['name'],
+        packing: it['pack'],
+        batch: it['batch'],
+        exp: it['exp'],
+        hsn: it['hsn'],
+        mrp: (it['mrp'] as num).toDouble(),
+        qty: (it['qty'] as num).toDouble(),
+        freeQty: (it['free'] as num).toDouble(),
+        rate: (it['rate'] as num).toDouble(),
+        gstRate: (it['gstPer'] as num).toDouble(),
+        total: (it['sysTotal'] as num).toDouble(),
+        discountRupees: (it['discAmt'] as num).toDouble(),
+        discountPer: (it['itemDiscPer'] as num).toDouble(),
+      ));
+    }
+
+    double extraDisc = (partyInfoInFile['extraDisc'] as num?)?.toDouble() ?? 0.0;
+    final gstSummary = WebBillingGstEngine.calculate(
+      items: selectedTempItems,
+      extraDiscount: extraDisc,
+      isLocal: isLocal,
+    );
+
     double csvTotalSum = reviewedItems.where((e) => e['isSelected']).fold(0.0, (s, e) => s + (e['csvTotal'] as double));
-    double diff = sysTotalSum - csvTotalSum;
+    double diff = gstSummary.finalGrandTotal - csvTotalSum;
 
     bool wasDateAdjusted = partyInfoInFile['isDateAdjusted'] ?? false;
     String rawDateStr = partyInfoInFile['rawCsvDate'] ?? "";
@@ -529,63 +617,77 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header Bar
+          // Header Row
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.white12, foregroundColor: Colors.white),
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text("BACK", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70),
+                    onPressed: widget.onBack,
+                    tooltip: "Back",
+                  ),
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "39-COL CSV MIRROR AUDIT • ${widget.exchangeMode} • INVOICE #${partyInfoInFile['billNo']}",
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      ),
+                      Text(
+                        "Import Destination: ${widget.importType} REGISTER • Total Items: ${reviewedItems.length}",
+                        style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 14),
-              const Icon(Icons.table_view_rounded, color: Color(0xFF38BDF8), size: 24),
-              const SizedBox(width: 8),
-              Text(
-                "39-COL CSV MIRROR AUDIT • ${widget.exchangeMode} • INVOICE #${partyInfoInFile['billNo']}",
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-              ),
-              const Spacer(),
               if (unlinkedCount > 0)
                 ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white),
-                  onPressed: () => _autoResolveAllNewProducts(webPh),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
                   icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
-                  label: Text("AUTO-CREATE ($unlinkedCount NEW ITEMS)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  label: Text("AUTO-RESOLVE ($unlinkedCount NEW ITEMS)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  onPressed: () => _autoResolveAllNewProducts(webPh),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          // Party Card & Date Watchdog Banner
-          _buildPartyInfoCard(webPh),
-
-          if (wasDateAdjusted) ...[
-            const SizedBox(height: 8),
+          // Date Watchdog Alert if Adjusted
+          if (wasDateAdjusted)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0x33D97706),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFD97706)),
+                color: const Color(0x33F59E0B),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orangeAccent),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, color: Color(0xFFFBBF24), size: 18),
+                  const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       "Date Watchdog: Original CSV date was '$rawDateStr'. Auto-adjusted to '$adjustedDateStr' for Financial Year ${webPh.financialYear} compliance.",
-                      style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 11, fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
               ),
             ),
-          ],
+
+          // Party Banner Card
+          _buildPartyInfoCard(webPh),
           const SizedBox(height: 14),
 
-          // Interactive 39-Col Table
+          // Mirror Review Table
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -596,33 +698,36 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
               child: SingleChildScrollView(
                 child: Table(
                   columnWidths: const {
-                    0: FixedColumnWidth(45),
-                    1: FlexColumnWidth(3),
-                    2: FixedColumnWidth(75),
-                    3: FixedColumnWidth(80),
-                    4: FixedColumnWidth(60),
-                    5: FixedColumnWidth(70),
-                    6: FixedColumnWidth(75),
-                    7: FixedColumnWidth(55),
-                    8: FixedColumnWidth(95),
-                    9: FixedColumnWidth(95),
-                    10: FixedColumnWidth(90),
+                    0: FixedColumnWidth(40),
+                    1: FlexColumnWidth(2.5),
+                    2: FixedColumnWidth(80),
+                    3: FixedColumnWidth(75),
+                    4: FixedColumnWidth(65),
+                    5: FixedColumnWidth(75),
+                    6: FixedColumnWidth(65),
+                    7: FixedColumnWidth(65),
+                    8: FixedColumnWidth(90),
+                    9: FixedColumnWidth(90),
+                    10: FixedColumnWidth(110),
                   },
                   defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                   children: [
                     TableRow(
-                      decoration: const BoxDecoration(color: Color(0xFF0F172A), border: Border(bottom: BorderSide(color: Colors.white24))),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF0F172A),
+                        border: Border(bottom: BorderSide(color: Colors.white24)),
+                      ),
                       children: [
                         const Center(child: Icon(Icons.check_box_outline_blank, color: Colors.white54, size: 16)),
                         _th("PRODUCT NAME", isLeft: true),
-                        _th("PACK"),
+                        _th("PACKING"),
                         _th("BATCH"),
                         _th("EXP"),
                         _th("QTY"),
-                        _th("RATE ₹", isRight: true),
-                        _th("GST%"),
+                        _th("RATE", isRight: true),
+                        _th("GST %", isRight: true),
+                        _th("SYS TOTAL", isRight: true),
                         _th("CSV TOTAL", isRight: true),
-                        _th("SYS CALC", isRight: true),
                         _th("ACTIONS"),
                       ],
                     ),
@@ -635,9 +740,9 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
           ),
           const SizedBox(height: 14),
 
-          // Bottom Analytics Dock
+          // Bottom Metric & Action Dock with Section 15 GST Breakdown
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(12),
@@ -646,12 +751,18 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
+                Wrap(
+                  spacing: 16,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _metric("SYSTEM TOTAL", sysTotalSum),
-                    const SizedBox(width: 18),
-                    _metric("CSV TOTAL", csvTotalSum),
-                    const SizedBox(width: 18),
+                    _metric("NET TAXABLE", gstSummary.netTaxable),
+                    _metric(isLocal ? "CGST + SGST" : "IGST TAX", gstSummary.totalTax),
+                    if (gstSummary.extraDiscount > 0)
+                      _metric("EXTRA DISC (-)", gstSummary.extraDiscount, color: Colors.orangeAccent),
+                    if (gstSummary.roundOff != 0)
+                      _metric("ROUND OFF", gstSummary.roundOff),
+                    _metric("SYS GRAND TOTAL", gstSummary.finalGrandTotal, color: const Color(0xFF38BDF8)),
+                    _metric("CSV NET", csvTotalSum),
                     _metric("DIFF", diff, color: diff.abs() > 0.1 ? Colors.redAccent : Colors.greenAccent),
                   ],
                 ),
@@ -761,44 +872,17 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         _td(it['pack'].toString()),
         _td(it['batch'].toString()),
         _td(it['exp'].toString()),
-        _td(qtyDisp, isBold: true),
+        _td(qtyDisp),
         _td("₹${(it['rate'] as num).toStringAsFixed(2)}", isRight: true),
-        _td("${(it['gstPer'] as num).toInt()}%"),
+        _td("${(it['gstPer'] as num).toStringAsFixed(0)}%", isRight: true),
+        _td("₹${(it['sysTotal'] as num).toStringAsFixed(2)}", isRight: true, isBold: true, color: Colors.greenAccent),
         _td("₹${(it['csvTotal'] as num).toStringAsFixed(2)}", isRight: true),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Text(
-                "₹${(it['sysTotal'] as num).toStringAsFixed(2)}",
-                style: TextStyle(
-                  color: hasErr ? Colors.redAccent : Colors.greenAccent,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 11,
-                ),
-              ),
-              if (hasErr) ...[
-                const SizedBox(width: 4),
-                InkWell(
-                  onTap: () => setState(() {
-                    it['isFixed'] = true;
-                    it['sysTotal'] = it['csvTotal'];
-                  }),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(4)),
-                    child: const Text("FIX", style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (!isLinked) ...[
+            if (isLinked)
+              const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 18)
+            else ...[
               IconButton(
                 icon: const Icon(Icons.link_rounded, color: Color(0xFF38BDF8), size: 18),
                 tooltip: "Link to Master",
@@ -821,45 +905,55 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
                         'purRate': it['purRate'],
                         'rateA': it['rate'],
                         'form': it['form'],
+                        'mfg': it['mfg'],
+                        'salt': it['salt'],
                       },
-                      onProductCreated: (newMed) {
-                        final m = Medicine.fromMap(newMed);
+                      onProductCreated: (newM) {
                         setState(() {
-                          it['match'] = m;
+                          it['match'] = newM;
                           it['status'] = 'exact';
                           it['isSelected'] = true;
                         });
-                        _propagateMatchingLinks(m);
+                        _propagateMatchingLinks(newM);
                       },
                     ),
                   );
                 },
               ),
-            ] else ...[
-              const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 18),
             ],
+            if (hasErr)
+              IconButton(
+                icon: const Icon(Icons.build_circle_rounded, color: Colors.orangeAccent, size: 18),
+                tooltip: "Override System Total to Match CSV Total",
+                onPressed: () {
+                  setState(() {
+                    it['sysTotal'] = it['csvTotal'];
+                    it['isFixed'] = true;
+                  });
+                },
+              ),
           ],
         ),
       ],
     );
   }
 
-  Widget _metric(String label, double val, {Color color = Colors.white}) => Column(
+  Widget _metric(String label, num val, {Color color = Colors.white}) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label, style: const TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
+      Text(label, style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
       const SizedBox(height: 2),
-      Text("₹${val.toStringAsFixed(2)}", style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w900)),
+      Text("₹${val.toStringAsFixed(2)}", style: TextStyle(color: color, fontSize: 12.5, fontWeight: FontWeight.bold)),
     ],
   );
 
   Widget _th(String t, {bool isLeft = false, bool isRight = false}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
     child: Text(t, textAlign: isLeft ? TextAlign.left : (isRight ? TextAlign.right : TextAlign.center), style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
   );
 
   Widget _td(String t, {bool isLeft = false, bool isRight = false, bool isBold = false, Color color = Colors.white}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
     child: Text(t, textAlign: isLeft ? TextAlign.left : (isRight ? TextAlign.right : TextAlign.center), style: TextStyle(color: color, fontSize: 11, fontWeight: isBold ? FontWeight.bold : FontWeight.normal), overflow: TextOverflow.ellipsis),
   );
 }
