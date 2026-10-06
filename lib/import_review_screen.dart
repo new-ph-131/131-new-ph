@@ -1,3 +1,4 @@
+import 'sync_bridge/core/sync_tombstone_hub.dart';
 // FILE: lib/import_review_screen.dart
 
 import 'package:flutter/material.dart';
@@ -523,8 +524,9 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
 
     final String cleanBillNo = (partyInfoInFile['billNo']?.toString() ?? "").trim();
     if (ph.activeCompany != null && cleanBillNo.isNotEmpty) {
+      final wPath = await ph.getWorkingPath();
       await SyncTombstoneHub.unmarkDeleted(
-        workingDir: ph.activeDirectory,
+        workingDir: wPath,
         companyId: ph.activeCompany!.id,
         id: cleanBillNo,
         referenceNo: cleanBillNo,
