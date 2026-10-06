@@ -1,3 +1,5 @@
+import 'package:pharoah_erp/web_live_sync/sync_protocol/tombstone_engine.dart';
+import 'package:pharoah_erp/web_live_sync/app_sync_engine.dart';
 import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
 import 'package:pharoah_erp/realtime_signaling/coordinators/app_realtime_coordinator.dart';
 import 'sync_bridge/core/sync_tombstone_hub.dart';
@@ -604,6 +606,11 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         companyId: ph.activeCompany!.id,
         id: cleanBillNo,
         referenceNo: cleanBillNo,
+      );
+      await TombstoneEngine.unmarkTombstone(
+        ph.activeCompany!.id,
+        id: cleanBillNo,
+        secondaryKey: cleanBillNo,
       );
     }
 

@@ -232,21 +232,29 @@ class PharoahWebManager with ChangeNotifier {
     }
     parties = uniqueParties.values.toList();
 
-    // 1. Sales Sync with Strict LWW & Compound Tombstone Watchdog
-    var rawSales = (decodeJson('sales.json') as List?)
+    // 1. Sales Sync with Strict LWW & Dynamic Record Revival
+    var rawSalesList = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
-        .where((s) => !deletedRecordIds.contains(s.id) && !deletedRecordIds.contains(s.billNo))
         .toList();
-    if (rawSales != null) {
+    if (rawSalesList != null) {
+      // Auto-revive any newly imported or active cloud sales
+      for (var s in rawSalesList) {
+        if (s.items.isNotEmpty && s.updatedAt > 0) {
+          deletedRecordIds.remove(s.id);
+          if (s.billNo.isNotEmpty) deletedRecordIds.remove(s.billNo);
+        }
+      }
+      var rawSales = rawSalesList
+          .where((s) => !deletedRecordIds.contains(s.id) && !deletedRecordIds.contains(s.billNo))
+          .toList();
       if (sales.isEmpty) {
         sales = rawSales;
       } else {
         for (var s in rawSales) {
-          if (deletedRecordIds.contains(s.id) || deletedRecordIds.contains(s.billNo)) continue;
           int idx = sales.indexWhere((ls) => ls.id == s.id || ls.billNo == s.billNo);
           if (idx != -1) {
-            // LWW Guard: Only overwrite if cloud record is strictly newer or has higher version
-            if (s.updatedAt > sales[idx].updatedAt || (s.updatedAt == sales[idx].updatedAt && s.version > sales[idx].version)) {
+            // LWW Guard: Overwrite if cloud record is newer or equal with higher/equal version
+            if (s.updatedAt >= sales[idx].updatedAt) {
               sales[idx] = s;
             }
           } else {
@@ -257,20 +265,29 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 2. Purchases Sync with Strict LWW
-    var rawPurc = (decodeJson('purc.json') as List?)
+    // 2. Purchases Sync with Strict LWW & Dynamic Record Revival
+    var rawPurcList = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
-        .where((p) => !deletedRecordIds.contains(p.id) && !deletedRecordIds.contains(p.internalNo) && (p.billNo.isEmpty || !deletedRecordIds.contains(p.billNo)))
         .toList();
-    if (rawPurc != null) {
+    if (rawPurcList != null) {
+      // Auto-revive any newly imported or active cloud purchases
+      for (var p in rawPurcList) {
+        if (p.items.isNotEmpty && p.updatedAt > 0) {
+          deletedRecordIds.remove(p.id);
+          if (p.internalNo.isNotEmpty) deletedRecordIds.remove(p.internalNo);
+          if (p.billNo.isNotEmpty) deletedRecordIds.remove(p.billNo);
+        }
+      }
+      var rawPurc = rawPurcList
+          .where((p) => !deletedRecordIds.contains(p.id) && !deletedRecordIds.contains(p.internalNo) && (p.billNo.isEmpty || !deletedRecordIds.contains(p.billNo)))
+          .toList();
       if (purchases.isEmpty) {
         purchases = rawPurc;
       } else {
         for (var p in rawPurc) {
-          if (deletedRecordIds.contains(p.id) || deletedRecordIds.contains(p.internalNo) || (p.billNo.isNotEmpty && deletedRecordIds.contains(p.billNo))) continue;
           int idx = purchases.indexWhere((lp) => lp.id == p.id || lp.internalNo == p.internalNo || (p.billNo.isNotEmpty && lp.billNo == p.billNo));
           if (idx != -1) {
-            if (p.updatedAt > purchases[idx].updatedAt || (p.updatedAt == purchases[idx].updatedAt && p.version > purchases[idx].version)) {
+            if (p.updatedAt >= purchases[idx].updatedAt) {
               purchases[idx] = p;
             }
           } else {
