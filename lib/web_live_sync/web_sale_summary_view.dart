@@ -107,7 +107,7 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
       bool searchMatch = searchQuery.isEmpty ||
           s.billNo.toLowerCase().contains(searchQuery.toLowerCase()) || 
           s.partyName.toLowerCase().contains(searchQuery.toLowerCase());
-      bool isActive = s.status.isEmpty || s.status.toLowerCase() == "active";
+      bool isActive = (s.status.isEmpty || s.status.toLowerCase() == "active") && s.isDeleted != 1;
 
       return isActive && dateMatch && searchMatch;
     }).toList();

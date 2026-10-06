@@ -95,7 +95,7 @@ class _SaleSummaryViewState extends State<SaleSummaryView> {
                        s.date.isBefore(toDate.add(const Duration(days: 1)));
       bool searchMatch = s.billNo.toLowerCase().contains(searchQuery.toLowerCase()) || 
                          s.partyName.toLowerCase().contains(searchQuery.toLowerCase());
-      return s.status == "Active" && dateMatch && searchMatch;
+      return s.isDeleted != 1 && s.status == "Active" && dateMatch && searchMatch;
     }).toList();
 
     // Calculations

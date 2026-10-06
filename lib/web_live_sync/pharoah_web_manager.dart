@@ -1,3 +1,4 @@
+import '../sync_core/modules/sales_sync_module.dart';
 // FILE: lib/web_live_sync/pharoah_web_manager.dart
 
 import 'dart:convert';
@@ -623,6 +624,9 @@ class PharoahWebManager with ChangeNotifier {
     rebuildInventory();
     notifyListeners();
 
+    // ⚡ Transactional Outbox Batch Enqueue
+    SalesSyncModule.onSaleSaved(sale, activeStoreToken);
+
     // ⚡ Fast Non-Blocking Background Cloud Push
     _autoSyncService.triggerAutoSync(
       action: 'DATA_SAVED',
@@ -665,6 +669,11 @@ class PharoahWebManager with ChangeNotifier {
       unmarkedRecordIds.remove(foundBillNo);
     }
     _saveLocalTombstones();
+
+    try {
+      final targetSale = sales.firstWhere((x) => x.id == saleId || (foundBillNo.isNotEmpty && x.billNo == foundBillNo));
+      SalesSyncModule.onSaleDeleted(targetSale, activeStoreToken);
+    } catch (_) {}
 
     sales.removeWhere((s) => s.id == saleId || (foundBillNo.isNotEmpty && s.billNo == foundBillNo));
     rebuildInventory();

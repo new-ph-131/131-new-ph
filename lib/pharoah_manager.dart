@@ -1,3 +1,4 @@
+import 'sync_core/modules/sales_sync_module.dart';
 import 'event_sync_lab/workflow/lab_sync_orchestrator.dart';
 // FILE: lib/pharoah_manager.dart (FULLY INTEGRATED, COMPILE-SAFE VERSION)
 
@@ -391,7 +392,7 @@ Future<void> finalizeSale({
       TombstoneEngine.unmarkTombstone(activeCompany!.id, id: sId, secondaryKey: billNo);
     }
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
-    sales.add(Sale(
+    final newFinalSale = Sale(
       id: sId, 
       billNo: billNo, 
       partyId: p.id, 
@@ -414,7 +415,13 @@ Future<void> finalizeSale({
       sourceTag: sourceTag,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       version: currentVer,
-    )); 
+    );
+    sales.add(newFinalSale);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) SalesSyncModule.onSaleSaved(newFinalSale, t);
+      });
+    } 
     
     if (linkedIds != null) { 
       for (var id in linkedIds) { 
@@ -1045,6 +1052,11 @@ void registerBatchActivity({
       final String realId = s.id;
       final String bNo = s.billNo;
       sales.removeWhere((x) => x.id == realId || (bNo.isNotEmpty && x.billNo == bNo));
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) SalesSyncModule.onSaleDeleted(s, t);
+        });
+      }
       if (activeCompany != null) {
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, [realId, if (bNo.isNotEmpty) bNo]);
         AppRealtimeCoordinator.instance.notifyAppMutation(

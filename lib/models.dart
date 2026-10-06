@@ -193,7 +193,7 @@ class BatchInfo {
 class Medicine {
   String id, systemId, uniqueCode, name, packing, companyId, saltId, drugTypeId, rackNo, hsnCode, drugForm, storageCondition; 
   int conversion; double reorderLevel, gst, mrp, purRate, rateA, rateB, rateC, stock; bool isNarcotic, isScheduleH1;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
   String get identityKey => systemId.isNotEmpty ? systemId : id;
 
   Medicine({
@@ -202,7 +202,7 @@ class Medicine {
     this.conversion = 1, this.reorderLevel = 0.0, this.gst = 12.0, this.mrp = 0.0, this.purRate = 0.0,
     this.rateA = 0.0, this.rateB = 0.0, this.rateC = 0.0, this.stock = 0.0, this.drugForm = "TAB",
     this.isNarcotic = false, this.isScheduleH1 = false, this.storageCondition = "Room Temp",
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -214,6 +214,9 @@ class Medicine {
     'storageCondition': storageCondition,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };
 
   factory Medicine.fromMap(Map<String, dynamic> map) => Medicine(
@@ -236,7 +239,7 @@ class Medicine {
 class Party {
   String id, name, group, phone, email, address, city, state, route, gst, dl, dlExp, pan, transport, priceLevel, defaultSeriesId, hsnCode; 
   double opBal, creditLimit; int creditDays;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   Party({
     required this.id, required this.name, this.group = "Sundry Debtors", this.phone = "",
@@ -244,7 +247,7 @@ class Party {
     this.gst = "", this.dl = "", this.dlExp = "", this.pan = "", this.transport = "",
     this.priceLevel = "A", this.defaultSeriesId = "", this.hsnCode = "N/A", this.opBal = 0.0,
     this.creditLimit = 0.0, this.creditDays = 0,
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -255,6 +258,9 @@ class Party {
     'creditLimit': creditLimit, 'creditDays': creditDays,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };
 
   factory Party.fromMap(Map<String, dynamic> map) => Party(
@@ -362,7 +368,7 @@ class PurchaseItem {
 class Sale { 
   String id, billNo, partyId, partyName, partyGstin, partyState, status, invoiceType, paymentMode, transporterName, transporterId, vehicleNo, salesmanName, sourceTag, partyPhone, partyEmail, partyAddress, partyCity, partyDl, partyPan; 
   DateTime date; List<BillItem> items; double totalAmount, extraDiscount, roundOff; List<String> linkedChallanIds; 
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   Sale({
     required this.id, required this.billNo, required this.partyId, required this.date,
@@ -373,7 +379,7 @@ class Sale {
     this.partyPhone = "", this.partyEmail = "", this.partyAddress = "", this.partyCity = "",
     this.partyDl = "", this.partyPan = "", this.extraDiscount = 0.0, this.roundOff = 0.0,
     this.linkedChallanIds = const [],
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   });  
 
   Map<String, dynamic> toMap() => {
@@ -386,6 +392,9 @@ class Sale {
     'partyPan': partyPan, 'partyCity': partyCity, 'sourceTag': sourceTag,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };  
 
   factory Sale.fromMap(Map<String, dynamic> map) => Sale(
@@ -405,6 +414,7 @@ class Sale {
     partyPan: map['partyPan'] ?? "", partyCity: map['partyCity'] ?? "", sourceTag: map['sourceTag'] ?? "",
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   ); 
 }
 
@@ -413,7 +423,7 @@ class Purchase {
   DateTime date, entryDate; List<PurchaseItem> items; double totalAmount; List<String> linkedChallanIds; 
   double extraDiscount;
   double roundOff;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   Purchase({
     required this.id, 
@@ -443,6 +453,9 @@ class Purchase {
     'extraDiscount': extraDiscount, 'roundOff': roundOff,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };  
 
   factory Purchase.fromMap(Map<String, dynamic> map) => Purchase(
@@ -459,19 +472,20 @@ class Purchase {
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   ); 
 }
 
 class SaleChallan { 
   String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks; DateTime date; List<BillItem> items; double totalAmount; List<ChallanSignature> sigHistory; bool isSigned;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   SaleChallan({
     required this.id, required this.billNo, required this.partyId, required this.date,
     required this.partyName, required this.partyGstin, required this.partyState,
     required this.items, required this.totalAmount, this.status = "Pending",
     this.salesmanName = "", this.remarks = "", this.sigHistory = const [], this.isSigned = false,
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -482,6 +496,9 @@ class SaleChallan {
     'sigHistory': sigHistory.map((s) => s.toMap()).toList(), 'isSigned': isSigned,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };
 
   factory SaleChallan.fromMap(Map<String, dynamic> map) => SaleChallan(
@@ -496,18 +513,19 @@ class SaleChallan {
     sigHistory: (map['sigHistory'] as List?)?.map((s) => ChallanSignature.fromMap(s)).toList() ?? [],
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   ); 
 }
 
 class PurchaseChallan { 
   String id, internalNo, billNo, partyId, distributorName, status, remarks; DateTime date; List<PurchaseItem> items; double totalAmount;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   PurchaseChallan({
     required this.id, required this.internalNo, required this.billNo, required this.partyId,
     required this.date, required this.distributorName, required this.items, required this.totalAmount,
     this.status = "Pending", this.remarks = "",
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -517,6 +535,9 @@ class PurchaseChallan {
     'items': items.map((i) => i.toMap()).toList(),
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };
 
   factory PurchaseChallan.fromMap(Map<String, dynamic> map) => PurchaseChallan(
@@ -528,6 +549,7 @@ class PurchaseChallan {
     items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   ); 
 }
 
@@ -536,14 +558,14 @@ class SaleReturn {
   DateTime date; 
   List<BillItem> items; 
   double totalAmount, extraDiscount, roundOff;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   SaleReturn({
     required this.id, required this.billNo, required this.date, 
     required this.partyName, required this.items, required this.totalAmount, 
     this.status = "Active", this.returnType = "Sellable",
     this.extraDiscount = 0.0, this.roundOff = 0.0,
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   }); 
 
   Map<String, dynamic> toMap() => {
@@ -554,6 +576,9 @@ class SaleReturn {
     'items': items.map((i) => i.toMap()).toList(),
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   }; 
 
   factory SaleReturn.fromMap(Map<String, dynamic> map) => SaleReturn(
@@ -568,6 +593,7 @@ class SaleReturn {
     items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   ); 
 }
 
@@ -576,14 +602,14 @@ class PurchaseReturn {
   DateTime date; 
   List<PurchaseItem> items; 
   double totalAmount, extraDiscount, roundOff;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   PurchaseReturn({
     required this.id, required this.billNo, required this.distributorName, 
     required this.items, required this.totalAmount, required this.date, 
     this.status = "Active", this.returnType = "Sellable",
     this.extraDiscount = 0.0, this.roundOff = 0.0,
-    this.updatedAt = 0, this.version = 1,
+    this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   }); 
 
   Map<String, dynamic> toMap() => {
@@ -594,6 +620,9 @@ class PurchaseReturn {
     'extraDiscount': extraDiscount, 'roundOff': roundOff,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   }; 
 
   factory PurchaseReturn.fromMap(Map<String, dynamic> map) => PurchaseReturn(
@@ -608,6 +637,7 @@ class PurchaseReturn {
     items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   ); 
 }
 
@@ -624,7 +654,7 @@ class Voucher {
   String depositedIn;              
   DateTime? chequeDate;            
   double roundOff;
-  int updatedAt, version;
+  int updatedAt, version, isDeleted;
 
   Voucher({
     required this.id,
@@ -656,6 +686,9 @@ class Voucher {
     'chequeDate': chequeDate?.toIso8601String(), 'roundOff': roundOff,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
+    'isDeleted': isDeleted,
+    'is_deleted': isDeleted,
+    'sync_id': id,
   };
 
   factory Voucher.fromMap(Map<String, dynamic> map) => Voucher(
@@ -674,6 +707,7 @@ class Voucher {
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
+    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   );
 }
   
