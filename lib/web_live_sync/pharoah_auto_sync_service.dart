@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-663 (SERVER-AUTHORITATIVE-D1-REVIVAL-ENGINE)
+// Live Revision: #PH-REV-664 (ACTIVE-RECORD-AUTO-REVIVAL-ENGINE)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'pharoah_web_manager.dart';
@@ -26,9 +26,10 @@ class PharoahAutoSyncService {
     String action = 'DATA_MUTATED',
     String entityId = '',
     List<String> deletedIds = const [],
+    List<String> unmarkedIds = const [],
   }) {
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
-    _coordinator.notifyWebMutation(action: action, entityId: entityId, deletedIds: deletedIds);
+    _coordinator.notifyWebMutation(action: action, entityId: entityId, deletedIds: deletedIds, unmarkedIds: unmarkedIds);
     LabSyncOrchestrator.instance.notifyWebRealMutation(webManager, action: action, entityId: entityId);
   }
 

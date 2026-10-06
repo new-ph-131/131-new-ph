@@ -241,10 +241,20 @@ class PharoahWebManager with ChangeNotifier {
     }
     parties = uniqueParties.values.toList();
 
-    // 1. Sales Sync with Strict LWW & Tombstone Shield
-    var rawSales = (decodeJson('sales.json') as List?)
+    // 1. Sales Sync with Active Auto-Revival & LWW Guard
+    var allParsedSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
-        .where((s) => !deletedRecordIds.contains(s.id) && !deletedRecordIds.contains(s.billNo))
+        .toList();
+    if (allParsedSales != null) {
+      for (var s in allParsedSales) {
+        if (s.status.toLowerCase() != 'deleted') {
+          deletedRecordIds.remove(s.id);
+          if (s.billNo.isNotEmpty) deletedRecordIds.remove(s.billNo);
+        }
+      }
+    }
+    var rawSales = allParsedSales
+        ?.where((s) => !deletedRecordIds.contains(s.id))
         .toList();
     if (rawSales != null) {
       if (sales.isEmpty) {
@@ -266,10 +276,19 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 2. Purchases Sync with Strict LWW & Tombstone Shield
-    var rawPurc = (decodeJson('purc.json') as List?)
+    // 2. Purchases Sync with Active Auto-Revival & LWW Guard
+    var allParsedPurc = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
-        .where((p) => !deletedRecordIds.contains(p.id) && !deletedRecordIds.contains(p.internalNo) && (p.billNo.isEmpty || !deletedRecordIds.contains(p.billNo)))
+        .toList();
+    if (allParsedPurc != null) {
+      for (var p in allParsedPurc) {
+        deletedRecordIds.remove(p.id);
+        if (p.internalNo.isNotEmpty) deletedRecordIds.remove(p.internalNo);
+        if (p.billNo.isNotEmpty) deletedRecordIds.remove(p.billNo);
+      }
+    }
+    var rawPurc = allParsedPurc
+        ?.where((p) => !deletedRecordIds.contains(p.id))
         .toList();
     if (rawPurc != null) {
       if (purchases.isEmpty) {
@@ -605,7 +624,11 @@ class PharoahWebManager with ChangeNotifier {
     notifyListeners();
 
     // ⚡ Fast Non-Blocking Background Cloud Push
-    _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: sale.id);
+    _autoSyncService.triggerAutoSync(
+      action: 'DATA_SAVED',
+      entityId: sale.id,
+      unmarkedIds: [sale.id, if (sale.billNo.isNotEmpty) sale.billNo],
+    );
   }
 
   void deleteSale(String saleId) {
@@ -690,7 +713,15 @@ class PharoahWebManager with ChangeNotifier {
     notifyListeners();
 
     // ⚡ Fast Non-Blocking Background Cloud Push
-    _autoSyncService.triggerAutoSync(action: 'DATA_SAVED', entityId: purchase.id);
+    _autoSyncService.triggerAutoSync(
+      action: 'DATA_SAVED',
+      entityId: purchase.id,
+      unmarkedIds: [
+        purchase.id,
+        if (purchase.internalNo.isNotEmpty) purchase.internalNo,
+        if (purchase.billNo.isNotEmpty) purchase.billNo,
+      ],
+    );
   }
 
   void deletePurchase(String purId) {

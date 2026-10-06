@@ -27,12 +27,11 @@ class DeltaMergeEngine {
       if (cloudList == null) return false;
       bool changed = false;
 
-      // 1. Purge any tombstoned records (checking both ID and BillNo to kill ghost bills)
+      // 1. Purge genuinely deleted records by exact ID
       final beforeLen = localList.length;
       localList.removeWhere((item) {
         final id = getId(item).trim();
-        final bNo = getBillNo(item).trim();
-        return tombstones.contains(id) || (bNo.isNotEmpty && tombstones.contains(bNo));
+        return tombstones.contains(id);
       });
       if (localList.length != beforeLen) changed = true;
 
@@ -43,8 +42,15 @@ class DeltaMergeEngine {
         String id = (cloudMap['id'] ?? '').toString().trim();
         String billNo = (cloudMap['billNo'] ?? cloudMap['internalNo'] ?? cloudMap['voucherNo'] ?? '').toString().trim();
 
-        // Skip if deleted or in tombstones
-        if (id.isEmpty || tombstones.contains(id) || (billNo.isNotEmpty && tombstones.contains(billNo))) continue;
+        // 🛡️ Active Record Auto-Revival Protocol:
+        final status = (cloudMap['status'] ?? 'Active').toString().toLowerCase();
+        final isAlive = status != 'deleted' && status != 'cancelled';
+        if (isAlive) {
+          tombstones.remove(id);
+          if (billNo.isNotEmpty) tombstones.remove(billNo);
+        } else {
+          if (id.isEmpty || tombstones.contains(id) || (billNo.isNotEmpty && tombstones.contains(billNo))) continue;
+        }
 
         // Match by exact ID or same Bill Number to prevent duplicate cards
         int idx = localList.indexWhere((e) => getId(e) == id || (billNo.isNotEmpty && getBillNo(e) == billNo));
@@ -110,7 +116,7 @@ class DeltaMergeEngine {
       decodeJson('purc.json'), 
       ph.purchases, 
       (e) => e.id, 
-      (e) => e.internalNo.isNotEmpty ? e.internalNo : e.billNo, 
+      (e) => e.billNo.isNotEmpty ? e.billNo : e.internalNo, 
       (m) => Purchase.fromMap(m), 
       (e) => e.toMap()
     );

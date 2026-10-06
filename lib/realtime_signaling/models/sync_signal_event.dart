@@ -10,6 +10,7 @@ class SyncSignalEvent {
   final int timestamp;
   final String companyId;
   final List<String> deletedIds;
+  final List<String> unmarkedIds;
   final dynamic delta;
 
   SyncSignalEvent({
@@ -20,6 +21,7 @@ class SyncSignalEvent {
     int? timestamp,
     this.companyId = '',
     this.deletedIds = const [],
+    this.unmarkedIds = const [],
     this.delta,
   }) : timestamp = timestamp ?? DateTime.now().millisecondsSinceEpoch;
 
@@ -31,6 +33,7 @@ class SyncSignalEvent {
     'timestamp': timestamp,
     'companyId': companyId,
     'deletedIds': deletedIds,
+    'unmarkedIds': unmarkedIds,
     'delta': delta,
   };
 
@@ -45,6 +48,7 @@ class SyncSignalEvent {
       timestamp: int.tryParse(map['timestamp']?.toString() ?? '') ?? DateTime.now().millisecondsSinceEpoch,
       companyId: (map['companyId'] ?? '').toString(),
       deletedIds: (map['deletedIds'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      unmarkedIds: (map['unmarkedIds'] as List?)?.map((e) => e.toString()).toList() ?? [],
       delta: map['delta'],
     );
   }

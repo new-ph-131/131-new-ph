@@ -34,6 +34,11 @@ class AppRealtimeCoordinator {
       interval: const Duration(milliseconds: 4000),
       onSignal: (event) async {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
+        if (event.unmarkedIds.isNotEmpty && ph.activeCompany != null) {
+          for (final u in event.unmarkedIds) {
+            await TombstoneEngine.unmarkTombstone(ph.activeCompany!.id, id: u);
+          }
+        }
         await FastPullEngine.pullAndMerge(ph);
       },
     );
@@ -47,7 +52,7 @@ class AppRealtimeCoordinator {
   }
 
   /// Triggers a push to cloud and sends instant wake-up signal to Web
-  void notifyAppMutation(PharoahManager ph, {String action = 'DATA_MUTATED', String entityId = ''}) {
+  void notifyAppMutation(PharoahManager ph, {String action = 'DATA_MUTATED', String entityId = '', List<String> unmarkedIds = const []}) {
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
 
     _pushDebounceTimer?.cancel();
@@ -65,6 +70,7 @@ class AppRealtimeCoordinator {
               source: 'app',
               action: action,
               entityId: entityId,
+              unmarkedIds: unmarkedIds,
               companyId: ph.activeCompany!.id,
             ),
           );

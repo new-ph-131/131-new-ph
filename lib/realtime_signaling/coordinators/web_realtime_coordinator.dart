@@ -14,6 +14,7 @@ class WebRealtimeCoordinator {
   bool _isPushing = false;
   bool _hasPendingPush = false;
   final List<String> _pendingDeletedIds = [];
+  final List<String> _pendingUnmarkedIds = [];
 
   WebRealtimeCoordinator({required this.webManager});
 
@@ -30,6 +31,11 @@ class WebRealtimeCoordinator {
       interval: const Duration(milliseconds: 3500),
       onSignal: (event) async {
         debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}). Processing...");
+        if (event.unmarkedIds.isNotEmpty) {
+          for (final u in event.unmarkedIds) {
+            webManager.unmarkDeletedId(u);
+          }
+        }
         if (event.deletedIds.isNotEmpty) {
           webManager.purgeDeletedIds(event.deletedIds);
         }
@@ -72,6 +78,9 @@ class WebRealtimeCoordinator {
           _hasPendingPush = false;
           final batchDeleted = List<String>.from(_pendingDeletedIds);
           _pendingDeletedIds.clear();
+    _pendingUnmarkedIds.clear();
+          final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
+          _pendingUnmarkedIds.clear();
 
           // 1. Broadcast instant event to Cloudflare Edge (<30ms)
           await CloudSignalChannel.instance.broadcastSignal(
@@ -81,6 +90,7 @@ class WebRealtimeCoordinator {
               action: action,
               entityId: entityId,
               deletedIds: batchDeleted,
+              unmarkedIds: batchUnmarked,
               companyId: webManager.companyProfile['id']?.toString() ?? '',
             ),
           );
@@ -104,5 +114,6 @@ class WebRealtimeCoordinator {
     _isPushing = false;
     _hasPendingPush = false;
     _pendingDeletedIds.clear();
+    _pendingUnmarkedIds.clear();
   }
 }

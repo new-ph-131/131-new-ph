@@ -28,6 +28,7 @@ class CloudSignalChannel {
         "entityId": event.entityId,
         "timestamp": event.timestamp,
         "deletedIds": event.deletedIds,
+        "unmarkedIds": event.unmarkedIds,
         "delta": event.delta,
       };
 

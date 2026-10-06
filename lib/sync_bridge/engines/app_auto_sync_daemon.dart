@@ -21,6 +21,7 @@ class AppAutoSyncDaemon {
   bool _isSyncing = false;
   bool _hasPendingPush = false;
   final List<String> _pendingDeletedIds = [];
+  final List<String> _pendingUnmarkedIds = [];
 
   /// Triggers a non-dropping background push with Cloudflare Edge signal
   void triggerSilentPush(
@@ -28,9 +29,13 @@ class AppAutoSyncDaemon {
     String action = 'DATA_SAVED',
     String entityId = '',
     List<String> deletedIds = const [],
+    List<String> unmarkedIds = const [],
   }) {
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
 
+    if (unmarkedIds.isNotEmpty) {
+      _pendingUnmarkedIds.addAll(unmarkedIds);
+    }
     if (deletedIds.isNotEmpty) {
       _pendingDeletedIds.addAll(deletedIds);
     }
@@ -50,6 +55,8 @@ class AppAutoSyncDaemon {
           _hasPendingPush = false;
           final batchDeleted = List<String>.from(_pendingDeletedIds);
           _pendingDeletedIds.clear();
+          final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
+          _pendingUnmarkedIds.clear();
 
           final companyId = ph.activeCompany!.id;
           final storeToken = await WebLiveToken.getOrCreateToken(companyId);
@@ -63,6 +70,7 @@ class AppAutoSyncDaemon {
                 action: action,
                 entityId: entityId,
                 deletedIds: batchDeleted,
+                unmarkedIds: batchUnmarked,
                 companyId: companyId,
               ),
             );

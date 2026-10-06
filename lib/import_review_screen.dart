@@ -696,7 +696,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         roundOff: summary.roundOff,
       );
       
-      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo);
+      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo, unmarkedIds: [cleanBillNo]);
     } else {
       List<BillItem> rawItems = [];
       int sNo = 1;
@@ -788,7 +788,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         roundOff: summary.roundOff,
       );
       
-      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo);
+      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo, unmarkedIds: [cleanBillNo]);
     }
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ C2C Data Sync Successful!"), backgroundColor: Colors.green));
