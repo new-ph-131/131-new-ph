@@ -415,7 +415,26 @@ class Sale {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  ); 
+  );
+
+  String get syncId => id;
+
+  factory Sale.fromEnvelope(Map<String, dynamic> map) {
+    if (map.containsKey('bill_data') && map['bill_data'] != null) {
+      var d = map['bill_data'];
+      if (d is String) {
+        try { d = jsonDecode(d); } catch (_) {}
+      }
+      if (d is Map<String, dynamic>) {
+        var s = Sale.fromMap(d);
+        s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
+        s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
+        s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        return s;
+      }
+    }
+    return Sale.fromMap(map);
+  } 
 }
 
 class Purchase { 
@@ -474,7 +493,26 @@ class Purchase {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  ); 
+  );
+
+  String get syncId => id;
+
+  factory Purchase.fromEnvelope(Map<String, dynamic> map) {
+    if (map.containsKey('bill_data') && map['bill_data'] != null) {
+      var d = map['bill_data'];
+      if (d is String) {
+        try { d = jsonDecode(d); } catch (_) {}
+      }
+      if (d is Map<String, dynamic>) {
+        var s = Purchase.fromMap(d);
+        s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
+        s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
+        s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        return s;
+      }
+    }
+    return Purchase.fromMap(map);
+  } 
 }
 
 class SaleChallan { 
@@ -515,7 +553,26 @@ class SaleChallan {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  ); 
+  );
+
+  String get syncId => id;
+
+  factory SaleChallan.fromEnvelope(Map<String, dynamic> map) {
+    if (map.containsKey('bill_data') && map['bill_data'] != null) {
+      var d = map['bill_data'];
+      if (d is String) {
+        try { d = jsonDecode(d); } catch (_) {}
+      }
+      if (d is Map<String, dynamic>) {
+        var s = SaleChallan.fromMap(d);
+        s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
+        s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
+        s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        return s;
+      }
+    }
+    return SaleChallan.fromMap(map);
+  } 
 }
 
 class PurchaseChallan { 
@@ -711,6 +768,25 @@ class Voucher {
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
   );
+
+  String get syncId => id;
+
+  factory Voucher.fromEnvelope(Map<String, dynamic> map) {
+    if (map.containsKey('bill_data') && map['bill_data'] != null) {
+      var d = map['bill_data'];
+      if (d is String) {
+        try { d = jsonDecode(d); } catch (_) {}
+      }
+      if (d is Map<String, dynamic>) {
+        var s = Voucher.fromMap(d);
+        s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
+        s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
+        s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        return s;
+      }
+    }
+    return Voucher.fromMap(map);
+  }
 }
   
 class ChequeEntry { String id, partyName, billNo, chequeNo, partyBank, depositBank, status, remark; DateTime date, chequeDate; double amount; ChequeEntry({required this.id, required this.partyName, this.billNo = "", required this.amount, required this.chequeNo, required this.date, required this.chequeDate, this.partyBank = "", this.depositBank = "", this.status = "Received", this.remark = ""}); Map<String, dynamic> toMap() => {'id': id, 'partyName': partyName, 'billNo': billNo, 'amount': amount, 'chequeNo': chequeNo, 'date': date.toIso8601String(), 'chequeDate': chequeDate.toIso8601String(), 'partyBank': partyBank, 'depositBank': depositBank, 'status': status, 'remark': remark}; factory ChequeEntry.fromMap(Map<String, dynamic> map) => ChequeEntry(id: map['id'] ?? "", partyName: map['partyName'] ?? "", billNo: map['billNo'] ?? "", amount: (map['amount'] ?? 0.0).toDouble(), chequeNo: map['chequeNo'] ?? "", date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), chequeDate: DateTime.parse(map['chequeDate'] ?? DateTime.now().toIso8601String()), partyBank: map['partyBank'] ?? "", depositBank: map['depositBank'] ?? "", status: map['status'] ?? "Received", remark: map['remark'] ?? ""); }
