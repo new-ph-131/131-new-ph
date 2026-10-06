@@ -522,6 +522,14 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
     }
 
     final String cleanBillNo = (partyInfoInFile['billNo']?.toString() ?? "").trim();
+    if (ph.activeCompany != null && cleanBillNo.isNotEmpty) {
+      await SyncTombstoneHub.unmarkDeleted(
+        workingDir: ph.activeDirectory,
+        companyId: ph.activeCompany!.id,
+        id: cleanBillNo,
+        referenceNo: cleanBillNo,
+      );
+    }
 
     if (widget.importType == "PURCHASE") {
       List<PurchaseItem> items = [];

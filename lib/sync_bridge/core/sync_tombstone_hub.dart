@@ -66,6 +66,34 @@ class SyncTombstoneHub {
     }
   }
 
+  /// Unmarks a tombstone when a record is newly imported or recreated with higher version
+  static Future<void> unmarkDeleted({
+    required String workingDir,
+    required String companyId,
+    required String id,
+    String? referenceNo,
+  }) async {
+    final cleanId = id.trim();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'tombstones_$companyId';
+      final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
+      if (cleanId.isNotEmpty) localList.remove(cleanId);
+      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
+        localList.remove(referenceNo.trim());
+      }
+      await prefs.setStringList(key, localList.toList());
+    } catch (_) {}
+    if (workingDir.isNotEmpty) {
+      final diskSet = await loadFromDisk(workingDir);
+      if (cleanId.isNotEmpty) diskSet.remove(cleanId);
+      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
+        diskSet.remove(referenceNo.trim());
+      }
+      await saveToDisk(workingDir, diskSet);
+    }
+  }
+
   /// Checks if a record ID or reference number has been marked as deleted.
   static bool isDeleted(Set<String> tombstones, String id, {String? referenceNo}) {
     if (tombstones.contains(id.trim())) return true;

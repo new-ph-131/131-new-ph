@@ -546,7 +546,16 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
+  void unmarkDeletedId(String id, {String? referenceNo}) {
+    if (id.trim().isNotEmpty) deletedRecordIds.remove(id.trim());
+    if (referenceNo != null && referenceNo.trim().isNotEmpty) {
+      deletedRecordIds.remove(referenceNo.trim());
+    }
+    _saveLocalTombstones();
+  }
+
   void addSaleAndSync(Sale sale) {
+    unmarkDeletedId(sale.id, referenceNo: sale.billNo);
     int currentVer = 1;
     final int existingIdx = sales.indexWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
     if (existingIdx != -1) {
@@ -626,6 +635,8 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void addPurchaseAndSync(Purchase purchase) {
+    unmarkDeletedId(purchase.id, referenceNo: purchase.internalNo);
+    if (purchase.billNo.isNotEmpty) unmarkDeletedId(purchase.billNo);
     int currentVer = 1;
     final int existingIdx = purchases.indexWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
     if (existingIdx != -1) {

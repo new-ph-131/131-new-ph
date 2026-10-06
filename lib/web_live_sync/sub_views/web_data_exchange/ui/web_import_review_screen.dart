@@ -395,6 +395,11 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         );
       }
 
+      final double grossItemsPur = items.fold(0.0, (s, e) => s + e.total);
+      final double exDiscPur = (partyInfoInFile['extraDisc'] as num).toDouble();
+      final double rOffPur = (partyInfoInFile['roundOff'] as num).toDouble();
+      final double finalPurTotal = grossItemsPur - exDiscPur + rOffPur;
+
       final newPur = Purchase(
         id: "PUR-CSV-${DateTime.now().millisecondsSinceEpoch}",
         internalNo: internalNo,
@@ -404,13 +409,17 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         date: adjustedDate,
         entryDate: DateTime.now(),
         paymentMode: "CREDIT",
-        totalAmount: items.fold(0.0, (s, e) => s + e.total),
-        extraDiscount: (partyInfoInFile['extraDisc'] as num).toDouble(),
-        roundOff: (partyInfoInFile['roundOff'] as num).toDouble(),
+        totalAmount: finalPurTotal,
+        extraDiscount: exDiscPur,
+        roundOff: rOffPur,
         sourceTag: auditTag,
         items: items,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        version: 1,
       );
 
+      webPh.unmarkDeletedId(newPur.id, referenceNo: newPur.internalNo);
+      if (newPur.billNo.isNotEmpty) webPh.unmarkDeletedId(newPur.billNo);
       webPh.addPurchaseAndSync(newPur);
     } else {
       String nextBillNo = partyInfoInFile['billNo'];
@@ -452,6 +461,11 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         );
       }
 
+      final double grossItemsSale = items.fold(0.0, (s, e) => s + e.total);
+      final double exDiscSale = (partyInfoInFile['extraDisc'] as num).toDouble();
+      final double rOffSale = (partyInfoInFile['roundOff'] as num).toDouble();
+      final double finalSaleTotal = grossItemsSale - exDiscSale + rOffSale;
+
       final newSale = Sale(
         id: "SALE-CSV-${DateTime.now().millisecondsSinceEpoch}",
         billNo: nextBillNo,
@@ -461,13 +475,16 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         partyState: matchedParty!.state,
         date: adjustedDate,
         paymentMode: "CREDIT",
-        totalAmount: items.fold(0.0, (s, e) => s + e.total),
-        extraDiscount: (partyInfoInFile['extraDisc'] as num).toDouble(),
-        roundOff: (partyInfoInFile['roundOff'] as num).toDouble(),
+        totalAmount: finalSaleTotal,
+        extraDiscount: exDiscSale,
+        roundOff: rOffSale,
         sourceTag: auditTag,
         items: items,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        version: 1,
       );
 
+      webPh.unmarkDeletedId(newSale.id, referenceNo: newSale.billNo);
       webPh.addSaleAndSync(newSale);
     }
 

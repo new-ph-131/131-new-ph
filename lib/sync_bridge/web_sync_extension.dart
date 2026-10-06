@@ -6,10 +6,10 @@ import 'package:pharoah_erp/web_live_sync/web_models.dart';
 extension WebSyncExtension on PharoahWebManager {
   /// Safe Edit for Web Sales: Preserves ID and tombstoned previousId if changed
   Future<void> syncWebUpdateSale(Sale updatedSale, {String? previousId}) async {
-    if (previousId != null &&
-        previousId.isNotEmpty &&
-        previousId != updatedSale.id) {
-      deletedRecordIds.add(previousId);
+    deletedRecordIds.remove(updatedSale.id);
+    deletedRecordIds.remove(updatedSale.billNo.trim());
+    if (previousId != null && previousId.isNotEmpty && previousId != updatedSale.id) {
+      deletedRecordIds.remove(previousId);
     }
 
     final int idx = sales.indexWhere((s) => s.id == updatedSale.id || s.billNo == updatedSale.billNo);
@@ -54,10 +54,11 @@ extension WebSyncExtension on PharoahWebManager {
 
   /// Safe Edit for Web Purchases: Preserves ID and syncs delta
   Future<void> syncWebUpdatePurchase(Purchase updatedPurchase, {String? previousId}) async {
-    if (previousId != null &&
-        previousId.isNotEmpty &&
-        previousId != updatedPurchase.id) {
-      deletedRecordIds.add(previousId);
+    deletedRecordIds.remove(updatedPurchase.id);
+    deletedRecordIds.remove(updatedPurchase.internalNo.trim());
+    deletedRecordIds.remove(updatedPurchase.billNo.trim());
+    if (previousId != null && previousId.isNotEmpty && previousId != updatedPurchase.id) {
+      deletedRecordIds.remove(previousId);
     }
 
     final int idx = purchases.indexWhere((p) => p.id == updatedPurchase.id || p.internalNo == updatedPurchase.internalNo);

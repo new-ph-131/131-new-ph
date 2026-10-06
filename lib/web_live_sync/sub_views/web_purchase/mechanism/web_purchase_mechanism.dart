@@ -1,5 +1,4 @@
 // FILE: lib/web_live_sync/sub_views/web_purchase/mechanism/web_purchase_mechanism.dart
-
 import 'package:pharoah_erp/web_live_sync/web_models.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 
@@ -20,8 +19,13 @@ class WebPurchaseMechanism {
     required List<String> linkedChallanIds,
     String? existingId,
   }) async {
-    if (existingId != null) {
-      webPh.purchases.removeWhere((p) => p.id == existingId);
+    int currentVer = 1;
+    if (existingId != null && existingId.isNotEmpty) {
+      final int idx = webPh.purchases.indexWhere((p) => p.id == existingId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+      if (idx != -1) {
+        currentVer = webPh.purchases[idx].version + 1;
+      }
+      webPh.purchases.removeWhere((p) => p.id == existingId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
     }
 
     final newPurchase = Purchase(
@@ -40,9 +44,15 @@ class WebPurchaseMechanism {
       items: List.from(items),
       linkedChallanIds: linkedChallanIds,
       sourceTag: "WEB-PORTAL",
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
     );
 
-    webPh.purchases.add(newPurchase);
+    // Unmark any tombstone for this bill or internal number
+    webPh.unmarkDeletedId(purchaseId, referenceNo: internalNo);
+    if (billNo.isNotEmpty) webPh.unmarkDeletedId(billNo);
+
+    webPh.addPurchaseAndSync(newPurchase);
 
     // 2-Way Batch Inventory Activity + Medicine Master L.P.R. Update
     for (var item in items) {
@@ -90,7 +100,6 @@ class WebPurchaseMechanism {
     // Update supplier payable
     supplier.opBal += totalAmount;
     webPh.updateParty(supplier);
-
     webPh.rebuildInventory();
     webPh.notifyListeners();
     return await webPh.pushUpdatedDataToCloud();

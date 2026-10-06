@@ -51,8 +51,17 @@ class UniversalDeltaMerger {
         final localJson = jsonEncode(toMap(localList[existingIdx]));
         final cloudJson = jsonEncode(cloudMap);
         if (localJson != cloudJson) {
-          localList[existingIdx] = fromMap(cloudMap);
-          hasChanged = true;
+          final cloudUpdatedAt = (cloudMap['updatedAt'] ?? 0) as int;
+          final cloudVersion = (cloudMap['version'] ?? 1) as int;
+          final localItemMap = toMap(localList[existingIdx]);
+          final localUpdatedAt = (localItemMap['updatedAt'] ?? 0) as int;
+          final localVersion = (localItemMap['version'] ?? 1) as int;
+
+          // LWW: Only overwrite if cloud record is newer or same time with higher/equal version
+          if (cloudUpdatedAt > localUpdatedAt || (cloudUpdatedAt == localUpdatedAt && cloudVersion >= localVersion) || localUpdatedAt == 0) {
+            localList[existingIdx] = fromMap(cloudMap);
+            hasChanged = true;
+          }
         }
       }
     }
