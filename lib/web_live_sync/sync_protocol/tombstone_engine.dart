@@ -186,15 +186,57 @@ class TombstoneEngine {
     });
   }
 
-  /// 🛡️ ID-ONLY Purge (Never purges by billNo)
-  static void purgeDeletedRecords(PharoahManager ph, Set<String> allTombstones) {
+  /// 🛡️ ID-ONLY Purge (Never purges by billNo, respects Monotonic Clock Registry)
+  static void purgeDeletedRecords(PharoahManager ph, Set<String> allTombstones, [Map<String, int>? registry]) {
     if (allTombstones.isEmpty) return;
-    ph.sales.removeWhere((e) => allTombstones.contains(e.id));
-    ph.purchases.removeWhere((e) => allTombstones.contains(e.id));
-    ph.saleChallans.removeWhere((e) => allTombstones.contains(e.id));
-    ph.purchaseChallans.removeWhere((e) => allTombstones.contains(e.id));
-    ph.saleReturns.removeWhere((e) => allTombstones.contains(e.id));
-    ph.purchaseReturns.removeWhere((e) => allTombstones.contains(e.id));
-    ph.vouchers.removeWhere((e) => allTombstones.contains(e.id));
+    ph.sales.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= e.updatedAt;
+      }
+      return true;
+    });
+    ph.purchases.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= e.updatedAt;
+      }
+      return true;
+    });
+    ph.saleChallans.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= (e.toMap()['updatedAt'] ?? 0);
+      }
+      return true;
+    });
+    ph.purchaseChallans.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= (e.toMap()['updatedAt'] ?? 0);
+      }
+      return true;
+    });
+    ph.saleReturns.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= (e.toMap()['updatedAt'] ?? 0);
+      }
+      return true;
+    });
+    ph.purchaseReturns.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= (e.toMap()['updatedAt'] ?? 0);
+      }
+      return true;
+    });
+    ph.vouchers.removeWhere((e) {
+      if (!allTombstones.contains(e.id)) return false;
+      if (registry != null && registry.containsKey(e.id)) {
+        return registry[e.id]! >= (e.toMap()['updatedAt'] ?? 0);
+      }
+      return true;
+    });
   }
 }

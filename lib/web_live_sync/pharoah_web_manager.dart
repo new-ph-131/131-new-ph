@@ -235,6 +235,22 @@ class PharoahWebManager with ChangeNotifier {
       _saveLocalTombstones();
     }
 
+    var regData = decodeJson('tombstone_registry.json');
+    if (regData != null && regData is Map) {
+      regData.forEach((k, v) {
+        final cleanK = k.toString().trim();
+        if (cleanK.isNotEmpty && !cleanK.contains('/') && !unmarkedRecordIds.contains(cleanK)) {
+          final cloudTs = int.tryParse(v.toString()) ?? 0;
+          final localTs = localTombstoneRegistry[cleanK] ?? 0;
+          if (cloudTs > localTs) {
+            localTombstoneRegistry[cleanK] = cloudTs;
+            deletedRecordIds.add(cleanK);
+          }
+        }
+      });
+      _saveLocalTombstones();
+    }
+
     var rawMeds = (decodeJson('meds.json') as List?)
         ?.map((e) => Medicine.fromMap(e))
         .where((m) => !deletedRecordIds.contains(m.id))

@@ -53,7 +53,7 @@ class FastPullEngine {
       }
       final Map<String, dynamic> cloudFiles = cloudData['files'];
 
-      // 3. Process Cloud Tombstones (Only IDs, drop sequence numbers)
+      // 3. Process Cloud Tombstones & Monotonic Registry (Only IDs, drop sequence numbers)
       if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
         try {
           List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
@@ -64,11 +64,28 @@ class FastPullEngine {
           localTombstones.addAll(sanitizedCloudT);
         } catch (_) {}
       }
+      if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
+        try {
+          dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
+          if (rawReg is Map) {
+            rawReg.forEach((k, v) {
+              final cleanK = k.toString().trim();
+              if (cleanK.isNotEmpty && !cleanK.contains('/')) {
+                final cTs = int.tryParse(v.toString()) ?? 0;
+                final lTs = localRegistry[cleanK] ?? 0;
+                if (cTs > lTs) {
+                  localRegistry[cleanK] = cTs;
+                }
+              }
+            });
+          }
+        } catch (_) {}
+      }
       localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
 
-      // 4. Chronological Anti-Zombie Purge with Registry
+      // 4. Chronological Anti-Zombie Purge with Registry (Timestamp & ID ONLY)
       TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
-      TombstoneEngine.purgeDeletedRecords(ph, localTombstones);
+      TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
       // 5. Delta Merge Cloud Data into Memory
       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);

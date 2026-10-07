@@ -86,8 +86,6 @@ class WebRealtimeCoordinator {
           _hasPendingPush = false;
           final batchDeleted = List<String>.from(_pendingDeletedIds.where((k) => !k.contains('/')));
           final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
-          _pendingDeletedIds.clear();
-          _pendingUnmarkedIds.clear();
 
           // 1. Broadcast instant event to Cloudflare Edge (<30ms)
           await CloudSignalChannel.instance.broadcastSignal(
@@ -104,6 +102,9 @@ class WebRealtimeCoordinator {
 
           // 2. Push full snapshot to Cloud Relay (Google Drive)
           await webManager.pushUpdatedDataToCloud();
+          // Remove processed IDs safely (avoiding premature clears)
+          _pendingDeletedIds.removeWhere((id) => batchDeleted.contains(id));
+          _pendingUnmarkedIds.removeWhere((id) => batchUnmarked.contains(id));
           debugPrint("⚡ [WebRealtimeCoordinator] Batch mutation synchronized successfully.");
         } while (_hasPendingPush);
       } catch (e) {
