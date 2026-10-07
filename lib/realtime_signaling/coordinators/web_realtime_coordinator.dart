@@ -84,10 +84,9 @@ class WebRealtimeCoordinator {
       try {
         do {
           _hasPendingPush = false;
-          final batchDeleted = List<String>.from(_pendingDeletedIds);
-          _pendingDeletedIds.clear();
-    _pendingUnmarkedIds.clear();
+          final batchDeleted = List<String>.from(_pendingDeletedIds.where((k) => !k.contains('/')));
           final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
+          _pendingDeletedIds.clear();
           _pendingUnmarkedIds.clear();
 
           // 1. Broadcast instant event to Cloudflare Edge (<30ms)

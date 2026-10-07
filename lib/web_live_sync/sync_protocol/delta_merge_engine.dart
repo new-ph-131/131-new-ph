@@ -3,56 +3,63 @@ import 'dart:convert';
 import '../../../pharoah_manager.dart';
 import '../../../models.dart';
 
+/// 🛡️ THE ENHANCED DELTA MERGE ENGINE RECONCILER
+/// Bridges Google Drive snapshots and D1 JSON batch inputs without ghost overwrites.
 class DeltaMergeEngine {
-  /// 🛡️ Dedicated Incoming Delta Batch Merger for Sales/Vouchers/Purchases
+  /// 🛡️ Dedicated Incoming Delta Batch Merger for Sales
   static List<Sale> mergeIncomingDelta({
-    required List<Sale> localList,               // Active working List<Sale> on screen
-    required List<dynamic> incomingCloudBatch,   // Can be from D1 or Google Drive JSON
-    required Map<String, int> localTombstoneRegistry, // 🧠 { 'sync_id': deleted_timestamp }
+    required List<Sale> localList,
+    required List<dynamic> incomingCloudBatch,
+    required Map<String, int> localTombstoneRegistry,
   }) {
-    for (var cloudMap in incomingCloudBatch) {
-      if (cloudMap is! Map<String, dynamic>) continue;
-      String syncId = (cloudMap['sync_id'] ?? cloudMap['id'] ?? '').toString();
+    for (var rawCloudMap in incomingCloudBatch) {
+      if (rawCloudMap is! Map<String, dynamic>) continue;
+      final cloudMap = rawCloudMap;
+      String syncId = (cloudMap['sync_id'] ?? cloudMap['id'] ?? '').toString().trim();
       int cloudVersion = int.tryParse(cloudMap['version']?.toString() ?? '1') ?? 1;
       int cloudTimestamp = int.tryParse(cloudMap['updated_at']?.toString() ?? cloudMap['updatedAt']?.toString() ?? '0') ?? 0;
       int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
-      // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check
-      if (syncId.isNotEmpty && localTombstoneRegistry.containsKey(syncId)) {
+      if (syncId.isEmpty) continue;
+
+      // 🛡️ SHIELD 1: Chronological Anti-Zombie Guard (ID ONLY)
+      if (localTombstoneRegistry.containsKey(syncId)) {
         int localDeleteTime = localTombstoneRegistry[syncId]!;
         if (localDeleteTime >= cloudTimestamp) {
-          // Google Drive / Cloud data is older than delete event -> Skip / Drop
-          continue; 
+          continue; // Obsolete lag-data packet dropped securely
         } else if (cloudIsDeleted == 0) {
-          localTombstoneRegistry.remove(syncId);
+          localTombstoneRegistry.remove(syncId); // Legit new creation
         }
       }
 
-      // Local active screen list me check karo
       int idx = localList.indexWhere((s) => s.syncId == syncId || s.id == syncId);
 
       if (idx != -1) {
         Sale localSale = localList[idx];
-
-        // 🛡️ SHIELD 2: Last-Write-Wins (LWW) Clock Auditing
-        if (cloudTimestamp > localSale.updatedAt || (cloudTimestamp == localSale.updatedAt && cloudVersion >= localSale.version)) {
+        // Last-Write-Wins (LWW) Check
+        if (cloudTimestamp > localSale.updatedAt || (cloudTimestamp == localSale.updatedAt && cloudVersion >= localSale.version) || localSale.updatedAt == 0) {
           if (cloudIsDeleted == 1) {
             localList.removeAt(idx);
-            if (syncId.isNotEmpty) localTombstoneRegistry[syncId] = cloudTimestamp;
+            localTombstoneRegistry[syncId] = cloudTimestamp;
           } else {
-            localList[idx] = Sale.fromEnvelope(cloudMap);
+            localList[idx] = Sale.fromEnvelope(cloudMap); // Safe update
           }
         }
       } else {
         if (cloudIsDeleted == 0) {
-          localList.insert(0, Sale.fromEnvelope(cloudMap));
+          // Gap-filling safety: if an older record with the same billNo exists, replace/remove it
+          String bNo = (cloudMap['billNo'] ?? '').toString().trim();
+          if (bNo.isNotEmpty) {
+            localList.removeWhere((s) => s.billNo == bNo && s.updatedAt <= cloudTimestamp);
+          }
+          localList.insert(0, Sale.fromEnvelope(cloudMap)); // Safe gap-filling injection
         }
       }
     }
     return localList;
   }
 
-  /// 🛡️ Smartly merges cloud data with ERP Multi-Node collision prevention,
+  /// 🛡️ Smartly merges cloud snapshot data with ERP Multi-Node collision prevention,
   /// Anti-Zombie Timestamp Shields, and True LWW safeguards.
   static bool processCloudData(
     PharoahManager ph, 
@@ -61,7 +68,6 @@ class DeltaMergeEngine {
     Map<String, String> localHashes
   ) {
     bool hasChanges = false;
-
     Map<String, int> tombstoneRegistry = {};
     if (localTombstonesOrRegistry is Map<String, int>) {
       tombstoneRegistry = Map<String, int>.from(localTombstonesOrRegistry);
@@ -74,6 +80,8 @@ class DeltaMergeEngine {
         tombstoneRegistry[k.toString()] = 0;
       }
     }
+    // Purge any billNo keys from registry (MANDATE 1)
+    tombstoneRegistry.removeWhere((k, _) => k.contains('/'));
 
     dynamic decodeJson(String fileName) {
       if (cloudFiles.containsKey(fileName) && cloudFiles[fileName] != null) {
@@ -104,25 +112,25 @@ class DeltaMergeEngine {
         int cloudTimestamp = int.tryParse(cloudMap['updated_at']?.toString() ?? cloudMap['updatedAt']?.toString() ?? '0') ?? 0;
         int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
-        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check with Microsecond/Millisecond Timestamp
-        int? localDeleteTime = tombstoneRegistry[id] ?? (billNo.isNotEmpty ? tombstoneRegistry[billNo] : null);
+        if (id.isEmpty) continue;
+
+        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (ID ONLY, NEVER billNo)
+        int? localDeleteTime = tombstoneRegistry[id];
         if (localDeleteTime != null) {
-          if (localDeleteTime == 0 || localDeleteTime >= cloudTimestamp) {
+          if (localDeleteTime >= cloudTimestamp && localDeleteTime > 0) {
             // Google Drive data is older than delete event -> Skip / Drop
             continue; 
           } else if (cloudIsDeleted == 0) {
             // Legitimate newer update found -> unmark tombstone
             tombstoneRegistry.remove(id);
-            if (billNo.isNotEmpty) tombstoneRegistry.remove(billNo);
             if (localTombstonesOrRegistry is Set<String>) {
               localTombstonesOrRegistry.remove(id);
-              if (billNo.isNotEmpty) localTombstonesOrRegistry.remove(billNo);
             }
           }
         }
 
-        // Local active screen list me check karo
-        int idx = localList.indexWhere((e) => getId(e) == id || (billNo.isNotEmpty && getBillNo(e) == billNo));
+        // Local active screen list me check karo (Match by unique ID)
+        int idx = localList.indexWhere((e) => getId(e) == id);
 
         if (idx != -1) {
           var localItem = localList[idx];
@@ -135,7 +143,6 @@ class DeltaMergeEngine {
             if (cloudIsDeleted == 1) {
               localList.removeAt(idx);
               tombstoneRegistry[id] = cloudTimestamp;
-              if (billNo.isNotEmpty) tombstoneRegistry[billNo] = cloudTimestamp;
               changed = true;
             } else {
               localList[idx] = fromMap(cloudMap);
@@ -143,8 +150,11 @@ class DeltaMergeEngine {
             }
           }
         } else {
-          // 🧠 THE TRAP BYPASSED LOGIC:
           if (cloudIsDeleted == 0) {
+            // Gap-filling safety: if an older record with the same billNo exists, replace it
+            if (billNo.isNotEmpty) {
+              localList.removeWhere((e) => getBillNo(e) == billNo && (toMap(e)['updatedAt'] ?? 0) <= cloudTimestamp);
+            }
             localList.add(fromMap(cloudMap));
             changed = true;
           }
@@ -169,7 +179,7 @@ class DeltaMergeEngine {
         }
       }
 
-      if (uniqueByBillNo.length < localList.length) {
+      if (uniqueByBillNo.isNotEmpty && uniqueByBillNo.length < localList.length) {
         localList.clear();
         localList.addAll(uniqueByBillNo.values);
         changed = true;
@@ -248,7 +258,6 @@ class DeltaMergeEngine {
         final partMap = rawPart as Map<String, dynamic>;
         String cleanName = (partMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
         if (cleanName.isEmpty) continue;
-
         int existingIdx = ph.parties.indexWhere((p) => p.id == partMap['id']);
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.parties[existingIdx].toMap());
@@ -274,7 +283,6 @@ class DeltaMergeEngine {
         final medMap = rawMed as Map<String, dynamic>;
         String cleanName = (medMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
         if (cleanName.isEmpty) continue;
-
         int existingIdx = ph.medicines.indexWhere((m) => m.id == medMap['id']);
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.medicines[existingIdx].toMap());

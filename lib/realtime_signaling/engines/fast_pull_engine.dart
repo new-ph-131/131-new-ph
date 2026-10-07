@@ -14,22 +14,23 @@ import '../../web_live_sync/sync_protocol/delta_merge_engine.dart';
 /// FastPullEngine: Dedicated high-speed pull & merge engine.
 /// Pulls cloud changes from Web and immediately updates App memory,
 /// disk storage, and UI listeners in < 300ms without circular re-push.
+/// Strict mandate: Evaluates immutable sync_id/UUID only, never purges by human-readable billNo.
 class FastPullEngine {
   static bool _isPulling = false;
 
   static Future<bool> pullAndMerge(PharoahManager ph) async {
     if (_isPulling) return false;
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return false;
-
     _isPulling = true;
+
     try {
       final workingDir = await ph.getWorkingPath();
       if (workingDir.isEmpty) return false;
-
       final companyId = ph.activeCompany!.id;
       final storeToken = await WebLiveToken.getOrCreateToken(companyId);
 
-      // 1. Fetch Local Tombstones & Hashes
+      // 1. Fetch Local Tombstone Registry & Hashes
+      Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
 
@@ -50,10 +51,9 @@ class FastPullEngine {
       if (cloudData['status'] != 'SUCCESS' || cloudData['files'] == null) {
         return false;
       }
-
       final Map<String, dynamic> cloudFiles = cloudData['files'];
 
-      // 3. Process Cloud Tombstones
+      // 3. Process Cloud Tombstones (Only IDs, drop sequence numbers)
       if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
         try {
           List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
@@ -66,11 +66,12 @@ class FastPullEngine {
       }
       localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
 
-      // 4. Purge Deleted
+      // 4. Chronological Anti-Zombie Purge with Registry
+      TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
       TombstoneEngine.purgeDeletedRecords(ph, localTombstones);
 
       // 5. Delta Merge Cloud Data into Memory
-      bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localTombstones, localHashes);
+      bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
 
       if (hasChanges) {
         // Rebuild stock & batches
@@ -100,6 +101,7 @@ class FastPullEngine {
           jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
         );
 
+        await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
         await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
         await SnapshotWatcher.takeSnapshot(ph);
 
@@ -108,7 +110,6 @@ class FastPullEngine {
         debugPrint("⚡ [FastPullEngine] Successfully pulled & merged latest cloud records!");
         return true;
       }
-
       return false;
     } catch (e) {
       debugPrint("⚠ [FastPullEngine] Pull error: $e");

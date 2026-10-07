@@ -41,7 +41,7 @@ class AppRealtimeCoordinator {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
         if (event.unmarkedIds.isNotEmpty && ph.activeCompany != null) {
           for (final u in event.unmarkedIds) {
-            await TombstoneEngine.unmarkTombstone(ph.activeCompany!.id, id: u);
+            await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u);
           }
         }
         await FastPullEngine.pullAndMerge(ph);

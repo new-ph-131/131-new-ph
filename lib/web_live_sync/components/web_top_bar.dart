@@ -74,7 +74,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-674 (PERMANENT-ANTI-ZOMBIE-FIX-VERIFIED)",
+                      "#PH-REV-675 (REUSABLE-SEQUENCE-SYNC-ENGINE)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),

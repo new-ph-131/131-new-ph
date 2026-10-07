@@ -53,7 +53,7 @@ class AppAutoSyncDaemon {
       try {
         do {
           _hasPendingPush = false;
-          final batchDeleted = List<String>.from(_pendingDeletedIds);
+          final batchDeleted = List<String>.from(_pendingDeletedIds.where((k) => !k.contains("/")));
           _pendingDeletedIds.clear();
           final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
           _pendingUnmarkedIds.clear();

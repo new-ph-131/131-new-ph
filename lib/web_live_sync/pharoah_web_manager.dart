@@ -35,9 +35,10 @@ class PharoahWebManager with ChangeNotifier {
   Map<String, dynamic> companyProfile = {};
   AppConfig appConfig = AppConfig();
 
-  // 🛡️ TOMBSTONE DELETION REGISTRY
+  // 🛡️ TOMBSTONE DELETION REGISTRY (MONOTONIC CLOCK REGISTRY)
   Set<String> deletedRecordIds = {};
   Set<String> unmarkedRecordIds = {};
+  Map<String, int> localTombstoneRegistry = {};
 
   // Auto-Sync Background Watchdog
   late final PharoahAutoSyncService _autoSyncService;
@@ -70,33 +71,52 @@ class PharoahWebManager with ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList('web_tombstone_ids') ?? [];
-      deletedRecordIds = list.toSet();
+      deletedRecordIds = list.where((id) => !id.contains('/')).toSet();
       final uList = prefs.getStringList('web_unmarked_ids') ?? [];
       unmarkedRecordIds = uList.toSet();
+      final rawRegistry = prefs.getString('web_tombstone_registry') ?? '';
+      if (rawRegistry.isNotEmpty) {
+        final decoded = jsonDecode(rawRegistry) as Map<String, dynamic>;
+        localTombstoneRegistry = decoded.map((k, v) => MapEntry(k, int.tryParse(v.toString()) ?? 0));
+        localTombstoneRegistry.removeWhere((k, _) => k.contains('/'));
+      }
     } catch (_) {}
   }
 
   Future<void> _saveLocalTombstones() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('web_tombstone_ids', deletedRecordIds.toList());
+      final cleanDeleted = deletedRecordIds.where((id) => !id.contains('/')).toList();
+      await prefs.setStringList('web_tombstone_ids', cleanDeleted);
       await prefs.setStringList('web_unmarked_ids', unmarkedRecordIds.toList());
+      final cleanRegistry = Map<String, int>.from(localTombstoneRegistry);
+      cleanRegistry.removeWhere((k, _) => k.contains('/'));
+      await prefs.setString('web_tombstone_registry', jsonEncode(cleanRegistry));
     } catch (_) {}
   }
 
   /// Atomically purges deleted IDs across all transaction collections in memory
+  /// Evaluates ID ONLY and checks deleteTimestamp >= recordTimestamp. NEVER purges by billNo.
   void purgeDeletedIds(List<String> ids) {
     if (ids.isEmpty) return;
-    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty && !unmarkedRecordIds.contains(e)).toSet();
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty && !unmarkedRecordIds.contains(e) && !e.contains('/')).toSet();
+    for (var id in set) {
+      localTombstoneRegistry[id] = nowTs;
+    }
     deletedRecordIds.addAll(set);
     _saveLocalTombstones();
-    sales.removeWhere((s) => set.contains(s.id) || set.contains(s.billNo));
-    purchases.removeWhere((p) => set.contains(p.id) || set.contains(p.billNo) || set.contains(p.internalNo));
-    saleChallans.removeWhere((c) => set.contains(c.id) || set.contains(c.billNo));
-    purchaseChallans.removeWhere((c) => set.contains(c.id) || set.contains(c.billNo) || set.contains(c.internalNo));
-    saleReturns.removeWhere((r) => set.contains(r.id) || set.contains(r.billNo));
-    purchaseReturns.removeWhere((r) => set.contains(r.id) || set.contains(r.billNo));
-    vouchers.removeWhere((v) => set.contains(v.id) || set.contains(v.voucherNo));
+    sales.removeWhere((s) {
+      if (!set.contains(s.id)) return false;
+      final delTime = localTombstoneRegistry[s.id] ?? nowTs;
+      return delTime >= s.updatedAt;
+    });
+    purchases.removeWhere((p) => set.contains(p.id));
+    saleChallans.removeWhere((c) => set.contains(c.id));
+    purchaseChallans.removeWhere((c) => set.contains(c.id));
+    saleReturns.removeWhere((r) => set.contains(r.id));
+    purchaseReturns.removeWhere((r) => set.contains(r.id));
+    vouchers.removeWhere((v) => set.contains(v.id));
     rebuildInventory();
     notifyListeners();
   }
@@ -208,7 +228,7 @@ class PharoahWebManager with ChangeNotifier {
     if (tData != null && tData is List) {
       for (var e in tData) {
         final k = e.toString().trim();
-        if (k.isNotEmpty && !unmarkedRecordIds.contains(k)) {
+        if (k.isNotEmpty && !k.contains('/') && !unmarkedRecordIds.contains(k)) {
           deletedRecordIds.add(k);
         }
       }
@@ -245,176 +265,155 @@ class PharoahWebManager with ChangeNotifier {
     }
     parties = uniqueParties.values.toList();
 
-    // 1. Sales Sync with Anti-Zombie Shield & Strict LWW Guard
+    // 1. Sales Sync with Anti-Zombie Shield & Strict LWW Guard (MANDATE 1 & 2)
     var allParsedSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
         .toList();
-    var rawSales = allParsedSales
-        ?.where((s) => !deletedRecordIds.contains(s.id) && (s.billNo.isEmpty || !deletedRecordIds.contains(s.billNo)))
-        .toList();
-    if (rawSales != null) {
-      if (sales.isEmpty) {
-        sales = rawSales;
-      } else {
-        for (var s in rawSales) {
-          if (deletedRecordIds.contains(s.id) || deletedRecordIds.contains(s.billNo)) continue;
-          int idx = sales.indexWhere((ls) => ls.id == s.id || ls.billNo == s.billNo);
-          if (idx != -1) {
-            // LWW Guard: Only overwrite if cloud record is strictly newer or has higher version
-            if (s.updatedAt > sales[idx].updatedAt || (s.updatedAt == sales[idx].updatedAt && s.version > sales[idx].version)) {
-              sales[idx] = s;
-            }
+    if (allParsedSales != null) {
+      for (var s in allParsedSales) {
+        if (s.id.isEmpty) continue;
+        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (ID ONLY)
+        if (localTombstoneRegistry.containsKey(s.id)) {
+          int localDeleteTime = localTombstoneRegistry[s.id]!;
+          if (localDeleteTime >= s.updatedAt && localDeleteTime > 0) {
+            continue; // Dropping obsolete snapshot
           } else {
-            sales.add(s);
+            localTombstoneRegistry.remove(s.id);
+            deletedRecordIds.remove(s.id);
           }
+        } else if (deletedRecordIds.contains(s.id)) {
+          continue;
         }
-        sales.removeWhere((s) => deletedRecordIds.contains(s.id) || deletedRecordIds.contains(s.billNo));
+
+        int idx = sales.indexWhere((ls) => ls.id == s.id);
+        if (idx != -1) {
+          // LWW Guard: Only overwrite if cloud record is newer
+          if (s.updatedAt > sales[idx].updatedAt || (s.updatedAt == sales[idx].updatedAt && s.version >= sales[idx].version) || sales[idx].updatedAt == 0) {
+            sales[idx] = s;
+          }
+        } else {
+          // Gap-filling safety: if an older record with the same billNo exists, replace it
+          if (s.billNo.isNotEmpty) {
+            sales.removeWhere((ls) => ls.billNo == s.billNo && ls.updatedAt <= s.updatedAt);
+          }
+          sales.insert(0, s);
+        }
       }
     }
 
-    // 2. Purchases Sync with Anti-Zombie Shield & Strict LWW Guard
+    // 2. Purchases Sync with Anti-Zombie Shield & Strict LWW Guard (ID ONLY)
     var allParsedPurc = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
         .toList();
-    var rawPurc = allParsedPurc
-        ?.where((p) => !deletedRecordIds.contains(p.id) && (p.internalNo.isEmpty || !deletedRecordIds.contains(p.internalNo)) && (p.billNo.isEmpty || !deletedRecordIds.contains(p.billNo)))
-        .toList();
-    if (rawPurc != null) {
-      if (purchases.isEmpty) {
-        purchases = rawPurc;
-      } else {
-        for (var p in rawPurc) {
-          if (deletedRecordIds.contains(p.id) || deletedRecordIds.contains(p.internalNo) || (p.billNo.isNotEmpty && deletedRecordIds.contains(p.billNo))) continue;
-          int idx = purchases.indexWhere((lp) => lp.id == p.id || lp.internalNo == p.internalNo || (p.billNo.isNotEmpty && lp.billNo == p.billNo));
-          if (idx != -1) {
-            if (p.updatedAt > purchases[idx].updatedAt || (p.updatedAt == purchases[idx].updatedAt && p.version > purchases[idx].version)) {
-              purchases[idx] = p;
-            }
-          } else {
-            purchases.add(p);
+    if (allParsedPurc != null) {
+      for (var p in allParsedPurc) {
+        if (p.id.isEmpty || deletedRecordIds.contains(p.id)) continue;
+        int idx = purchases.indexWhere((lp) => lp.id == p.id);
+        if (idx != -1) {
+          if (p.updatedAt > purchases[idx].updatedAt || (p.updatedAt == purchases[idx].updatedAt && p.version >= purchases[idx].version) || purchases[idx].updatedAt == 0) {
+            purchases[idx] = p;
           }
+        } else {
+          if (p.internalNo.isNotEmpty) {
+            purchases.removeWhere((lp) => lp.internalNo == p.internalNo && lp.updatedAt <= p.updatedAt);
+          }
+          purchases.insert(0, p);
         }
-        purchases.removeWhere((p) => deletedRecordIds.contains(p.id) || deletedRecordIds.contains(p.internalNo) || (p.billNo.isNotEmpty && deletedRecordIds.contains(p.billNo)));
       }
     }
 
-    // 3. Vouchers Sync with Strict LWW
+    // 3. Vouchers Sync with Strict LWW (ID ONLY)
     var rawVouc = (decodeJson('vouc.json') as List?)
         ?.map((e) => Voucher.fromMap(e))
-        .where((v) => !deletedRecordIds.contains(v.id) && !deletedRecordIds.contains(v.voucherNo))
+        .where((v) => !deletedRecordIds.contains(v.id))
         .toList();
     if (rawVouc != null) {
-      if (vouchers.isEmpty) {
-        vouchers = rawVouc;
-      } else {
-        for (var v in rawVouc) {
-          if (deletedRecordIds.contains(v.id) || deletedRecordIds.contains(v.voucherNo)) continue;
-          int idx = vouchers.indexWhere((lv) => lv.id == v.id || lv.voucherNo == v.voucherNo);
-          if (idx != -1) {
-            if (v.updatedAt > vouchers[idx].updatedAt || (v.updatedAt == vouchers[idx].updatedAt && v.version > vouchers[idx].version)) {
-              vouchers[idx] = v;
-            }
-          } else {
-            vouchers.add(v);
+      for (var v in rawVouc) {
+        if (deletedRecordIds.contains(v.id)) continue;
+        int idx = vouchers.indexWhere((lv) => lv.id == v.id);
+        if (idx != -1) {
+          if (v.updatedAt > vouchers[idx].updatedAt || (v.updatedAt == vouchers[idx].updatedAt && v.version >= vouchers[idx].version) || vouchers[idx].updatedAt == 0) {
+            vouchers[idx] = v;
           }
+        } else {
+          vouchers.insert(0, v);
         }
-        vouchers.removeWhere((v) => deletedRecordIds.contains(v.id) || deletedRecordIds.contains(v.voucherNo));
       }
     }
 
-    // 4. Sale Challans Sync with LWW
+    // 4. Sale Challans Sync with LWW (ID ONLY)
     var rawSCh = (decodeJson('s_challan.json') as List?)
         ?.map((e) => SaleChallan.fromMap(e))
-        .where((c) => !deletedRecordIds.contains(c.id) && !deletedRecordIds.contains(c.billNo))
+        .where((c) => !deletedRecordIds.contains(c.id))
         .toList();
     if (rawSCh != null) {
-      if (saleChallans.isEmpty) {
-        saleChallans = rawSCh;
-      } else {
-        for (var c in rawSCh) {
-          if (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.billNo)) continue;
-          int idx = saleChallans.indexWhere((lc) => lc.id == c.id || lc.billNo == c.billNo);
-          if (idx != -1) {
-            if (c.updatedAt > saleChallans[idx].updatedAt || (c.updatedAt == saleChallans[idx].updatedAt && c.version > saleChallans[idx].version)) {
-              saleChallans[idx] = c;
-            }
-          } else {
-            saleChallans.add(c);
+      for (var c in rawSCh) {
+        if (deletedRecordIds.contains(c.id)) continue;
+        int idx = saleChallans.indexWhere((lc) => lc.id == c.id);
+        if (idx != -1) {
+          if (c.updatedAt > saleChallans[idx].updatedAt || (c.updatedAt == saleChallans[idx].updatedAt && c.version >= saleChallans[idx].version) || saleChallans[idx].updatedAt == 0) {
+            saleChallans[idx] = c;
           }
+        } else {
+          saleChallans.insert(0, c);
         }
-        saleChallans.removeWhere((c) => deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.billNo));
       }
     }
 
-    // 5. Purchase Challans Sync with LWW
+    // 5. Purchase Challans Sync with LWW (ID ONLY)
     var rawPCh = (decodeJson('p_challan.json') as List?)
         ?.map((e) => PurchaseChallan.fromMap(e))
-        .where((c) => !deletedRecordIds.contains(c.id) && !deletedRecordIds.contains(c.internalNo))
+        .where((c) => !deletedRecordIds.contains(c.id))
         .toList();
     if (rawPCh != null) {
-      if (purchaseChallans.isEmpty) {
-        purchaseChallans = rawPCh;
-      } else {
-        for (var c in rawPCh) {
-          if (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.internalNo)) continue;
-          int idx = purchaseChallans.indexWhere((lc) => lc.id == c.id || lc.internalNo == c.internalNo);
-          if (idx != -1) {
-            if (c.updatedAt > purchaseChallans[idx].updatedAt || (c.updatedAt == purchaseChallans[idx].updatedAt && c.version > purchaseChallans[idx].version)) {
-              purchaseChallans[idx] = c;
-            }
-          } else {
-            purchaseChallans.add(c);
+      for (var c in rawPCh) {
+        if (deletedRecordIds.contains(c.id)) continue;
+        int idx = purchaseChallans.indexWhere((lc) => lc.id == c.id);
+        if (idx != -1) {
+          if (c.updatedAt > purchaseChallans[idx].updatedAt || (c.updatedAt == purchaseChallans[idx].updatedAt && c.version >= purchaseChallans[idx].version) || purchaseChallans[idx].updatedAt == 0) {
+            purchaseChallans[idx] = c;
           }
+        } else {
+          purchaseChallans.insert(0, c);
         }
-        purchaseChallans.removeWhere((c) => deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.internalNo));
       }
     }
 
-    // 6. Sale Returns Sync with LWW
+    // 6. Sale Returns Sync with LWW (ID ONLY)
     var rawSRet = (decodeJson('s_return.json') as List?)
         ?.map((e) => SaleReturn.fromMap(e))
-        .where((r) => !deletedRecordIds.contains(r.id) && !deletedRecordIds.contains(r.billNo))
+        .where((r) => !deletedRecordIds.contains(r.id))
         .toList();
     if (rawSRet != null) {
-      if (saleReturns.isEmpty) {
-        saleReturns = rawSRet;
-      } else {
-        for (var r in rawSRet) {
-          if (deletedRecordIds.contains(r.id) || deletedRecordIds.contains(r.billNo)) continue;
-          int idx = saleReturns.indexWhere((lr) => lr.id == r.id || lr.billNo == r.billNo);
-          if (idx != -1) {
-            if (r.updatedAt > saleReturns[idx].updatedAt || (r.updatedAt == saleReturns[idx].updatedAt && r.version > saleReturns[idx].version)) {
-              saleReturns[idx] = r;
-            }
-          } else {
-            saleReturns.add(r);
+      for (var r in rawSRet) {
+        if (deletedRecordIds.contains(r.id)) continue;
+        int idx = saleReturns.indexWhere((lr) => lr.id == r.id);
+        if (idx != -1) {
+          if (r.updatedAt > saleReturns[idx].updatedAt || (r.updatedAt == saleReturns[idx].updatedAt && r.version >= saleReturns[idx].version) || saleReturns[idx].updatedAt == 0) {
+            saleReturns[idx] = r;
           }
+        } else {
+          saleReturns.insert(0, r);
         }
-        saleReturns.removeWhere((r) => deletedRecordIds.contains(r.id) || deletedRecordIds.contains(r.billNo));
       }
     }
 
-    // 7. Purchase Returns Sync with LWW
+    // 7. Purchase Returns Sync with LWW (ID ONLY)
     var rawPRet = (decodeJson('p_return.json') as List?)
         ?.map((e) => PurchaseReturn.fromMap(e))
-        .where((r) => !deletedRecordIds.contains(r.id) && !deletedRecordIds.contains(r.billNo))
+        .where((r) => !deletedRecordIds.contains(r.id))
         .toList();
     if (rawPRet != null) {
-      if (purchaseReturns.isEmpty) {
-        purchaseReturns = rawPRet;
-      } else {
-        for (var r in rawPRet) {
-          if (deletedRecordIds.contains(r.id) || deletedRecordIds.contains(r.billNo)) continue;
-          int idx = purchaseReturns.indexWhere((lr) => lr.id == r.id || lr.billNo == r.billNo);
-          if (idx != -1) {
-            if (r.updatedAt > purchaseReturns[idx].updatedAt || (r.updatedAt == purchaseReturns[idx].updatedAt && r.version > purchaseReturns[idx].version)) {
-              purchaseReturns[idx] = r;
-            }
-          } else {
-            purchaseReturns.add(r);
+      for (var r in rawPRet) {
+        if (deletedRecordIds.contains(r.id)) continue;
+        int idx = purchaseReturns.indexWhere((lr) => lr.id == r.id);
+        if (idx != -1) {
+          if (r.updatedAt > purchaseReturns[idx].updatedAt || (r.updatedAt == purchaseReturns[idx].updatedAt && r.version >= purchaseReturns[idx].version) || purchaseReturns[idx].updatedAt == 0) {
+            purchaseReturns[idx] = r;
           }
+        } else {
+          purchaseReturns.insert(0, r);
         }
-        purchaseReturns.removeWhere((r) => deletedRecordIds.contains(r.id) || deletedRecordIds.contains(r.billNo));
       }
     }
 
@@ -534,7 +533,8 @@ class PharoahWebManager with ChangeNotifier {
         'series.json': jsonEncode(numberingSeries.map((e) => e.toMap()).toList()),
         'config.json': jsonEncode(appConfig.toMap()),
         'bats.json': jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
-        'tombstones.json': jsonEncode(deletedRecordIds.toList()),
+        'tombstones.json': jsonEncode(deletedRecordIds.where((k) => !k.contains('/')).toList()),
+        'tombstone_registry.json': jsonEncode(localTombstoneRegistry),
       };
 
       final payload = {
@@ -567,11 +567,13 @@ class PharoahWebManager with ChangeNotifier {
     final cleanId = id.trim();
     if (cleanId.isNotEmpty) {
       deletedRecordIds.remove(cleanId);
+      localTombstoneRegistry.remove(cleanId);
       unmarkedRecordIds.add(cleanId);
     }
     if (referenceNo != null && referenceNo.trim().isNotEmpty) {
       final cleanRef = referenceNo.trim();
       deletedRecordIds.remove(cleanRef);
+      localTombstoneRegistry.remove(cleanRef);
       unmarkedRecordIds.add(cleanRef);
     }
     _saveLocalTombstones();
@@ -624,13 +626,13 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deleteSale(String saleId) {
-    String foundBillNo = '';
+    String realId = saleId;
     try {
       final s = sales.firstWhere(
         (x) => x.id == saleId || x.billNo == saleId,
         orElse: () => sales.firstWhere((x) => x.id == saleId),
       );
-      foundBillNo = s.billNo;
+      realId = s.id;
       Set<String> targetChallanKeys = {};
       for (var cid in s.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -648,28 +650,23 @@ class PharoahWebManager with ChangeNotifier {
           }
         }
       }
+
+      SalesSyncModule.onSaleDeleted(s, activeStoreToken);
     } catch (_) {}
 
-    deletedRecordIds.add(saleId);
-    unmarkedRecordIds.remove(saleId);
-    if (foundBillNo.isNotEmpty) {
-      deletedRecordIds.add(foundBillNo);
-      unmarkedRecordIds.remove(foundBillNo);
-    }
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    localTombstoneRegistry[realId] = delTime;
+    deletedRecordIds.add(realId);
+    unmarkedRecordIds.remove(realId);
     _saveLocalTombstones();
 
-    try {
-      final targetSale = sales.firstWhere((x) => x.id == saleId || (foundBillNo.isNotEmpty && x.billNo == foundBillNo));
-      SalesSyncModule.onSaleDeleted(targetSale, activeStoreToken);
-    } catch (_) {}
-
-    sales.removeWhere((s) => s.id == saleId || (foundBillNo.isNotEmpty && s.billNo == foundBillNo));
+    sales.removeWhere((s) => s.id == realId);
     rebuildInventory();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
-      entityId: saleId,
-      deletedIds: [saleId, if (foundBillNo.isNotEmpty) foundBillNo],
+      entityId: realId,
+      deletedIds: [realId],
     );
   }
 
@@ -723,15 +720,13 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deletePurchase(String purId) {
-    String foundInternalNo = '';
-    String foundBillNo = '';
+    String realId = purId;
     try {
       final p = purchases.firstWhere(
         (x) => x.id == purId || x.internalNo == purId || x.billNo == purId,
         orElse: () => purchases.firstWhere((x) => x.id == purId),
       );
-      foundInternalNo = p.internalNo;
-      foundBillNo = p.billNo;
+      realId = p.id;
       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
@@ -753,25 +748,19 @@ class PharoahWebManager with ChangeNotifier {
       }
     } catch (_) {}
 
-    deletedRecordIds.add(purId);
-    unmarkedRecordIds.remove(purId);
-    if (foundInternalNo.isNotEmpty) {
-      deletedRecordIds.add(foundInternalNo);
-      unmarkedRecordIds.remove(foundInternalNo);
-    }
-    if (foundBillNo.isNotEmpty) {
-      deletedRecordIds.add(foundBillNo);
-      unmarkedRecordIds.remove(foundBillNo);
-    }
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    localTombstoneRegistry[realId] = delTime;
+    deletedRecordIds.add(realId);
+    unmarkedRecordIds.remove(realId);
     _saveLocalTombstones();
 
-    purchases.removeWhere((p) => p.id == purId || (foundInternalNo.isNotEmpty && p.internalNo == foundInternalNo) || (foundBillNo.isNotEmpty && p.billNo == foundBillNo));
+    purchases.removeWhere((p) => p.id == realId);
     rebuildInventory();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
-      entityId: purId,
-      deletedIds: [purId, if (foundInternalNo.isNotEmpty) foundInternalNo, if (foundBillNo.isNotEmpty) foundBillNo],
+      entityId: realId,
+      deletedIds: [realId],
     );
   }
 

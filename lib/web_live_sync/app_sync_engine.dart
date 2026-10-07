@@ -34,10 +34,15 @@ class AppSyncEngine {
 
       // STEP 1: SNAP & DETECT (The Spy)
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
+      Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
       Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
       List<String> newlyDeleted = await SnapshotWatcher.detectLocalDeletions(ph);
       if (newlyDeleted.isNotEmpty) {
-        localTombstones.addAll(newlyDeleted);
+        final nowTs = DateTime.now().millisecondsSinceEpoch;
+        for (var id in newlyDeleted) {
+          localRegistry[id] = nowTs;
+        }
+        localTombstones.addAll(newlyDeleted.where((k) => !k.contains('/')));
       }
 
       // STEP 2: PULL CLOUD DATA
@@ -66,11 +71,12 @@ class AppSyncEngine {
           }
           localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
 
-          // STEP 3: EXECUTE DEATH (The Graveyard)
+          // STEP 3: EXECUTE DEATH (The Graveyard - Monotonic Anti-Zombie & ID Only)
+          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
           TombstoneEngine.purgeDeletedRecords(ph, localTombstones);
 
           // STEP 4: DELTA MERGE (The Updater)
-          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localTombstones, localHashes);
+          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
 
           if (hasChanges || newlyDeleted.isNotEmpty || localTombstones.isNotEmpty) {
             InventoryLogicCenter.rebuildAllInventory(
@@ -87,6 +93,7 @@ class AppSyncEngine {
         }
       }
 
+      await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
       await SnapshotWatcher.takeSnapshot(ph);
 
@@ -99,7 +106,8 @@ class AppSyncEngine {
         }
       }
       
-      filesPayload['tombstones.json'] = jsonEncode(localTombstones.toList());
+      filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
+      filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
 
       final payload = {
         "action": WebCloudConfig.actionPushStore,

@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../pharoah_manager.dart';
 
+/// 🛡️ RE-USABLE SEQUENCE SYNC & TOMBSTONE RECONCILER ENGINE
+/// Architectural Mandate: NEVER blacklist or purge by human-readable billNo.
+/// Only immutable system hashes ('sync_id' / UUID) with monotonic clock auditing.
 class TombstoneEngine {
   /// 🛡️ Persistent high-precision Timestamp-backed Tombstone Registry: { "sync_id": epoch_millis }
   static Future<Map<String, int>> getTombstoneRegistry(String companyId) async {
@@ -11,7 +14,15 @@ class TombstoneEngine {
     if (raw == null || raw.isEmpty) return {};
     try {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      return decoded.map((k, v) => MapEntry(k, int.tryParse(v.toString()) ?? 0));
+      final result = <String, int>{};
+      decoded.forEach((k, v) {
+        final cleanK = k.toString().trim();
+        // Mandatory Shield: Drop human-readable sequence numbers
+        if (cleanK.isNotEmpty && !cleanK.contains('/')) {
+          result[cleanK] = int.tryParse(v.toString()) ?? 0;
+        }
+      });
+      return result;
     } catch (_) {
       return {};
     }
@@ -19,10 +30,13 @@ class TombstoneEngine {
 
   static Future<void> saveTombstoneRegistry(String companyId, Map<String, int> registry) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('tombstone_registry_$companyId', jsonEncode(registry));
+    // Sanitize: strip out any bill numbers
+    final sanitized = Map<String, int>.from(registry);
+    sanitized.removeWhere((k, _) => k.contains('/'));
+    await prefs.setString('tombstone_registry_$companyId', jsonEncode(sanitized));
   }
 
-  /// Records a deletion with high-precision timestamp into registry
+  /// Records a deletion with high-precision timestamp into registry (ID ONLY)
   static Future<void> recordTombstoneWithTimestamp(
     String companyId, {
     required String id,
@@ -31,38 +45,39 @@ class TombstoneEngine {
   }) async {
     final registry = await getTombstoneRegistry(companyId);
     final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
-    if (id.trim().isNotEmpty) {
-      registry[id.trim()] = ts;
-    }
-    if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
-      registry[secondaryKey.trim()] = ts;
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty && !cleanId.contains('/')) {
+      registry[cleanId] = ts;
     }
     await saveTombstoneRegistry(companyId, registry);
-    await recordTombstone(companyId, id: id, secondaryKey: secondaryKey);
+    await recordTombstone(companyId, id: cleanId);
   }
 
   /// Unmarks a tombstone when a bill is explicitly re-created with a newer timestamp
   static Future<void> unmarkTombstoneWithTimestamp(String companyId, {required String id, String? secondaryKey}) async {
     final registry = await getTombstoneRegistry(companyId);
-    if (id.trim().isNotEmpty) {
-      registry.remove(id.trim());
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty) {
+      registry.remove(cleanId);
     }
     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
       registry.remove(secondaryKey.trim());
     }
     await saveTombstoneRegistry(companyId, registry);
-    await unmarkTombstone(companyId, id: id, secondaryKey: secondaryKey);
+    await unmarkTombstone(companyId, id: cleanId, secondaryKey: secondaryKey);
   }
 
-  // --- Existing Legacy Set-based APIs (Kept for Full Compatibility) ---
+  // --- Legacy Set-based APIs (Kept for Full Compatibility, Sanitized against billNo) ---
   static Future<Set<String>> getLocalTombstones(String companyId) async {
     final prefs = await SharedPreferences.getInstance();
-    return (prefs.getStringList('tombstones_$companyId') ?? []).toSet();
+    final list = prefs.getStringList('tombstones_$companyId') ?? [];
+    return list.where((k) => !k.contains('/')).toSet();
   }
 
   static Future<void> saveLocalTombstones(String companyId, Set<String> tombstones) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('tombstones_$companyId', tombstones.toList());
+    final sanitized = tombstones.where((k) => !k.contains('/')).toList();
+    await prefs.setStringList('tombstones_$companyId', sanitized);
   }
 
   static Future<Set<String>> getUnmarkedKeys(String companyId) async {
@@ -78,13 +93,15 @@ class TombstoneEngine {
   static Future<void> unmarkTombstone(String companyId, {required String id, String? secondaryKey}) async {
     final tombstones = await getLocalTombstones(companyId);
     final unmarked = await getUnmarkedKeys(companyId);
-    if (id.trim().isNotEmpty) {
-      tombstones.remove(id.trim());
-      unmarked.add(id.trim());
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty) {
+      tombstones.remove(cleanId);
+      unmarked.add(cleanId);
     }
     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
-      tombstones.remove(secondaryKey.trim());
-      unmarked.add(secondaryKey.trim());
+      final cleanSec = secondaryKey.trim();
+      tombstones.remove(cleanSec);
+      unmarked.add(cleanSec);
     }
     await saveLocalTombstones(companyId, tombstones);
     await saveUnmarkedKeys(companyId, unmarked);
@@ -93,13 +110,10 @@ class TombstoneEngine {
   static Future<Set<String>> recordTombstone(String companyId, {required String id, String? secondaryKey}) async {
     final tombstones = await getLocalTombstones(companyId);
     final unmarked = await getUnmarkedKeys(companyId);
-    if (id.trim().isNotEmpty) {
-      tombstones.add(id.trim());
-      unmarked.remove(id.trim());
-    }
-    if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
-      tombstones.add(secondaryKey.trim());
-      unmarked.remove(secondaryKey.trim());
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty && !cleanId.contains('/')) {
+      tombstones.add(cleanId);
+      unmarked.remove(cleanId);
     }
     await saveLocalTombstones(companyId, tombstones);
     await saveUnmarkedKeys(companyId, unmarked);
@@ -113,7 +127,8 @@ class TombstoneEngine {
     final unmarked = await getUnmarkedKeys(companyId);
     for (var k in keys) {
       final cleanK = k.trim();
-      if (cleanK.isNotEmpty) {
+      // Drop human-readable sequence numbers
+      if (cleanK.isNotEmpty && !cleanK.contains('/')) {
         registry[cleanK] = ts;
         tombstones.add(cleanK);
         unmarked.remove(cleanK);
@@ -130,22 +145,56 @@ class TombstoneEngine {
     final sanitized = <String>{};
     for (var k in incomingCloudTombstones) {
       final cleanK = k.trim();
-      if (cleanK.isNotEmpty && !unmarked.contains(cleanK)) {
+      if (cleanK.isNotEmpty && !cleanK.contains('/') && !unmarked.contains(cleanK)) {
         sanitized.add(cleanK);
       }
     }
     return sanitized;
   }
 
+  /// 🛡️ Chronological Anti-Zombie Registry Purge:
+  /// Evaluates ID ONLY and checks deleteTimestamp >= recordTimestamp before purging.
+  static void purgeDeletedRecordsWithRegistry(PharoahManager ph, Map<String, int> registry) {
+    if (registry.isEmpty) return;
+    ph.sales.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= e.updatedAt;
+    });
+    ph.purchases.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= e.updatedAt;
+    });
+    ph.saleChallans.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
+    });
+    ph.purchaseChallans.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
+    });
+    ph.saleReturns.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
+    });
+    ph.purchaseReturns.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
+    });
+    ph.vouchers.removeWhere((e) {
+      final delTime = registry[e.id];
+      return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
+    });
+  }
+
+  /// 🛡️ ID-ONLY Purge (Never purges by billNo)
   static void purgeDeletedRecords(PharoahManager ph, Set<String> allTombstones) {
     if (allTombstones.isEmpty) return;
-
-    ph.sales.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
-    ph.purchases.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)) || (e.internalNo.isNotEmpty && allTombstones.contains(e.internalNo)));
-    ph.saleChallans.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
-    ph.purchaseChallans.removeWhere((e) => allTombstones.contains(e.id) || (e.internalNo.isNotEmpty && allTombstones.contains(e.internalNo)) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
-    ph.saleReturns.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
-    ph.purchaseReturns.removeWhere((e) => allTombstones.contains(e.id) || (e.billNo.isNotEmpty && allTombstones.contains(e.billNo)));
-    ph.vouchers.removeWhere((e) => allTombstones.contains(e.id) || (e.voucherNo.isNotEmpty && allTombstones.contains(e.voucherNo)));
+    ph.sales.removeWhere((e) => allTombstones.contains(e.id));
+    ph.purchases.removeWhere((e) => allTombstones.contains(e.id));
+    ph.saleChallans.removeWhere((e) => allTombstones.contains(e.id));
+    ph.purchaseChallans.removeWhere((e) => allTombstones.contains(e.id));
+    ph.saleReturns.removeWhere((e) => allTombstones.contains(e.id));
+    ph.purchaseReturns.removeWhere((e) => allTombstones.contains(e.id));
+    ph.vouchers.removeWhere((e) => allTombstones.contains(e.id));
   }
 }

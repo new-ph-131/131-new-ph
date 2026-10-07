@@ -1086,15 +1086,14 @@ void registerBatchActivity({
         }
       }
       final String realId = s.id;
-      final String bNo = s.billNo;
-      sales.removeWhere((x) => x.id == realId || (bNo.isNotEmpty && x.billNo == bNo));
+      sales.removeWhere((x) => x.id == realId);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) SalesSyncModule.onSaleDeleted(s, t);
         });
       }
       if (activeCompany != null) {
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [realId, if (bNo.isNotEmpty) bNo]);
+        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: realId);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_SALE',
@@ -1104,7 +1103,7 @@ void registerBatchActivity({
           this,
           action: 'DELETE_SALE',
           entityId: realId,
-          deletedIds: [realId, if (bNo.isNotEmpty) bNo],
+          deletedIds: [realId],
         );
       }
       save();
@@ -1121,14 +1120,12 @@ void registerBatchActivity({
         }
       }
       final String pId = p.id;
-      final String iNo = p.internalNo;
-      final String bNo = p.billNo;
-      purchases.removeWhere((x) => x.id == pId || x.internalNo == iNo || (bNo.isNotEmpty && x.billNo == bNo));
+      purchases.removeWhere((x) => x.id == pId);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) PurchaseSyncModule.onPurchaseDeleted(p, t);
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [pId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo]);
+        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: pId);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_PURCHASE',
@@ -1138,7 +1135,7 @@ void registerBatchActivity({
           this,
           action: 'DELETE_PURCHASE',
           entityId: pId,
-          deletedIds: [pId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo],
+          deletedIds: [pId],
         );
       }
       save();
