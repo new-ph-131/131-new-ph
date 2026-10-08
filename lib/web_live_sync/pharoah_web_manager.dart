@@ -318,12 +318,14 @@ class PharoahWebManager with ChangeNotifier {
       }
       // 🚀 EDGE D1 REAL-TIME SALES DELTAS (#PH-REV-680)
       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
-        try {
-          final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(activeStoreToken);
+        D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
           if (edgeEvents.isNotEmpty) {
-            D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents);
+            if (D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents)) {
+              rebuildInventory();
+              notifyListeners();
+            }
           }
-        } catch (_) {}
+        }).catchError((_) {});
       }
     }
 
