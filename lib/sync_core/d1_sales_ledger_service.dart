@@ -74,8 +74,7 @@ class D1SalesLedgerService {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
-      markPermanentlyDeleted(saleId, billNo);
-    final payload = {
+      final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
         "action": isUpdate ? "UPDATE_SALE" : "INSERT_SALE",
@@ -169,6 +168,7 @@ class D1SalesLedgerService {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
+      markPermanentlyDeleted(saleId, billNo);
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
