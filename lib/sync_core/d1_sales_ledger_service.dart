@@ -1,22 +1,18 @@
 // FILE: lib/sync_core/d1_sales_ledger_service.dart
 // 🛡️ D1 EDGE SALES LEDGER & OPTIMISTIC CONCURRENCY SERVICE (#PH-REV-680)
-// Independent, modular Marg-style row-delta sync bridge for Pharoah ERP.
 
-import dart:convert;
-import package:flutter/foundation.dart;
-import package:http/http.dart as http;
-import package:shared_preferences/shared_preferences.dart;
-import ../models.dart;
-import ../web_live_sync/web_cloud_config.dart;
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models.dart';
+import '../web_live_sync/web_cloud_config.dart';
 
 class D1SalesLedgerService {
   /// 🎚️ MASTER SAFETY SWITCH: Toggle true for D1 Edge sync, false to safely fallback
   static const bool USE_D1_EDGE_LEDGER = true;
 
   static String get endpoint {
-    if (kIsWeb) {
-      return "/api/lab_signal";
-    }
     return "${WebCloudConfig.webPortalUrl}/api/lab_signal";
   }
 
@@ -63,7 +59,7 @@ class D1SalesLedgerService {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS") {
-          int? newSeq = data["seq"];
+          final int? newSeq = data["seq"];
           if (newSeq != null && newSeq > 0) {
             await _updateHighestLocalSeq(storeToken, newSeq);
           }
@@ -111,7 +107,8 @@ class D1SalesLedgerService {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS" && data["seq"] != null) {
-          await _updateHighestLocalSeq(storeToken, data["seq"]);
+          final int s = data["seq"];
+          await _updateHighestLocalSeq(storeToken, s);
           return true;
         }
       }
@@ -160,7 +157,8 @@ class D1SalesLedgerService {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS" && data["seq"] != null) {
-          await _updateHighestLocalSeq(storeToken, data["seq"]);
+          final int s = data["seq"];
+          await _updateHighestLocalSeq(storeToken, s);
           return true;
         }
       }
@@ -193,7 +191,8 @@ class D1SalesLedgerService {
               List<Map<String, dynamic>>.from(data["events"]);
           
           if (events.isNotEmpty && data["max_seq"] != null) {
-            await _updateHighestLocalSeq(storeToken, data["max_seq"]);
+            final int mSeq = data["max_seq"];
+            await _updateHighestLocalSeq(storeToken, mSeq);
           }
           return events;
         }
