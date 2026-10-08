@@ -124,6 +124,25 @@ class FastPullEngine {
       TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
       TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
+      // 🛡️ D1 MASTER SHIELD FOR GOOGLE DRIVE SALES SNAPSHOT
+      if (cloudFiles.containsKey("sales.json") && cloudFiles["sales.json"] != null) {
+        try {
+          final List<dynamic> rawCloudSales = jsonDecode(cloudFiles["sales.json"]);
+          final List<dynamic> filteredSales = [];
+          for (final s in rawCloudSales) {
+            if (s is Map) {
+              final String sId = (s["id"] ?? "").toString().trim();
+              final String sNo = (s["billNo"] ?? "").toString().trim();
+              if (D1SalesLedgerService.isBillDeleted(sId, sNo)) continue;
+              final int sVer = int.tryParse(s["version"]?.toString() ?? "1") ?? 1;
+              if (D1SalesLedgerService.getKnownVersion(sId, sNo) > sVer) continue;
+              filteredSales.add(s);
+            }
+          }
+          cloudFiles["sales.json"] = jsonEncode(filteredSales);
+        } catch (_) {}
+      }
+
       // 5. Delta Merge Cloud Data into Memory
       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
 

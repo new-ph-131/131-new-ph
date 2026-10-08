@@ -12,6 +12,45 @@ class D1SalesLedgerService {
   /// 🎚️ MASTER SAFETY SWITCH: Toggle true for D1 Edge sync, false to safely fallback
   static const bool USE_D1_EDGE_LEDGER = true;
 
+  /// 🛡️ PERMANENT GRAVESTONES: Once marked deleted in D1, Google Drive can NEVER resurrect
+  static final Set<String> _permanentDeletedKeys = {};
+
+  /// 🛡️ MASTER KNOWN VERSIONS: Google Drive can NEVER downgrade a known higher version
+  static final Map<String, int> _knownBillVersions = {};
+
+  static bool isBillDeleted(String id, String billNo) {
+    final cleanId = id.trim();
+    final cleanNo = billNo.trim().toUpperCase();
+    return (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId)) ||
+           (cleanNo.isNotEmpty && _permanentDeletedKeys.contains(cleanNo));
+  }
+
+  static int getKnownVersion(String id, String billNo) {
+    final cleanId = id.trim();
+    final cleanNo = billNo.trim().toUpperCase();
+    int vId = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
+    int vNo = cleanNo.isNotEmpty ? (_knownBillVersions[cleanNo] ?? 0) : 0;
+    return vId > vNo ? vId : vNo;
+  }
+
+  static void recordKnownVersion(String id, String billNo, int version) {
+    final cleanId = id.trim();
+    final cleanNo = billNo.trim().toUpperCase();
+    if (cleanId.isNotEmpty && version > (_knownBillVersions[cleanId] ?? 0)) {
+      _knownBillVersions[cleanId] = version;
+    }
+    if (cleanNo.isNotEmpty && version > (_knownBillVersions[cleanNo] ?? 0)) {
+      _knownBillVersions[cleanNo] = version;
+    }
+  }
+
+  static void markPermanentlyDeleted(String id, String billNo) {
+    final cleanId = id.trim();
+    final cleanNo = billNo.trim().toUpperCase();
+    if (cleanId.isNotEmpty) _permanentDeletedKeys.add(cleanId);
+    if (cleanNo.isNotEmpty) _permanentDeletedKeys.add(cleanNo);
+  }
+
   static String get endpoint {
     return "${WebCloudConfig.webPortalUrl}/api/lab_signal";
   }
@@ -35,7 +74,8 @@ class D1SalesLedgerService {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
-      final payload = {
+      markPermanentlyDeleted(saleId, billNo);
+    final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
         "action": isUpdate ? "UPDATE_SALE" : "INSERT_SALE",
@@ -59,6 +99,7 @@ class D1SalesLedgerService {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS") {
+          recordKnownVersion(sale.id, sale.billNo, sale.version);
           final int? newSeq = data["seq"];
           if (newSeq != null && newSeq > 0) {
             await _updateHighestLocalSeq(storeToken, newSeq);
@@ -220,14 +261,15 @@ class D1SalesLedgerService {
 
       if (billId.isEmpty && billNo.isEmpty) continue;
 
-      int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo == billNo));
+      recordKnownVersion(billId, billNo, version);
 
       if (action == "DELETE") {
-        if (existingIdx != -1) {
-          localSales.removeAt(existingIdx);
-          mutated = true;
-        }
+        markPermanentlyDeleted(billId, billNo);
+        final initialLen = localSales.length;
+        localSales.removeWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
+        if (localSales.length != initialLen) mutated = true;
       } else if (action == "CANCEL") {
+        int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
         if (existingIdx != -1) {
           localSales[existingIdx].status = "Cancelled";
           mutated = true;
@@ -236,6 +278,7 @@ class D1SalesLedgerService {
         // INSERT or UPDATE
         if (rawSale is Map<String, dynamic>) {
           final incomingSale = Sale.fromMap(rawSale);
+          int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
           if (existingIdx != -1) {
             // OCC / Version Check
             if (version >= localSales[existingIdx].version) {

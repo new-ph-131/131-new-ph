@@ -289,6 +289,18 @@ class PharoahWebManager with ChangeNotifier {
     if (allParsedSales != null) {
       for (var s in allParsedSales) {
         if (s.id.isEmpty) continue;
+
+        // 🛡️ D1 MASTER GRAVESTONE SHIELD: If deleted in D1, Google Drive can NEVER resurrect!
+        if (D1SalesLedgerService.isBillDeleted(s.id, s.billNo)) {
+          continue;
+        }
+
+        // 🛡️ D1 MASTER VERSION SHIELD: If D1 has higher version, Google Drive can NEVER downgrade!
+        final int knownVer = D1SalesLedgerService.getKnownVersion(s.id, s.billNo);
+        if (knownVer > s.version) {
+          continue;
+        }
+
         // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (ID ONLY)
         if (localTombstoneRegistry.containsKey(s.id)) {
           int localDeleteTime = localTombstoneRegistry[s.id]!;
@@ -682,12 +694,15 @@ class PharoahWebManager with ChangeNotifier {
 
   void deleteSale(String saleId) {
     String realId = saleId;
+    String targetBillNo = "";
     try {
       final s = sales.firstWhere(
         (x) => x.id == saleId || x.billNo == saleId,
         orElse: () => sales.firstWhere((x) => x.id == saleId),
       );
       realId = s.id;
+      targetBillNo = s.billNo;
+      D1SalesLedgerService.markPermanentlyDeleted(realId, targetBillNo);
       Set<String> targetChallanKeys = {};
       for (var cid in s.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -716,7 +731,7 @@ class PharoahWebManager with ChangeNotifier {
     unmarkedRecordIds.remove(realId);
     _saveLocalTombstones();
 
-    sales.removeWhere((s) => s.id == realId);
+    sales.removeWhere((s) => s.id == realId || (targetBillNo.isNotEmpty && s.billNo.trim().toUpperCase() == targetBillNo.trim().toUpperCase()));
     rebuildInventory();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
