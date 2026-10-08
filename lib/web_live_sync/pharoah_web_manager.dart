@@ -1,3 +1,4 @@
+import "../sync_core/d1_sales_ledger_service.dart";
 import '../sync_core/modules/sales_sync_module.dart';
 import '../sync_core/modules/purchase_sync_module.dart';
 import '../sync_core/modules/challan_sync_module.dart';
@@ -314,6 +315,15 @@ class PharoahWebManager with ChangeNotifier {
           }
           sales.insert(0, s);
         }
+      }
+      // 🚀 EDGE D1 REAL-TIME SALES DELTAS (#PH-REV-680)
+      if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
+        try {
+          final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(activeStoreToken);
+          if (edgeEvents.isNotEmpty) {
+            D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents);
+          }
+        } catch (_) {}
       }
     }
 
@@ -632,6 +642,7 @@ class PharoahWebManager with ChangeNotifier {
 
     // ⚡ Transactional Outbox Batch Enqueue
     SalesSyncModule.onSaleSaved(sale, activeStoreToken);
+    D1SalesLedgerService.onSaleSaved(sale, activeStoreToken, isUpdate: existingIdx != -1, clientSource: "WEB_PORTAL");
 
     // ⚡ Fast Non-Blocking Background Cloud Push
     _autoSyncService.triggerAutoSync(
@@ -668,6 +679,7 @@ class PharoahWebManager with ChangeNotifier {
       }
 
       SalesSyncModule.onSaleDeleted(s, activeStoreToken);
+      D1SalesLedgerService.onSaleDeleted(realId, s.billNo, activeStoreToken, clientSource: "WEB_PORTAL");
     } catch (_) {}
 
     final int delTime = DateTime.now().millisecondsSinceEpoch;
@@ -684,6 +696,20 @@ class PharoahWebManager with ChangeNotifier {
       entityId: realId,
       deletedIds: [realId],
     );
+  }
+
+  void cancelSale(String saleId) {
+    int i = sales.indexWhere((x) => x.id == saleId || x.billNo == saleId);
+    if (i != -1) {
+      sales[i].status = "Cancelled";
+      rebuildInventory();
+      notifyListeners();
+      D1SalesLedgerService.onSaleCancelled(sales[i], activeStoreToken, clientSource: "WEB_PORTAL");
+      _autoSyncService.triggerAutoSync(
+        action: 'CANCEL_SALE',
+        entityId: sales[i].id,
+      );
+    }
   }
 
   void addPurchaseAndSync(Purchase purchase) {

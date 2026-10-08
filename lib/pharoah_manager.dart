@@ -1,3 +1,4 @@
+import "sync_core/d1_sales_ledger_service.dart";
 import 'sync_core/modules/sales_sync_module.dart';
 import 'sync_core/modules/purchase_sync_module.dart';
 import 'sync_core/modules/challan_sync_module.dart';
@@ -422,7 +423,10 @@ Future<void> finalizeSale({
     sales.add(newFinalSale);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) SalesSyncModule.onSaleSaved(newFinalSale, t);
+        if (t.isNotEmpty) {
+          SalesSyncModule.onSaleSaved(newFinalSale, t);
+          D1SalesLedgerService.onSaleSaved(newFinalSale, t, isUpdate: existingIdx != -1, clientSource: "APP_MOBILE");
+        }
       });
     } 
     
@@ -1071,6 +1075,13 @@ void registerBatchActivity({
     int i = sales.indexWhere((x) => x.id == id);
     if (i != -1) {
       sales[i].status = "Cancelled";
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) {
+            D1SalesLedgerService.onSaleCancelled(sales[i], t, clientSource: "APP_MOBILE");
+          }
+        });
+      }
       save().then((_) => loadAllData());
       notifyListeners();
     }
@@ -1089,7 +1100,10 @@ void registerBatchActivity({
       sales.removeWhere((x) => x.id == realId);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) SalesSyncModule.onSaleDeleted(s, t);
+          if (t.isNotEmpty) {
+            SalesSyncModule.onSaleDeleted(s, t);
+            D1SalesLedgerService.onSaleDeleted(realId, s.billNo, t, clientSource: "APP_MOBILE");
+          }
         });
       }
       if (activeCompany != null) {

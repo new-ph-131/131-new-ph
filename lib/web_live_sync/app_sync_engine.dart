@@ -1,3 +1,4 @@
+import "../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/app_sync_engine.dart
 
 import 'dart:convert';
@@ -77,6 +78,16 @@ class AppSyncEngine {
 
           // STEP 4: DELTA MERGE (The Updater)
           bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
+          // 🚀 STEP 4.5: EDGE D1 REAL-TIME SALES DELTA MERGE (#PH-REV-680)
+          if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
+            try {
+              final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
+              if (edgeEvents.isNotEmpty) {
+                bool d1Mutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
+                if (d1Mutated) hasChanges = true;
+              }
+            } catch (_) {}
+          }
 
           if (hasChanges || newlyDeleted.isNotEmpty || localTombstones.isNotEmpty) {
             InventoryLogicCenter.rebuildAllInventory(
