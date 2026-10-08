@@ -302,25 +302,51 @@ class PharoahWebManager with ChangeNotifier {
           continue;
         }
 
-        int idx = sales.indexWhere((ls) => ls.id == s.id);
+        int idx = sales.indexWhere((ls) => ls.id == s.id || (s.billNo.trim().isNotEmpty && ls.billNo.trim().toUpperCase() == s.billNo.trim().toUpperCase()));
         if (idx != -1) {
-          // LWW Guard: Only overwrite if cloud record is newer
-          if (s.updatedAt > sales[idx].updatedAt || (s.updatedAt == sales[idx].updatedAt && s.version >= sales[idx].version) || sales[idx].updatedAt == 0) {
+          // 🛡️ VERSION SHIELD: Never allow Google Drive to downgrade a locally modified / D1 bill!
+          if (sales[idx].version > s.version) {
+            continue; // Local/D1 is newer! Reject stale Google Drive snapshot!
+          }
+          if (s.version > sales[idx].version || (s.version == sales[idx].version && s.updatedAt >= sales[idx].updatedAt) || sales[idx].updatedAt == 0) {
             sales[idx] = s;
           }
         } else {
-          // Gap-filling safety: if an older record with the same billNo exists, replace it
-          if (s.billNo.isNotEmpty) {
-            sales.removeWhere((ls) => ls.billNo == s.billNo && ls.updatedAt <= s.updatedAt);
-          }
           sales.insert(0, s);
         }
       }
-      // 🚀 EDGE D1 REAL-TIME SALES DELTAS (#PH-REV-680)
+
+      // 🛡️ STRICT DEDUPLICATION: Exactly 1 record per BillNo (Keep highest version)
+      Map<String, Sale> masterSalesMap = {};
+      for (var s in sales) {
+        String key = s.billNo.trim().toUpperCase();
+        if (key.isEmpty) key = s.id.trim();
+        if (!masterSalesMap.containsKey(key)) {
+          masterSalesMap[key] = s;
+        } else {
+          var existing = masterSalesMap[key]!;
+          if (s.version > existing.version || (s.version == existing.version && s.updatedAt >= existing.updatedAt)) {
+            masterSalesMap[key] = s;
+          }
+        }
+      }
+      sales = masterSalesMap.values.toList();
+
+      // 🚀 EDGE D1 REAL-TIME SALES DELTAS HARVEST
       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
         D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
           if (edgeEvents.isNotEmpty) {
             if (D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents)) {
+              // Post-D1 Deduplication pass
+              Map<String, Sale> postD1Map = {};
+              for (var s in sales) {
+                String key = s.billNo.trim().toUpperCase();
+                if (key.isEmpty) key = s.id.trim();
+                if (!postD1Map.containsKey(key) || s.version >= postD1Map[key]!.version) {
+                  postD1Map[key] = s;
+                }
+              }
+              sales = postD1Map.values.toList();
               rebuildInventory();
               notifyListeners();
             }
@@ -616,7 +642,7 @@ class PharoahWebManager with ChangeNotifier {
     }
     sale.updatedAt = DateTime.now().millisecondsSinceEpoch;
     sale.version = currentVer;
-    sales.removeWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
+    sales.removeWhere((s) => s.id == sale.id || (sale.billNo.trim().isNotEmpty && s.billNo.trim().toUpperCase() == sale.billNo.trim().toUpperCase()));
     sales.add(sale);
     for (var item in sale.items) {
       String resolvedKey = item.medicineID;

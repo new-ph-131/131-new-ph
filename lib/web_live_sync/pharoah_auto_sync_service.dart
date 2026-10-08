@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-683 (D1-EDGE-FAST-PULL-C2C-FIX)
+// Live Revision: #PH-REV-684 (VERSION-SHIELD-AND-DEDUP-PRO)
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'pharoah_web_manager.dart';
