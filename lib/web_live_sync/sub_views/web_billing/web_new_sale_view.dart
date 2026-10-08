@@ -393,14 +393,14 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     setState(() => isSaving = true);
 
     final Party activeParty = selectedParty ?? Party(id: 'cash', name: 'CASH', group: 'Cash in Hand');
-    final String targetSaleId = widget.modifySaleId ?? "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}";
     final String targetBillNo = billNoC.text.trim();
-
     int currentVer = 1;
+    Sale? existingSale;
     try {
-      final existingSale = webPh.sales.firstWhere((s) => s.id == targetSaleId || s.billNo == targetBillNo);
+      existingSale = webPh.sales.firstWhere((s) => (widget.modifySaleId != null && s.id == widget.modifySaleId) || (targetBillNo.isNotEmpty && s.billNo == targetBillNo));
       currentVer = existingSale.version + 1;
     } catch (_) {}
+    final String targetSaleId = widget.modifySaleId ?? (existingSale != null ? existingSale.id : "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}");
 
     final newSale = Sale(
       id: targetSaleId,

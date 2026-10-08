@@ -1,3 +1,4 @@
+import "../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/realtime_signaling/engines/fast_pull_engine.dart
 import 'dart:convert';
 import 'dart:io';
@@ -33,6 +34,42 @@ class FastPullEngine {
       Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
+
+      // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK
+      if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
+        try {
+          final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
+          if (edgeEvents.isNotEmpty) {
+            bool d1Mutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
+            for (final ev in edgeEvents) {
+              final String action = (ev["action"] ?? "").toString().toUpperCase();
+              final String bId = (ev["bill_id"] ?? "").toString().trim();
+              if (action == "DELETE" && bId.isNotEmpty) {
+                final nowTs = DateTime.now().millisecondsSinceEpoch;
+                localRegistry[bId] = nowTs;
+                localTombstones.add(bId);
+                await TombstoneEngine.recordTombstoneWithTimestamp(companyId, id: bId, timestamp: nowTs);
+              }
+            }
+            if (d1Mutated) {
+              InventoryLogicCenter.rebuildAllInventory(
+                medicines: ph.medicines,
+                batchHistory: ph.batchHistory,
+                purchases: ph.purchases,
+                sales: ph.sales,
+                saleReturns: ph.saleReturns,
+                purchaseReturns: ph.purchaseReturns,
+              );
+              await File('$workingDir/sales.json').writeAsString(
+                jsonEncode(ph.sales.map((e) => e.toMap()).toList()),
+              );
+              ph.notifyListeners();
+            }
+          }
+        } catch (d1Err) {
+          debugPrint("⚠ [FastPullEngine] D1 Delta Sync Notice: $d1Err");
+        }
+      }
 
       // 2. Ultra-Fast Pull from Cloud Relay
       final pullUri = Uri.parse(

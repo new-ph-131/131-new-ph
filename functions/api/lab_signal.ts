@@ -110,6 +110,21 @@ export async function onRequestPost(context: any) {
 
           const newSeq = insertRes?.meta?.last_row_id || Date.now();
 
+          // 🛡️ Permanent Tombstone Sync: Add to signals.tombstones so Google Drive lag never resurrects
+          if (evAction === "DELETE") {
+            try {
+              const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
+              let chanData: any = row && row.data ? JSON.parse(row.data) : { latest: null, events: [], tombstones: [] };
+              if (!chanData.tombstones) chanData.tombstones = [];
+              const tSet = new Set(chanData.tombstones);
+              if (billId) tSet.add(billId);
+              chanData.tombstones = Array.from(tSet);
+              await db.prepare(
+                "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+              ).bind(storeToken, JSON.stringify(chanData), Date.now()).run();
+            } catch (_) {}
+          }
+
           return new Response(JSON.stringify({
             status: "SUCCESS",
             seq: newSeq,
