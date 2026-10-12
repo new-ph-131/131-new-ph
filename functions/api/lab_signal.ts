@@ -1,7 +1,7 @@
 // FILE: functions/api/lab_signal.ts
 // Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal & Tombstone Resolution Bus (<30ms)
 // Features: Server-Authoritative Tombstone Sanitization, 100,000 Writes/Day, 5,000,000 Reads/Day.
-// Revision: #PH-REV-680 (Marg-Style Sequence Ledger & Optimistic Concurrency Engine)
+// Revision: #PH-REV-688 (100% Pure D1 Edge SQL - Cloudflare KV Completely Removed for Zero Quota Limits)
 
 interface SignalRecord {
   id: string;
@@ -265,14 +265,7 @@ export async function onRequestPost(context: any) {
       }
     }
 
-    // 2. SECONDARY / TRANSITIONAL FALLBACK: KV
-    if (context.env && context.env.SIGNAL_KV) {
-      try {
-        const kv = context.env.SIGNAL_KV;
-        const chanKey = "chan_" + storeToken;
-        await kv.put(chanKey, JSON.stringify(channelData), { expirationTtl: 604800 }).catch(() => {});
-      } catch (_) {}
-    }
+    // 🛡️ KV PERMANENTLY DECOMMISSIONED: Pure D1 SQL Engine Only (100k Writes/Day)
 
     return new Response(JSON.stringify({
       status: "SUCCESS",
@@ -385,24 +378,7 @@ export async function onRequestGet(context: any) {
       }
     }
 
-    // 2. SECONDARY FALLBACK: KV
-    if (!foundInD1 && context.env && context.env.SIGNAL_KV) {
-      try {
-        const kv = context.env.SIGNAL_KV;
-        const chanKey = "chan_" + storeToken;
-        const rawChan = await kv.get(chanKey);
-        if (rawChan) {
-          const chanData: ChannelData = JSON.parse(rawChan);
-          current = chanData.latest;
-          if (Array.isArray(chanData.events)) {
-            mutations = chanData.events.filter((e) => e.timestamp > lastSeenTs);
-          }
-          if (Array.isArray(chanData.tombstones)) {
-            tombstones = chanData.tombstones;
-          }
-        }
-      } catch (_) {}
-    }
+    // 🛡️ KV PERMANENTLY DECOMMISSIONED: Pure D1 SQL Engine Only
 
     // Query D1 Master Sync for Delta Batch Operations
     let batchOperations: any[] = [];
