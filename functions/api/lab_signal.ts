@@ -87,19 +87,7 @@ export async function onRequestPost(context: any) {
           const clientSource = (ev.client_source || body.source || "UNKNOWN").toString();
           const payload = typeof ev.payload === "string" ? ev.payload : JSON.stringify(ev.payload || ev);
 
-                    // 🛡️ STRICT ENTERPRISE TOMBSTONE & DELETION GUARD
-          const tombstoneCheck: any = await db.prepare(
-            "SELECT seq FROM sale_events WHERE store_token = ? AND (bill_id = ? OR bill_no = ?) AND action = 'DELETE' LIMIT 1"
-          ).bind(storeToken, billId, billNo).first().catch(() => null);
-
-          if (tombstoneCheck && evAction !== "DELETE") {
-            return new Response(JSON.stringify({
-              status: "REJECTED",
-              message: 
-            }), { status: 410, headers: CORS_HEADERS });
-          }
-
-          // Optimistic Concurrency Control (OCC) Check
+                              // Optimistic Concurrency Control (OCC) Check
           if (evAction === "UPDATE" || evAction === "CANCEL") {
             const latestRow: any = await db.prepare(
               "SELECT version FROM sale_events WHERE store_token = ? AND bill_id = ? ORDER BY seq DESC LIMIT 1"
