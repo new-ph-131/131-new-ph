@@ -401,6 +401,10 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       currentVer = existingSale.version + 1;
     } catch (_) {}
     final String targetSaleId = widget.modifySaleId ?? (existingSale != null ? existingSale.id : "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}");
+    final int d1KnownVer = D1SalesLedgerService.getKnownVersion(targetSaleId, targetBillNo);
+    if (d1KnownVer >= currentVer) {
+      currentVer = d1KnownVer + 1;
+    }
 
     final newSale = Sale(
       id: targetSaleId,
@@ -428,8 +432,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       version: currentVer,
     );
 
-    // Atomically purge previous versions (by ID or Bill No) so modifications are 100% clean
-    webPh.sales.removeWhere((s) => s.id == targetSaleId || s.billNo == targetBillNo);
+    // In-place enterprise update: preserved for addSaleAndSync
     webPh.addSaleAndSync(newSale);
     
     if (widget.linkedChallanIds != null) {

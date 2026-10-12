@@ -106,7 +106,17 @@ class D1SalesLedgerService {
           return true;
         }
       } else if (res.statusCode == 409) {
-        debugPrint("⚠ [D1SalesLedger] OCC Conflict: Bill modified elsewhere.");
+        debugPrint("⚠ [D1SalesLedger] OCC Conflict: Bill modified elsewhere. Initiating Enterprise Auto-Rebase...");
+        try {
+          final data = jsonDecode(res.body);
+          final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
+          if (serverVer > 0) {
+            recordKnownVersion(sale.id, sale.billNo, serverVer);
+            sale.version = serverVer + 1;
+            debugPrint("🔄 [D1SalesLedger] Auto-Rebasing sale ${sale.billNo} to version ${sale.version} and retrying...");
+            return await onSaleSaved(sale, storeToken, isUpdate: true, clientSource: clientSource);
+          }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint("⚠ [D1SalesLedger] onSaleSaved Network Error: $e");

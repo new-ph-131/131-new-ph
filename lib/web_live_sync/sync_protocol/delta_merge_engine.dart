@@ -37,7 +37,7 @@ class DeltaMergeEngine {
       if (idx != -1) {
         Sale localSale = localList[idx];
         // Last-Write-Wins (LWW) Check
-        if (cloudTimestamp > localSale.updatedAt || (cloudTimestamp == localSale.updatedAt && cloudVersion >= localSale.version) || localSale.updatedAt == 0) {
+        if (cloudVersion > localSale.version || (cloudVersion == localSale.version && cloudTimestamp >= localSale.updatedAt) || localSale.updatedAt == 0) {
           if (cloudIsDeleted == 1) {
             localList.removeAt(idx);
             localTombstoneRegistry[syncId] = cloudTimestamp;
@@ -139,7 +139,7 @@ class DeltaMergeEngine {
           int localVer = (localMap['version'] ?? 1).toInt();
 
           // 🛡️ SHIELD 2: Last-Write-Wins (LWW) Clock Auditing
-          if (cloudTimestamp > localTimestamp || (cloudTimestamp == localTimestamp && cloudVersion >= localVer) || localTimestamp == 0) {
+          if (cloudVersion > localVer || (cloudVersion == localVer && cloudTimestamp >= localTimestamp) || localTimestamp == 0) {
             if (cloudIsDeleted == 1) {
               localList.removeAt(idx);
               tombstoneRegistry[id] = cloudTimestamp;

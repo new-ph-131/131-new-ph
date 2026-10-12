@@ -647,15 +647,27 @@ class PharoahWebManager with ChangeNotifier {
 
   void addSaleAndSync(Sale sale) {
     unmarkDeletedId(sale.id, referenceNo: sale.billNo);
-    int currentVer = 1;
-    final int existingIdx = sales.indexWhere((s) => s.id == sale.id || s.billNo == sale.billNo);
-    if (existingIdx != -1) {
-      currentVer = sales[existingIdx].version + 1;
+    final int existingIdx = sales.indexWhere((s) => s.id == sale.id || (sale.billNo.trim().isNotEmpty && s.billNo.trim().toUpperCase() == sale.billNo.trim().toUpperCase()));
+    final bool isUpdate = existingIdx != -1;
+
+    // 🛡️ ENTERPRISE MONOTONIC VERSIONING & OCC RECONCILER (#PH-REV-687)
+    int maxVer = sale.version;
+    if (isUpdate && sales[existingIdx].version >= maxVer) {
+      maxVer = sales[existingIdx].version + 1;
     }
+    final int d1Known = D1SalesLedgerService.getKnownVersion(sale.id, sale.billNo);
+    if (d1Known >= maxVer) {
+      maxVer = d1Known + 1;
+    }
+    sale.version = maxVer;
     sale.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    sale.version = currentVer;
-    sales.removeWhere((s) => s.id == sale.id || (sale.billNo.trim().isNotEmpty && s.billNo.trim().toUpperCase() == sale.billNo.trim().toUpperCase()));
-    sales.add(sale);
+    D1SalesLedgerService.recordKnownVersion(sale.id, sale.billNo, sale.version);
+
+    if (isUpdate) {
+      sales[existingIdx] = sale;
+    } else {
+      sales.insert(0, sale);
+    }
     for (var item in sale.items) {
       String resolvedKey = item.medicineID;
       try {
