@@ -401,10 +401,12 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       currentVer = existingSale.version + 1;
     } catch (_) {}
     final String targetSaleId = widget.modifySaleId ?? (existingSale != null ? existingSale.id : "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}");
-    final int d1KnownVer = D1SalesLedgerService.getKnownVersion(targetSaleId, targetBillNo);
-    if (d1KnownVer >= currentVer) {
-      currentVer = d1KnownVer + 1;
-    }
+    try {
+      final ex = webPh.sales.firstWhere((s) => s.id == targetSaleId || (targetBillNo.isNotEmpty && s.billNo == targetBillNo));
+      if (ex.version >= currentVer) {
+        currentVer = ex.version + 1;
+      }
+    } catch (_) {}
 
     final newSale = Sale(
       id: targetSaleId,
