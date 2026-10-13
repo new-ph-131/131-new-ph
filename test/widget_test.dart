@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,7 +19,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Pharoah ERP'), findsNothing); // MaterialApp title is metadata, not body text.
+    expect(find.byType(MaterialApp), findsOneWidget);
     expect(find.byType(AppGateway), findsOneWidget);
   });
 }
