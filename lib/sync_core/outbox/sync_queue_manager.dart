@@ -75,13 +75,9 @@ class SyncQueueManager {
     if (_outboxBufferQueue.isEmpty || _isFlushing) return false;
     _isFlushing = true;
 
-    // Snapshot current outbox buffer
     final List<SyncEnvelope> batchPayload = List.from(_outboxBufferQueue);
     _outboxBufferQueue.clear();
-
     final String token = batchPayload.first.storeToken;
-
-    // STEP 4 CONFORMING JSON BATCH PAYLOAD
     final Map<String, dynamic> body = {
       "device_id": _deviceId,
       "storeToken": token,
@@ -91,6 +87,7 @@ class SyncQueueManager {
       "operations": batchPayload.map((e) => e.toMap()).toList(),
     };
 
+    bool succeeded = false;
     try {
       final response = await http.post(
         Uri.parse(edgeSignalEndpoint),
@@ -100,20 +97,30 @@ class SyncQueueManager {
 
       if (response.statusCode == 200) {
         debugPrint("⚡ [SyncQueueManager] Successfully flushed Step 4 batch of ${batchPayload.length} operations to D1!");
-        _isFlushing = false;
-        return true;
+        succeeded = true;
       } else {
         debugPrint("⚠ [SyncQueueManager] Server returned status ${response.statusCode}. Restoring to buffer.");
-        _outboxBufferQueue.insertAll(0, batchPayload);
-        _isFlushing = false;
-        return false;
       }
     } catch (e) {
       debugPrint("⚠ [SyncQueueManager] Batch flush error: $e. Restoring to buffer for retry.");
-      _outboxBufferQueue.insertAll(0, batchPayload);
+    } finally {
+      if (!succeeded) {
+        // Preserve retry data ahead of mutations queued while the request was in flight.
+        _outboxBufferQueue.insertAll(0, batchPayload);
+      }
       _isFlushing = false;
-      return false;
+
+      // An enqueue can happen while the HTTP request is in flight. Its debounce
+      // timer may fire while _isFlushing is true and return early; always schedule
+      // another flush once the current request finishes if anything remains queued.
+      if (_outboxBufferQueue.isNotEmpty) {
+        _debounceTimer?.cancel();
+        _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+          flushOutboxAsJSONBatch();
+        });
+      }
     }
+    return succeeded;
   }
 
   /// Pending count for UI status inspection
