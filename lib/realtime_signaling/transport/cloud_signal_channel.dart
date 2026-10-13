@@ -77,6 +77,14 @@ class CloudSignalChannel {
             // 🚀 Step 4: Atomic Batch Delta Processing
             if (data['batch_operations'] is List && (data['batch_operations'] as List).isNotEmpty) {
               final batchOps = List<dynamic>.from(data['batch_operations']);
+              for (final op in batchOps) {
+                if (op is Map && op['updated_at'] != null) {
+                  final uTs = int.tryParse(op['updated_at'].toString()) ?? 0;
+                  if (uTs > _lastKnownSignalTime) {
+                    _lastKnownSignalTime = uTs;
+                  }
+                }
+              }
               onBatchReceived?.call(batchOps);
             }
 

@@ -1,6 +1,7 @@
 // FILE: lib/web_live_sync/sub_views/web_purchase/mechanism/web_purchase_mechanism.dart
 import 'package:pharoah_erp/web_live_sync/web_models.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
+import 'package:pharoah_erp/sync_core/modules/purchase_sync_module.dart';
 
 class WebPurchaseMechanism {
   static Future<bool> commitPurchase({
@@ -20,11 +21,14 @@ class WebPurchaseMechanism {
     String? existingId,
   }) async {
     int currentVer = 1;
+    final cleanIntNo = internalNo.trim().toUpperCase();
+    final cleanBillNo = billNo.trim().toUpperCase();
+
     if (existingId != null && existingId.isNotEmpty) {
       final int idx = webPh.purchases.indexWhere((p) => 
         p.id == existingId || 
-        (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase()) || 
-        (billNo.isNotEmpty && p.billNo.trim().toUpperCase() == billNo.trim().toUpperCase())
+        (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
+        (cleanBillNo.isNotEmpty && p.partyId == supplier.id && p.billNo.trim().toUpperCase() == cleanBillNo)
       );
       if (idx != -1) {
         currentVer = webPh.purchases[idx].version + 1;
@@ -52,9 +56,10 @@ class WebPurchaseMechanism {
       version: currentVer,
     );
 
-    // Unmark any tombstone for this bill or internal number
+    // Unmark any tombstone for this purchase using Composite Key (Never naked billNo!)
+    final compKey = PurchaseSyncModule.makeCompositeKey(supplier.id, billNo, internalNo);
     webPh.unmarkDeletedId(purchaseId, referenceNo: internalNo);
-    if (billNo.isNotEmpty) webPh.unmarkDeletedId(billNo);
+    if (compKey.isNotEmpty) webPh.unmarkDeletedId(compKey);
 
     webPh.addPurchaseAndSync(newPurchase);
 

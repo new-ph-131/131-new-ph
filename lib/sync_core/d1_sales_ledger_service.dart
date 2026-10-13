@@ -90,6 +90,71 @@ class D1SalesLedgerService {
     } catch (_) {}
   }
 
+  // =========================================================================
+  // 🛡️ PURCHASE COMPOSITE CONCURRENCY & GRAVESTONES (PARTY_ID + BILL_NO)
+  // =========================================================================
+  static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
+    final cleanId = id.trim();
+    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanParty = partyId.trim().toUpperCase();
+    final cleanBill = billNo.trim().toUpperCase();
+    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    return (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId)) ||
+           (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
+           (compKey.isNotEmpty && _permanentDeletedKeys.contains(compKey));
+  }
+
+  static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = ""]) {
+    final cleanId = id.trim();
+    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanParty = partyId.trim().toUpperCase();
+    final cleanBill = billNo.trim().toUpperCase();
+    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    int maxV = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
+    if (cleanInt.isNotEmpty && (_knownBillVersions[cleanInt] ?? 0) > maxV) {
+      maxV = _knownBillVersions[cleanInt]!;
+    }
+    if (compKey.isNotEmpty && (_knownBillVersions[compKey] ?? 0) > maxV) {
+      maxV = _knownBillVersions[compKey]!;
+    }
+    return maxV;
+  }
+
+  static void recordPurchaseKnownVersion(String id, String partyId, String billNo, int version, [String internalNo = ""]) {
+    final cleanId = id.trim();
+    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanParty = partyId.trim().toUpperCase();
+    final cleanBill = billNo.trim().toUpperCase();
+    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    if (cleanId.isNotEmpty && version > (_knownBillVersions[cleanId] ?? 0)) {
+      _knownBillVersions[cleanId] = version;
+    }
+    if (cleanInt.isNotEmpty && version > (_knownBillVersions[cleanInt] ?? 0)) {
+      _knownBillVersions[cleanInt] = version;
+    }
+    if (compKey.isNotEmpty && version > (_knownBillVersions[compKey] ?? 0)) {
+      _knownBillVersions[compKey] = version;
+    }
+  }
+
+  static void markPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
+    final cleanId = id.trim();
+    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanParty = partyId.trim().toUpperCase();
+    final cleanBill = billNo.trim().toUpperCase();
+    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    markPermanentlyDeleted(cleanId, cleanInt, compKey);
+  }
+
+  static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
+    final cleanId = id.trim();
+    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanParty = partyId.trim().toUpperCase();
+    final cleanBill = billNo.trim().toUpperCase();
+    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey);
+  }
+
   static Future<void> loadPersistedGravestones() async {
     try {
       final prefs = await SharedPreferences.getInstance();

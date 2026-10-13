@@ -1,3 +1,4 @@
+import '../sync_core/modules/returns_sync_module.dart';
 import "../sync_core/d1_sales_ledger_service.dart";
 import '../sync_core/modules/sales_sync_module.dart';
 import '../sync_core/modules/purchase_sync_module.dart';
@@ -397,7 +398,7 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 2. Purchases Sync with Anti-Zombie Shield & Strict Multi-Key Protection
+    // 2. Purchases Sync with Anti-Zombie Composite Key Shield & Strict Multi-Key Protection
     var allParsedPurc = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
         .toList();
@@ -406,18 +407,35 @@ class PharoahWebManager with ChangeNotifier {
         if (p.isDeleted == 1) continue;
         final String cleanIntNo = p.internalNo.trim().toUpperCase();
         final String cleanBillNo = p.billNo.trim().toUpperCase();
+        final String cleanPartyId = p.partyId.trim().toUpperCase();
+        final String compKey = PurchaseSyncModule.makeCompositeKey(cleanPartyId, cleanBillNo, cleanIntNo);
+
+        // 🛡️ D1 MASTER GRAVESTONE SHIELD: If deleted in D1, Google Drive can NEVER resurrect!
+        if (D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo)) {
+          continue;
+        }
+
+        // 🛡️ D1 MASTER VERSION SHIELD: If D1 has higher version, Google Drive can NEVER downgrade!
+        final int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(p.id, p.partyId, p.billNo, p.internalNo);
+        if (knownVer > p.version) {
+          continue;
+        }
+
+        // 🛡️ Anti-Zombie / Permanent Tombstone Check (Protected by Composite Key, NEVER raw billNo!)
         if ((p.id.isNotEmpty && deletedRecordIds.contains(p.id)) ||
             (cleanIntNo.isNotEmpty && deletedRecordIds.contains(cleanIntNo)) ||
-            (cleanBillNo.isNotEmpty && deletedRecordIds.contains(cleanBillNo)) ||
+            (compKey.isNotEmpty && deletedRecordIds.contains(compKey)) ||
             (p.id.isNotEmpty && localTombstoneRegistry.containsKey(p.id)) ||
             (cleanIntNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanIntNo)) ||
-            (cleanBillNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBillNo))) {
+            (compKey.isNotEmpty && localTombstoneRegistry.containsKey(compKey))) {
           continue; // Blocked by Permanent Tombstone!
         }
+
         int idx = purchases.indexWhere((lp) => 
           (p.id.isNotEmpty && lp.id == p.id) ||
           (cleanIntNo.isNotEmpty && lp.internalNo.trim().toUpperCase() == cleanIntNo) ||
-          (cleanBillNo.isNotEmpty && lp.billNo.trim().toUpperCase() == cleanBillNo)
+          (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty &&
+           lp.billNo.trim().toUpperCase() == cleanBillNo && lp.partyId.trim().toUpperCase() == cleanPartyId)
         );
         if (idx != -1) {
           if (purchases[idx].version > p.version) continue;
@@ -428,10 +446,13 @@ class PharoahWebManager with ChangeNotifier {
           purchases.insert(0, p);
         }
       }
+      // 🛡️ STRICT DEDUPLICATION: Keyed by internalNo or composite key (PartyId_BillNo)
       Map<String, Purchase> masterPurcMap = {};
       for (var p in purchases) {
         String key = p.internalNo.trim().toUpperCase();
-        if (key.isEmpty) key = p.billNo.trim().toUpperCase();
+        if (key.isEmpty && p.partyId.isNotEmpty && p.billNo.isNotEmpty) {
+          key = "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}";
+        }
         if (key.isEmpty) key = p.id.trim();
         if (!masterPurcMap.containsKey(key) || p.version >= masterPurcMap[key]!.version) {
           masterPurcMap[key] = p;
@@ -889,14 +910,20 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void addPurchaseAndSync(Purchase purchase) {
+    final compKey = PurchaseSyncModule.makeCompositeKey(purchase.partyId, purchase.billNo, purchase.internalNo);
     unmarkDeletedId(purchase.id, referenceNo: purchase.internalNo);
-    if (purchase.billNo.isNotEmpty) unmarkDeletedId(purchase.billNo);
-    D1SalesLedgerService.unmarkPermanentlyDeleted(purchase.id, purchase.billNo, purchase.internalNo);
+    if (compKey.isNotEmpty) unmarkDeletedId(compKey);
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo);
+
+    final cleanIntNo = purchase.internalNo.trim().toUpperCase();
+    final cleanBillNo = purchase.billNo.trim().toUpperCase();
+    final cleanPartyId = purchase.partyId.trim().toUpperCase();
 
     final int existingIdx = purchases.indexWhere((p) => 
       p.id == purchase.id || 
-      (purchase.billNo.isNotEmpty && p.billNo.isNotEmpty && p.billNo.trim().toUpperCase() == purchase.billNo.trim().toUpperCase()) || 
-      (purchase.internalNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == purchase.internalNo.trim().toUpperCase())
+      (cleanIntNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
+      (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty && p.billNo.isNotEmpty && p.partyId.isNotEmpty &&
+       p.billNo.trim().toUpperCase() == cleanBillNo && p.partyId.trim().toUpperCase() == cleanPartyId)
     );
     final bool isUpdate = existingIdx != -1;
 
@@ -905,16 +932,13 @@ class PharoahWebManager with ChangeNotifier {
     if (isUpdate && purchases[existingIdx].version >= maxVer) {
       maxVer = purchases[existingIdx].version + 1;
     }
-    final int d1Known = D1SalesLedgerService.getKnownVersion(purchase.id, purchase.billNo, purchase.internalNo);
+    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo);
     if (d1Known >= maxVer) {
       maxVer = d1Known + 1;
     }
     purchase.version = maxVer;
     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    D1SalesLedgerService.recordKnownVersion(purchase.id, purchase.billNo, purchase.version);
-    if (purchase.internalNo.isNotEmpty) {
-      D1SalesLedgerService.recordKnownVersion(purchase.internalNo, "", purchase.version);
-    }
+    D1SalesLedgerService.recordPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.version, purchase.internalNo);
 
     if (isUpdate) {
       purchases[existingIdx] = purchase;
@@ -946,14 +970,14 @@ class PharoahWebManager with ChangeNotifier {
     rebuildInventory();
     notifyListeners();
 
-    // ⚡ Fast Non-Blocking Background Cloud Push
+    // ⚡ Fast Non-Blocking Background Cloud Push with Composite Key
     _autoSyncService.triggerAutoSync(
       action: 'DATA_SAVED',
       entityId: purchase.id,
       unmarkedIds: [
         purchase.id,
         if (purchase.internalNo.isNotEmpty) purchase.internalNo,
-        if (purchase.billNo.isNotEmpty) purchase.billNo,
+        if (compKey.isNotEmpty) compKey,
       ],
     );
   }
@@ -962,15 +986,19 @@ class PharoahWebManager with ChangeNotifier {
     String realId = purId;
     String targetIntNo = "";
     String targetBillNo = "";
+    String targetPartyId = "";
+    String compKey = "";
     try {
       final p = purchases.firstWhere(
-        (x) => x.id == purId || x.internalNo == purId || x.billNo == purId,
+        (x) => x.id == purId || x.internalNo == purId,
         orElse: () => purchases.firstWhere((x) => x.id == purId),
       );
       realId = p.id;
       targetIntNo = p.internalNo.trim().toUpperCase();
       targetBillNo = p.billNo.trim().toUpperCase();
-      D1SalesLedgerService.markPermanentlyDeleted(realId, targetBillNo, targetIntNo);
+      targetPartyId = p.partyId.trim().toUpperCase();
+      compKey = PurchaseSyncModule.makeCompositeKey(targetPartyId, targetBillNo, targetIntNo);
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(realId, targetPartyId, targetBillNo, targetIntNo);
       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
@@ -980,7 +1008,6 @@ class PharoahWebManager with ChangeNotifier {
         if (it.sourceChallanNo.trim().isNotEmpty) targetChallanKeys.add(it.sourceChallanNo.trim().toUpperCase());
         if (it.sourceChallanId.trim().isNotEmpty) targetChallanKeys.add(it.sourceChallanId.trim().toUpperCase());
       }
-
       if (targetChallanKeys.isNotEmpty) {
         for (var ch in purchaseChallans) {
           if (targetChallanKeys.contains(ch.id.trim().toUpperCase()) ||
@@ -993,7 +1020,12 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
 
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final List<String> delKeys = [realId, if (targetIntNo.isNotEmpty) targetIntNo, if (targetBillNo.isNotEmpty) targetBillNo];
+    // 🛡️ COMPOSITE TOMBSTONE KEYS: NEVER naked targetBillNo alone!
+    final List<String> delKeys = [
+      realId,
+      if (targetIntNo.isNotEmpty) targetIntNo,
+      if (compKey.isNotEmpty) compKey,
+    ];
 
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
@@ -1001,11 +1033,11 @@ class PharoahWebManager with ChangeNotifier {
       unmarkedRecordIds.remove(k);
     }
     _saveLocalTombstones();
-
     purchases.removeWhere((p) => 
       p.id == realId || 
       (targetIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == targetIntNo) ||
-      (targetBillNo.isNotEmpty && p.billNo.trim().toUpperCase() == targetBillNo)
+      (targetBillNo.isNotEmpty && targetPartyId.isNotEmpty &&
+       p.billNo.trim().toUpperCase() == targetBillNo && p.partyId.trim().toUpperCase() == targetPartyId)
     );
     rebuildInventory();
     notifyListeners();

@@ -4,19 +4,20 @@ import '../models/sync_envelope.dart';
 import '../modules/sales_sync_module.dart';
 import '../modules/purchase_sync_module.dart';
 import '../modules/challan_sync_module.dart';
+import '../modules/returns_sync_module.dart';
 import '../modules/voucher_sync_module.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
 
 /// MasterSyncOrchestrator: Combined routing facade merging all domain modules.
-/// Complies with the File Separation Rule: Sales, Purchases, Challans, and Vouchers
-/// each reside in their own clean, isolated file, and this orchestrator merges them
-/// dynamically upon incoming sync batches.
+/// Complies with Enterprise File Separation Architecture: Sales, Purchases, Challans,
+/// Returns, and Vouchers each reside in their own clean, isolated file, and this orchestrator
+/// routes and merges them dynamically upon incoming sync batches.
 class MasterSyncOrchestrator {
   static final MasterSyncOrchestrator instance = MasterSyncOrchestrator._internal();
   MasterSyncOrchestrator._internal();
 
-  /// Dispatches an individual SyncEnvelope to the appropriate module
+  /// Dispatches an individual SyncEnvelope to the appropriate domain module
   static bool dispatchEnvelope({
     required SyncEnvelope envelope,
     PharoahManager? phApp,
@@ -34,7 +35,19 @@ class MasterSyncOrchestrator {
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope);
           break;
         case 'CHALLAN':
+        case 'SALE_CHALLAN':
           mutated = ChallanSyncModule.mergeIncomingChallanEnvelope(phApp.saleChallans, envelope);
+          break;
+        case 'PURCHASE_CHALLAN':
+          mutated = ChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phApp.purchaseChallans, envelope);
+          break;
+        case 'SALE_RETURN':
+        case 'CREDIT_NOTE':
+          mutated = ReturnsSyncModule.mergeIncomingSaleReturn(phApp.saleReturns, envelope);
+          break;
+        case 'PURCHASE_RETURN':
+        case 'DEBIT_NOTE':
+          mutated = ReturnsSyncModule.mergeIncomingPurchaseReturn(phApp.purchaseReturns, envelope);
           break;
         case 'VOUCHER':
           mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phApp.vouchers, envelope);
@@ -53,7 +66,19 @@ class MasterSyncOrchestrator {
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope);
           break;
         case 'CHALLAN':
+        case 'SALE_CHALLAN':
           mutated = ChallanSyncModule.mergeIncomingChallanEnvelope(phWeb.saleChallans, envelope);
+          break;
+        case 'PURCHASE_CHALLAN':
+          mutated = ChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phWeb.purchaseChallans, envelope);
+          break;
+        case 'SALE_RETURN':
+        case 'CREDIT_NOTE':
+          mutated = ReturnsSyncModule.mergeIncomingSaleReturn(phWeb.saleReturns, envelope);
+          break;
+        case 'PURCHASE_RETURN':
+        case 'DEBIT_NOTE':
+          mutated = ReturnsSyncModule.mergeIncomingPurchaseReturn(phWeb.purchaseReturns, envelope);
           break;
         case 'VOUCHER':
           mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phWeb.vouchers, envelope);
@@ -66,7 +91,7 @@ class MasterSyncOrchestrator {
     return mutated;
   }
 
-  /// Processes a complete Step 4 JSON Batch payload
+  /// Processes a complete JSON Batch payload
   static int dispatchBatchOperations({
     required List<dynamic> operations,
     PharoahManager? phApp,
@@ -74,13 +99,11 @@ class MasterSyncOrchestrator {
   }) {
     if (operations.isEmpty) return 0;
     int appliedCount = 0;
-
     for (final rawOp in operations) {
       try {
         final Map<String, dynamic> opMap = rawOp is Map<String, dynamic>
             ? rawOp
             : Map<String, dynamic>.from(rawOp as Map);
-
         final envelope = SyncEnvelope.fromMap(opMap);
         final success = dispatchEnvelope(envelope: envelope, phApp: phApp, phWeb: phWeb);
         if (success) appliedCount++;
@@ -100,7 +123,6 @@ class MasterSyncOrchestrator {
       }
       debugPrint("🚀 [MasterSyncOrchestrator] Applied $appliedCount mutations from JSON batch!");
     }
-
     return appliedCount;
   }
 }

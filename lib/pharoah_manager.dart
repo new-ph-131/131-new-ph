@@ -489,22 +489,37 @@ Future<void> finalizePurchase({
   }) async { 
     final String pId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
-    final int existingIdx = purchases.indexWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+    final cleanIntNo = internalNo.trim().toUpperCase();
+    final cleanBillNo = billNo.trim().toUpperCase();
+    final cleanPartyId = party.id.trim().toUpperCase();
+    final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
+
+    final int existingIdx = purchases.indexWhere((p) => 
+      p.id == pId || 
+      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
+      (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty &&
+       p.billNo.trim().toUpperCase() == cleanBillNo && p.partyId.trim().toUpperCase() == cleanPartyId)
+    );
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: billNo);
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: compKey);
       if (internalNo.isNotEmpty) {
         TombstoneEngine.unmarkTombstone(activeCompany!.id, id: internalNo);
       }
     }
-    D1SalesLedgerService.unmarkPermanentlyDeleted(pId, billNo, internalNo);
-    final int d1Known = D1SalesLedgerService.getKnownVersion(pId, billNo, internalNo);
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo);
+    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(pId, party.id, billNo, internalNo);
     if (d1Known >= currentVer) currentVer = d1Known + 1;
-    D1SalesLedgerService.recordKnownVersion(pId, billNo, currentVer);
-    if (internalNo.isNotEmpty) D1SalesLedgerService.recordKnownVersion(internalNo, "", currentVer);
-    purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+    D1SalesLedgerService.recordPurchaseKnownVersion(pId, party.id, billNo, currentVer, internalNo);
+
+    purchases.removeWhere((p) => 
+      p.id == pId || 
+      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
+      (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty &&
+       p.billNo.trim().toUpperCase() == cleanBillNo && p.partyId.trim().toUpperCase() == cleanPartyId)
+    );
     final newFinalPurchase = Purchase(
       id: pId, 
       internalNo: internalNo, 
@@ -1212,16 +1227,19 @@ void registerBatchActivity({
       final String pId = p.id;
       final String intNo = p.internalNo.trim().toUpperCase();
       final String bNo = p.billNo.trim().toUpperCase();
+      final String partyId = p.partyId.trim().toUpperCase();
+      final String compKey = PurchaseSyncModule.makeCompositeKey(partyId, bNo, intNo);
 
-      // Deduplicate remove across all 3 identifiers
+      // Deduplicate remove across composite identity (never naked bNo alone!)
       purchases.removeWhere((x) => 
         x.id == pId || 
         (intNo.isNotEmpty && x.internalNo.trim().toUpperCase() == intNo) ||
-        (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo)
+        (bNo.isNotEmpty && partyId.isNotEmpty &&
+         x.billNo.trim().toUpperCase() == bNo && x.partyId.trim().toUpperCase() == partyId)
       );
 
-      D1SalesLedgerService.markPermanentlyDeleted(pId, bNo, intNo);
-      final List<String> delKeys = [pId, if (intNo.isNotEmpty) intNo, if (bNo.isNotEmpty) bNo];
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(pId, partyId, bNo, intNo);
+      final List<String> delKeys = [pId, if (intNo.isNotEmpty) intNo, if (compKey.isNotEmpty) compKey];
 
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {

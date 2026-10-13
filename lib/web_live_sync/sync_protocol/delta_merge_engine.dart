@@ -205,7 +205,7 @@ class DeltaMergeEngine {
       decodeJson('purc.json'), 
       ph.purchases, 
       (e) => e.id, 
-      (e) => e.internalNo.isNotEmpty ? e.internalNo : e.billNo, 
+      (e) => e.internalNo.isNotEmpty ? e.internalNo : "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}", 
       (m) => Purchase.fromMap(m), 
       (e) => e.toMap()
     );
@@ -232,7 +232,7 @@ class DeltaMergeEngine {
       decodeJson('p_challan.json'), 
       ph.purchaseChallans, 
       (e) => e.id, 
-      (e) => e.internalNo.isNotEmpty ? e.internalNo : e.billNo, 
+      (e) => e.internalNo.isNotEmpty ? e.internalNo : "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}", 
       (m) => PurchaseChallan.fromMap(m), 
       (e) => e.toMap()
     );
@@ -250,7 +250,7 @@ class DeltaMergeEngine {
       decodeJson('p_return.json'), 
       ph.purchaseReturns, 
       (e) => e.id, 
-      (e) => e.billNo, 
+      (e) => "${e.distributorName.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}", 
       (m) => PurchaseReturn.fromMap(m), 
       (e) => e.toMap()
     );
