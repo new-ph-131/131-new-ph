@@ -21,11 +21,20 @@ class WebPurchaseMechanism {
   }) async {
     int currentVer = 1;
     if (existingId != null && existingId.isNotEmpty) {
-      final int idx = webPh.purchases.indexWhere((p) => p.id == existingId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+      final int idx = webPh.purchases.indexWhere((p) => 
+        p.id == existingId || 
+        (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase()) || 
+        (billNo.isNotEmpty && p.billNo.trim().toUpperCase() == billNo.trim().toUpperCase())
+      );
       if (idx != -1) {
         currentVer = webPh.purchases[idx].version + 1;
+        supplier.opBal -= webPh.purchases[idx].totalAmount;
       }
-      webPh.purchases.removeWhere((p) => p.id == existingId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
+      webPh.purchases.removeWhere((p) => 
+        p.id == existingId || 
+        (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase()) || 
+        (billNo.isNotEmpty && p.billNo.trim().toUpperCase() == billNo.trim().toUpperCase())
+      );
     }
 
     final newPurchase = Purchase(
@@ -102,6 +111,6 @@ class WebPurchaseMechanism {
     webPh.updateParty(supplier);
     webPh.rebuildInventory();
     webPh.notifyListeners();
-    return await webPh.pushUpdatedDataToCloud();
+    return true;
   }
 }

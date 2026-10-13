@@ -107,7 +107,7 @@ class FastPullEngine {
           if (rawReg is Map) {
             rawReg.forEach((k, v) {
               final cleanK = k.toString().trim();
-              if (cleanK.isNotEmpty && !cleanK.contains('/')) {
+              if (cleanK.isNotEmpty) {
                 final cTs = int.tryParse(v.toString()) ?? 0;
                 final lTs = localRegistry[cleanK] ?? 0;
                 if (cTs > lTs) {
@@ -124,7 +124,32 @@ class FastPullEngine {
       TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
       TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
-      // 🛡️ D1 MASTER SHIELD FOR GOOGLE DRIVE SALES SNAPSHOT
+      // 🛡️ UNIVERSAL PRE-MERGE SHIELD FOR ALL CLOUD SNAPSHOT FILES
+      void sanitizeCloudFile(String fileName, List<String> Function(Map) keyExtractor) {
+        if (!cloudFiles.containsKey(fileName) || cloudFiles[fileName] == null) return;
+        try {
+          final List<dynamic> rawList = jsonDecode(cloudFiles[fileName]);
+          final List<dynamic> filtered = [];
+          for (final item in rawList) {
+            if (item is Map) {
+              final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" || item["status"] == "Cancelled" ? "1" : "0")) ?? 0;
+              if (isDel == 1) continue;
+              final keys = keyExtractor(item);
+              bool isBlocked = false;
+              for (final k in keys) {
+                final clean = k.trim().toUpperCase();
+                if (clean.isNotEmpty && (localTombstones.contains(clean) || localRegistry.containsKey(clean) || localTombstones.contains(k.trim()) || localRegistry.containsKey(k.trim()))) {
+                  isBlocked = true;
+                  break;
+                }
+              }
+              if (!isBlocked) filtered.add(item);
+            }
+          }
+          cloudFiles[fileName] = jsonEncode(filtered);
+        } catch (_) {}
+      }
+
       if (cloudFiles.containsKey("sales.json") && cloudFiles["sales.json"] != null) {
         try {
           final List<dynamic> rawCloudSales = jsonDecode(cloudFiles["sales.json"]);
@@ -142,6 +167,13 @@ class FastPullEngine {
           cloudFiles["sales.json"] = jsonEncode(filteredSales);
         } catch (_) {}
       }
+      sanitizeCloudFile("sales.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("purc.json", (m) => [(m["id"] ?? "").toString(), (m["internalNo"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("vouc.json", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
+      sanitizeCloudFile("s_challan.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("p_challan.json", (m) => [(m["id"] ?? "").toString(), (m["internalNo"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("s_return.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("p_return.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
 
       // 5. Delta Merge Cloud Data into Memory
       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);

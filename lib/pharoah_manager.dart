@@ -1049,12 +1049,19 @@ void registerBatchActivity({
       final vNo = v.voucherNo;
       vouchers.removeAt(i);
       if (activeCompany != null) {
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [id, if (vNo.isNotEmpty) vNo]);
+        final List<String> delKeys = [id, if (vNo.isNotEmpty) vNo];
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_VOUCHER',
+          entityId: id,
+          deletedIds: delKeys,
+        );
         AppAutoSyncDaemon.instance.triggerSilentPush(
           this,
           action: 'DELETE_VOUCHER',
           entityId: id,
-          deletedIds: [id, if (vNo.isNotEmpty) vNo],
+          deletedIds: delKeys,
         );
       }
       save();
@@ -1214,6 +1221,7 @@ void registerBatchActivity({
           this,
           action: 'DELETE_PURCHASE',
           entityId: pId,
+          deletedIds: delKeys,
         );
         AppAutoSyncDaemon.instance.triggerSilentPush(
           this,
@@ -1230,18 +1238,123 @@ void registerBatchActivity({
   void deleteSaleChallan(String id) {
     try {
       final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
+      final cId = c.id;
+      final bNo = c.billNo.trim().toUpperCase();
+      final List<String> delKeys = [cId, if (bNo.isNotEmpty) bNo];
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) ChallanSyncModule.onChallanDeleted(c, t);
         });
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_SALE_CHALLAN',
+          entityId: cId,
+          deletedIds: delKeys,
+        );
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_SALE_CHALLAN',
+          entityId: cId,
+          deletedIds: delKeys,
+        );
       }
-    } catch (_) {}
-    saleChallans.removeWhere((c) => c.id == id); 
-    save(); 
+      saleChallans.removeWhere((x) => x.id == cId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      save();
+      notifyListeners();
+    } catch (_) {
+      saleChallans.removeWhere((c) => c.id == id);
+      save();
+      notifyListeners();
+    }
   }
-  void deletePurchaseChallan(String id) { purchaseChallans.removeWhere((c) => c.id == id); save(); }
-  void deleteSaleReturn(String id) { saleReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }
-  void deletePurchaseReturn(String id) { purchaseReturns.removeWhere((r) => r.id == id); save().then((_) => loadAllData()); }
+  void deletePurchaseChallan(String id) {
+    try {
+      final c = purchaseChallans.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
+      final cId = c.id;
+      final iNo = c.internalNo.trim().toUpperCase();
+      final bNo = c.billNo.trim().toUpperCase();
+      final List<String> delKeys = [cId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo];
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_PURCHASE_CHALLAN',
+          entityId: cId,
+          deletedIds: delKeys,
+        );
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_PURCHASE_CHALLAN',
+          entityId: cId,
+          deletedIds: delKeys,
+        );
+      }
+      purchaseChallans.removeWhere((x) => x.id == cId || (iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      save();
+      notifyListeners();
+    } catch (_) {
+      purchaseChallans.removeWhere((c) => c.id == id);
+      save();
+      notifyListeners();
+    }
+  }
+  void deleteSaleReturn(String id) {
+    try {
+      final r = saleReturns.firstWhere((x) => x.id == id || x.billNo == id);
+      final rId = r.id;
+      final bNo = r.billNo.trim().toUpperCase();
+      final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_SALE_RETURN',
+          entityId: rId,
+          deletedIds: delKeys,
+        );
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_SALE_RETURN',
+          entityId: rId,
+          deletedIds: delKeys,
+        );
+      }
+      saleReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      save().then((_) => loadAllData());
+    } catch (_) {
+      saleReturns.removeWhere((r) => r.id == id);
+      save().then((_) => loadAllData());
+    }
+  }
+  void deletePurchaseReturn(String id) {
+    try {
+      final r = purchaseReturns.firstWhere((x) => x.id == id || x.billNo == id);
+      final rId = r.id;
+      final bNo = r.billNo.trim().toUpperCase();
+      final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'DELETE_PURCHASE_RETURN',
+          entityId: rId,
+          deletedIds: delKeys,
+        );
+        AppAutoSyncDaemon.instance.triggerSilentPush(
+          this,
+          action: 'DELETE_PURCHASE_RETURN',
+          entityId: rId,
+          deletedIds: delKeys,
+        );
+      }
+      purchaseReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      save().then((_) => loadAllData());
+    } catch (_) {
+      purchaseReturns.removeWhere((r) => r.id == id);
+      save().then((_) => loadAllData());
+    }
+  }
 
   void deleteParty(String id) {
     try {

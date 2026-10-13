@@ -101,23 +101,54 @@ class PharoahWebManager with ChangeNotifier {
   void purgeDeletedIds(List<String> ids) {
     if (ids.isEmpty) return;
     final nowTs = DateTime.now().millisecondsSinceEpoch;
-    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty && !unmarkedRecordIds.contains(e) && !e.contains('/')).toSet();
+    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty && !unmarkedRecordIds.contains(e)).toSet();
+    final upperSet = set.map((e) => e.toUpperCase()).toSet();
     for (var id in set) {
       localTombstoneRegistry[id] = nowTs;
+      localTombstoneRegistry[id.toUpperCase()] = nowTs;
     }
     deletedRecordIds.addAll(set);
+    deletedRecordIds.addAll(upperSet);
     _saveLocalTombstones();
+
     sales.removeWhere((s) {
-      if (!set.contains(s.id)) return false;
-      final delTime = localTombstoneRegistry[s.id] ?? nowTs;
-      return delTime >= s.updatedAt;
+      final bNo = s.billNo.trim().toUpperCase();
+      return set.contains(s.id) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
     });
-    purchases.removeWhere((p) => set.contains(p.id));
-    saleChallans.removeWhere((c) => set.contains(c.id));
-    purchaseChallans.removeWhere((c) => set.contains(c.id));
-    saleReturns.removeWhere((r) => set.contains(r.id));
-    purchaseReturns.removeWhere((r) => set.contains(r.id));
-    vouchers.removeWhere((v) => set.contains(v.id));
+
+    purchases.removeWhere((p) {
+      final iNo = p.internalNo.trim().toUpperCase();
+      final bNo = p.billNo.trim().toUpperCase();
+      return set.contains(p.id) ||
+          (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
+          (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+    });
+
+    saleChallans.removeWhere((c) {
+      final bNo = c.billNo.trim().toUpperCase();
+      return set.contains(c.id) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+    });
+
+    purchaseChallans.removeWhere((c) {
+      final iNo = c.internalNo.trim().toUpperCase();
+      final bNo = c.billNo.trim().toUpperCase();
+      return set.contains(c.id) ||
+          (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
+          (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+    });
+
+    saleReturns.removeWhere((r) {
+      final bNo = r.billNo.trim().toUpperCase();
+      return set.contains(r.id) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+    });
+
+    purchaseReturns.removeWhere((r) => set.contains(r.id) || (r.billNo.trim().isNotEmpty && (set.contains(r.billNo.trim().toUpperCase()) || upperSet.contains(r.billNo.trim().toUpperCase()))));
+
+    vouchers.removeWhere((v) {
+      final vNo = v.voucherNo.trim().toUpperCase();
+      return set.contains(v.id) || (vNo.isNotEmpty && (set.contains(vNo) || upperSet.contains(vNo)));
+    });
+
     rebuildInventory();
     notifyListeners();
   }
@@ -229,8 +260,9 @@ class PharoahWebManager with ChangeNotifier {
     if (tData != null && tData is List) {
       for (var e in tData) {
         final k = e.toString().trim();
-        if (k.isNotEmpty && !k.contains('/') && !unmarkedRecordIds.contains(k)) {
+        if (k.isNotEmpty && !unmarkedRecordIds.contains(k)) {
           deletedRecordIds.add(k);
+          deletedRecordIds.add(k.toUpperCase());
         }
       }
       _saveLocalTombstones();
@@ -240,12 +272,14 @@ class PharoahWebManager with ChangeNotifier {
     if (regData != null && regData is Map) {
       regData.forEach((k, v) {
         final cleanK = k.toString().trim();
-        if (cleanK.isNotEmpty && !cleanK.contains('/') && !unmarkedRecordIds.contains(cleanK)) {
+        if (cleanK.isNotEmpty && !unmarkedRecordIds.contains(cleanK)) {
           final cloudTs = int.tryParse(v.toString()) ?? 0;
           final localTs = localTombstoneRegistry[cleanK] ?? 0;
           if (cloudTs > localTs) {
             localTombstoneRegistry[cleanK] = cloudTs;
+            localTombstoneRegistry[cleanK.toUpperCase()] = cloudTs;
             deletedRecordIds.add(cleanK);
+            deletedRecordIds.add(cleanK.toUpperCase());
           }
         }
       });
@@ -363,57 +397,108 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 2. Purchases Sync with Anti-Zombie Shield & Strict LWW Guard (ID ONLY)
+    // 2. Purchases Sync with Anti-Zombie Shield & Strict Multi-Key Protection
     var allParsedPurc = (decodeJson('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
         .toList();
     if (allParsedPurc != null) {
       for (var p in allParsedPurc) {
-        if (p.id.isEmpty || deletedRecordIds.contains(p.id)) continue;
-        int idx = purchases.indexWhere((lp) => lp.id == p.id);
+        if (p.isDeleted == 1) continue;
+        final String cleanIntNo = p.internalNo.trim().toUpperCase();
+        final String cleanBillNo = p.billNo.trim().toUpperCase();
+        if ((p.id.isNotEmpty && deletedRecordIds.contains(p.id)) ||
+            (cleanIntNo.isNotEmpty && deletedRecordIds.contains(cleanIntNo)) ||
+            (cleanBillNo.isNotEmpty && deletedRecordIds.contains(cleanBillNo)) ||
+            (p.id.isNotEmpty && localTombstoneRegistry.containsKey(p.id)) ||
+            (cleanIntNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanIntNo)) ||
+            (cleanBillNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBillNo))) {
+          continue; // Blocked by Permanent Tombstone!
+        }
+        int idx = purchases.indexWhere((lp) => 
+          (p.id.isNotEmpty && lp.id == p.id) ||
+          (cleanIntNo.isNotEmpty && lp.internalNo.trim().toUpperCase() == cleanIntNo) ||
+          (cleanBillNo.isNotEmpty && lp.billNo.trim().toUpperCase() == cleanBillNo)
+        );
         if (idx != -1) {
-          if (p.updatedAt > purchases[idx].updatedAt || (p.updatedAt == purchases[idx].updatedAt && p.version >= purchases[idx].version) || purchases[idx].updatedAt == 0) {
+          if (purchases[idx].version > p.version) continue;
+          if (p.version > purchases[idx].version || (p.version == purchases[idx].version && p.updatedAt >= purchases[idx].updatedAt) || purchases[idx].updatedAt == 0) {
             purchases[idx] = p;
           }
         } else {
-          if (p.internalNo.isNotEmpty) {
-            purchases.removeWhere((lp) => lp.internalNo == p.internalNo && lp.updatedAt <= p.updatedAt);
-          }
           purchases.insert(0, p);
         }
       }
+      Map<String, Purchase> masterPurcMap = {};
+      for (var p in purchases) {
+        String key = p.internalNo.trim().toUpperCase();
+        if (key.isEmpty) key = p.billNo.trim().toUpperCase();
+        if (key.isEmpty) key = p.id.trim();
+        if (!masterPurcMap.containsKey(key) || p.version >= masterPurcMap[key]!.version) {
+          masterPurcMap[key] = p;
+        }
+      }
+      purchases = masterPurcMap.values.toList();
     }
 
-    // 3. Vouchers Sync with Strict LWW (ID ONLY)
-    var rawVouc = (decodeJson('vouc.json') as List?)
+    // 3. Vouchers Sync with Anti-Zombie Multi-Key Protection
+    var allParsedVouc = (decodeJson('vouc.json') as List?)
         ?.map((e) => Voucher.fromMap(e))
-        .where((v) => !deletedRecordIds.contains(v.id))
         .toList();
-    if (rawVouc != null) {
-      for (var v in rawVouc) {
-        if (deletedRecordIds.contains(v.id)) continue;
-        int idx = vouchers.indexWhere((lv) => lv.id == v.id);
+    if (allParsedVouc != null) {
+      for (var v in allParsedVouc) {
+        if (v.isDeleted == 1) continue;
+        final String cleanVNo = v.voucherNo.trim().toUpperCase();
+        if ((v.id.isNotEmpty && deletedRecordIds.contains(v.id)) ||
+            (cleanVNo.isNotEmpty && deletedRecordIds.contains(cleanVNo)) ||
+            (v.id.isNotEmpty && localTombstoneRegistry.containsKey(v.id)) ||
+            (cleanVNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanVNo))) {
+          continue;
+        }
+        int idx = vouchers.indexWhere((lv) => 
+          (v.id.isNotEmpty && lv.id == v.id) ||
+          (cleanVNo.isNotEmpty && lv.voucherNo.trim().toUpperCase() == cleanVNo)
+        );
         if (idx != -1) {
-          if (v.updatedAt > vouchers[idx].updatedAt || (v.updatedAt == vouchers[idx].updatedAt && v.version >= vouchers[idx].version) || vouchers[idx].updatedAt == 0) {
+          if (vouchers[idx].version > v.version) continue;
+          if (v.version > vouchers[idx].version || (v.version == vouchers[idx].version && v.updatedAt >= vouchers[idx].updatedAt) || vouchers[idx].updatedAt == 0) {
             vouchers[idx] = v;
           }
         } else {
           vouchers.insert(0, v);
         }
       }
+      Map<String, Voucher> masterVoucMap = {};
+      for (var v in vouchers) {
+        String key = v.voucherNo.trim().toUpperCase();
+        if (key.isEmpty) key = v.id.trim();
+        if (!masterVoucMap.containsKey(key) || v.version >= masterVoucMap[key]!.version) {
+          masterVoucMap[key] = v;
+        }
+      }
+      vouchers = masterVoucMap.values.toList();
     }
 
-    // 4. Sale Challans Sync with LWW (ID ONLY)
-    var rawSCh = (decodeJson('s_challan.json') as List?)
+    // 4. Sale Challans Sync with Anti-Zombie Multi-Key Protection
+    var allParsedSCh = (decodeJson('s_challan.json') as List?)
         ?.map((e) => SaleChallan.fromMap(e))
-        .where((c) => !deletedRecordIds.contains(c.id))
         .toList();
-    if (rawSCh != null) {
-      for (var c in rawSCh) {
-        if (deletedRecordIds.contains(c.id)) continue;
-        int idx = saleChallans.indexWhere((lc) => lc.id == c.id);
+    if (allParsedSCh != null) {
+      for (var c in allParsedSCh) {
+        if (c.isDeleted == 1) continue;
+        final String cleanBNo = c.billNo.trim().toUpperCase();
+        if ((c.id.isNotEmpty && deletedRecordIds.contains(c.id)) ||
+            (cleanBNo.isNotEmpty && deletedRecordIds.contains(cleanBNo)) ||
+            (c.id.isNotEmpty && localTombstoneRegistry.containsKey(c.id)) ||
+            (cleanBNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBNo))) {
+          continue;
+        }
+        int idx = saleChallans.indexWhere((lc) => 
+          (c.id.isNotEmpty && lc.id == c.id) ||
+          (cleanBNo.isNotEmpty && lc.billNo.trim().toUpperCase() == cleanBNo)
+        );
         if (idx != -1) {
-          if (c.updatedAt > saleChallans[idx].updatedAt || (c.updatedAt == saleChallans[idx].updatedAt && c.version >= saleChallans[idx].version) || saleChallans[idx].updatedAt == 0) {
+          if (saleChallans[idx].version > c.version) continue;
+          if (c.version > saleChallans[idx].version || (c.version == saleChallans[idx].version && c.updatedAt >= saleChallans[idx].updatedAt) || saleChallans[idx].updatedAt == 0) {
             saleChallans[idx] = c;
           }
         } else {
@@ -422,17 +507,31 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 5. Purchase Challans Sync with LWW (ID ONLY)
-    var rawPCh = (decodeJson('p_challan.json') as List?)
+    // 5. Purchase Challans Sync with Anti-Zombie Multi-Key Protection
+    var allParsedPCh = (decodeJson('p_challan.json') as List?)
         ?.map((e) => PurchaseChallan.fromMap(e))
-        .where((c) => !deletedRecordIds.contains(c.id))
         .toList();
-    if (rawPCh != null) {
-      for (var c in rawPCh) {
-        if (deletedRecordIds.contains(c.id)) continue;
-        int idx = purchaseChallans.indexWhere((lc) => lc.id == c.id);
+    if (allParsedPCh != null) {
+      for (var c in allParsedPCh) {
+        if (c.isDeleted == 1) continue;
+        final String cleanINo = c.internalNo.trim().toUpperCase();
+        final String cleanBNo = c.billNo.trim().toUpperCase();
+        if ((c.id.isNotEmpty && deletedRecordIds.contains(c.id)) ||
+            (cleanINo.isNotEmpty && deletedRecordIds.contains(cleanINo)) ||
+            (cleanBNo.isNotEmpty && deletedRecordIds.contains(cleanBNo)) ||
+            (c.id.isNotEmpty && localTombstoneRegistry.containsKey(c.id)) ||
+            (cleanINo.isNotEmpty && localTombstoneRegistry.containsKey(cleanINo)) ||
+            (cleanBNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBNo))) {
+          continue;
+        }
+        int idx = purchaseChallans.indexWhere((lc) => 
+          (c.id.isNotEmpty && lc.id == c.id) ||
+          (cleanINo.isNotEmpty && lc.internalNo.trim().toUpperCase() == cleanINo) ||
+          (cleanBNo.isNotEmpty && lc.billNo.trim().toUpperCase() == cleanBNo)
+        );
         if (idx != -1) {
-          if (c.updatedAt > purchaseChallans[idx].updatedAt || (c.updatedAt == purchaseChallans[idx].updatedAt && c.version >= purchaseChallans[idx].version) || purchaseChallans[idx].updatedAt == 0) {
+          if (purchaseChallans[idx].version > c.version) continue;
+          if (c.version > purchaseChallans[idx].version || (c.version == purchaseChallans[idx].version && c.updatedAt >= purchaseChallans[idx].updatedAt) || purchaseChallans[idx].updatedAt == 0) {
             purchaseChallans[idx] = c;
           }
         } else {
@@ -441,17 +540,27 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 6. Sale Returns Sync with LWW (ID ONLY)
-    var rawSRet = (decodeJson('s_return.json') as List?)
+    // 6. Sale Returns Sync with Anti-Zombie Multi-Key Protection
+    var allParsedSRet = (decodeJson('s_return.json') as List?)
         ?.map((e) => SaleReturn.fromMap(e))
-        .where((r) => !deletedRecordIds.contains(r.id))
         .toList();
-    if (rawSRet != null) {
-      for (var r in rawSRet) {
-        if (deletedRecordIds.contains(r.id)) continue;
-        int idx = saleReturns.indexWhere((lr) => lr.id == r.id);
+    if (allParsedSRet != null) {
+      for (var r in allParsedSRet) {
+        if (r.isDeleted == 1) continue;
+        final String cleanBNo = r.billNo.trim().toUpperCase();
+        if ((r.id.isNotEmpty && deletedRecordIds.contains(r.id)) ||
+            (cleanBNo.isNotEmpty && deletedRecordIds.contains(cleanBNo)) ||
+            (r.id.isNotEmpty && localTombstoneRegistry.containsKey(r.id)) ||
+            (cleanBNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBNo))) {
+          continue;
+        }
+        int idx = saleReturns.indexWhere((lr) => 
+          (r.id.isNotEmpty && lr.id == r.id) ||
+          (cleanBNo.isNotEmpty && lr.billNo.trim().toUpperCase() == cleanBNo)
+        );
         if (idx != -1) {
-          if (r.updatedAt > saleReturns[idx].updatedAt || (r.updatedAt == saleReturns[idx].updatedAt && r.version >= saleReturns[idx].version) || saleReturns[idx].updatedAt == 0) {
+          if (saleReturns[idx].version > r.version) continue;
+          if (r.version > saleReturns[idx].version || (r.version == saleReturns[idx].version && r.updatedAt >= saleReturns[idx].updatedAt) || saleReturns[idx].updatedAt == 0) {
             saleReturns[idx] = r;
           }
         } else {
@@ -460,17 +569,27 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    // 7. Purchase Returns Sync with LWW (ID ONLY)
-    var rawPRet = (decodeJson('p_return.json') as List?)
+    // 7. Purchase Returns Sync with Anti-Zombie Multi-Key Protection
+    var allParsedPRet = (decodeJson('p_return.json') as List?)
         ?.map((e) => PurchaseReturn.fromMap(e))
-        .where((r) => !deletedRecordIds.contains(r.id))
         .toList();
-    if (rawPRet != null) {
-      for (var r in rawPRet) {
-        if (deletedRecordIds.contains(r.id)) continue;
-        int idx = purchaseReturns.indexWhere((lr) => lr.id == r.id);
+    if (allParsedPRet != null) {
+      for (var r in allParsedPRet) {
+        if (r.isDeleted == 1) continue;
+        final String cleanBNo = r.billNo.trim().toUpperCase();
+        if ((r.id.isNotEmpty && deletedRecordIds.contains(r.id)) ||
+            (cleanBNo.isNotEmpty && deletedRecordIds.contains(cleanBNo)) ||
+            (r.id.isNotEmpty && localTombstoneRegistry.containsKey(r.id)) ||
+            (cleanBNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBNo))) {
+          continue;
+        }
+        int idx = purchaseReturns.indexWhere((lr) => 
+          (r.id.isNotEmpty && lr.id == r.id) ||
+          (cleanBNo.isNotEmpty && lr.billNo.trim().toUpperCase() == cleanBNo)
+        );
         if (idx != -1) {
-          if (r.updatedAt > purchaseReturns[idx].updatedAt || (r.updatedAt == purchaseReturns[idx].updatedAt && r.version >= purchaseReturns[idx].version) || purchaseReturns[idx].updatedAt == 0) {
+          if (purchaseReturns[idx].version > r.version) continue;
+          if (r.version > purchaseReturns[idx].version || (r.version == purchaseReturns[idx].version && r.updatedAt >= purchaseReturns[idx].updatedAt) || purchaseReturns[idx].updatedAt == 0) {
             purchaseReturns[idx] = r;
           }
         } else {
@@ -646,7 +765,7 @@ class PharoahWebManager with ChangeNotifier {
     final int existingIdx = sales.indexWhere((s) => s.id == sale.id || (sale.billNo.trim().isNotEmpty && s.billNo.trim().toUpperCase() == sale.billNo.trim().toUpperCase()));
     final bool isUpdate = existingIdx != -1;
 
-    // 🛡️ ENTERPRISE MONOTONIC VERSIONING & OCC RECONCILER (#PH-REV-690)
+    // 🛡️ ENTERPRISE MONOTONIC VERSIONING & OCC RECONCILER (#PH-REV-691)
     int maxVer = sale.version;
     if (isUpdate && sales[existingIdx].version >= maxVer) {
       maxVer = sales[existingIdx].version + 1;
@@ -773,13 +892,21 @@ class PharoahWebManager with ChangeNotifier {
     unmarkDeletedId(purchase.id, referenceNo: purchase.internalNo);
     if (purchase.billNo.isNotEmpty) unmarkDeletedId(purchase.billNo);
     int currentVer = 1;
-    final int existingIdx = purchases.indexWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
+    final int existingIdx = purchases.indexWhere((p) => 
+      p.id == purchase.id || 
+      (purchase.billNo.isNotEmpty && p.billNo.isNotEmpty && p.billNo.trim().toUpperCase() == purchase.billNo.trim().toUpperCase()) || 
+      (purchase.internalNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == purchase.internalNo.trim().toUpperCase())
+    );
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
     }
     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
     purchase.version = currentVer;
-    purchases.removeWhere((p) => p.id == purchase.id || p.billNo == purchase.billNo || p.internalNo == purchase.internalNo);
+    purchases.removeWhere((p) => 
+      p.id == purchase.id || 
+      (purchase.billNo.isNotEmpty && p.billNo.isNotEmpty && p.billNo.trim().toUpperCase() == purchase.billNo.trim().toUpperCase()) || 
+      (purchase.internalNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == purchase.internalNo.trim().toUpperCase())
+    );
     purchases.add(purchase);
     PurchaseSyncModule.onPurchaseSaved(purchase, activeStoreToken);
     for (var item in purchase.items) {
@@ -876,70 +1003,121 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void deleteVoucher(String voucherId) {
+    String vNo = "";
     try {
-      final targetV = vouchers.firstWhere((item) => item.id == voucherId);
+      final targetV = vouchers.firstWhere((item) => item.id == voucherId || item.voucherNo == voucherId);
+      vNo = targetV.voucherNo.trim().toUpperCase();
       VoucherSyncModule.onVoucherDeleted(targetV, activeStoreToken);
     } catch (_) {}
-    deletedRecordIds.add(voucherId);
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final List<String> delKeys = [voucherId, if (vNo.isNotEmpty) vNo];
+    for (var k in delKeys) {
+      localTombstoneRegistry[k] = delTime;
+      deletedRecordIds.add(k);
+      unmarkedRecordIds.remove(k);
+    }
     _saveLocalTombstones();
-    vouchers.removeWhere((item) => item.id == voucherId);
+    vouchers.removeWhere((item) => item.id == voucherId || (vNo.isNotEmpty && item.voucherNo.trim().toUpperCase() == vNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: voucherId,
-      deletedIds: [voucherId],
+      deletedIds: delKeys,
     );
   }
 
   void deleteSaleChallan(String challanId) {
+    String bNo = "";
     try {
-      final targetC = saleChallans.firstWhere((item) => item.id == challanId);
+      final targetC = saleChallans.firstWhere((item) => item.id == challanId || item.billNo == challanId);
+      bNo = targetC.billNo.trim().toUpperCase();
       ChallanSyncModule.onChallanDeleted(targetC, activeStoreToken);
     } catch (_) {}
-    deletedRecordIds.add(challanId);
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final List<String> delKeys = [challanId, if (bNo.isNotEmpty) bNo];
+    for (var k in delKeys) {
+      localTombstoneRegistry[k] = delTime;
+      deletedRecordIds.add(k);
+      unmarkedRecordIds.remove(k);
+    }
     _saveLocalTombstones();
-    saleChallans.removeWhere((item) => item.id == challanId);
+    saleChallans.removeWhere((item) => item.id == challanId || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: challanId,
-      deletedIds: [challanId],
+      deletedIds: delKeys,
     );
   }
 
   void deletePurchaseChallan(String challanId) {
-    deletedRecordIds.add(challanId);
+    String iNo = "";
+    String bNo = "";
+    try {
+      final targetC = purchaseChallans.firstWhere((item) => item.id == challanId || item.internalNo == challanId || item.billNo == challanId);
+      iNo = targetC.internalNo.trim().toUpperCase();
+      bNo = targetC.billNo.trim().toUpperCase();
+    } catch (_) {}
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final List<String> delKeys = [challanId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo];
+    for (var k in delKeys) {
+      localTombstoneRegistry[k] = delTime;
+      deletedRecordIds.add(k);
+      unmarkedRecordIds.remove(k);
+    }
     _saveLocalTombstones();
-    purchaseChallans.removeWhere((item) => item.id == challanId);
+    purchaseChallans.removeWhere((item) => item.id == challanId || (iNo.isNotEmpty && item.internalNo.trim().toUpperCase() == iNo) || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: challanId,
-      deletedIds: [challanId],
+      deletedIds: delKeys,
     );
   }
 
   void deleteSaleReturn(String returnId) {
-    deletedRecordIds.add(returnId);
+    String bNo = "";
+    try {
+      final targetR = saleReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
+      bNo = targetR.billNo.trim().toUpperCase();
+    } catch (_) {}
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final List<String> delKeys = [returnId, if (bNo.isNotEmpty) bNo];
+    for (var k in delKeys) {
+      localTombstoneRegistry[k] = delTime;
+      deletedRecordIds.add(k);
+      unmarkedRecordIds.remove(k);
+    }
     _saveLocalTombstones();
-    saleReturns.removeWhere((item) => item.id == returnId);
+    saleReturns.removeWhere((item) => item.id == returnId || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: returnId,
-      deletedIds: [returnId],
+      deletedIds: delKeys,
     );
   }
 
   void deletePurchaseReturn(String returnId) {
-    deletedRecordIds.add(returnId);
+    String bNo = "";
+    try {
+      final targetR = purchaseReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
+      bNo = targetR.billNo.trim().toUpperCase();
+    } catch (_) {}
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final List<String> delKeys = [returnId, if (bNo.isNotEmpty) bNo];
+    for (var k in delKeys) {
+      localTombstoneRegistry[k] = delTime;
+      deletedRecordIds.add(k);
+      unmarkedRecordIds.remove(k);
+    }
     _saveLocalTombstones();
-    purchaseReturns.removeWhere((item) => item.id == returnId);
+    purchaseReturns.removeWhere((item) => item.id == returnId || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: returnId,
-      deletedIds: [returnId],
+      deletedIds: delKeys,
     );
   }
 

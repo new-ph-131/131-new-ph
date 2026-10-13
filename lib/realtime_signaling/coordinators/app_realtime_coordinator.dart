@@ -44,6 +44,15 @@ class AppRealtimeCoordinator {
             await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u);
           }
         }
+        if (event.deletedIds.isNotEmpty && ph.activeCompany != null) {
+          final companyId = ph.activeCompany!.id;
+          await TombstoneEngine.recordBatchTombstones(companyId, event.deletedIds);
+          final reg = await TombstoneEngine.getTombstoneRegistry(companyId);
+          final tombstones = await TombstoneEngine.getLocalTombstones(companyId);
+          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, reg);
+          TombstoneEngine.purgeDeletedRecords(ph, tombstones, reg);
+          ph.notifyListeners();
+        }
         await FastPullEngine.pullAndMerge(ph);
       },
     );
