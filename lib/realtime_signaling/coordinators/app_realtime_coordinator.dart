@@ -57,7 +57,13 @@ class AppRealtimeCoordinator {
   }
 
   /// Triggers a push to cloud and sends instant wake-up signal to Web
-  void notifyAppMutation(PharoahManager ph, {String action = 'DATA_MUTATED', String entityId = '', List<String> unmarkedIds = const []}) {
+  void notifyAppMutation(
+    PharoahManager ph, {
+    String action = 'DATA_MUTATED',
+    String entityId = '',
+    List<String> unmarkedIds = const [],
+    List<String> deletedIds = const [],
+  }) {
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
 
     _pushDebounceTimer?.cancel();
@@ -75,6 +81,7 @@ class AppRealtimeCoordinator {
               source: 'app',
               action: action,
               entityId: entityId,
+              deletedIds: deletedIds,
               unmarkedIds: unmarkedIds,
               companyId: ph.activeCompany!.id,
             ),
