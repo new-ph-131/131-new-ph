@@ -3,6 +3,7 @@ import "../../../sync_core/d1_sales_ledger_service.dart";
 import 'dart:convert';
 import '../../../pharoah_manager.dart';
 import '../../../models.dart';
+import '../../sync_core/modules/purchase_sync_module.dart';
 
 /// 🛡️ THE ENHANCED DELTA MERGE ENGINE RECONCILER
 /// Bridges Google Drive snapshots and D1 JSON batch inputs without ghost overwrites.
@@ -92,6 +93,7 @@ class DeltaMergeEngine {
       String Function(T) getBillNo,
       T Function(Map<String, dynamic>) fromMap,
       Map<String, dynamic> Function(T) toMap,
+      String Function(Map<String, dynamic>)? getCloudCompositeKey,
     ) {
       if (cloudList == null) return false;
       bool changed = false;
@@ -113,9 +115,11 @@ class DeltaMergeEngine {
         // 🛡️ Multi-Key Anti-Zombie Check: ID, InternalNo, BillNo
         String bNoKey = billNo.toUpperCase();
         String intNoKey = internalNo.toUpperCase();
+        final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? '';
         bool isTombstoned = tombstoneRegistry.containsKey(id) ||
             (bNoKey.isNotEmpty && tombstoneRegistry.containsKey(bNoKey)) ||
-            (intNoKey.isNotEmpty && tombstoneRegistry.containsKey(intNoKey));
+            (intNoKey.isNotEmpty && tombstoneRegistry.containsKey(intNoKey)) ||
+            (compositeKey.isNotEmpty && tombstoneRegistry.containsKey(compositeKey));
 
         if (isTombstoned) {
           // Cloud item is deleted locally -> DROP immediately! Never allow cloud lag to resurrect!
@@ -128,6 +132,7 @@ class DeltaMergeEngine {
           final localBNo = getBillNo(e).trim().toUpperCase();
           if (bNoKey.isNotEmpty && localBNo == bNoKey) return true;
           if (intNoKey.isNotEmpty && localBNo == intNoKey) return true;
+          if (compositeKey.isNotEmpty && localBNo == compositeKey) return true;
           return false;
         });
 
@@ -139,6 +144,7 @@ class DeltaMergeEngine {
           tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
           if (bNoKey.isNotEmpty) tombstoneRegistry[bNoKey] = tombstoneRegistry[id]!;
           if (intNoKey.isNotEmpty) tombstoneRegistry[intNoKey] = tombstoneRegistry[id]!;
+          if (compositeKey.isNotEmpty) tombstoneRegistry[compositeKey] = tombstoneRegistry[id]!;
           continue;
         }
 
@@ -205,8 +211,9 @@ class DeltaMergeEngine {
       decodeJson('purc.json'), 
       ph.purchases, 
       (e) => e.id, 
-      (e) => e.internalNo.isNotEmpty ? e.internalNo : "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}", 
-      (m) => Purchase.fromMap(m), 
+      (e) => PurchaseSyncModule.getCompositeKey(e), 
+      (m) => Purchase.fromMap(m),
+      getCloudCompositeKey: (m) => PurchaseSyncModule.makeCompositeKey((m['partyId'] ?? '').toString(), (m['billNo'] ?? '').toString(), (m['internalNo'] ?? '').toString()), 
       (e) => e.toMap()
     );
 
