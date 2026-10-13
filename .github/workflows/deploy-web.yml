@@ -1,38 +1,71 @@
-name: Build Flutter Web Portal
+name: Build Flutter Web Portal and Android APK
 
 on:
   push:
     branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
-jobs:
-  build-web:
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
 
+jobs:
+  build-web-and-apk:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: zulu
           java-version: '17'
 
-      - name: Set up Flutter (3.27.4)
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.27.4'
           cache: true
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: flutter pub get
 
-      - name: Build Production Web App (Custom Web Entry Target, No-Cache Strategy)
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Build Android release APK
+        run: flutter build apk --release
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharoah-android-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build web portal
         run: flutter build web -t lib/web_live_sync/web_main.dart --release --base-href "/" --pwa-strategy=none
 
-      - name: Upload Web Artifact
+      - name: Upload web build
         uses: actions/upload-artifact@v4
         with:
           name: pharoah-web-portal-build
           path: build/web
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Deploy production web to Cloudflare Pages
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::Deployment credentials are missing. Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in GitHub Actions secrets."
+            exit 1
+          fi
+          npx --yes wrangler@3 pages deploy build/web --project-name=pharoah-erp --branch=main
