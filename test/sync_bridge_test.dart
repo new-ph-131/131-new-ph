@@ -49,6 +49,8 @@ void main() {
         "items": [],
         "totalAmount": 250.0, // Modified amount from other device
         "paymentMode": "CASH",
+        "version": 2,
+        "updatedAt": DateTime.now().millisecondsSinceEpoch + 1000,
       }
     ];
 
