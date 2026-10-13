@@ -12,7 +12,7 @@ import subprocess
 import urllib.request
 import urllib.error
 
-# 🔑 PRE-CONFIGURED PRODUCTION CLOUDFLARE CREDENTIALS
+# 🔑 CLOUDFLARE CONFIGURATION
 CF_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "PASTE_YOUR_CLOUDFLARE_API_TOKEN_HERE").strip()
 CF_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "7a2686af5567f6f24cb5a7a5799de277").strip()
 CF_PROJECT_NAME = "pharoah-erp"
@@ -35,7 +35,6 @@ def verify_cloudflare(token, account_id, project_name):
         "User-Agent": "Pharoah-Colab-Deployer/690"
     }
     
-    # Verify Project Access
     proj_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/pages/projects/{project_name}"
     req = urllib.request.Request(proj_url, headers=headers)
     try:
@@ -116,10 +115,11 @@ print(f"  ✔ Web Build Completed in {build_duration}s!")
 # ==============================================================================
 print(f"\n🚀 [STEP 5/5] Deploying build/web to Cloudflare Pages ({CF_PROJECT_NAME})...")
 
+# Note: Wrangler takes account-id via CLOUDFLARE_ACCOUNT_ID env variable, NOT via --account-id flag!
 deploy_cmd = [
     "npx", "wrangler", "pages", "deploy", "build/web",
     f"--project-name={CF_PROJECT_NAME}",
-    f"--account-id={CF_ACCOUNT_ID}",
+    "--branch=main",
     "--commit-dirty=true"
 ]
 
