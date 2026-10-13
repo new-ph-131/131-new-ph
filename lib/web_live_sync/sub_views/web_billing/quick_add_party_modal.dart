@@ -307,6 +307,9 @@ class _QuickAddPartyModalState extends State<QuickAddPartyModal> {
               Expanded(
                 child: TextField(
                   controller: ctrl,
+                  textInputAction: TextInputAction.next,
+                  enableSuggestions: false,
+                  autocorrect: false,
                   keyboardType: isPhone ? TextInputType.phone : (isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text),
                   textCapitalization: isCaps ? TextCapitalization.characters : TextCapitalization.none,
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
