@@ -81,6 +81,42 @@ class UniversalDeltaMerger {
       }
     }
 
+    // Optional composite-identity dedupe. Purchase uses supplier + invoice
+    // number so already duplicated local rows are repaired during ordinary sync.
+    if (getCompositeKey != null) {
+      final Map<String, T> uniqueByComposite = {};
+      final List<T> withoutComposite = [];
+      for (final item in localList) {
+        final key = getCompositeKey(item).trim().toUpperCase();
+        if (key.isEmpty) {
+          withoutComposite.add(item);
+          continue;
+        }
+        final prior = uniqueByComposite[key];
+        if (prior == null) {
+          uniqueByComposite[key] = item;
+          continue;
+        }
+        final priorMap = toMap(prior);
+        final currentMap = toMap(item);
+        final priorVersion = int.tryParse((priorMap['version'] ?? 1).toString()) ?? 1;
+        final currentVersion = int.tryParse((currentMap['version'] ?? 1).toString()) ?? 1;
+        final priorUpdated = int.tryParse((priorMap['updatedAt'] ?? priorMap['updated_at'] ?? 0).toString()) ?? 0;
+        final currentUpdated = int.tryParse((currentMap['updatedAt'] ?? currentMap['updated_at'] ?? 0).toString()) ?? 0;
+        if (currentVersion > priorVersion ||
+            (currentVersion == priorVersion && currentUpdated >= priorUpdated)) {
+          uniqueByComposite[key] = item;
+        }
+      }
+      final deduplicated = [...uniqueByComposite.values, ...withoutComposite];
+      if (deduplicated.length != localList.length) {
+        localList
+          ..clear()
+          ..addAll(deduplicated);
+        hasChanged = true;
+      }
+    }
+
     return hasChanged;
   }
 
