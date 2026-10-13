@@ -4,39 +4,26 @@ import '../../models.dart';
 import '../models/sync_envelope.dart';
 import '../outbox/sync_queue_manager.dart';
 
-/// PurchaseSyncModule: Isolated Synchronization & Conflict Resolution Engine for Purchases.
-/// Strictly decoupled from Sales, Challans, and Vouchers (Enterprise File Separation Rule).
-/// Uses Composite Keys (PartyId + BillNo / InternalNo) to guarantee zero collisions across suppliers.
+/// Purchase synchronization with supplier-scoped invoice identity.
 class PurchaseSyncModule {
   static const String documentType = "PURCHASE";
 
-  /// 🛡️ Generates a deterministic Composite Unique Key for Purchases
-  /// Supplier invoices are only unique per supplier, never globally!
-  static String getCompositeKey(Purchase p) {
-    if (p.internalNo.trim().isNotEmpty) {
-      return p.internalNo.trim().toUpperCase();
-    }
-    final cleanParty = p.partyId.trim().toUpperCase();
-    final cleanBill = p.billNo.trim().toUpperCase();
-    if (cleanParty.isNotEmpty && cleanBill.isNotEmpty) {
-      return "${cleanParty}_$cleanBill";
-    }
-    return p.id.trim();
-  }
+  /// A supplier invoice is identified by supplier/party + supplier invoice number.
+  /// internalNo is only a fallback when that pair is unavailable.
+  static String getCompositeKey(Purchase p) =>
+      makeCompositeKey(p.partyId, p.billNo, p.internalNo);
 
-  /// 🛡️ Static factory to construct Composite Key from components
   static String makeCompositeKey(String partyId, String billNo, [String internalNo = ""]) {
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
     if (cleanParty.isNotEmpty && cleanBill.isNotEmpty) {
-      return "${cleanParty}_$cleanBill";
+      return "${cleanParty}_${cleanBill}";
     }
     final cleanInt = internalNo.trim().toUpperCase();
     if (cleanInt.isNotEmpty) return cleanInt;
     return cleanBill.isNotEmpty ? cleanBill : "UNKNOWN_PURCHASE";
   }
 
-  /// Dispatches a purchase creation or modification to the Outbox queue
   static void onPurchaseSaved(Purchase purchase, String storeToken) {
     if (storeToken.trim().isEmpty) return;
     SyncQueueManager.enqueueMutation(
@@ -49,7 +36,6 @@ class PurchaseSyncModule {
     );
   }
 
-  /// Dispatches a soft-delete operation to the Outbox queue
   static void onPurchaseDeleted(Purchase purchase, String storeToken) {
     if (storeToken.trim().isEmpty) return;
     purchase.isDeleted = 1;
@@ -65,13 +51,11 @@ class PurchaseSyncModule {
     );
   }
 
-  /// handleIncomingSync conforming to Step 3 Frontend State Optimization
   static List<Purchase> handleIncomingSync(List<Purchase> currentUIStateList, SyncEnvelope incomingEvent) {
     mergeIncomingPurchaseEnvelope(currentUIStateList, incomingEvent);
     return currentUIStateList;
   }
 
-  /// Merges an incoming SyncEnvelope into current Purchases list
   static bool mergeIncomingPurchaseEnvelope(List<Purchase> currentPurchases, SyncEnvelope envelope) {
     if (envelope.documentType != documentType) return false;
     final targetId = envelope.syncId.trim();
@@ -84,51 +68,60 @@ class PurchaseSyncModule {
     return applyPurchaseMutation(currentPurchases, incomingPurchase);
   }
 
-  /// Core LWW State Machine for Purchase Objects with Composite Key isolation
+  static bool _sameSupplierInvoice(Purchase a, Purchase b) {
+    final aParty = a.partyId.trim().toUpperCase();
+    final bParty = b.partyId.trim().toUpperCase();
+    final aBill = a.billNo.trim().toUpperCase();
+    final bBill = b.billNo.trim().toUpperCase();
+    return aParty.isNotEmpty && bParty.isNotEmpty &&
+        aBill.isNotEmpty && bBill.isNotEmpty &&
+        aParty == bParty && aBill == bBill;
+  }
+
   static bool applyPurchaseMutation(List<Purchase> currentPurchases, Purchase incoming) {
     final cleanIntNo = incoming.internalNo.trim().toUpperCase();
-    final cleanBillNo = incoming.billNo.trim().toUpperCase();
-    final cleanPartyId = incoming.partyId.trim().toUpperCase();
+    final hasSupplierInvoice = incoming.partyId.trim().isNotEmpty && incoming.billNo.trim().isNotEmpty;
 
-    // 1. Search existing index using strict 3-tier identity (never naked billNo alone!)
+    // Prefer stable ID, then supplier-scoped invoice identity. Never use internalNo
+    // as a global key when supplier + invoice number are available.
     int idx = currentPurchases.indexWhere((p) {
-      if (incoming.id.isNotEmpty && p.id.trim() == incoming.id.trim()) return true;
-      if (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) return true;
-      if (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty &&
-          p.billNo.trim().toUpperCase() == cleanBillNo &&
-          p.partyId.trim().toUpperCase() == cleanPartyId) {
+      if (incoming.id.trim().isNotEmpty && p.id.trim() == incoming.id.trim()) return true;
+      if (hasSupplierInvoice && _sameSupplierInvoice(p, incoming)) return true;
+      if (!hasSupplierInvoice && cleanIntNo.isNotEmpty &&
+          p.internalNo.trim().toUpperCase() == cleanIntNo &&
+          (incoming.partyId.trim().isEmpty || p.partyId.trim().isEmpty ||
+           p.partyId.trim().toUpperCase() == incoming.partyId.trim().toUpperCase())) {
         return true;
       }
       return false;
     });
 
-    // 2. Handle Soft Deletion (is_deleted == 1)
     if (incoming.isDeleted == 1) {
-      if (idx != -1) {
-        final local = currentPurchases[idx];
-        if (incoming.updatedAt >= local.updatedAt || incoming.version > local.version || incoming.updatedAt == 0) {
-          currentPurchases.removeAt(idx);
-          debugPrint("🗑️ [PurchaseSyncModule] Soft-deleted purchase evicted safely: ${incoming.billNo} (${incoming.id})");
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // 3. Handle Active Mutation (is_deleted == 0)
-    if (idx != -1) {
+      if (idx == -1) return false;
       final local = currentPurchases[idx];
-      // If incoming version is less or equal AND updated_at is older, ignore stale data
-      if (incoming.version <= local.version && incoming.updatedAt < local.updatedAt) {
+      if (incoming.updatedAt < local.updatedAt &&
+          incoming.version <= local.version && incoming.updatedAt != 0) {
         return false;
       }
-      currentPurchases[idx] = incoming;
-      debugPrint("🔄 [PurchaseSyncModule] In-place updated purchase: ${incoming.billNo} (v${incoming.version})");
-      return true;
-    } else {
-      currentPurchases.insert(0, incoming);
-      debugPrint("✨ [PurchaseSyncModule] Added new remote purchase: ${incoming.billNo} (${incoming.id})");
+      currentPurchases.removeAt(idx);
+      debugPrint("🗑️ [PurchaseSyncModule] Deleted purchase: ${incoming.billNo} (${incoming.id})");
       return true;
     }
+
+    if (idx != -1) {
+      final local = currentPurchases[idx];
+      if (incoming.version < local.version && incoming.updatedAt < local.updatedAt) return false;
+      currentPurchases[idx] = incoming;
+    } else {
+      currentPurchases.insert(0, incoming);
+    }
+
+    // Clean up any pre-existing duplicates for this supplier invoice while
+    // retaining the just-applied record.
+    currentPurchases.removeWhere((p) =>
+        !identical(p, incoming) &&
+        ((incoming.id.isNotEmpty && p.id == incoming.id) ||
+         (hasSupplierInvoice && _sameSupplierInvoice(p, incoming))));
+    return true;
   }
 }
