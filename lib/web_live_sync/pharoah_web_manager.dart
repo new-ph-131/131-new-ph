@@ -102,8 +102,10 @@ class PharoahWebManager with ChangeNotifier {
   void purgeDeletedIds(List<String> ids) {
     if (ids.isEmpty) return;
     final nowTs = DateTime.now().millisecondsSinceEpoch;
-    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty && !unmarkedRecordIds.contains(e)).toSet();
+    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
     final upperSet = set.map((e) => e.toUpperCase()).toSet();
+    unmarkedRecordIds.removeAll(set);
+    unmarkedRecordIds.removeAll(upperSet);
     for (var id in set) {
       localTombstoneRegistry[id] = nowTs;
       localTombstoneRegistry[id.toUpperCase()] = nowTs;
@@ -114,15 +116,15 @@ class PharoahWebManager with ChangeNotifier {
 
     sales.removeWhere((s) {
       final bNo = s.billNo.trim().toUpperCase();
-      return set.contains(s.id) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+      return set.contains(s.id) || upperSet.contains(s.id.toUpperCase()) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
     });
 
     purchases.removeWhere((p) {
       final iNo = p.internalNo.trim().toUpperCase();
-      final bNo = p.billNo.trim().toUpperCase();
-      return set.contains(p.id) ||
+      final compKey = (p.partyId.isNotEmpty && p.billNo.isNotEmpty) ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}" : "";
+      return set.contains(p.id) || upperSet.contains(p.id.toUpperCase()) ||
           (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
-          (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+          (compKey.isNotEmpty && (set.contains(compKey) || upperSet.contains(compKey)));
     });
 
     saleChallans.removeWhere((c) {

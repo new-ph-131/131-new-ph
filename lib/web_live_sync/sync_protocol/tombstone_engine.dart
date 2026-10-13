@@ -174,10 +174,10 @@ class TombstoneEngine {
     });
     ph.purchases.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
-      final bNo = e.billNo.trim().toUpperCase();
+      final compKey = (e.partyId.isNotEmpty && e.billNo.isNotEmpty) ? "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}" : "";
       final delTime = registry[e.id] ?? 
           (iNo.isNotEmpty ? registry[iNo] : null) ?? 
-          (bNo.isNotEmpty ? registry[bNo] : null);
+          (compKey.isNotEmpty ? registry[compKey] : null);
       return delTime != null && delTime >= e.updatedAt;
     });
     ph.saleChallans.removeWhere((e) {
@@ -228,15 +228,15 @@ class TombstoneEngine {
 
     ph.purchases.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
-      final bNo = e.billNo.trim().toUpperCase();
-      final isTomb = allTombstones.contains(e.id) || 
+      final compKey = (e.partyId.isNotEmpty && e.billNo.isNotEmpty) ? "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}" : "";
+      final isTomb = allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase()) ||
           (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
-          (bNo.isNotEmpty && (allTombstones.contains(bNo) || upperTombstones.contains(bNo)));
+          (compKey.isNotEmpty && (allTombstones.contains(compKey) || upperTombstones.contains(compKey)));
       if (!isTomb) return false;
       if (registry != null) {
         final delTime = registry[e.id] ?? 
             (iNo.isNotEmpty ? registry[iNo] : null) ?? 
-            (bNo.isNotEmpty ? registry[bNo] : null);
+            (compKey.isNotEmpty ? registry[compKey] : null);
         if (delTime != null) return delTime >= e.updatedAt;
       }
       return true;
