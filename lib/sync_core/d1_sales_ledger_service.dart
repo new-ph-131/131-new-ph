@@ -18,43 +18,73 @@ class D1SalesLedgerService {
   /// 🛡️ MASTER KNOWN VERSIONS: Google Drive can NEVER downgrade a known higher version
   static final Map<String, int> _knownBillVersions = {};
 
-  static bool isBillDeleted(String id, String billNo) {
+  static bool isBillDeleted(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
     final cleanId = id.trim();
-    final cleanNo = billNo.trim().toUpperCase();
+    final cleanSec = secondaryKey.trim().toUpperCase();
+    final cleanTer = tertiaryKey.trim().toUpperCase();
     return (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId)) ||
-           (cleanNo.isNotEmpty && _permanentDeletedKeys.contains(cleanNo));
+           (cleanSec.isNotEmpty && _permanentDeletedKeys.contains(cleanSec)) ||
+           (cleanTer.isNotEmpty && _permanentDeletedKeys.contains(cleanTer));
   }
 
-  static int getKnownVersion(String id, String billNo) {
+  static int getKnownVersion(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
     final cleanId = id.trim();
-    final cleanNo = billNo.trim().toUpperCase();
-    int vId = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
-    int vNo = cleanNo.isNotEmpty ? (_knownBillVersions[cleanNo] ?? 0) : 0;
-    return vId > vNo ? vId : vNo;
+    final cleanSec = secondaryKey.trim().toUpperCase();
+    final cleanTer = tertiaryKey.trim().toUpperCase();
+    int maxV = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
+    if (cleanSec.isNotEmpty && (_knownBillVersions[cleanSec] ?? 0) > maxV) {
+      maxV = _knownBillVersions[cleanSec]!;
+    }
+    if (cleanTer.isNotEmpty && (_knownBillVersions[cleanTer] ?? 0) > maxV) {
+      maxV = _knownBillVersions[cleanTer]!;
+    }
+    return maxV;
   }
 
-  static void recordKnownVersion(String id, String billNo, int version) {
+  static void recordKnownVersion(String id, [String secondaryKey = "", int version = 1]) {
     final cleanId = id.trim();
-    final cleanNo = billNo.trim().toUpperCase();
+    final cleanSec = secondaryKey.trim().toUpperCase();
     if (cleanId.isNotEmpty && version > (_knownBillVersions[cleanId] ?? 0)) {
       _knownBillVersions[cleanId] = version;
     }
-    if (cleanNo.isNotEmpty && version > (_knownBillVersions[cleanNo] ?? 0)) {
-      _knownBillVersions[cleanNo] = version;
+    if (cleanSec.isNotEmpty && version > (_knownBillVersions[cleanSec] ?? 0)) {
+      _knownBillVersions[cleanSec] = version;
     }
   }
 
-  static void markPermanentlyDeleted(String id, String billNo) {
+  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
     final cleanId = id.trim();
-    final cleanNo = billNo.trim().toUpperCase();
+    final cleanSec = secondaryKey.trim().toUpperCase();
+    final cleanTer = tertiaryKey.trim().toUpperCase();
     if (cleanId.isNotEmpty) _permanentDeletedKeys.add(cleanId);
-    if (cleanNo.isNotEmpty) _permanentDeletedKeys.add(cleanNo);
+    if (cleanSec.isNotEmpty) _permanentDeletedKeys.add(cleanSec);
+    if (cleanTer.isNotEmpty) _permanentDeletedKeys.add(cleanTer);
     try {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
         final set = existing.toSet();
         if (cleanId.isNotEmpty) set.add(cleanId);
-        if (cleanNo.isNotEmpty) set.add(cleanNo);
+        if (cleanSec.isNotEmpty) set.add(cleanSec);
+        if (cleanTer.isNotEmpty) set.add(cleanTer);
+        prefs.setStringList("d1_permanent_gravestones", set.toList());
+      });
+    } catch (_) {}
+  }
+
+  static void unmarkPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
+    final cleanId = id.trim();
+    final cleanSec = secondaryKey.trim().toUpperCase();
+    final cleanTer = tertiaryKey.trim().toUpperCase();
+    if (cleanId.isNotEmpty) _permanentDeletedKeys.remove(cleanId);
+    if (cleanSec.isNotEmpty) _permanentDeletedKeys.remove(cleanSec);
+    if (cleanTer.isNotEmpty) _permanentDeletedKeys.remove(cleanTer);
+    try {
+      SharedPreferences.getInstance().then((prefs) {
+        final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
+        final set = existing.toSet();
+        if (cleanId.isNotEmpty) set.remove(cleanId);
+        if (cleanSec.isNotEmpty) set.remove(cleanSec);
+        if (cleanTer.isNotEmpty) set.remove(cleanTer);
         prefs.setStringList("d1_permanent_gravestones", set.toList());
       });
     } catch (_) {}

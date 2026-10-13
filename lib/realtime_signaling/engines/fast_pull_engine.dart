@@ -150,23 +150,35 @@ class FastPullEngine {
         } catch (_) {}
       }
 
-      if (cloudFiles.containsKey("sales.json") && cloudFiles["sales.json"] != null) {
+      // 🛡️ UNIVERSAL D1 PRE-MERGE SHIELD: Sales, Purchases, Challans, Returns, Vouchers
+      void applyUniversalD1Shield(String fileName, String docType, List<String> Function(Map) keyExtractor) {
+        if (!cloudFiles.containsKey(fileName) || cloudFiles[fileName] == null) return;
         try {
-          final List<dynamic> rawCloudSales = jsonDecode(cloudFiles["sales.json"]);
-          final List<dynamic> filteredSales = [];
-          for (final s in rawCloudSales) {
-            if (s is Map) {
-              final String sId = (s["id"] ?? "").toString().trim();
-              final String sNo = (s["billNo"] ?? "").toString().trim();
-              if (D1SalesLedgerService.isBillDeleted(sId, sNo)) continue;
-              final int sVer = int.tryParse(s["version"]?.toString() ?? "1") ?? 1;
-              if (D1SalesLedgerService.getKnownVersion(sId, sNo) > sVer) continue;
-              filteredSales.add(s);
+          final List<dynamic> rawList = jsonDecode(cloudFiles[fileName]);
+          final List<dynamic> filtered = [];
+          for (final item in rawList) {
+            if (item is Map) {
+              final keys = keyExtractor(item);
+              final String k1 = keys.isNotEmpty ? keys[0].trim() : "";
+              final String k2 = keys.length > 1 ? keys[1].trim() : "";
+              final String k3 = keys.length > 2 ? keys[2].trim() : "";
+              if (D1SalesLedgerService.isBillDeleted(k1, k2, k3)) continue;
+              final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
+              if (D1SalesLedgerService.getKnownVersion(k1, k2, k3) > itemVer) continue;
+              filtered.add(item);
             }
           }
-          cloudFiles["sales.json"] = jsonEncode(filteredSales);
+          cloudFiles[fileName] = jsonEncode(filtered);
         } catch (_) {}
       }
+
+      applyUniversalD1Shield("sales.json", "SALE", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      applyUniversalD1Shield("purc.json", "PURCHASE", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString(), (m["internalNo"] ?? "").toString()]);
+      applyUniversalD1Shield("vouc.json", "VOUCHER", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
+      applyUniversalD1Shield("s_challan.json", "CHALLAN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      applyUniversalD1Shield("p_challan.json", "PURCHASE_CHALLAN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString(), (m["internalNo"] ?? "").toString()]);
+      applyUniversalD1Shield("s_return.json", "SALE_RETURN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      applyUniversalD1Shield("p_return.json", "PURCHASE_RETURN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("sales.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("purc.json", (m) => [(m["id"] ?? "").toString(), (m["internalNo"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("vouc.json", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);

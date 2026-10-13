@@ -30,11 +30,6 @@ class WebPurchaseMechanism {
         currentVer = webPh.purchases[idx].version + 1;
         supplier.opBal -= webPh.purchases[idx].totalAmount;
       }
-      webPh.purchases.removeWhere((p) => 
-        p.id == existingId || 
-        (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase()) || 
-        (billNo.isNotEmpty && p.billNo.trim().toUpperCase() == billNo.trim().toUpperCase())
-      );
     }
 
     final newPurchase = Purchase(

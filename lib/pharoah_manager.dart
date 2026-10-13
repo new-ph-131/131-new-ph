@@ -499,6 +499,11 @@ Future<void> finalizePurchase({
         TombstoneEngine.unmarkTombstone(activeCompany!.id, id: internalNo);
       }
     }
+    D1SalesLedgerService.unmarkPermanentlyDeleted(pId, billNo, internalNo);
+    final int d1Known = D1SalesLedgerService.getKnownVersion(pId, billNo, internalNo);
+    if (d1Known >= currentVer) currentVer = d1Known + 1;
+    D1SalesLedgerService.recordKnownVersion(pId, billNo, currentVer);
+    if (internalNo.isNotEmpty) D1SalesLedgerService.recordKnownVersion(internalNo, "", currentVer);
     purchases.removeWhere((p) => p.id == pId || p.internalNo == internalNo || (billNo.isNotEmpty && p.billNo == billNo));
     final newFinalPurchase = Purchase(
       id: pId, 
@@ -582,7 +587,11 @@ Future<void> finalizePurchase({
     int idx = purchases.indexWhere((p) => p.id == id || (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase())); 
     if (idx == -1) return; 
     String t = purchases[idx].sourceTag; 
-    int nextVer = purchases[idx].version + 1;
+    int maxKnown = D1SalesLedgerService.getKnownVersion(id, billNo, internalNo);
+    int nextVer = (purchases[idx].version >= maxKnown ? purchases[idx].version : maxKnown) + 1;
+    D1SalesLedgerService.recordKnownVersion(id, billNo, nextVer);
+    if (internalNo.isNotEmpty) D1SalesLedgerService.recordKnownVersion(internalNo, "", nextVer);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo, internalNo);
     int nowTs = DateTime.now().millisecondsSinceEpoch;
 
     final updatedPurchase = Purchase(
@@ -1047,6 +1056,7 @@ void registerBatchActivity({
       }
       _reverseVoucherImpact(v);
       final vNo = v.voucherNo;
+      D1SalesLedgerService.markPermanentlyDeleted(id, vNo);
       vouchers.removeAt(i);
       if (activeCompany != null) {
         final List<String> delKeys = [id, if (vNo.isNotEmpty) vNo];
@@ -1210,6 +1220,7 @@ void registerBatchActivity({
         (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo)
       );
 
+      D1SalesLedgerService.markPermanentlyDeleted(pId, bNo, intNo);
       final List<String> delKeys = [pId, if (intNo.isNotEmpty) intNo, if (bNo.isNotEmpty) bNo];
 
       if (activeCompany != null) {
@@ -1241,6 +1252,7 @@ void registerBatchActivity({
       final cId = c.id;
       final bNo = c.billNo.trim().toUpperCase();
       final List<String> delKeys = [cId, if (bNo.isNotEmpty) bNo];
+      D1SalesLedgerService.markPermanentlyDeleted(cId, bNo);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) ChallanSyncModule.onChallanDeleted(c, t);
@@ -1274,7 +1286,8 @@ void registerBatchActivity({
       final cId = c.id;
       final iNo = c.internalNo.trim().toUpperCase();
       final bNo = c.billNo.trim().toUpperCase();
-      final List<String> delKeys = [cId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo];
+      final List<String> delKeys = [cId, if (bNo.isNotEmpty) bNo, if (iNo.isNotEmpty) iNo];
+      D1SalesLedgerService.markPermanentlyDeleted(cId, bNo, iNo);
       if (activeCompany != null) {
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
@@ -1305,6 +1318,7 @@ void registerBatchActivity({
       final rId = r.id;
       final bNo = r.billNo.trim().toUpperCase();
       final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
+      D1SalesLedgerService.markPermanentlyDeleted(rId, bNo);
       if (activeCompany != null) {
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
@@ -1333,6 +1347,7 @@ void registerBatchActivity({
       final rId = r.id;
       final bNo = r.billNo.trim().toUpperCase();
       final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
+      D1SalesLedgerService.markPermanentlyDeleted(rId, bNo);
       if (activeCompany != null) {
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(

@@ -891,23 +891,36 @@ class PharoahWebManager with ChangeNotifier {
   void addPurchaseAndSync(Purchase purchase) {
     unmarkDeletedId(purchase.id, referenceNo: purchase.internalNo);
     if (purchase.billNo.isNotEmpty) unmarkDeletedId(purchase.billNo);
-    int currentVer = 1;
+    D1SalesLedgerService.unmarkPermanentlyDeleted(purchase.id, purchase.billNo, purchase.internalNo);
+
     final int existingIdx = purchases.indexWhere((p) => 
       p.id == purchase.id || 
       (purchase.billNo.isNotEmpty && p.billNo.isNotEmpty && p.billNo.trim().toUpperCase() == purchase.billNo.trim().toUpperCase()) || 
       (purchase.internalNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == purchase.internalNo.trim().toUpperCase())
     );
-    if (existingIdx != -1) {
-      currentVer = purchases[existingIdx].version + 1;
+    final bool isUpdate = existingIdx != -1;
+
+    // 🛡️ ENTERPRISE MONOTONIC VERSIONING & OCC RECONCILER (#PH-REV-692)
+    int maxVer = purchase.version;
+    if (isUpdate && purchases[existingIdx].version >= maxVer) {
+      maxVer = purchases[existingIdx].version + 1;
     }
+    final int d1Known = D1SalesLedgerService.getKnownVersion(purchase.id, purchase.billNo, purchase.internalNo);
+    if (d1Known >= maxVer) {
+      maxVer = d1Known + 1;
+    }
+    purchase.version = maxVer;
     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    purchase.version = currentVer;
-    purchases.removeWhere((p) => 
-      p.id == purchase.id || 
-      (purchase.billNo.isNotEmpty && p.billNo.isNotEmpty && p.billNo.trim().toUpperCase() == purchase.billNo.trim().toUpperCase()) || 
-      (purchase.internalNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == purchase.internalNo.trim().toUpperCase())
-    );
-    purchases.add(purchase);
+    D1SalesLedgerService.recordKnownVersion(purchase.id, purchase.billNo, purchase.version);
+    if (purchase.internalNo.isNotEmpty) {
+      D1SalesLedgerService.recordKnownVersion(purchase.internalNo, "", purchase.version);
+    }
+
+    if (isUpdate) {
+      purchases[existingIdx] = purchase;
+    } else {
+      purchases.insert(0, purchase);
+    }
     PurchaseSyncModule.onPurchaseSaved(purchase, activeStoreToken);
     for (var item in purchase.items) {
       String resolvedKey = item.medicineID;
@@ -957,6 +970,7 @@ class PharoahWebManager with ChangeNotifier {
       realId = p.id;
       targetIntNo = p.internalNo.trim().toUpperCase();
       targetBillNo = p.billNo.trim().toUpperCase();
+      D1SalesLedgerService.markPermanentlyDeleted(realId, targetBillNo, targetIntNo);
       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
@@ -1007,6 +1021,7 @@ class PharoahWebManager with ChangeNotifier {
     try {
       final targetV = vouchers.firstWhere((item) => item.id == voucherId || item.voucherNo == voucherId);
       vNo = targetV.voucherNo.trim().toUpperCase();
+      D1SalesLedgerService.markPermanentlyDeleted(voucherId, vNo);
       VoucherSyncModule.onVoucherDeleted(targetV, activeStoreToken);
     } catch (_) {}
     final int delTime = DateTime.now().millisecondsSinceEpoch;
@@ -1058,6 +1073,7 @@ class PharoahWebManager with ChangeNotifier {
       iNo = targetC.internalNo.trim().toUpperCase();
       bNo = targetC.billNo.trim().toUpperCase();
     } catch (_) {}
+    D1SalesLedgerService.markPermanentlyDeleted(challanId, bNo, iNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final List<String> delKeys = [challanId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo];
     for (var k in delKeys) {
@@ -1081,6 +1097,7 @@ class PharoahWebManager with ChangeNotifier {
       final targetR = saleReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
       bNo = targetR.billNo.trim().toUpperCase();
     } catch (_) {}
+    D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final List<String> delKeys = [returnId, if (bNo.isNotEmpty) bNo];
     for (var k in delKeys) {
@@ -1104,6 +1121,7 @@ class PharoahWebManager with ChangeNotifier {
       final targetR = purchaseReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
       bNo = targetR.billNo.trim().toUpperCase();
     } catch (_) {}
+    D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final List<String> delKeys = [returnId, if (bNo.isNotEmpty) bNo];
     for (var k in delKeys) {

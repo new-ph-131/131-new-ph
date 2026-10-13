@@ -265,8 +265,7 @@ export async function onRequestPost(context: any) {
       }
     }
 
-    // 🛡️ KV PERMANENTLY DECOMMISSIONED: Pure D1 SQL Engine Only (100k Writes/Day)
-
+    
     return new Response(JSON.stringify({
       status: "SUCCESS",
       event: record,
@@ -378,8 +377,7 @@ export async function onRequestGet(context: any) {
       }
     }
 
-    // 🛡️ KV PERMANENTLY DECOMMISSIONED: Pure D1 SQL Engine Only
-
+    
     // Query D1 Master Sync for Delta Batch Operations
     let batchOperations: any[] = [];
     if (context.env && context.env.SIGNAL_DB) {
