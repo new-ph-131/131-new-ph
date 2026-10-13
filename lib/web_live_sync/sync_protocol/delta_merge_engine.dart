@@ -1,3 +1,4 @@
+import "../../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/sync_protocol/delta_merge_engine.dart
 import 'dart:convert';
 import '../../../pharoah_manager.dart';
@@ -21,6 +22,8 @@ class DeltaMergeEngine {
       int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
       if (syncId.isEmpty) continue;
+      String billNo = (cloudMap['billNo'] ?? cloudMap['internalNo'] ?? '').toString().trim();
+      if (D1SalesLedgerService.isBillDeleted(syncId, billNo)) continue;
 
       // 🛡️ SHIELD 1: Chronological Anti-Zombie Guard (ID ONLY)
       if (localTombstoneRegistry.containsKey(syncId)) {
@@ -113,6 +116,7 @@ class DeltaMergeEngine {
         int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
         if (id.isEmpty) continue;
+        if (D1SalesLedgerService.isBillDeleted(id, billNo)) continue;
 
         // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (ID ONLY, NEVER billNo)
         int? localDeleteTime = tombstoneRegistry[id];
