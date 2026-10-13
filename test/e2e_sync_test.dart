@@ -35,6 +35,8 @@ void main() {
       "items": [],
       "totalAmount": 1200.0,
       "paymentMode": "CREDIT",
+      "version": 2,
+      "updatedAt": DateTime.now().millisecondsSinceEpoch + 1000,
     };
 
     final Set<String> tombstones = {};
