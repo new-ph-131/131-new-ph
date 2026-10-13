@@ -337,7 +337,7 @@ class PharoahManager with ChangeNotifier {
     companies = (load('comps.json') as List?)?.map((e) => Company.fromMap(e)).toList() ?? MasterDataLibrary.getTopCompanies();
     salts = (load('salts.json') as List?)?.map((e) => Salt.fromMap(e)).toList() ?? MasterDataLibrary.getTopSalts();
     drugTypes = (load('dtypes.json') as List?)?.map((e) => DrugType.fromMap(e)).toList() ?? MasterDataLibrary.getDrugTypes();
-    sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).toList() ?? [];
+    sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
     purchases = (load('purc.json') as List?)?.map((e) => Purchase.fromMap(e)).toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
@@ -1097,7 +1097,15 @@ void registerBatchActivity({
         }
       }
       final String realId = s.id;
-      sales.removeWhere((x) => x.id == realId);
+      sales.removeWhere((x) => x.id == realId || (s.billNo.isNotEmpty && x.billNo.trim().toUpperCase() == s.billNo.trim().toUpperCase()));
+      D1SalesLedgerService.markPermanentlyDeleted(realId, s.billNo);
+      try {
+        getWorkingPath().then((dir) {
+          if (dir.isNotEmpty) {
+            File('$dir/sales.json').writeAsStringSync(jsonEncode(sales.map((e) => e.toMap()).toList()));
+          }
+        });
+      } catch (_) {}
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
@@ -1498,7 +1506,7 @@ void registerBatchActivity({
     companies = (load('comps.json') as List?)?.map((e) => Company.fromMap(e)).toList() ?? MasterDataLibrary.getTopCompanies();
     salts = (load('salts.json') as List?)?.map((e) => Salt.fromMap(e)).toList() ?? MasterDataLibrary.getTopSalts();
     drugTypes = (load('dtypes.json') as List?)?.map((e) => DrugType.fromMap(e)).toList() ?? MasterDataLibrary.getDrugTypes();
-    sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).toList() ?? [];
+    sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
     purchases = (load('purc.json') as List?)?.map((e) => Purchase.fromMap(e)).toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
