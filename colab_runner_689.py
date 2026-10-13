@@ -90,6 +90,8 @@ print("  🎉 Cloudflare Token is 100% VALID & Ready for Deployment!")
 os.environ["CLOUDFLARE_API_TOKEN"] = CF_API_TOKEN
 if account_id:
     os.environ["CLOUDFLARE_ACCOUNT_ID"] = account_id
+elif DEFAULT_ACCOUNT_ID:
+    os.environ["CLOUDFLARE_ACCOUNT_ID"] = DEFAULT_ACCOUNT_ID
 
 # ==============================================================================
 # STEP 2: REPOSITORY SYNC (#PH-REV-689)
