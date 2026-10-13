@@ -301,17 +301,13 @@ class PharoahWebManager with ChangeNotifier {
           continue;
         }
 
-        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (ID ONLY)
-        if (localTombstoneRegistry.containsKey(s.id)) {
-          int localDeleteTime = localTombstoneRegistry[s.id]!;
-          if (localDeleteTime >= s.updatedAt && localDeleteTime > 0) {
-            continue; // Dropping obsolete snapshot
-          } else {
-            localTombstoneRegistry.remove(s.id);
-            deletedRecordIds.remove(s.id);
-          }
-        } else if (deletedRecordIds.contains(s.id)) {
-          continue;
+        // 🛡️ SHIELD 1: Anti-Zombie / Permanent Tombstone Check (ID & BillNo Protected)
+        final String cleanBillNo = s.billNo.trim().toUpperCase();
+        if (deletedRecordIds.contains(s.id) || (cleanBillNo.isNotEmpty && deletedRecordIds.contains(cleanBillNo))) {
+          continue; // Blocked by Permanent Tombstone!
+        }
+        if (localTombstoneRegistry.containsKey(s.id) || (cleanBillNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBillNo))) {
+          continue; // Blocked by Tombstone Registry!
         }
 
         int idx = sales.indexWhere((ls) => ls.id == s.id || (s.billNo.trim().isNotEmpty && ls.billNo.trim().toUpperCase() == s.billNo.trim().toUpperCase()));
@@ -599,7 +595,7 @@ class PharoahWebManager with ChangeNotifier {
         'series.json': jsonEncode(numberingSeries.map((e) => e.toMap()).toList()),
         'config.json': jsonEncode(appConfig.toMap()),
         'bats.json': jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
-        'tombstones.json': jsonEncode(deletedRecordIds.where((k) => !k.contains('/')).toList()),
+        'tombstones.json': jsonEncode(deletedRecordIds.toList()),
         'tombstone_registry.json': jsonEncode(localTombstoneRegistry),
       };
 
@@ -741,6 +737,12 @@ class PharoahWebManager with ChangeNotifier {
     localTombstoneRegistry[realId] = delTime;
     deletedRecordIds.add(realId);
     unmarkedRecordIds.remove(realId);
+    if (targetBillNo.isNotEmpty) {
+      final cleanBillKey = targetBillNo.trim().toUpperCase();
+      localTombstoneRegistry[cleanBillKey] = delTime;
+      deletedRecordIds.add(cleanBillKey);
+      unmarkedRecordIds.remove(cleanBillKey);
+    }
     _saveLocalTombstones();
 
     sales.removeWhere((s) => s.id == realId || (targetBillNo.isNotEmpty && s.billNo.trim().toUpperCase() == targetBillNo.trim().toUpperCase()));
@@ -749,7 +751,7 @@ class PharoahWebManager with ChangeNotifier {
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: realId,
-      deletedIds: [realId],
+      deletedIds: [realId, if (targetBillNo.isNotEmpty) targetBillNo.trim().toUpperCase()],
     );
   }
 

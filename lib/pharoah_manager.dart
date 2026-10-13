@@ -1107,17 +1107,18 @@ void registerBatchActivity({
         });
       }
       if (activeCompany != null) {
-        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: realId);
+        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: realId, secondaryKey: s.billNo);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_SALE',
           entityId: realId,
+          deletedIds: [realId, if (s.billNo.isNotEmpty) s.billNo],
         );
         AppAutoSyncDaemon.instance.triggerSilentPush(
           this,
           action: 'DELETE_SALE',
           entityId: realId,
-          deletedIds: [realId],
+          deletedIds: [realId, if (s.billNo.isNotEmpty) s.billNo],
         );
       }
       save();

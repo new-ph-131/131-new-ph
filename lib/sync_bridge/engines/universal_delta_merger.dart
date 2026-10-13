@@ -1,3 +1,4 @@
+import "../../sync_core/d1_sales_ledger_service.dart";
 import 'dart:convert';
 import 'package:pharoah_erp/models.dart';
 import '../core/sync_tombstone_hub.dart';
@@ -36,11 +37,13 @@ class UniversalDeltaMerger {
       if (id.isEmpty) continue;
 
       // Skip if marked deleted
-      if (SyncTombstoneHub.isDeleted(tombstones, id, referenceNo: refNo)) {
+      if (SyncTombstoneHub.isDeleted(tombstones, id, referenceNo: refNo) ||
+          D1SalesLedgerService.isBillDeleted(id, refNo)) {
         continue;
       }
 
-      final existingIdx = localList.indexWhere((item) => getId(item) == id);
+      final existingIdx = localList.indexWhere((item) =>
+          getId(item) == id || (refNo.isNotEmpty && getRefNo(item).trim().toUpperCase() == refNo.toUpperCase()));
 
       if (existingIdx == -1) {
         // New record from cloud: Add to local list

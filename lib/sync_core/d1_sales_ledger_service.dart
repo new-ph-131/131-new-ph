@@ -49,6 +49,23 @@ class D1SalesLedgerService {
     final cleanNo = billNo.trim().toUpperCase();
     if (cleanId.isNotEmpty) _permanentDeletedKeys.add(cleanId);
     if (cleanNo.isNotEmpty) _permanentDeletedKeys.add(cleanNo);
+    try {
+      SharedPreferences.getInstance().then((prefs) {
+        final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
+        final set = existing.toSet();
+        if (cleanId.isNotEmpty) set.add(cleanId);
+        if (cleanNo.isNotEmpty) set.add(cleanNo);
+        prefs.setStringList("d1_permanent_gravestones", set.toList());
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> loadPersistedGravestones() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList("d1_permanent_gravestones") ?? [];
+      _permanentDeletedKeys.addAll(list);
+    } catch (_) {}
   }
 
   static String get endpoint {

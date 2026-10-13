@@ -1,6 +1,6 @@
 # ==============================================================================
 # 🚀 PHAROAH ERP WEB - ADVANCED GOOGLE COLAB BUILD & DEPLOY RUNNER
-# Revision: #PH-REV-687 (ENTERPRISE-MONOTONIC-OCC-SHIELD-PRO)
+# Revision: #PH-REV-689 (ENTERPRISE-PERMANENT-TOMBSTONE-SHIELD-PRO)
 # Target: Cloudflare Pages (pharoah-erp.pages.dev)
 # ==============================================================================
 
@@ -19,7 +19,7 @@ REPO_URL = "https://github.com/new-ph-131/131-new-ph.git"
 FLUTTER_VERSION = "3.27.4"
 
 print("=" * 80)
-print("       PHAROAH ERP - COLAB ADVANCED WEB DEPLOYER (#PH-REV-687)")
+print("       PHAROAH ERP - COLAB ADVANCED WEB DEPLOYER (#PH-REV-689)")
 print("=" * 80)
 
 # ==============================================================================
@@ -94,7 +94,7 @@ if account_id:
     os.environ["CLOUDFLARE_ACCOUNT_ID"] = account_id
 
 # ==============================================================================
-# STEP 2: REPOSITORY SYNC (#PH-REV-687)
+# STEP 2: REPOSITORY SYNC (#PH-REV-689)
 # ==============================================================================
 print("
 📥 [STEP 2/5] Syncing Source Code from GitHub...")
@@ -162,7 +162,7 @@ deploy_res = subprocess.run(deploy_cmd)
 if deploy_res.returncode == 0:
     print("
 " + "=" * 80)
-    print("🎉 #PH-REV-687 WEB PORTAL DEPLOYED SUCCESSFULLY!")
+    print("🎉 #PH-REV-689 WEB PORTAL DEPLOYED SUCCESSFULLY!")
     print("🔗 Live URL: https://pharoah-erp.pages.dev")
     print("🛡️ Features: Enterprise Monotonic Versioning, OCC Rebase & Sale Modification Shield")
     print("=" * 80)
