@@ -1,4 +1,5 @@
 import "../../sync_core/d1_sales_ledger_service.dart";
+import "../../sync_core/modules/purchase_sync_module.dart";
 import 'dart:convert';
 import 'package:pharoah_erp/models.dart';
 import '../core/sync_tombstone_hub.dart';
@@ -15,14 +16,19 @@ class UniversalDeltaMerger {
     required String Function(T) getRefNo,
     required T Function(Map<String, dynamic>) fromMap,
     required Map<String, dynamic> Function(T) toMap,
+    String Function(T)? getCompositeKey,
+    String Function(Map<String, dynamic>)? getCloudCompositeKey,
   }) {
     if (cloudList == null) return false;
     bool hasChanged = false;
 
     // 1. Purge any locally present item that exists in tombstones
     final initialLen = localList.length;
-    localList.removeWhere((item) =>
-        SyncTombstoneHub.isDeleted(tombstones, getId(item), referenceNo: getRefNo(item)));
+    localList.removeWhere((item) {
+      final composite = getCompositeKey?.call(item).trim().toUpperCase() ?? '';
+      return SyncTombstoneHub.isDeleted(tombstones, getId(item), referenceNo: getRefNo(item)) ||
+          (composite.isNotEmpty && tombstones.contains(composite));
+    });
     if (localList.length != initialLen) {
       hasChanged = true;
     }
@@ -33,17 +39,23 @@ class UniversalDeltaMerger {
       final cloudMap = raw;
       final id = (cloudMap['id'] ?? '').toString().trim();
       final refNo = (cloudMap['billNo'] ?? cloudMap['internalNo'] ?? cloudMap['voucherNo'] ?? '').toString().trim();
+      final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? '';
 
       if (id.isEmpty) continue;
 
       // Skip if marked deleted
       if (SyncTombstoneHub.isDeleted(tombstones, id, referenceNo: refNo) ||
+          (compositeKey.isNotEmpty && tombstones.contains(compositeKey)) ||
           D1SalesLedgerService.isBillDeleted(id, refNo)) {
         continue;
       }
 
-      final existingIdx = localList.indexWhere((item) =>
-          getId(item) == id || (refNo.isNotEmpty && getRefNo(item).trim().toUpperCase() == refNo.toUpperCase()));
+      final existingIdx = localList.indexWhere((item) {
+        if (getId(item) == id) return true;
+        if (refNo.isNotEmpty && getRefNo(item).trim().toUpperCase() == refNo.toUpperCase()) return true;
+        if (compositeKey.isNotEmpty && getCompositeKey != null && getCompositeKey(item).trim().toUpperCase() == compositeKey) return true;
+        return false;
+      });
 
       if (existingIdx == -1) {
         // New record from cloud: Add to local list
@@ -108,7 +120,9 @@ class UniversalDeltaMerger {
       localList: purchases,
       tombstones: tombstones,
       getId: (e) => e.id,
-      getRefNo: (e) => e.internalNo.isNotEmpty ? e.internalNo : e.billNo,
+      getRefNo: (e) => PurchaseSyncModule.getCompositeKey(e),
+      getCompositeKey: (e) => PurchaseSyncModule.getCompositeKey(e),
+      getCloudCompositeKey: (m) => PurchaseSyncModule.makeCompositeKey((m['partyId'] ?? '').toString(), (m['billNo'] ?? '').toString(), (m['internalNo'] ?? '').toString()),
       fromMap: (m) => Purchase.fromMap(m),
       toMap: (e) => e.toMap(),
     );
