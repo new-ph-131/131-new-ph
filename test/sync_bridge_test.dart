@@ -6,7 +6,6 @@ import 'package:pharoah_erp/models.dart';
 
 void main() {
   test('2-Way Sync Engine: ID Lock, Tombstone & In-Place Merge Test', () {
-    // 1. Test ID Preservation on Edit
     const originalId = "SALE-101-ORIGINAL";
     final resolved = SyncIdentityGuard.resolveId(
       existingId: originalId,
@@ -15,19 +14,17 @@ void main() {
     );
     expect(resolved, equals(originalId));
 
-    // 2. Test Tombstone Deletion Shield
     final tombstones = {"DEL-001", "INV-999"};
     expect(SyncTombstoneHub.isDeleted(tombstones, "DEL-001"), isTrue);
     expect(SyncTombstoneHub.isDeleted(tombstones, "random-id", referenceNo: "INV-999"), isTrue);
     expect(SyncTombstoneHub.isDeleted(tombstones, "ACTIVE-001"), isFalse);
 
-    // 3. Test In-Place Delta Merge (Edit without duplicates)
     final localSales = [
       Sale(
-        id: "SALE-1",
-        billNo: "INV-1",
+        id: "SALE-MERGE-TEST-101",
+        billNo: "INV-MERGE-TEST-101",
         partyId: "P1",
-        date: DateTime.now(),
+        date: DateTime.utc(2025, 1, 1),
         partyName: "Test Party",
         partyGstin: "N/A",
         partyState: "Rajasthan",
@@ -39,16 +36,18 @@ void main() {
 
     final cloudIncoming = [
       {
-        "id": "SALE-1",
-        "billNo": "INV-1",
+        "id": "SALE-MERGE-TEST-101",
+        "billNo": "INV-MERGE-TEST-101",
         "partyId": "P1",
-        "date": DateTime.now().toIso8601String(),
+        "date": DateTime.utc(2025, 1, 1).toIso8601String(),
         "partyName": "Test Party",
         "partyGstin": "N/A",
         "partyState": "Rajasthan",
         "items": [],
-        "totalAmount": 250.0, // Modified amount from other device
+        "totalAmount": 250.0,
         "paymentMode": "CASH",
+        "updatedAt": 2000,
+        "version": 2,
       }
     ];
 
