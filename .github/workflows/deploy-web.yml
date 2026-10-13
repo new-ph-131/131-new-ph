@@ -36,3 +36,15 @@ jobs:
         with:
           name: pharoah-web-portal-build
           path: build/web
+
+      - name: Deploy Web to Cloudflare Pages
+        if: github.event_name == 'push'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::Cloudflare deployment skipped. Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets."
+            exit 0
+          fi
+          npx --yes wrangler@3 pages deploy build/web --project-name=pharoah-erp
