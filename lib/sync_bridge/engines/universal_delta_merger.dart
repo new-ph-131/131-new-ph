@@ -1,4 +1,5 @@
 import "../../sync_core/d1_sales_ledger_service.dart";
+import "../../sync_core/modules/purchase_sync_module.dart";
 import 'dart:convert';
 import 'package:pharoah_erp/models.dart';
 import '../core/sync_tombstone_hub.dart';
@@ -15,14 +16,19 @@ class UniversalDeltaMerger {
     required String Function(T) getRefNo,
     required T Function(Map<String, dynamic>) fromMap,
     required Map<String, dynamic> Function(T) toMap,
+    String Function(T)? getCompositeKey,
+    String Function(Map<String, dynamic>)? getCloudCompositeKey,
   }) {
     if (cloudList == null) return false;
     bool hasChanged = false;
 
     // 1. Purge any locally present item that exists in tombstones
     final initialLen = localList.length;
-    localList.removeWhere((item) =>
-        SyncTombstoneHub.isDeleted(tombstones, getId(item), referenceNo: getRefNo(item)));
+    localList.removeWhere((item) {
+      final composite = getCompositeKey?.call(item).trim().toUpperCase() ?? '';
+      return SyncTombstoneHub.isDeleted(tombstones, getId(item), referenceNo: getRefNo(item)) ||
+          (composite.isNotEmpty && tombstones.contains(composite));
+    });
     if (localList.length != initialLen) {
       hasChanged = true;
     }
@@ -33,17 +39,23 @@ class UniversalDeltaMerger {
       final cloudMap = raw;
       final id = (cloudMap['id'] ?? '').toString().trim();
       final refNo = (cloudMap['billNo'] ?? cloudMap['internalNo'] ?? cloudMap['voucherNo'] ?? '').toString().trim();
+      final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? '';
 
       if (id.isEmpty) continue;
 
       // Skip if marked deleted
       if (SyncTombstoneHub.isDeleted(tombstones, id, referenceNo: refNo) ||
+          (compositeKey.isNotEmpty && tombstones.contains(compositeKey)) ||
           D1SalesLedgerService.isBillDeleted(id, refNo)) {
         continue;
       }
 
-      final existingIdx = localList.indexWhere((item) =>
-          getId(item) == id || (refNo.isNotEmpty && getRefNo(item).trim().toUpperCase() == refNo.toUpperCase()));
+      final existingIdx = localList.indexWhere((item) {
+        if (getId(item) == id) return true;
+        if (refNo.isNotEmpty && getRefNo(item).trim().toUpperCase() == refNo.toUpperCase()) return true;
+        if (compositeKey.isNotEmpty && getCompositeKey != null && getCompositeKey(item).trim().toUpperCase() == compositeKey) return true;
+        return false;
+      });
 
       if (existingIdx == -1) {
         // New record from cloud: Add to local list
@@ -66,6 +78,42 @@ class UniversalDeltaMerger {
             hasChanged = true;
           }
         }
+      }
+    }
+
+    // Optional composite-identity dedupe. Purchase uses supplier + invoice
+    // number so already duplicated local rows are repaired during ordinary sync.
+    if (getCompositeKey != null) {
+      final Map<String, T> uniqueByComposite = {};
+      final List<T> withoutComposite = [];
+      for (final item in localList) {
+        final key = getCompositeKey(item).trim().toUpperCase();
+        if (key.isEmpty) {
+          withoutComposite.add(item);
+          continue;
+        }
+        final prior = uniqueByComposite[key];
+        if (prior == null) {
+          uniqueByComposite[key] = item;
+          continue;
+        }
+        final priorMap = toMap(prior);
+        final currentMap = toMap(item);
+        final priorVersion = int.tryParse((priorMap['version'] ?? 1).toString()) ?? 1;
+        final currentVersion = int.tryParse((currentMap['version'] ?? 1).toString()) ?? 1;
+        final priorUpdated = int.tryParse((priorMap['updatedAt'] ?? priorMap['updated_at'] ?? 0).toString()) ?? 0;
+        final currentUpdated = int.tryParse((currentMap['updatedAt'] ?? currentMap['updated_at'] ?? 0).toString()) ?? 0;
+        if (currentVersion > priorVersion ||
+            (currentVersion == priorVersion && currentUpdated >= priorUpdated)) {
+          uniqueByComposite[key] = item;
+        }
+      }
+      final deduplicated = [...uniqueByComposite.values, ...withoutComposite];
+      if (deduplicated.length != localList.length) {
+        localList
+          ..clear()
+          ..addAll(deduplicated);
+        hasChanged = true;
       }
     }
 
@@ -108,7 +156,9 @@ class UniversalDeltaMerger {
       localList: purchases,
       tombstones: tombstones,
       getId: (e) => e.id,
-      getRefNo: (e) => e.internalNo.isNotEmpty ? e.internalNo : e.billNo,
+      getRefNo: (e) => PurchaseSyncModule.getCompositeKey(e),
+      getCompositeKey: (e) => PurchaseSyncModule.getCompositeKey(e),
+      getCloudCompositeKey: (m) => PurchaseSyncModule.makeCompositeKey((m['partyId'] ?? '').toString(), (m['billNo'] ?? '').toString(), (m['internalNo'] ?? '').toString()),
       fromMap: (m) => Purchase.fromMap(m),
       toMap: (e) => e.toMap(),
     );
