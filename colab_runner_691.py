@@ -1,6 +1,6 @@
 # ==============================================================================
 # 🚀 PHAROAH ERP WEB - ADVANCED GOOGLE COLAB BUILD & DEPLOY RUNNER
-# Revision: #PH-REV-691 (ENTERPRISE-UNIVERSAL-ANTI-ZOMBIE-SHIELD-PRO)
+# Revision: #PH-REV-692 (ENTERPRISE-UNIVERSAL-ANTI-ZOMBIE-SHIELD-PRO)
 # Target: Cloudflare Pages (pharoah-erp.pages.dev)
 # ==============================================================================
 
@@ -20,7 +20,7 @@ REPO_URL = "https://github.com/new-ph-131/131-new-ph.git"
 FLUTTER_VERSION = "3.27.4"
 
 print("=" * 80)
-print("       PHAROAH ERP - COLAB ADVANCED WEB DEPLOYER (#PH-REV-691)")
+print("       PHAROAH ERP - COLAB ADVANCED WEB DEPLOYER (#PH-REV-692)")
 print("=" * 80)
 
 # ==============================================================================
@@ -32,7 +32,7 @@ def verify_cloudflare(token, account_id, project_name):
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        "User-Agent": "Pharoah-Colab-Deployer/691"
+        "User-Agent": "Pharoah-Colab-Deployer/692"
     }
     
     proj_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/pages/projects/{project_name}"
@@ -59,9 +59,9 @@ os.environ["CLOUDFLARE_API_TOKEN"] = CF_API_TOKEN
 os.environ["CLOUDFLARE_ACCOUNT_ID"] = CF_ACCOUNT_ID
 
 # ==============================================================================
-# STEP 2: REPOSITORY SYNC (#PH-REV-691)
+# STEP 2: REPOSITORY SYNC (#PH-REV-692)
 # ==============================================================================
-print("\n📥 [STEP 2/5] Syncing Latest Source Code (#PH-REV-691)...")
+print("\n📥 [STEP 2/5] Syncing Latest Source Code (#PH-REV-692)...")
 if os.path.exists(".git"):
     print("  Pulling latest changes from origin main...")
     subprocess.run(["git", "pull", "origin", "main"], check=False)
@@ -126,9 +126,9 @@ deploy_cmd = [
 res_deploy = subprocess.run(deploy_cmd)
 if res_deploy.returncode == 0:
     print("\n" + "=" * 80)
-    print("🎉 #PH-REV-691 LIVE WEB WORKSTATION DEPLOYED SUCCESSFULLY!")
+    print("🎉 #PH-REV-692 LIVE WEB WORKSTATION DEPLOYED SUCCESSFULLY!")
     print(f"🔗 Live Production URL: https://{CF_PROJECT_NAME}.pages.dev")
-    print("🛡️ Live Revision Badge: #PH-REV-691 (ENTERPRISE-UNIVERSAL-ANTI-ZOMBIE-SHIELD-PRO)")
+    print("🛡️ Live Revision Badge: #PH-REV-692 (ENTERPRISE-UNIVERSAL-ANTI-ZOMBIE-SHIELD-PRO)")
     print("⚡ New Capabilities: Full Purchase OCC Sync + Dual-Key Tombstones Active")
     print("=" * 80)
 else:
