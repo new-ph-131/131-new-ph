@@ -93,7 +93,7 @@ class DeltaMergeEngine {
       String Function(T) getBillNo,
       T Function(Map<String, dynamic>) fromMap,
       Map<String, dynamic> Function(T) toMap,
-      String Function(Map<String, dynamic>)? getCloudCompositeKey,
+      [String Function(Map<String, dynamic>)? getCloudCompositeKey]
     ) {
       if (cloudList == null) return false;
       bool changed = false;
@@ -213,12 +213,12 @@ class DeltaMergeEngine {
       (e) => e.id, 
       (e) => PurchaseSyncModule.getCompositeKey(e), 
       (m) => Purchase.fromMap(m),
-      getCloudCompositeKey: (m) => PurchaseSyncModule.makeCompositeKey(
+      (e) => e.toMap(),
+      (m) => PurchaseSyncModule.makeCompositeKey(
         (m['partyId'] ?? '').toString(),
         (m['billNo'] ?? '').toString(),
         (m['internalNo'] ?? '').toString(),
-      ), 
-      (e) => e.toMap()
+      )
     );
 
     bool cVouc = mergeList<Voucher>(
