@@ -25,8 +25,7 @@ print("=" * 80)
 # ==============================================================================
 # STEP 1: SMART CLOUDFLARE TOKEN VERIFICATION
 # ==============================================================================
-print("
-🔍 [STEP 1/5] Verifying Cloudflare API Token...")
+print("\n🔍 [STEP 1/5] Verifying Cloudflare API Token...")
 
 def verify_cloudflare_token(token, project_name):
     headers = {
@@ -74,8 +73,7 @@ def verify_cloudflare_token(token, project_name):
 is_valid, account_id, diagnostic_msg = verify_cloudflare_token(CF_API_TOKEN, CF_PROJECT_NAME)
 
 if not is_valid:
-    print("
-❌ CLOUDFLARE TOKEN VERIFICATION FAILED!")
+    print("\n❌ CLOUDFLARE TOKEN VERIFICATION FAILED!")
     print("=" * 80)
     print("Diagnostic Output:")
     print(diagnostic_msg)
@@ -96,8 +94,7 @@ if account_id:
 # ==============================================================================
 # STEP 2: REPOSITORY SYNC (#PH-REV-689)
 # ==============================================================================
-print("
-📥 [STEP 2/5] Syncing Source Code from GitHub...")
+print("\n📥 [STEP 2/5] Syncing Source Code from GitHub...")
 if os.path.exists(".git"):
     print("  Pulling latest changes from origin main...")
     subprocess.run(["git", "pull", "origin", "main"], check=False)
@@ -109,8 +106,7 @@ else:
 # ==============================================================================
 # STEP 3: FLUTTER SDK SETUP (Version 3.27.4)
 # ==============================================================================
-print(f"
-🛠️  [STEP 3/5] Checking Flutter SDK ({FLUTTER_VERSION})...")
+print(f"\n🛠️  [STEP 3/5] Checking Flutter SDK ({FLUTTER_VERSION})...")
 flutter_bin = "flutter"
 
 has_flutter = subprocess.run(["which", "flutter"], capture_output=True).returncode == 0
@@ -127,8 +123,7 @@ subprocess.run([flutter_bin, "--version"], check=False)
 # ==============================================================================
 # STEP 4: PRODUCTION WEB BUILD
 # ==============================================================================
-print("
-🔨 [STEP 4/5] Building Flutter Web Production Assets...")
+print("\n🔨 [STEP 4/5] Building Flutter Web Production Assets...")
 subprocess.run([flutter_bin, "pub", "get"], check=True)
 
 build_cmd = [
@@ -151,8 +146,7 @@ print(f"  ✔ Build Completed Successfully in {build_duration}s!")
 # ==============================================================================
 # STEP 5: DEPLOY TO CLOUDFLARE PAGES
 # ==============================================================================
-print("
-🚀 [STEP 5/5] Deploying to Cloudflare Pages (pharoah-erp)...")
+print("\n🚀 [STEP 5/5] Deploying to Cloudflare Pages (pharoah-erp)...")
 deploy_cmd = [
     "npx", "wrangler", "pages", "deploy", "build/web",
     f"--project-name={CF_PROJECT_NAME}",
@@ -160,8 +154,7 @@ deploy_cmd = [
 ]
 deploy_res = subprocess.run(deploy_cmd)
 if deploy_res.returncode == 0:
-    print("
-" + "=" * 80)
+    print("\n" + "=" * 80)
     print("🎉 #PH-REV-689 WEB PORTAL DEPLOYED SUCCESSFULLY!")
     print("🔗 Live URL: https://pharoah-erp.pages.dev")
     print("🛡️ Features: Enterprise Monotonic Versioning, OCC Rebase & Sale Modification Shield")
