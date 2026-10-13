@@ -149,7 +149,7 @@ export async function onRequestPost(context: any) {
       action: body.action || "DELTA_MUTATION",
       entityType: body.entityType || "",
       entityId: (body.entityId || "").trim(),
-      timestamp: body.timestamp || Date.now(),
+      timestamp: (body.timestamp && body.timestamp > 100000000000000) ? Math.floor(body.timestamp / 1000) : (body.timestamp || Date.now()),
       serverReceivedAt: Date.now(),
       deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
       delta: body.delta || null,
@@ -239,6 +239,14 @@ export async function onRequestPost(context: any) {
               const uAt = parseInt(op.updated_at || Date.now(), 10);
               const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
               const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+              if (isDel === 1) {
+                tSet.add(sId);
+                const rawBill = (op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo);
+                const rawParty = (op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId);
+                const rawInt = (op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo);
+                if (rawInt) tSet.add(rawInt.toString().trim().toUpperCase());
+                if (rawParty && rawBill) tSet.add(`${rawParty.toString().trim().toUpperCase()}_${rawBill.toString().trim().toUpperCase()}`);
+              }
               const rawData = op.data !== undefined ? op.data : op.bill_data;
               const bData = typeof rawData === "string" ? rawData : JSON.stringify(rawData || {});
 
@@ -255,6 +263,10 @@ export async function onRequestPost(context: any) {
             }
             if (sqlStatements.length > 0) {
               await db.batch(sqlStatements);
+              channelData.tombstones = Array.from(tSet);
+              await db.prepare(
+                "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+              ).bind(storeToken, JSON.stringify(channelData), Date.now()).run().catch(() => {});
             }
           } catch (batchErr) {
             console.error("D1 Master Sync Batch Exception:", batchErr);
@@ -286,7 +298,8 @@ export async function onRequestGet(context: any) {
   try {
     const url = new URL(context.request.url);
     const storeToken = (url.searchParams.get("storeToken") || "").trim().toUpperCase();
-    const lastSeenTs = parseInt(url.searchParams.get("lastSeenTs") || "0", 10);
+    let lastSeenTs = parseInt(url.searchParams.get("lastSeenTs") || "0", 10);
+    if (lastSeenTs > 100000000000000) lastSeenTs = Math.floor(lastSeenTs / 1000);
     const sinceSeq = parseInt(url.searchParams.get("since_seq") || "-1", 10);
 
     if (!storeToken) {

@@ -121,10 +121,13 @@ class PharoahWebManager with ChangeNotifier {
 
     purchases.removeWhere((p) {
       final iNo = p.internalNo.trim().toUpperCase();
-      final compKey = (p.partyId.isNotEmpty && p.billNo.isNotEmpty) ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}" : "";
+      final bNo = p.billNo.trim().toUpperCase();
+      final party = p.partyId.trim().toUpperCase();
+      final compKey = (party.isNotEmpty && bNo.isNotEmpty) ? "${party}_$bNo" : "";
       return set.contains(p.id) || upperSet.contains(p.id.toUpperCase()) ||
           (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
-          (compKey.isNotEmpty && (set.contains(compKey) || upperSet.contains(compKey)));
+          (compKey.isNotEmpty && (set.contains(compKey) || upperSet.contains(compKey))) ||
+          (party.isNotEmpty && bNo.isNotEmpty && (set.contains(bNo) && set.contains(party)));
     });
 
     saleChallans.removeWhere((c) {
@@ -424,12 +427,15 @@ class PharoahWebManager with ChangeNotifier {
         }
 
         // 🛡️ Anti-Zombie / Permanent Tombstone Check (Protected by Composite Key, NEVER raw billNo!)
-        if ((p.id.isNotEmpty && deletedRecordIds.contains(p.id)) ||
-            (cleanIntNo.isNotEmpty && deletedRecordIds.contains(cleanIntNo)) ||
-            (compKey.isNotEmpty && deletedRecordIds.contains(compKey)) ||
+        final String rawCompKey = (cleanPartyId.isNotEmpty && cleanBillNo.isNotEmpty) ? "${cleanPartyId}_$cleanBillNo" : "";
+        if ((p.id.isNotEmpty && (deletedRecordIds.contains(p.id) || deletedRecordIds.contains(p.id.toUpperCase()))) ||
+            (cleanIntNo.isNotEmpty && (deletedRecordIds.contains(cleanIntNo) || deletedRecordIds.contains(cleanIntNo.toUpperCase()))) ||
+            (compKey.isNotEmpty && (deletedRecordIds.contains(compKey) || deletedRecordIds.contains(compKey.toUpperCase()))) ||
+            (rawCompKey.isNotEmpty && (deletedRecordIds.contains(rawCompKey) || deletedRecordIds.contains(rawCompKey.toUpperCase()))) ||
             (p.id.isNotEmpty && localTombstoneRegistry.containsKey(p.id)) ||
             (cleanIntNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanIntNo)) ||
-            (compKey.isNotEmpty && localTombstoneRegistry.containsKey(compKey))) {
+            (compKey.isNotEmpty && localTombstoneRegistry.containsKey(compKey)) ||
+            (rawCompKey.isNotEmpty && localTombstoneRegistry.containsKey(rawCompKey))) {
           continue; // Blocked by Permanent Tombstone!
         }
 
@@ -460,7 +466,14 @@ class PharoahWebManager with ChangeNotifier {
           masterPurcMap[key] = p;
         }
       }
-      purchases = masterPurcMap.values.toList();
+      purchases = masterPurcMap.values.where((p) {
+        final iNo = p.internalNo.trim().toUpperCase();
+        final comp = (p.partyId.isNotEmpty && p.billNo.isNotEmpty) ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}" : "";
+        return !deletedRecordIds.contains(p.id) &&
+               !deletedRecordIds.contains(p.id.toUpperCase()) &&
+               (iNo.isEmpty || (!deletedRecordIds.contains(iNo) && !deletedRecordIds.contains(iNo.toUpperCase()))) &&
+               (comp.isEmpty || (!deletedRecordIds.contains(comp) && !deletedRecordIds.contains(comp.toUpperCase())));
+      }).toList();
     }
 
     // 3. Vouchers Sync with Anti-Zombie Multi-Key Protection

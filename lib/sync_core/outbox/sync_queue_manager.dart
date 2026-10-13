@@ -52,7 +52,7 @@ class SyncQueueManager {
       action: actionType,
       deviceId: _deviceId,
       version: currentVersion + 1,
-      updatedAt: DateTime.now().microsecondsSinceEpoch, // 16-Digit Microsecond Clock
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
       isDeleted: isDelete ? 1 : 0,
       billData: rawPayload,
     );

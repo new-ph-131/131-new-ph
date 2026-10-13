@@ -26,13 +26,13 @@ class PurchaseSyncModule {
 
   /// 🛡️ Static factory to construct Composite Key from components
   static String makeCompositeKey(String partyId, String billNo, [String internalNo = ""]) {
-    final cleanInt = internalNo.trim().toUpperCase();
-    if (cleanInt.isNotEmpty) return cleanInt;
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
     if (cleanParty.isNotEmpty && cleanBill.isNotEmpty) {
       return "${cleanParty}_$cleanBill";
     }
+    final cleanInt = internalNo.trim().toUpperCase();
+    if (cleanInt.isNotEmpty) return cleanInt;
     return cleanBill.isNotEmpty ? cleanBill : "UNKNOWN_PURCHASE";
   }
 

@@ -1243,7 +1243,10 @@ void registerBatchActivity({
 
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) PurchaseSyncModule.onPurchaseDeleted(p, t);
+          if (t.isNotEmpty) {
+            PurchaseSyncModule.onPurchaseDeleted(p, t);
+            D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE");
+          }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(

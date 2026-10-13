@@ -30,6 +30,9 @@ class WebRealtimeCoordinator {
       storeToken: token,
       mySource: 'web',
       interval: const Duration(milliseconds: 3500),
+      onTombstonesReceived: (edgeTombstones) {
+        webManager.purgeDeletedIds(edgeTombstones);
+      },
       onBatchReceived: (batchOps) {
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phWeb: webManager);
       },
@@ -40,8 +43,12 @@ class WebRealtimeCoordinator {
             webManager.unmarkDeletedId(u);
           }
         }
-        if (event.deletedIds.isNotEmpty) {
-          webManager.purgeDeletedIds(event.deletedIds);
+        final List<String> allDel = [...event.deletedIds];
+        if (event.entityId.isNotEmpty && (event.action.contains('DELETE') || event.action.contains('REMOVE'))) {
+          allDel.add(event.entityId);
+        }
+        if (allDel.isNotEmpty) {
+          webManager.purgeDeletedIds(allDel);
         }
         await webManager.refreshStoreData();
       },

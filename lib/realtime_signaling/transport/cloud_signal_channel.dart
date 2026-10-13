@@ -51,6 +51,7 @@ class CloudSignalChannel {
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
     Function(List<dynamic>)? onBatchReceived,
+    Function(List<String>)? onTombstonesReceived,
     Duration interval = const Duration(milliseconds: 3500),
   }) {
     stopListening();
@@ -67,19 +68,27 @@ class CloudSignalChannel {
       try {
         final uri = Uri.parse(
           "$edgeSignalEndpoint?storeToken=${Uri.encodeComponent(cleanToken)}"
-          "&lastSeenTs=$_lastKnownSignalTime"
+          "&lastSeenTs=${_lastKnownSignalTime > 100000000000000 ? _lastKnownSignalTime ~/ 1000 : _lastKnownSignalTime}"
         );
 
         final response = await http.get(uri).timeout(const Duration(seconds: 3));
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['status'] == 'SUCCESS') {
+            // 🛡️ Edge Gravestones Ingestion
+            if (data['tombstones'] is List && (data['tombstones'] as List).isNotEmpty) {
+              final edgeTombs = List<String>.from((data['tombstones'] as List).map((e) => e.toString().trim()).where((e) => e.isNotEmpty));
+              if (edgeTombs.isNotEmpty) {
+                onTombstonesReceived?.call(edgeTombs);
+              }
+            }
             // 🚀 Step 4: Atomic Batch Delta Processing
             if (data['batch_operations'] is List && (data['batch_operations'] as List).isNotEmpty) {
               final batchOps = List<dynamic>.from(data['batch_operations']);
               for (final op in batchOps) {
                 if (op is Map && op['updated_at'] != null) {
-                  final uTs = int.tryParse(op['updated_at'].toString()) ?? 0;
+                  int uTs = int.tryParse(op['updated_at'].toString()) ?? 0;
+                  if (uTs > 100000000000000) uTs ~/= 1000;
                   if (uTs > _lastKnownSignalTime) {
                     _lastKnownSignalTime = uTs;
                   }
@@ -91,7 +100,9 @@ class CloudSignalChannel {
             if (data['hasUpdate'] == true && data['event'] != null) {
               final sig = data['event'];
               final event = SyncSignalEvent.fromMap(sig);
-              if (event.timestamp > _lastKnownSignalTime && event.source.toUpperCase() != cleanSource) {
+              int evTs = event.timestamp;
+              if (evTs > 100000000000000) evTs ~/= 1000;
+              if (evTs > _lastKnownSignalTime && event.source.toUpperCase() != cleanSource) {
                 _lastKnownSignalTime = event.timestamp;
                 debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${event.source}: ${event.action}");
                 onSignal(event);

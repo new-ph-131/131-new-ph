@@ -137,6 +137,53 @@ class D1SalesLedgerService {
     }
   }
 
+  /// Called when a Purchase is permanently deleted from either App or Web
+  static Future<bool> onPurchaseDeleted(
+    String purchaseId,
+    String partyId,
+    String billNo,
+    String internalNo,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+  }) async {
+    markPurchasePermanentlyDeleted(purchaseId, partyId, billNo, internalNo);
+    if (storeToken.trim().isEmpty) return false;
+    try {
+      final cleanParty = partyId.trim().toUpperCase();
+      final cleanBill = billNo.trim().toUpperCase();
+      final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "DELETE_PURCHASE",
+        "entityId": purchaseId,
+        "deletedIds": [
+          purchaseId,
+          if (internalNo.trim().isNotEmpty) internalNo.trim().toUpperCase(),
+          if (compKey.isNotEmpty) compKey,
+        ],
+        "sale_event": {
+          "id": purchaseId,
+          "bill_no": billNo,
+          "version": 999999,
+          "action": "DELETE",
+          "status": "Deleted",
+          "client_source": clientSource,
+          "payload": {"partyId": partyId, "billNo": billNo, "internalNo": internalNo},
+        },
+      };
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 4));
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onPurchaseDeleted Network Error: $e");
+    }
+    return false;
+  }
+
   static void markPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();

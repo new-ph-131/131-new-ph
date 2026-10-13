@@ -63,6 +63,18 @@ class MasterSyncOrchestrator {
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phWeb.sales, envelope);
           break;
         case 'PURCHASE':
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            final billData = envelope.billData;
+            final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
+            final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
+            final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
+            final List<String> delList = [
+              envelope.syncId,
+              if (iNo.isNotEmpty) iNo,
+              if (pId.isNotEmpty && bNo.isNotEmpty) "${pId}_$bNo",
+            ];
+            phWeb.purgeDeletedIds(delList);
+          }
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope);
           break;
         case 'CHALLAN':
