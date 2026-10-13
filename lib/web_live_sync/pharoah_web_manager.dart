@@ -646,7 +646,7 @@ class PharoahWebManager with ChangeNotifier {
     final int existingIdx = sales.indexWhere((s) => s.id == sale.id || (sale.billNo.trim().isNotEmpty && s.billNo.trim().toUpperCase() == sale.billNo.trim().toUpperCase()));
     final bool isUpdate = existingIdx != -1;
 
-    // 🛡️ ENTERPRISE MONOTONIC VERSIONING & OCC RECONCILER (#PH-REV-687)
+    // 🛡️ ENTERPRISE MONOTONIC VERSIONING & OCC RECONCILER (#PH-REV-689)
     int maxVer = sale.version;
     if (isUpdate && sales[existingIdx].version >= maxVer) {
       maxVer = sales[existingIdx].version + 1;
