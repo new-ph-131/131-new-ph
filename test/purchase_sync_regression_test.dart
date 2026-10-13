@@ -17,7 +17,10 @@ void main() {
     expect(PurchaseSyncModule.getCompositeKey(b),PurchaseSyncModule.getCompositeKey(a));
   });
   test('Different IDs/internalNos for same supplier invoice update one row', () {
-    final list=[purchase(id:'APP-ID',partyId:'SUP-1',billNo:'INV-77',internalNo:'APP-1',amount:100)];
+    final list=[
+      purchase(id:'APP-ID',partyId:'SUP-1',billNo:'INV-77',internalNo:'APP-1',amount:100,version:1,updatedAt:100),
+      purchase(id:'LEGACY-DUP',partyId:'SUP-1',billNo:'INV-77',internalNo:'APP-OLD',amount:90,version:1,updatedAt:90),
+    ];
     expect(PurchaseSyncModule.applyPurchaseMutation(list,purchase(id:'WEB-ID',partyId:'SUP-1',billNo:'INV-77',internalNo:'WEB-9',amount:250,version:2,updatedAt:200)),isTrue);
     expect(list,hasLength(1)); expect(list.single.totalAmount,250);
   });
