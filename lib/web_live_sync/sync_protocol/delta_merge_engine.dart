@@ -118,17 +118,25 @@ class DeltaMergeEngine {
         if (id.isEmpty) continue;
         if (D1SalesLedgerService.isBillDeleted(id, billNo)) continue;
 
-        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (ID ONLY, NEVER billNo)
-        int? localDeleteTime = tombstoneRegistry[id];
+        // 🛡️ SHIELD 1: Anti-Zombie / Tombstone Check (Multi-Key Shield with ID, InternalNo, BillNo)
+        String intNoKey = (cloudMap['internalNo'] ?? '').toString().trim().toUpperCase();
+        String bNoKey = billNo.toUpperCase();
+        int? localDeleteTime = tombstoneRegistry[id] ?? 
+            (bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ?? 
+            (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null);
         if (localDeleteTime != null) {
           if (localDeleteTime >= cloudTimestamp && localDeleteTime > 0) {
-            // Google Drive data is older than delete event -> Skip / Drop
+            // Obsolete lag-data packet dropped securely
             continue; 
           } else if (cloudIsDeleted == 0) {
             // Legitimate newer update found -> unmark tombstone
             tombstoneRegistry.remove(id);
+            if (bNoKey.isNotEmpty) tombstoneRegistry.remove(bNoKey);
+            if (intNoKey.isNotEmpty) tombstoneRegistry.remove(intNoKey);
             if (localTombstonesOrRegistry is Set<String>) {
               localTombstonesOrRegistry.remove(id);
+              if (bNoKey.isNotEmpty) localTombstonesOrRegistry.remove(bNoKey);
+              if (intNoKey.isNotEmpty) localTombstonesOrRegistry.remove(intNoKey);
             }
           }
         }

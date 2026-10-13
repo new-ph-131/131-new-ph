@@ -579,12 +579,62 @@ Future<void> finalizePurchase({
     double extraDiscount = 0.0, // 🆕 Mapped
     double roundOff = 0.0,      // 🆕 Mapped
   }) async { 
-    int idx = purchases.indexWhere((p) => p.id == id); 
+    int idx = purchases.indexWhere((p) => p.id == id || (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase())); 
     if (idx == -1) return; 
     String t = purchases[idx].sourceTag; 
-    purchases[idx] = Purchase(id: id, internalNo: internalNo, billNo: billNo, partyId: party.id, date: date, entryDate: entryDate ?? DateTime.now(), distributorName: party.name, items: items, totalAmount: total, paymentMode: mode, linkedChallanIds: linkedChallanIds, sourceTag: t, extraDiscount: extraDiscount, roundOff: roundOff); 
+    int nextVer = purchases[idx].version + 1;
+    int nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    final updatedPurchase = Purchase(
+      id: id, 
+      internalNo: internalNo, 
+      billNo: billNo, 
+      partyId: party.id, 
+      date: date, 
+      entryDate: entryDate ?? DateTime.now(), 
+      distributorName: party.name, 
+      items: items, 
+      totalAmount: total, 
+      paymentMode: mode, 
+      linkedChallanIds: linkedChallanIds, 
+      sourceTag: t, 
+      extraDiscount: extraDiscount, 
+      roundOff: roundOff,
+      version: nextVer,
+      updatedAt: nowTs,
+    );
+    purchases[idx] = updatedPurchase; 
+
+    // ⚡ Outbox Queue Event Dispatch
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((token) {
+        if (token.isNotEmpty) PurchaseSyncModule.onPurchaseSaved(updatedPurchase, token);
+      });
+    }
+
+    // Register batch activity for all updated items
+    for (var item in items) {
+      String resolvedKey = item.medicineID;
+      try {
+        final med = medicines.firstWhere((m) => m.id == item.medicineID);
+        resolvedKey = med.identityKey;
+      } catch (_) {}
+      registerBatchActivity(
+        productKey: resolvedKey, 
+        batchNo: item.batch, 
+        exp: item.exp, 
+        packing: item.packing, 
+        mrp: item.mrp, 
+        rate: item.purchaseRate,
+        rateA: item.rateA,
+        rateB: item.rateB,
+        rateC: item.rateC,
+        rateCFormula: item.rateCFormula,
+        appliedRateType: item.appliedRateType,
+      );
+    }
     
-    // Rebuild first, then Save
+    // Rebuild first, then Save & Silent Push
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save();
     notifyListeners();
@@ -1143,12 +1193,23 @@ void registerBatchActivity({
         }
       }
       final String pId = p.id;
-      purchases.removeWhere((x) => x.id == pId);
+      final String intNo = p.internalNo.trim().toUpperCase();
+      final String bNo = p.billNo.trim().toUpperCase();
+
+      // Deduplicate remove across all 3 identifiers
+      purchases.removeWhere((x) => 
+        x.id == pId || 
+        (intNo.isNotEmpty && x.internalNo.trim().toUpperCase() == intNo) ||
+        (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo)
+      );
+
+      final List<String> delKeys = [pId, if (intNo.isNotEmpty) intNo, if (bNo.isNotEmpty) bNo];
+
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) PurchaseSyncModule.onPurchaseDeleted(p, t);
         });
-        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: pId);
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_PURCHASE',
@@ -1158,9 +1219,10 @@ void registerBatchActivity({
           this,
           action: 'DELETE_PURCHASE',
           entityId: pId,
-          deletedIds: [pId],
+          deletedIds: delKeys,
         );
       }
+      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
       save();
       notifyListeners();
     } catch (e) {}

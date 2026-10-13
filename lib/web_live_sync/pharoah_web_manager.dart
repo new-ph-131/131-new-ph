@@ -820,12 +820,16 @@ class PharoahWebManager with ChangeNotifier {
 
   void deletePurchase(String purId) {
     String realId = purId;
+    String targetIntNo = "";
+    String targetBillNo = "";
     try {
       final p = purchases.firstWhere(
         (x) => x.id == purId || x.internalNo == purId || x.billNo == purId,
         orElse: () => purchases.firstWhere((x) => x.id == purId),
       );
       realId = p.id;
+      targetIntNo = p.internalNo.trim().toUpperCase();
+      targetBillNo = p.billNo.trim().toUpperCase();
       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
@@ -848,18 +852,26 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
 
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    localTombstoneRegistry[realId] = delTime;
-    deletedRecordIds.add(realId);
-    unmarkedRecordIds.remove(realId);
+    final List<String> delKeys = [realId, if (targetIntNo.isNotEmpty) targetIntNo, if (targetBillNo.isNotEmpty) targetBillNo];
+
+    for (var k in delKeys) {
+      localTombstoneRegistry[k] = delTime;
+      deletedRecordIds.add(k);
+      unmarkedRecordIds.remove(k);
+    }
     _saveLocalTombstones();
 
-    purchases.removeWhere((p) => p.id == realId);
+    purchases.removeWhere((p) => 
+      p.id == realId || 
+      (targetIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == targetIntNo) ||
+      (targetBillNo.isNotEmpty && p.billNo.trim().toUpperCase() == targetBillNo)
+    );
     rebuildInventory();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: realId,
-      deletedIds: [realId],
+      deletedIds: delKeys,
     );
   }
 

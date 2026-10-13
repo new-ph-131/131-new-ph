@@ -65,12 +65,19 @@ class PurchaseSyncModule {
   static bool applyPurchaseMutation(List<Purchase> currentPurchases, Purchase incoming) {
     final idx = currentPurchases.indexWhere((p) => p.id == incoming.id);
 
-    // 1. Check if delete operation (is_deleted == 1)
+    // 1. Check if delete operation (is_deleted == 1) - Multi-Key Protected
     if (incoming.isDeleted == 1) {
-      if (idx != -1) {
-        final local = currentPurchases[idx];
-        if (incoming.updatedAt >= local.updatedAt || incoming.version > local.version) {
-          currentPurchases.removeAt(idx);
+      int delIdx = idx;
+      if (delIdx == -1 && incoming.internalNo.isNotEmpty) {
+        delIdx = currentPurchases.indexWhere((p) => p.internalNo.trim().toUpperCase() == incoming.internalNo.trim().toUpperCase());
+      }
+      if (delIdx == -1 && incoming.billNo.isNotEmpty && incoming.partyId.isNotEmpty) {
+        delIdx = currentPurchases.indexWhere((p) => p.billNo.trim().toUpperCase() == incoming.billNo.trim().toUpperCase() && p.partyId.trim() == incoming.partyId.trim());
+      }
+      if (delIdx != -1) {
+        final local = currentPurchases[delIdx];
+        if (incoming.updatedAt >= local.updatedAt || incoming.version > local.version || incoming.updatedAt == 0) {
+          currentPurchases.removeAt(delIdx);
           debugPrint("🗑️ [PurchaseSyncModule] Soft-deleted purchase evicted: ${incoming.billNo} (${incoming.id})");
           return true;
         }
