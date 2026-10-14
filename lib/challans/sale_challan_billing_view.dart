@@ -185,8 +185,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
                   id: "temp", 
                   billNo: widget.challanNo, 
                   partyId: widget.party.id,
-      existingId: widget.existingRecord?.id, // ID Link Added
-                  date: widget.challanDate, 
+                        date: widget.challanDate, 
                   partyName: widget.party.name, 
                   partyGstin: widget.party.gst, 
                   partyState: widget.party.state, 
@@ -331,11 +330,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
       );
 
 void _handleSave(PharoahManager ph) async {
-    if (widget.existingRecord != null) {
-      ph.deleteSaleChallan(widget.existingRecord!.id);
-    }
-
-    // 🆕 TWO-WAY SYNC TRIGGER: Direct list add ke bajaye finalizer call karein
+    // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
     ph.finalizeSaleChallan(
       billNo: widget.challanNo,
       date: widget.challanDate,
@@ -344,6 +339,7 @@ void _handleSave(PharoahManager ph) async {
       total: totalAmt,
       remarks: remarksC.text.trim(),
       partyId: widget.party.id,
+      existingId: widget.existingRecord?.id,
     );
 
     // Dynamic fetch of newly created challan record

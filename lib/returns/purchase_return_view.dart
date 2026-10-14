@@ -348,16 +348,16 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   void _handleSave(PharoahManager ph) {
     if (selectedSupplier == null) return;
     if (widget.existingRecord != null) {
-      ph.updatePurchaseReturn(id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff, existingId: widget.existingRecord?.id);
+      ph.updatePurchaseReturn(id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     } else {
-      ph.finalizePurchaseReturn(billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff, existingId: widget.existingRecord?.id);
+      ph.finalizePurchaseReturn(billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     }
     Navigator.pop(context);
   }
 
   void _handlePrint(PharoahManager ph) async {
     if (selectedSupplier == null) return;
-    final returnObj = PurchaseReturn(id: "temp", billNo: returnNoC.text, date: selectedDate, distributorName: selectedSupplier!.name, items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff, existingId: widget.existingRecord?.id);
+    final returnObj = PurchaseReturn(id: "temp", billNo: returnNoC.text, date: selectedDate, distributorName: selectedSupplier!.name, items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     await PdfRouterService.printDebitNote(returnObj: returnObj, supplier: selectedSupplier!, ph: ph);
   }
 }

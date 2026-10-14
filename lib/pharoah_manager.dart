@@ -1205,11 +1205,20 @@ void registerBatchActivity({
   Future<void> updateSaleReturn({required String id, required String billNo, required DateTime date, required Party party, required List<BillItem> items, required double total, double extraDiscount = 0.0, double roundOff = 0.0}) async {
     int i = saleReturns.indexWhere((r) => r.id == id);
     if (i != -1) {
-      saleReturns[i] = SaleReturn(
+      final oldVer = saleReturns[i].version;
+      final updatedReturn = SaleReturn(
         id: id, billNo: billNo, date: date, partyName: party.name, 
         items: items, totalAmount: total, extraDiscount: extraDiscount, 
-        roundOff: roundOff, status: "Active"
+        roundOff: roundOff, status: "Active",
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        version: oldVer + 1,
       );
+      saleReturns[i] = updatedReturn;
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) ReturnsSyncModule.onSaleReturnSaved(updatedReturn, t);
+        });
+      }
       
       await save(); 
       InventoryLogicCenter.rebuildAllInventory(
@@ -1224,11 +1233,20 @@ void registerBatchActivity({
   Future<void> updatePurchaseReturn({required String id, required String billNo, required DateTime date, required Party party, required List<PurchaseItem> items, required double total, double extraDiscount = 0.0, double roundOff = 0.0}) async {
     int i = purchaseReturns.indexWhere((r) => r.id == id);
     if (i != -1) {
-      purchaseReturns[i] = PurchaseReturn(
+      final oldVer = purchaseReturns[i].version;
+      final updatedPReturn = PurchaseReturn(
         id: id, billNo: billNo, distributorName: party.name, 
         date: date, items: items, totalAmount: total, 
-        extraDiscount: extraDiscount, roundOff: roundOff, status: "Active"
+        extraDiscount: extraDiscount, roundOff: roundOff, status: "Active",
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        version: oldVer + 1,
       );
+      purchaseReturns[i] = updatedPReturn;
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) ReturnsSyncModule.onPurchaseReturnSaved(updatedPReturn, t);
+        });
+      }
 
       await save();
       InventoryLogicCenter.rebuildAllInventory(

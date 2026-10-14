@@ -187,8 +187,7 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
                   internalNo: widget.internalNo, 
                   billNo: widget.supplierChallanNo, 
                   partyId: widget.distributor.id,
-      existingId: widget.existingRecord?.id,
-                  date: widget.challanDate, 
+                        date: widget.challanDate, 
                   distributorName: widget.distributor.name, 
                   items: items, 
                   totalAmount: totalAmt, 
@@ -329,9 +328,7 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
       );
 
   void _handleSave(PharoahManager ph) {
-    if (widget.existingRecord != null) {
-      ph.deletePurchaseChallan(widget.existingRecord!.id);
-    }
+    // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
     ph.finalizePurchaseChallan(
       billNo: widget.supplierChallanNo,
       internalNo: widget.internalNo,
@@ -341,6 +338,7 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
       total: totalAmt,
       remarks: remarksC.text.trim(),
       partyId: widget.distributor.id,
+      existingId: widget.existingRecord?.id,
     );
     Navigator.of(context).popUntil((route) => route.isFirst);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Purchase Challan Saved Successfully!"), backgroundColor: Colors.green));

@@ -331,16 +331,16 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   void _handleSave(PharoahManager ph) {
     if (selectedParty == null) return;
     if (widget.existingRecord != null) {
-      ph.updateSaleReturn(id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff, existingId: widget.existingRecord?.id);
+      ph.updateSaleReturn(id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     } else {
-      ph.finalizeSaleReturn(billNo: returnNoC.text, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff, existingId: widget.existingRecord?.id);
+      ph.finalizeSaleReturn(billNo: returnNoC.text, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     }
     Navigator.pop(context);
   }
 
   void _handlePrint(PharoahManager ph) async {
     if (selectedParty == null) return;
-    final returnObj = SaleReturn(id: "temp", billNo: returnNoC.text, date: selectedDate, partyName: selectedParty!.name, items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff, existingId: widget.existingRecord?.id);
+    final returnObj = SaleReturn(id: "temp", billNo: returnNoC.text, date: selectedDate, partyName: selectedParty!.name, items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     await PdfRouterService.printCreditNote(returnObj: returnObj, party: selectedParty!, ph: ph);
   }
 }
