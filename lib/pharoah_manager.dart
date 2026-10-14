@@ -3,6 +3,7 @@ import 'sync_core/modules/sales_sync_module.dart';
 import 'sync_core/modules/purchase_sync_module.dart';
 import 'sync_core/modules/challan_sync_module.dart';
 import 'sync_core/modules/voucher_sync_module.dart';
+import 'sync_core/modules/returns_sync_module.dart';
 import 'event_sync_lab/workflow/lab_sync_orchestrator.dart';
 // FILE: lib/pharoah_manager.dart (FULLY INTEGRATED, COMPILE-SAFE VERSION)
 
