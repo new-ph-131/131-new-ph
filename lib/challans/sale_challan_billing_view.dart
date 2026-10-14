@@ -184,7 +184,8 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
                 final tempChallan = SaleChallan(
                   id: "temp", 
                   billNo: widget.challanNo, 
-                  partyId: widget.party.id, // ID Link Added
+                  partyId: widget.party.id,
+      existingId: widget.existingRecord?.id, // ID Link Added
                   date: widget.challanDate, 
                   partyName: widget.party.name, 
                   partyGstin: widget.party.gst, 

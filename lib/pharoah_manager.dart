@@ -688,10 +688,22 @@ Future<void> finalizePurchase({
     required List<BillItem> items, 
     required double total, 
     String remarks = "", 
-    required String partyId
+    required String partyId,
+    String? existingId,
   }) { 
+    final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    int currentVer = 1;
+    final cleanBNo = billNo.trim().toUpperCase();
+    final int existingIdx = saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo));
+    if (existingIdx != -1) {
+      currentVer = saleChallans[existingIdx].version + 1;
+    }
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cId, secondaryKey: billNo);
+    }
+    saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo));
     final newChallan = SaleChallan(
-      id: DateTime.now().toString(), 
+      id: cId, 
       billNo: billNo, 
       partyId: partyId, 
       date: date, 
@@ -702,7 +714,7 @@ Future<void> finalizePurchase({
       totalAmount: total, 
       remarks: remarks,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
-      version: 1,
+      version: currentVer,
     );
     saleChallans.add(newChallan);
     if (activeCompany != null) {
@@ -744,9 +756,39 @@ Future<void> finalizePurchase({
     required List<PurchaseItem> items, 
     required double total, 
     String remarks = "", 
-    required String partyId
+    required String partyId,
+    String? existingId,
   }) { 
-    purchaseChallans.add(PurchaseChallan(id: DateTime.now().toString(), internalNo: internalNo, billNo: billNo, partyId: partyId, date: date, distributorName: party.name, items: items, totalAmount: total, remarks: remarks)); 
+    final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    int currentVer = 1;
+    final cleanINo = internalNo.trim().toUpperCase();
+    final int existingIdx = purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
+    if (existingIdx != -1) {
+      currentVer = purchaseChallans[existingIdx].version + 1;
+    }
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cId, secondaryKey: internalNo);
+    }
+    purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
+    final newPChallan = PurchaseChallan(
+      id: cId, 
+      internalNo: internalNo, 
+      billNo: billNo, 
+      partyId: partyId, 
+      date: date, 
+      distributorName: party.name, 
+      items: items, 
+      totalAmount: total, 
+      remarks: remarks,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
+    );
+    purchaseChallans.add(newPChallan);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) ChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
+      });
+    } 
     
     // 🆕 STRICT TWO-WAY SYNC: Purchase Challan items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
@@ -783,9 +825,40 @@ Future<void> finalizePurchase({
     required double total, 
     double extraDiscount = 0.0, 
     double roundOff = 0.0, 
-    String type = "Mixed"
+    String type = "Mixed",
+    String? existingId,
   }) async { 
-    saleReturns.add(SaleReturn(id: DateTime.now().toString(), billNo: billNo, date: date, partyName: party.name, items: items, totalAmount: total, returnType: type, extraDiscount: extraDiscount, roundOff: roundOff, status: "Active")); 
+    final String rId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    int currentVer = 1;
+    final cleanBNo = billNo.trim().toUpperCase();
+    final int existingIdx = saleReturns.indexWhere((r) => r.id == rId || (cleanBNo.isNotEmpty && r.billNo.trim().toUpperCase() == cleanBNo));
+    if (existingIdx != -1) {
+      currentVer = saleReturns[existingIdx].version + 1;
+    }
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: rId, secondaryKey: billNo);
+    }
+    saleReturns.removeWhere((r) => r.id == rId || (cleanBNo.isNotEmpty && r.billNo.trim().toUpperCase() == cleanBNo));
+    final newSReturn = SaleReturn(
+      id: rId, 
+      billNo: billNo, 
+      date: date, 
+      partyName: party.name, 
+      items: items, 
+      totalAmount: total, 
+      returnType: type, 
+      extraDiscount: extraDiscount, 
+      roundOff: roundOff, 
+      status: "Active",
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
+    );
+    saleReturns.add(newSReturn);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) ReturnsSyncModule.onSaleReturnSaved(newSReturn, t);
+      });
+    } 
     
     // 🆕 STRICT TWO-WAY SYNC: Sale Return (Credit Note) items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
@@ -824,9 +897,40 @@ Future<void> finalizePurchase({
     required double total, 
     double extraDiscount = 0.0, 
     double roundOff = 0.0, 
-    String type = "Mixed"
+    String type = "Mixed",
+    String? existingId,
   }) async { 
-    purchaseReturns.add(PurchaseReturn(id: DateTime.now().toString(), billNo: billNo, distributorName: party.name, date: date, items: items, totalAmount: total, status: "Active", returnType: type, extraDiscount: extraDiscount, roundOff: roundOff)); 
+    final String rId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
+    int currentVer = 1;
+    final cleanBNo = billNo.trim().toUpperCase();
+    final int existingIdx = purchaseReturns.indexWhere((r) => r.id == rId || (cleanBNo.isNotEmpty && r.billNo.trim().toUpperCase() == cleanBNo));
+    if (existingIdx != -1) {
+      currentVer = purchaseReturns[existingIdx].version + 1;
+    }
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: rId, secondaryKey: billNo);
+    }
+    purchaseReturns.removeWhere((r) => r.id == rId || (cleanBNo.isNotEmpty && r.billNo.trim().toUpperCase() == cleanBNo));
+    final newPReturn = PurchaseReturn(
+      id: rId, 
+      billNo: billNo, 
+      distributorName: party.name, 
+      date: date, 
+      items: items, 
+      totalAmount: total, 
+      status: "Active", 
+      returnType: type, 
+      extraDiscount: extraDiscount, 
+      roundOff: roundOff,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: currentVer,
+    );
+    purchaseReturns.add(newPReturn);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) ReturnsSyncModule.onPurchaseReturnSaved(newPReturn, t);
+      });
+    } 
     
     // 🆕 STRICT TWO-WAY SYNC: Purchase Return (Debit Note) items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
