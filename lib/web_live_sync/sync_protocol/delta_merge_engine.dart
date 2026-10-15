@@ -110,20 +110,35 @@ class DeltaMergeEngine {
         int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
         if (id.isEmpty) continue;
-        if (D1SalesLedgerService.isBillDeleted(id, billNo)) continue;
-
         // 🛡️ Multi-Key Anti-Zombie Check: ID, InternalNo, BillNo
         String bNoKey = billNo.toUpperCase();
         String intNoKey = internalNo.toUpperCase();
-        final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? '';
-        bool isTombstoned = tombstoneRegistry.containsKey(id) ||
-            (bNoKey.isNotEmpty && tombstoneRegistry.containsKey(bNoKey)) ||
-            (intNoKey.isNotEmpty && tombstoneRegistry.containsKey(intNoKey)) ||
-            (compositeKey.isNotEmpty && tombstoneRegistry.containsKey(compositeKey));
+        final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? "";
 
-        if (isTombstoned) {
-          // Cloud item is deleted locally -> DROP immediately! Never allow cloud lag to resurrect!
-          continue;
+        // 🛡️ SMART TIME & VERSION AWARE REBIRTH PROTOCOL (#PH-REV-700)
+        int delTs = tombstoneRegistry[id] ??
+            (bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ??
+            (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null) ??
+            (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ?? 0;
+
+        if (delTs > 0) {
+          if (delTs >= cloudTimestamp && cloudVersion <= 1) {
+            continue; // Stale deleted snapshot -> Drop!
+          } else {
+            // Reborn! Entity is newly created or updated after deletion!
+            tombstoneRegistry.remove(id);
+            if (bNoKey.isNotEmpty) tombstoneRegistry.remove(bNoKey);
+            if (intNoKey.isNotEmpty) tombstoneRegistry.remove(intNoKey);
+            if (compositeKey.isNotEmpty) tombstoneRegistry.remove(compositeKey);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo);
+          }
+        }
+        if (D1SalesLedgerService.isBillDeleted(id, billNo)) {
+          if (cloudVersion > 1 || (delTs > 0 && cloudTimestamp > delTs)) {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo);
+          } else {
+            continue;
+          }
         }
 
         // Match in active local list

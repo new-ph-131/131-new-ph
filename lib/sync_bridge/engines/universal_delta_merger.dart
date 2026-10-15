@@ -43,20 +43,40 @@ class UniversalDeltaMerger {
 
       if (id.isEmpty) continue;
 
-      // Skip if marked deleted
-      if (SyncTombstoneHub.isDeleted(tombstones, id, referenceNo: refNo) ||
-          (compositeKey.isNotEmpty && tombstones.contains(compositeKey)) ||
-          D1SalesLedgerService.isBillDeleted(id, refNo)) {
+      // 🛡️ SMART ANTI-ZOMBIE & REBIRTH RESOLUTION (#PH-REV-700)
+      // Check if primary ID is tombstoned
+      if (tombstones.contains(id)) {
+        continue; // Primary ID is permanently dead
+      }
+      
+      // If reference number was in tombstones, but this record has a fresh active ID:
+      // It is a REBORN entity with a reused bill/voucher number! Revoke stale tombstone!
+      if (refNo.isNotEmpty && (tombstones.contains(refNo) || tombstones.contains(refNo.toUpperCase()))) {
+        tombstones.remove(refNo);
+        tombstones.remove(refNo.toUpperCase());
+        D1SalesLedgerService.unmarkPermanentlyDeleted(id, refNo);
+      }
+      if (compositeKey.isNotEmpty && tombstones.contains(compositeKey)) {
         continue;
       }
+      if (D1SalesLedgerService.isBillDeleted(id, refNo)) {
+        // Double-check: if incoming record has version > 1 or is active, unmark in D1
+        final int cloudVer = int.tryParse(cloudMap["version"]?.toString() ?? "1") ?? 1;
+        if (cloudVer > 1) {
+          D1SalesLedgerService.unmarkPermanentlyDeleted(id, refNo);
+        } else {
+          continue;
+        }
+      }
 
-      final existingIdx = localList.indexWhere((item) {
-        if (getId(item) == id) return true;
-        if (refNo.isNotEmpty && getRefNo(item).trim().toUpperCase() == refNo.toUpperCase()) return true;
-        if (compositeKey.isNotEmpty && getCompositeKey != null &&
-            getCompositeKey(item).trim().toUpperCase() == compositeKey) return true;
-        return false;
-      });
+      // Dual-Key Matching: 1. By Immutable ID (Aadhaar), 2. By Human RefNo (Name)
+      int existingIdx = localList.indexWhere((item) => getId(item) == id);
+      if (existingIdx == -1 && refNo.isNotEmpty) {
+        existingIdx = localList.indexWhere((item) => getRefNo(item).trim().toUpperCase() == refNo.toUpperCase());
+      }
+      if (existingIdx == -1 && compositeKey.isNotEmpty && getCompositeKey != null) {
+        existingIdx = localList.indexWhere((item) => getCompositeKey(item).trim().toUpperCase() == compositeKey);
+      }
 
       if (existingIdx == -1) {
         // New record from cloud: Add to local list

@@ -93,4 +93,53 @@ void main() {
     expect(changed, isTrue);
     expect(appVouchersList.isEmpty, isTrue);
   });
+
+  test('E2E TEST 3: Reborn Bill & Number Renaming (INV-1 to INV-300) without Duplicates', () {
+    const String billId = "SALE-REBORN-101";
+    final List<Sale> localSalesList = [
+      Sale(
+        id: billId,
+        billNo: "INV-300",
+        partyId: "P1",
+        date: DateTime.utc(2025, 1, 1),
+        partyName: "Sharma Medicals",
+        partyGstin: "08ABCDE1234F1Z5",
+        partyState: "Rajasthan",
+        items: [],
+        totalAmount: 900.0,
+        paymentMode: "CREDIT",
+        version: 2,
+      )
+    ];
+    // Cloud has the renamed bill or recreated bill with higher version
+    final List<dynamic> cloudList = [
+      {
+        "id": billId,
+        "billNo": "INV-300",
+        "partyId": "P1",
+        "date": DateTime.utc(2025, 1, 1).toIso8601String(),
+        "partyName": "Sharma Medicals",
+        "partyGstin": "08ABCDE1234F1Z5",
+        "partyState": "Rajasthan",
+        "items": [],
+        "totalAmount": 900.0,
+        "paymentMode": "CREDIT",
+        "updatedAt": 3000,
+        "version": 2,
+      }
+    ];
+    final Set<String> tombstones = {"INV-1"}; // Old bill number was tombstoned
+    final bool changed = UniversalDeltaMerger.mergeEntityList<Sale>(
+      cloudList: cloudList,
+      localList: localSalesList,
+      tombstones: tombstones,
+      getId: (s) => s.id,
+      getRefNo: (s) => s.billNo,
+      fromMap: (m) => Sale.fromMap(m),
+      toMap: (s) => s.toMap(),
+    );
+    expect(localSalesList.length, equals(1));
+    expect(localSalesList.first.billNo, equals("INV-300"));
+    expect(tombstones.contains("INV-1"), isFalse); // Stale tombstone revoked
+  });
 }
