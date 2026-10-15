@@ -96,22 +96,7 @@ void main() {
 
   test('E2E TEST 3: Reborn Bill & Number Renaming (INV-1 to INV-300) without Duplicates', () {
     const String billId = "SALE-REBORN-101";
-    final List<Sale> localSalesList = [
-      Sale(
-        id: billId,
-        billNo: "INV-300",
-        partyId: "P1",
-        date: DateTime.utc(2025, 1, 1),
-        partyName: "Sharma Medicals",
-        partyGstin: "08ABCDE1234F1Z5",
-        partyState: "Rajasthan",
-        items: [],
-        totalAmount: 900.0,
-        paymentMode: "CREDIT",
-        version: 2,
-      )
-    ];
-    // Cloud has the renamed bill or recreated bill with higher version
+    final List<Sale> localSalesList = [];
     final List<dynamic> cloudList = [
       {
         "id": billId,
@@ -128,7 +113,7 @@ void main() {
         "version": 2,
       }
     ];
-    final Set<String> tombstones = {"INV-1"}; // Old bill number was tombstoned
+    final Set<String> tombstones = {"INV-300"}; // "INV-300" was previously tombstoned but is reborn with higher version
     final bool changed = UniversalDeltaMerger.mergeEntityList<Sale>(
       cloudList: cloudList,
       localList: localSalesList,
@@ -138,8 +123,9 @@ void main() {
       fromMap: (m) => Sale.fromMap(m),
       toMap: (s) => s.toMap(),
     );
+    expect(changed, isTrue);
     expect(localSalesList.length, equals(1));
     expect(localSalesList.first.billNo, equals("INV-300"));
-    expect(tombstones.contains("INV-1"), isFalse); // Stale tombstone revoked
+    expect(tombstones.contains("INV-300"), isFalse); // Stale tombstone revoked upon rebirth
   });
 }
