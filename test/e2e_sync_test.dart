@@ -1,8 +1,11 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pharoah_erp/sync_bridge/engines/universal_delta_merger.dart';
 import 'package:pharoah_erp/models.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
   test('E2E TEST 1: Edit Invoice on App updates in-place on Web without Duplicates', () {
     const String billId = "SALE-E2E-MERGE-TEST-101";
     final List<Sale> webSalesList = [
