@@ -191,6 +191,7 @@ class D1SalesLedgerService {
     final cleanBill = billNo.trim().toUpperCase();
     final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
     markPermanentlyDeleted(cleanId, cleanInt, compKey);
+    if (cleanBill.isNotEmpty) markPermanentlyDeleted(cleanBill);
   }
 
   static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
@@ -200,6 +201,7 @@ class D1SalesLedgerService {
     final cleanBill = billNo.trim().toUpperCase();
     final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
     unmarkPermanentlyDeleted(cleanId, cleanInt, compKey);
+    if (cleanBill.isNotEmpty) unmarkPermanentlyDeleted(cleanBill);
   }
 
   static Future<void> loadPersistedGravestones() async {

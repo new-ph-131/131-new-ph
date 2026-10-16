@@ -493,6 +493,12 @@ Future<void> finalizePurchase({
     final cleanIntNo = internalNo.trim().toUpperCase();
     final cleanBillNo = billNo.trim().toUpperCase();
     final cleanPartyId = party.id.trim().toUpperCase();
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: compKey);
+      if (cleanBillNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanBillNo);
+      if (cleanIntNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanIntNo);\n    }
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo);
+    if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo);
     final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
 
     final int existingIdx = purchases.indexWhere((p) => 
