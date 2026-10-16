@@ -497,7 +497,8 @@ Future<void> finalizePurchase({
     if (activeCompany != null) {
       TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: compKey);
       if (cleanBillNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanBillNo);
-      if (cleanIntNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanIntNo);\n    }
+      if (cleanIntNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanIntNo);
+    }
     D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo);
     if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo);
     final int existingIdx = purchases.indexWhere((p) => 
