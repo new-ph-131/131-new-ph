@@ -6,6 +6,7 @@ import 'package:pharoah_erp/models.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   SharedPreferences.setMockInitialValues({});
+
   test('E2E TEST 1: Edit Invoice on App updates in-place on Web without Duplicates', () {
     const String billId = "SALE-E2E-MERGE-TEST-101";
     final List<Sale> webSalesList = [
@@ -107,7 +108,7 @@ void main() {
         "partyId": "P1",
         "date": DateTime.utc(2025, 1, 1).toIso8601String(),
         "partyName": "Sharma Medicals",
-        "partyGstin": "08ABCDE1234F1Z5",
+        "partyGstin: ": "08ABCDE1234F1Z5",
         "partyState": "Rajasthan",
         "items": [],
         "totalAmount": 900.0,
@@ -116,7 +117,9 @@ void main() {
         "version": 2,
       }
     ];
+
     final Set<String> tombstones = {"INV-300"}; // "INV-300" was previously tombstoned but is reborn with higher version
+
     final bool changed = UniversalDeltaMerger.mergeEntityList<Sale>(
       cloudList: cloudList,
       localList: localSalesList,
@@ -126,9 +129,98 @@ void main() {
       fromMap: (m) => Sale.fromMap(m),
       toMap: (s) => s.toMap(),
     );
+
     expect(changed, isTrue);
     expect(localSalesList.length, equals(1));
     expect(localSalesList.first.billNo, equals("INV-300"));
     expect(tombstones.contains("INV-300"), isFalse); // Stale tombstone revoked upon rebirth
+  });
+
+  test('E2E TEST 4: Purchase Full Lifecycle (Create -> Modify -> Delete -> Recreate PUR-1 & Multi-Supplier Same BillNo)', () {
+    final List<Purchase> purchasesList = [];
+    final Set<String> tombstones = {};
+
+    // 1. Create PUR-1 (Supplier P1, Bill 105, Total 2500, v1)
+    final Map<String, dynamic> pur1Create = {
+      "id": "PUR-APP-1001",
+      "internalNo": "PUR-1",
+      "billNo": "105",
+      "partyId": "P1",
+      "distributorName": "Apex Pharma",
+      "date": DateTime.utc(2025, 1, 10).toIso8601String(),
+      "entryDate": DateTime.utc(2025, 1, 10).toIso8601String(),
+      "items": [],
+      "totalAmount": 2500.0,
+      "paymentMode": "CREDIT",
+      "updatedAt": 1000,
+      "version": 1,
+    };
+
+    UniversalDeltaMerger.mergeEntityList<Purchase>(
+      cloudList: [pur1Create],
+      localList: purchasesList,
+      tombstones: tombstones,
+      getId: (e) => e.id,
+      getRefNo: (e) => "${e.partyId}_${e.billNo}",
+      getCompositeKey: (e) => "${e.partyId}_${e.billNo}",
+      getCloudCompositeKey: (m) => "${m['partyId']}_${m['billNo']}",
+      fromMap: (m) => Purchase.fromMap(m),
+      toMap: (e) => e.toMap(),
+    );
+    expect(purchasesList.length, equals(1));
+    expect(purchasesList.first.totalAmount, equals(2500.0));
+
+    // 2. Modify PUR-1 (Total 3800, v2)
+    final Map<String, dynamic> pur1Modify = {
+      ...pur1Create,
+      "totalAmount": 3800.0,
+      "updatedAt": 2000,
+      "version": 2,
+    };
+    UniversalDeltaMerger.mergeEntityList<Purchase>(
+      cloudList: [pur1Modify],
+      localList: purchasesList,
+      tombstones: tombstones,
+      getId: (e) => e.id,
+      getRefNo: (e) => "${e.partyId}_${e.billNo}",
+      getCompositeKey: (e) => "${e.partyId}_${e.billNo}",
+      getCloudCompositeKey: (m) => "${m['partyId']}_${m['billNo']}",
+      fromMap: (m) => Purchase.fromMap(m),
+      toMap: (e) => e.toMap(),
+    );
+    expect(purchasesList.length, equals(1));
+    expect(purchasesList.first.totalAmount, equals(3800.0));
+    expect(purchasesList.first.version, equals(2));
+
+    // 3. Delete PUR-1 & verify Supplier P2 with same BillNo 105 is NOT blocked!
+    tombstones.addAll(["PUR-APP-1001", "P1_105", "PUR-1"]);
+    final Map<String, dynamic> pur2DifferentSupplierSameBill = {
+      "id": "PUR-WEB-2002",
+      "internalNo": "PUR-2",
+      "billNo": "105",
+      "partyId": "P2",
+      "distributorName": "Medilente Biotech",
+      "date": DateTime.utc(2025, 1, 11).toIso8601String(),
+      "entryDate": DateTime.utc(2025, 1, 11).toIso8601String(),
+      "items": [],
+      "totalAmount": 6100.0,
+      "paymentMode": "CREDIT",
+      "updatedAt": 3000,
+      "version": 1,
+    };
+    UniversalDeltaMerger.mergeEntityList<Purchase>(
+      cloudList: [pur1Modify, pur2DifferentSupplierSameBill],
+      localList: purchasesList,
+      tombstones: tombstones,
+      getId: (e) => e.id,
+      getRefNo: (e) => "${e.partyId}_${e.billNo}",
+      getCompositeKey: (e) => "${e.partyId}_${e.billNo}",
+      getCloudCompositeKey: (m) => "${m['partyId']}_${m['billNo']}",
+      fromMap: (m) => Purchase.fromMap(m),
+      toMap: (e) => e.toMap(),
+    );
+    expect(purchasesList.length, equals(1));
+    expect(purchasesList.first.id, equals("PUR-WEB-2002"));
+    expect(purchasesList.first.internalNo, equals("PUR-2"));
   });
 }

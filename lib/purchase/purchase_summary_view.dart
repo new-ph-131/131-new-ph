@@ -90,12 +90,19 @@ class _PurchaseSummaryViewState extends State<PurchaseSummaryView> {
     final ph = Provider.of<PharoahManager>(context);
     final activeShop = ph.activeCompany;
     
-    // Filter logic
+    DateTime _dOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final fOnly = _dOnly(fromDate);
+    final tOnly = _dOnly(toDate);
+
+    // Filter logic (matches Supplier Name, Bill No, OR Internal Entry No PUR-X + exact date range)
     List<Purchase> filteredPur = ph.purchases.reversed.where((p) {
-      bool dateMatch = p.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
-                       p.date.isBefore(toDate.add(const Duration(days: 1)));
-      bool searchMatch = p.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
-                         p.billNo.toLowerCase().contains(searchQuery.toLowerCase());
+      final pOnly = _dOnly(p.date);
+      bool dateMatch = !pOnly.isBefore(fOnly) && !pOnly.isAfter(tOnly);
+      final q = searchQuery.trim().toLowerCase();
+      bool searchMatch = q.isEmpty ||
+                         p.distributorName.toLowerCase().contains(q) || 
+                         p.billNo.toLowerCase().contains(q) ||
+                         p.internalNo.toLowerCase().contains(q);
       return p.isDeleted != 1 && dateMatch && searchMatch;
     }).toList();
 
@@ -192,8 +199,8 @@ class _PurchaseSummaryViewState extends State<PurchaseSummaryView> {
                 itemBuilder: (c, i) {
                   final p = filteredPur[i];
                   final supplier = ph.parties.firstWhere(
-                    (pt) => pt.name == p.distributorName, 
-                    orElse: () => Party(id: "", name: p.distributorName)
+                    (pt) => (p.partyId.isNotEmpty && pt.id == p.partyId) || pt.name.trim().toUpperCase() == p.distributorName.trim().toUpperCase(), 
+                    orElse: () => Party(id: p.partyId, name: p.distributorName, group: "Sundry Creditors")
                   );
 
                   return Card(
@@ -296,7 +303,7 @@ class _PurchaseSummaryViewState extends State<PurchaseSummaryView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          Text("Bill: ${p.billNo} | ${AppDateLogic.format(p.date)}", style: const TextStyle(fontSize: 11)),
+          Text("Entry: ${p.internalNo} • Bill: ${p.billNo} | ${AppDateLogic.format(p.date)}", style: const TextStyle(fontSize: 11)),
           const SizedBox(width: 8),
           if (p.linkedChallanIds.isNotEmpty)
             Container(

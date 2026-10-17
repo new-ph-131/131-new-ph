@@ -142,7 +142,7 @@ class _AppSettingsViewState extends State<AppSettingsView> {
           _infoRow("Active Company ID", ph.activeCompany?.id ?? "N/A"),
           _infoRow("Business Type", ph.activeCompany?.businessType ?? "N/A"),
           _infoRow("Financial Year", ph.currentFY),
-          _infoRow("ERP Version", "v1.0.9 (Architect Series)"),
+          _infoRow("ERP Version", "v1.1.0 (#PH-REV-710 Live Series)"),
         ],
       ),
     );

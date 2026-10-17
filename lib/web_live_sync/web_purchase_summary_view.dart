@@ -329,6 +329,7 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                               backgroundColor: const Color(0xFF0F172A),
                               body: WebPurchaseEntryView(
                                 onBack: () => Navigator.pop(ctx),
+                                existingPurchase: p,
                                 initialSupplier: supplierObj,
                                 initialInternalNo: p.internalNo,
                                 initialBillNo: p.billNo,
@@ -338,6 +339,10 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                                 existingItems: p.items,
                                 linkedChallanIds: p.linkedChallanIds,
                                 modifyPurchaseId: p.id,
+                                initialExtraDiscount: p.extraDiscount,
+                                initialRoundOff: p.roundOff,
+                                initialTotalAmount: p.totalAmount,
+                                initialVersion: p.version,
                                 isReadOnly: false,
                               ),
                             )));

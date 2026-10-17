@@ -43,7 +43,7 @@ class UniversalDeltaMerger {
 
       if (id.isEmpty) continue;
 
-      // 🛡️ SMART ANTI-ZOMBIE & REBIRTH RESOLUTION (#PH-REV-700)
+      // 🛡️ SMART ANTI-ZOMBIE & REBIRTH RESOLUTION (#PH-REV-710)
       // Check if primary ID is tombstoned
       if (tombstones.contains(id)) {
         continue; // Primary ID is permanently dead

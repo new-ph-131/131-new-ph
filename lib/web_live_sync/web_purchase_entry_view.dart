@@ -17,6 +17,11 @@ class WebPurchaseEntryView extends StatelessWidget {
   final List<String>? linkedChallanIds;
   final String? modifyPurchaseId;
   final bool isReadOnly;
+  final Purchase? existingPurchase;
+  final double initialExtraDiscount;
+  final double initialRoundOff;
+  final double initialTotalAmount;
+  final int initialVersion;
 
   const WebPurchaseEntryView({
     super.key,
@@ -32,14 +37,19 @@ class WebPurchaseEntryView extends StatelessWidget {
     this.linkedChallanIds,
     this.modifyPurchaseId,
     this.isReadOnly = false,
+    this.existingPurchase,
+    this.initialExtraDiscount = 0.0,
+    this.initialRoundOff = 0.0,
+    this.initialTotalAmount = 0.0,
+    this.initialVersion = 1,
   });
 
   @override
   Widget build(BuildContext context) {
-    Purchase? reconstructedPurchase;
+    Purchase? reconstructedPurchase = existingPurchase;
     
-    // RECONSTRUCT PURCHASE OBJECT FOR STEP 1
-    if (modifyPurchaseId != null && initialSupplier != null && existingItems != null) {
+    // RECONSTRUCT PURCHASE OBJECT FOR STEP 1 (WITH FULL VERSION & DISCOUNT FIDELITY)
+    if (reconstructedPurchase == null && modifyPurchaseId != null && initialSupplier != null && existingItems != null) {
       reconstructedPurchase = Purchase(
         id: modifyPurchaseId!,
         internalNo: initialInternalNo ?? "PUR-1",
@@ -49,7 +59,10 @@ class WebPurchaseEntryView extends StatelessWidget {
         date: initialDate ?? DateTime.now(),
         entryDate: initialEntryDate ?? DateTime.now(),
         paymentMode: initialMode ?? "CREDIT",
-        totalAmount: 0.0,
+        totalAmount: initialTotalAmount,
+        extraDiscount: initialExtraDiscount,
+        roundOff: initialRoundOff,
+        version: initialVersion,
         items: existingItems ?? [],
         linkedChallanIds: linkedChallanIds ?? [],
       );

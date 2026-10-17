@@ -14,13 +14,14 @@ class CloudSignalChannel {
   static const String edgeSignalEndpoint = "https://pharoah-erp.pages.dev/api/lab_signal";
   Timer? _pollTimer;
   int _lastKnownSignalTime = 0;
+  int _lastKnownBatchTime = 0;
   bool _isChecking = false;
 
   /// Broadcasts a fast mutation signal to Cloudflare Edge Relay
   Future<bool> broadcastSignal(SyncSignalEvent event) async {
     try {
       if (event.storeToken.isEmpty) return false;
-      
+
       final payload = {
         "storeToken": event.storeToken,
         "source": event.source.toUpperCase(),
@@ -52,12 +53,14 @@ class CloudSignalChannel {
     required Function(SyncSignalEvent) onSignal,
     Function(List<dynamic>)? onBatchReceived,
     Function(List<String>)? onTombstonesReceived,
-    Duration interval = const Duration(milliseconds: 3500),
+    Duration interval = const Duration(milliseconds: 3000),
   }) {
     stopListening();
     if (storeToken.isEmpty) return;
 
-    _lastKnownSignalTime = DateTime.now().millisecondsSinceEpoch;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    _lastKnownSignalTime = nowMs;
+    _lastKnownBatchTime = nowMs;
     final cleanToken = storeToken.trim().toUpperCase();
     final cleanSource = mySource.trim().toUpperCase();
 
@@ -66,49 +69,114 @@ class CloudSignalChannel {
       _isChecking = true;
 
       try {
+        final int queryTs = _lastKnownSignalTime < _lastKnownBatchTime
+            ? _lastKnownSignalTime
+            : _lastKnownBatchTime;
+        final int normalizedTs = queryTs > 100000000000000 ? queryTs ~/ 1000 : queryTs;
+
         final uri = Uri.parse(
           "$edgeSignalEndpoint?storeToken=${Uri.encodeComponent(cleanToken)}"
-          "&lastSeenTs=${_lastKnownSignalTime > 100000000000000 ? _lastKnownSignalTime ~/ 1000 : _lastKnownSignalTime}"
+          "&lastSeenTs=$normalizedTs"
         );
 
-        final response = await http.get(uri).timeout(const Duration(seconds: 3));
+        final response = await http.get(uri).timeout(const Duration(seconds: 4));
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['status'] == 'SUCCESS') {
             // 🛡️ Edge Gravestones Ingestion
             if (data['tombstones'] is List && (data['tombstones'] as List).isNotEmpty) {
-              final edgeTombs = List<String>.from((data['tombstones'] as List).map((e) => e.toString().trim()).where((e) => e.isNotEmpty));
+              final edgeTombs = List<String>.from(
+                (data['tombstones'] as List)
+                    .map((e) => e.toString().trim())
+                    .where((e) => e.isNotEmpty),
+              );
               if (edgeTombs.isNotEmpty) {
                 onTombstonesReceived?.call(edgeTombs);
               }
             }
-            // 🚀 Step 4: Atomic Batch Delta Processing
+
+            // 🚀 Step 4: Atomic Batch Delta Processing (uses separate _lastKnownBatchTime cursor)
             if (data['batch_operations'] is List && (data['batch_operations'] as List).isNotEmpty) {
-              final batchOps = List<dynamic>.from(data['batch_operations']);
-              for (final op in batchOps) {
-                if (op is Map && op['updated_at'] != null) {
-                  int uTs = int.tryParse(op['updated_at'].toString()) ?? 0;
+              final rawOps = List<dynamic>.from(data['batch_operations']);
+              final freshOps = <dynamic>[];
+              int maxBatchTs = _lastKnownBatchTime;
+              for (final op in rawOps) {
+                if (op is Map) {
+                  int uTs = int.tryParse((op['updated_at'] ?? '0').toString()) ?? 0;
                   if (uTs > 100000000000000) uTs ~/= 1000;
-                  if (uTs > _lastKnownSignalTime) {
-                    _lastKnownSignalTime = uTs;
+                  if (uTs > _lastKnownBatchTime) {
+                    freshOps.add(op);
+                    if (uTs > maxBatchTs) maxBatchTs = uTs;
                   }
                 }
               }
-              onBatchReceived?.call(batchOps);
+              _lastKnownBatchTime = maxBatchTs;
+              if (freshOps.isNotEmpty) {
+                onBatchReceived?.call(freshOps);
+              }
             }
 
-            if (data['hasUpdate'] == true && data['event'] != null) {
-              final sig = data['event'];
-              final event = SyncSignalEvent.fromMap(sig);
-              int evTs = event.timestamp;
-              if (evTs > 100000000000000) evTs ~/= 1000;
-              if (evTs > _lastKnownSignalTime && event.source.toUpperCase() != cleanSource) {
-                _lastKnownSignalTime = event.timestamp;
-                debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${event.source}: ${event.action}");
-                onSignal(event);
-              } else if (event.timestamp > _lastKnownSignalTime) {
-                _lastKnownSignalTime = event.timestamp;
+            // 🔔 Process all new Signal Events (mutations array + latest event) without OUTBOX_BATCH masking
+            final List<Map<String, dynamic>> candidateEvents = [];
+            if (data['mutations'] is List) {
+              for (final m in (data['mutations'] as List)) {
+                if (m is Map) {
+                  candidateEvents.add(Map<String, dynamic>.from(m));
+                }
               }
+            }
+            if (data['event'] is Map) {
+              candidateEvents.add(Map<String, dynamic>.from(data['event'] as Map));
+            }
+
+            SyncSignalEvent? latestRemoteEvent;
+            final Set<String> aggregatedDeletedIds = {};
+            final Set<String> aggregatedUnmarkedIds = {};
+            int maxSigTs = _lastKnownSignalTime;
+
+            for (final rawEv in candidateEvents) {
+              final ev = SyncSignalEvent.fromMap(rawEv);
+              int evTs = ev.timestamp;
+              if (evTs > 100000000000000) evTs ~/= 1000;
+              if (evTs > _lastKnownSignalTime) {
+                if (evTs > maxSigTs) maxSigTs = evTs;
+                final src = ev.source.trim().toUpperCase();
+                if (src != cleanSource) {
+                  for (final d in ev.deletedIds) {
+                    if (d.trim().isNotEmpty) {
+                      aggregatedDeletedIds.add(d.trim());
+                      aggregatedUnmarkedIds.remove(d.trim());
+                      aggregatedUnmarkedIds.remove(d.trim().toUpperCase());
+                    }
+                  }
+                  for (final u in ev.unmarkedIds) {
+                    if (u.trim().isNotEmpty) {
+                      aggregatedUnmarkedIds.add(u.trim());
+                      aggregatedDeletedIds.remove(u.trim());
+                      aggregatedDeletedIds.remove(u.trim().toUpperCase());
+                    }
+                  }
+                  latestRemoteEvent = ev;
+                }
+              }
+            }
+
+            _lastKnownSignalTime = maxSigTs;
+
+            if (latestRemoteEvent != null) {
+              final mergedEvent = SyncSignalEvent(
+                storeToken: latestRemoteEvent.storeToken,
+                source: latestRemoteEvent.source,
+                action: latestRemoteEvent.action,
+                entityId: latestRemoteEvent.entityId,
+                timestamp: latestRemoteEvent.timestamp,
+                companyId: latestRemoteEvent.companyId,
+                deletedIds: aggregatedDeletedIds.toList(),
+                unmarkedIds: aggregatedUnmarkedIds.toList(),
+                delta: latestRemoteEvent.delta,
+              );
+              debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${mergedEvent.source}: ${mergedEvent.action} (del:${mergedEvent.deletedIds.length}, unmark:${mergedEvent.unmarkedIds.length})");
+              onSignal(mergedEvent);
             }
           }
         }

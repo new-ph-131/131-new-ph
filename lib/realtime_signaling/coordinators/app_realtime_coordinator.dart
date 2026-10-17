@@ -18,6 +18,9 @@ class AppRealtimeCoordinator {
   Timer? _safetyHeartbeatTimer;
   Timer? _pushDebounceTimer;
   bool _isPushing = false;
+  bool _hasPendingPush = false;
+  final List<String> _pendingDeletedIds = [];
+  final List<String> _pendingUnmarkedIds = [];
 
   /// Starts listening to real-time events from Web
   Future<void> start(PharoahManager ph) async {
@@ -65,7 +68,7 @@ class AppRealtimeCoordinator {
     });
   }
 
-  /// Triggers a push to cloud and sends instant wake-up signal to Web
+  /// Triggers a non-dropping queued push to cloud and sends instant wake-up signal to Web
   void notifyAppMutation(
     PharoahManager ph, {
     String action = 'DATA_MUTATED',
@@ -75,28 +78,65 @@ class AppRealtimeCoordinator {
   }) {
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
 
+    if (deletedIds.isNotEmpty) {
+      for (final d in deletedIds) {
+        if (d.trim().isNotEmpty) {
+          _pendingDeletedIds.add(d.trim());
+          _pendingUnmarkedIds.remove(d.trim());
+          _pendingUnmarkedIds.remove(d.trim().toUpperCase());
+        }
+      }
+    }
+    if (unmarkedIds.isNotEmpty) {
+      for (final u in unmarkedIds) {
+        if (u.trim().isNotEmpty) {
+          _pendingUnmarkedIds.add(u.trim());
+          _pendingDeletedIds.remove(u.trim());
+          _pendingDeletedIds.remove(u.trim().toUpperCase());
+        }
+      }
+    }
+    if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
+      _pendingDeletedIds.add(entityId.trim());
+    }
+
     _pushDebounceTimer?.cancel();
-    _pushDebounceTimer = Timer(const Duration(milliseconds: 800), () async {
-      if (_isPushing) return;
+    _pushDebounceTimer = Timer(const Duration(milliseconds: 550), () async {
+      if (_isPushing) {
+        _hasPendingPush = true;
+        return;
+      }
       _isPushing = true;
       try {
-        final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
-        final success = await AppSyncEngine.pushStoreData(ph);
-        if (success) {
-          // Broadcast signal to Web immediately
-          await CloudSignalChannel.instance.broadcastSignal(
-            SyncSignalEvent(
-              storeToken: token,
-              source: 'app',
-              action: action,
-              entityId: entityId,
-              deletedIds: deletedIds,
-              unmarkedIds: unmarkedIds,
-              companyId: ph.activeCompany!.id,
-            ),
-          );
-          debugPrint("⚡ [AppRealtimeCoordinator] Pushed to cloud and broadcast signal to Web!");
-        }
+        do {
+          _hasPendingPush = false;
+          final batchDeleted = List<String>.from(_pendingDeletedIds.toSet());
+          final batchUnmarked = List<String>.from(_pendingUnmarkedIds.toSet());
+          final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
+
+          // 1. Broadcast instant signal to Cloudflare Edge (<30ms) with accumulated tombstones/unmarks
+          if (token.isNotEmpty) {
+            await CloudSignalChannel.instance.broadcastSignal(
+              SyncSignalEvent(
+                storeToken: token,
+                source: 'app',
+                action: action,
+                entityId: entityId,
+                deletedIds: batchDeleted,
+                unmarkedIds: batchUnmarked,
+                companyId: ph.activeCompany!.id,
+              ),
+            );
+          }
+
+          // 2. Push full snapshot to Cloud Relay (Google Drive) + Flush Outbox
+          final success = await AppSyncEngine.pushStoreData(ph);
+          if (success) {
+            _pendingDeletedIds.removeWhere((id) => batchDeleted.contains(id));
+            _pendingUnmarkedIds.removeWhere((id) => batchUnmarked.contains(id));
+            debugPrint("⚡ [AppRealtimeCoordinator] Pushed to cloud and broadcast signal to Web (#PH-REV-710)!");
+          }
+        } while (_hasPendingPush);
       } catch (e) {
         debugPrint("⚠ [AppRealtimeCoordinator] Push error: $e");
       } finally {

@@ -318,10 +318,9 @@ class PharoahManager with ChangeNotifier {
     await File('$dir/bats.json').writeAsString(jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
     await File('$dir/config.json').writeAsString(jsonEncode(config.toMap()));
     notifyListeners();
-    // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Debounced Background Push)
+    // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Single Unified Debounced Push via AppRealtimeCoordinator)
     AppRealtimeCoordinator.instance.notifyAppMutation(this);
-    AppAutoSyncDaemon.instance.triggerSilentPush(this, action: 'DATA_SAVED');
-    LabSyncOrchestrator.instance.notifyAppRealMutation(this, action: 'DATA_SAVED');
+    LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-710)");
   }
 
   Future<void> loadAllData() async {
@@ -364,9 +363,8 @@ class PharoahManager with ChangeNotifier {
       purchaseReturns: purchaseReturns 
     );
     notifyListeners();
-    // ⚡ Live Event Bus Listener Active for App
+    // ⚡ Live Event Bus Listener Active for App (Single Unified Listener)
     AppRealtimeCoordinator.instance.start(this);
-    LabSyncOrchestrator.instance.bindApp(this);
   }
 
   // ===========================================================================
@@ -1193,13 +1191,7 @@ void registerBatchActivity({
           entityId: id,
           deletedIds: delKeys,
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_VOUCHER',
-          entityId: id,
-          deletedIds: delKeys,
-        );
-      }
+        }
       save();
       notifyListeners();
     }
@@ -1333,13 +1325,7 @@ void registerBatchActivity({
           entityId: realId,
           deletedIds: [realId, if (s.billNo.isNotEmpty) s.billNo],
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_SALE',
-          entityId: realId,
-          deletedIds: [realId, if (s.billNo.isNotEmpty) s.billNo],
-        );
-      }
+        }
       save();
       notifyListeners();
     } catch (e) {}
@@ -1384,13 +1370,7 @@ void registerBatchActivity({
           entityId: pId,
           deletedIds: delKeys,
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_PURCHASE',
-          entityId: pId,
-          deletedIds: delKeys,
-        );
-      }
+        }
       InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
       save();
       notifyListeners();
@@ -1414,13 +1394,7 @@ void registerBatchActivity({
           entityId: cId,
           deletedIds: delKeys,
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_SALE_CHALLAN',
-          entityId: cId,
-          deletedIds: delKeys,
-        );
-      }
+        }
       saleChallans.removeWhere((x) => x.id == cId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save();
       notifyListeners();
@@ -1446,13 +1420,7 @@ void registerBatchActivity({
           entityId: cId,
           deletedIds: delKeys,
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_PURCHASE_CHALLAN',
-          entityId: cId,
-          deletedIds: delKeys,
-        );
-      }
+        }
       purchaseChallans.removeWhere((x) => x.id == cId || (iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save();
       notifyListeners();
@@ -1477,13 +1445,7 @@ void registerBatchActivity({
           entityId: rId,
           deletedIds: delKeys,
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_SALE_RETURN',
-          entityId: rId,
-          deletedIds: delKeys,
-        );
-      }
+        }
       saleReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save().then((_) => loadAllData());
     } catch (_) {
@@ -1506,13 +1468,7 @@ void registerBatchActivity({
           entityId: rId,
           deletedIds: delKeys,
         );
-        AppAutoSyncDaemon.instance.triggerSilentPush(
-          this,
-          action: 'DELETE_PURCHASE_RETURN',
-          entityId: rId,
-          deletedIds: delKeys,
-        );
-      }
+        }
       purchaseReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save().then((_) => loadAllData());
     } catch (_) {

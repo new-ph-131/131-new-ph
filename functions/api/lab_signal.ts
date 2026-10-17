@@ -1,7 +1,7 @@
 // FILE: functions/api/lab_signal.ts
 // Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal & Tombstone Resolution Bus (<30ms)
 // Features: Server-Authoritative Tombstone Sanitization, 100,000 Writes/Day, 5,000,000 Reads/Day.
-// Revision: #PH-REV-688 (100% Pure D1 Edge SQL - Cloudflare KV Completely Removed for Zero Quota Limits)
+// Revision: #PH-REV-710 (PURCHASE-LIFECYCLE-ATOMIC-SYNC-PRO)
 
 interface SignalRecord {
   id: string;
@@ -13,6 +13,7 @@ interface SignalRecord {
   timestamp: number;
   serverReceivedAt: number;
   deletedIds?: string[];
+  unmarkedIds?: string[];
   delta?: any;
   payload?: any;
 }
@@ -53,7 +54,7 @@ export async function onRequestPost(context: any) {
       });
     }
 
-    // 🚀 SECTION 2: MARG-STYLE DETERMINISTIC SALE EVENT LEDGER (D1 AUTO-INCREMENT SEQ)
+    // 🚀 SECTION 2: MARG-STYLE DETERMINISTIC SALE/PURCHASE EVENT LEDGER (D1 AUTO-INCREMENT SEQ)
     if (body.sale_event && typeof body.sale_event === "object") {
       try {
         if (context.env && context.env.SIGNAL_DB) {
@@ -87,7 +88,7 @@ export async function onRequestPost(context: any) {
           const clientSource = (ev.client_source || body.source || "UNKNOWN").toString();
           const payload = typeof ev.payload === "string" ? ev.payload : JSON.stringify(ev.payload || ev);
 
-                              // Optimistic Concurrency Control (OCC) Check
+          // Optimistic Concurrency Control (OCC) Check
           if (evAction === "UPDATE" || evAction === "CANCEL") {
             const latestRow: any = await db.prepare(
               "SELECT version FROM sale_events WHERE store_token = ? AND bill_id = ? ORDER BY seq DESC LIMIT 1"
@@ -110,20 +111,69 @@ export async function onRequestPost(context: any) {
 
           const newSeq = insertRes?.meta?.last_row_id || Date.now();
 
-          // 🛡️ Permanent Tombstone Sync: Add to signals.tombstones so Google Drive lag never resurrects
-          if (evAction === "DELETE") {
-            try {
-              const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
-              let chanData: any = row && row.data ? JSON.parse(row.data) : { latest: null, events: [], tombstones: [] };
-              if (!chanData.tombstones) chanData.tombstones = [];
-              const tSet = new Set(chanData.tombstones);
+          // 🛡️ Synchronize signals.tombstones & signals.events so listeners get immediate notification
+          try {
+            await db.prepare(
+              "CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"
+            ).run().catch(() => {});
+            const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
+            let chanData: ChannelData = row && row.data ? JSON.parse(row.data) : { latest: null, events: [], tombstones: [] };
+            if (!chanData.tombstones) chanData.tombstones = [];
+            if (!chanData.events) chanData.events = [];
+            const tSet = new Set(chanData.tombstones);
+
+            const delIds: string[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
+            const unmIds: string[] = Array.isArray(body.unmarkedIds) ? body.unmarkedIds : [];
+
+            if (evAction === "DELETE") {
               if (billId) tSet.add(billId);
-              chanData.tombstones = Array.from(tSet);
-              await db.prepare(
-                "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
-              ).bind(storeToken, JSON.stringify(chanData), Date.now()).run();
-            } catch (_) {}
-          }
+              for (const d of delIds) {
+                if (d && typeof d === "string" && d.trim()) {
+                  tSet.add(d.trim());
+                  tSet.add(d.trim().toUpperCase());
+                }
+              }
+            } else {
+              if (billId) {
+                tSet.delete(billId);
+                tSet.delete(billId.toUpperCase());
+              }
+              if (billNo) {
+                tSet.delete(billNo);
+                tSet.delete(billNo.toUpperCase());
+              }
+              for (const u of unmIds) {
+                if (u && typeof u === "string" && u.trim()) {
+                  tSet.delete(u.trim());
+                  tSet.delete(u.trim().toUpperCase());
+                }
+              }
+            }
+
+            chanData.tombstones = Array.from(tSet);
+            const sigRecord: SignalRecord = {
+              id: "evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+              storeToken,
+              source: clientSource.toUpperCase().includes("WEB") ? "WEB" : (clientSource.toUpperCase().includes("APP") ? "APP" : clientSource.toUpperCase()),
+              action: body.action || evAction,
+              entityType: (body.action || "").toString().toUpperCase().includes("PURCHASE") ? "PURCHASE" : "SALE",
+              entityId: billId,
+              timestamp: Date.now(),
+              serverReceivedAt: Date.now(),
+              deletedIds: evAction === "DELETE" ? (delIds.length > 0 ? delIds : (billId ? [billId] : [])) : [],
+              unmarkedIds: evAction !== "DELETE" ? unmIds : [],
+              payload: ev.payload || {},
+            };
+            chanData.latest = sigRecord;
+            chanData.events.push(sigRecord);
+            if (chanData.events.length > 50) {
+              chanData.events = chanData.events.slice(chanData.events.length - 50);
+            }
+
+            await db.prepare(
+              "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+            ).bind(storeToken, JSON.stringify(chanData), Date.now()).run();
+          } catch (_) {}
 
           return new Response(JSON.stringify({
             status: "SUCCESS",
@@ -141,6 +191,42 @@ export async function onRequestPost(context: any) {
 
     const action = (body.action || "DELTA_MUTATION").toUpperCase();
     const isDeleteAction = action.includes("DELETE") || action.includes("REMOVE");
+    const isOutboxBatch = action === "JSON_BATCH_MUTATION" || (body.source || "").toUpperCase() === "OUTBOX_BATCH";
+
+    const extractedBatchDeletedIds: string[] = [];
+    const extractedBatchUnmarkedIds: string[] = [];
+
+    if (body.operations && Array.isArray(body.operations)) {
+      for (const op of body.operations) {
+        const sId = (op.sync_id || "").toString().trim();
+        const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
+        const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+        const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();
+        const rawParty = ((op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId) || "").toString().trim();
+        const rawInt = ((op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo) || "").toString().trim();
+        const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill.toUpperCase()}` : "";
+
+        if (isDel === 1) {
+          if (sId) extractedBatchDeletedIds.push(sId);
+          if (rawInt) extractedBatchDeletedIds.push(rawInt.toUpperCase());
+          if (compKey) extractedBatchDeletedIds.push(compKey);
+        } else {
+          if (sId) extractedBatchUnmarkedIds.push(sId);
+          if (rawInt) extractedBatchUnmarkedIds.push(rawInt.toUpperCase());
+          if (compKey) extractedBatchUnmarkedIds.push(compKey);
+          if (rawBill) extractedBatchUnmarkedIds.push(rawBill.toUpperCase());
+        }
+      }
+    }
+
+    const mergedDeletedIds = Array.from(new Set([
+      ...(Array.isArray(body.deletedIds) ? body.deletedIds : []),
+      ...extractedBatchDeletedIds,
+    ]));
+    const mergedUnmarkedIds = Array.from(new Set([
+      ...(Array.isArray(body.unmarkedIds) ? body.unmarkedIds : []),
+      ...extractedBatchUnmarkedIds,
+    ]));
 
     const record: SignalRecord = {
       id: body.id || ("evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7)),
@@ -151,7 +237,8 @@ export async function onRequestPost(context: any) {
       entityId: (body.entityId || "").trim(),
       timestamp: (body.timestamp && body.timestamp > 100000000000000) ? Math.floor(body.timestamp / 1000) : (body.timestamp || Date.now()),
       serverReceivedAt: Date.now(),
-      deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
+      deletedIds: mergedDeletedIds,
+      unmarkedIds: mergedUnmarkedIds,
       delta: body.delta || null,
       payload: body.payload || {},
     };
@@ -177,22 +264,33 @@ export async function onRequestPost(context: any) {
           } catch (_) {}
         }
 
-        channelData.latest = record;
+        // Preserve latest non-OUTBOX_BATCH signal source if OUTBOX_BATCH arrives within 2s, while merging its deleted/unmarked IDs
+        if (!isOutboxBatch || !channelData.latest) {
+          channelData.latest = record;
+        } else {
+          channelData.latest = {
+            ...channelData.latest,
+            timestamp: Math.max(channelData.latest.timestamp || 0, record.timestamp),
+            serverReceivedAt: Date.now(),
+            deletedIds: Array.from(new Set([...(channelData.latest.deletedIds || []), ...mergedDeletedIds])),
+            unmarkedIds: Array.from(new Set([...(channelData.latest.unmarkedIds || []), ...mergedUnmarkedIds])),
+          };
+        }
+
         if (!channelData.events) channelData.events = [];
         channelData.events.push(record);
-        if (channelData.events.length > 40) {
-          channelData.events = channelData.events.slice(channelData.events.length - 40);
+        if (channelData.events.length > 50) {
+          channelData.events = channelData.events.slice(channelData.events.length - 50);
         }
 
         if (!channelData.tombstones) channelData.tombstones = [];
         const tSet = new Set(channelData.tombstones);
 
         if (isDeleteAction) {
-          if (record.deletedIds && record.deletedIds.length > 0) {
-            for (const d of record.deletedIds) {
-              if (d && typeof d === "string" && d.trim().length > 0) {
-                tSet.add(d.trim());
-              }
+          for (const d of mergedDeletedIds) {
+            if (d && typeof d === "string" && d.trim().length > 0) {
+              tSet.add(d.trim());
+              tSet.add(d.trim().toUpperCase());
             }
           }
           if (record.entityId && record.entityId.length > 0) {
@@ -201,18 +299,44 @@ export async function onRequestPost(context: any) {
         } else {
           if (record.entityId && record.entityId.length > 0) {
             tSet.delete(record.entityId);
+            tSet.delete(record.entityId.toUpperCase());
           }
           if (record.payload && typeof record.payload === "object") {
-            if (record.payload.billNo) tSet.delete(record.payload.billNo.toString().trim());
-            if (record.payload.internalNo) tSet.delete(record.payload.internalNo.toString().trim());
-            if (record.payload.id) tSet.delete(record.payload.id.toString().trim());
-          }
-          if (Array.isArray(body.unmarkedIds)) {
-            for (const u of body.unmarkedIds) {
-              if (u && typeof u === "string") tSet.delete(u.trim());
+            if (record.payload.billNo) {
+              const b = record.payload.billNo.toString().trim();
+              tSet.delete(b);
+              tSet.delete(b.toUpperCase());
+            }
+            if (record.payload.internalNo) {
+              const i = record.payload.internalNo.toString().trim();
+              tSet.delete(i);
+              tSet.delete(i.toUpperCase());
+            }
+            if (record.payload.id) {
+              const pid = record.payload.id.toString().trim();
+              tSet.delete(pid);
+              tSet.delete(pid.toUpperCase());
+            }
+            if (record.payload.partyId && record.payload.billNo) {
+              const ck = `${record.payload.partyId.toString().trim().toUpperCase()}_${record.payload.billNo.toString().trim().toUpperCase()}`;
+              tSet.delete(ck);
             }
           }
         }
+
+        for (const u of mergedUnmarkedIds) {
+          if (u && typeof u === "string" && u.trim().length > 0) {
+            tSet.delete(u.trim());
+            tSet.delete(u.trim().toUpperCase());
+          }
+        }
+        for (const d of extractedBatchDeletedIds) {
+          if (d && typeof d === "string" && d.trim().length > 0) {
+            tSet.add(d.trim());
+            tSet.add(d.trim().toUpperCase());
+          }
+        }
+
         channelData.tombstones = Array.from(tSet);
 
         // Atomic Upsert to D1
@@ -239,14 +363,29 @@ export async function onRequestPost(context: any) {
               const uAt = parseInt(op.updated_at || Date.now(), 10);
               const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
               const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+              const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();
+              const rawParty = ((op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId) || "").toString().trim();
+              const rawInt = ((op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo) || "").toString().trim();
+              const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill.toUpperCase()}` : "";
+
               if (isDel === 1) {
                 tSet.add(sId);
-                const rawBill = (op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo);
-                const rawParty = (op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId);
-                const rawInt = (op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo);
-                if (rawInt) tSet.add(rawInt.toString().trim().toUpperCase());
-                if (rawParty && rawBill) tSet.add(`${rawParty.toString().trim().toUpperCase()}_${rawBill.toString().trim().toUpperCase()}`);
+                if (rawInt) tSet.add(rawInt.toUpperCase());
+                if (compKey) tSet.add(compKey);
+              } else {
+                tSet.delete(sId);
+                tSet.delete(sId.toUpperCase());
+                if (rawInt) {
+                  tSet.delete(rawInt);
+                  tSet.delete(rawInt.toUpperCase());
+                }
+                if (compKey) tSet.delete(compKey);
+                if (rawBill) {
+                  tSet.delete(rawBill);
+                  tSet.delete(rawBill.toUpperCase());
+                }
               }
+
               const rawData = op.data !== undefined ? op.data : op.bill_data;
               const bData = typeof rawData === "string" ? rawData : JSON.stringify(rawData || {});
 
@@ -254,8 +393,8 @@ export async function onRequestPost(context: any) {
                 "INSERT INTO erp_master_sync (sync_id, store_token, document_type, version, updated_at, is_deleted, bill_data) " +
                 "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) " +
                 "ON CONFLICT(sync_id) DO UPDATE SET " +
-                "bill_data = CASE WHEN ?5 > updated_at AND ?4 >= version THEN ?7 ELSE bill_data END, " +
-                "is_deleted = CASE WHEN ?5 > updated_at AND ?4 >= version THEN ?6 ELSE is_deleted END, " +
+                "bill_data = CASE WHEN (?5 >= updated_at OR ?4 > version) THEN ?7 ELSE bill_data END, " +
+                "is_deleted = CASE WHEN (?5 >= updated_at OR ?4 > version) THEN ?6 ELSE is_deleted END, " +
                 "version = CASE WHEN ?4 > version THEN ?4 ELSE version END, " +
                 "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END"
               ).bind(sId, storeToken, dType, ver, uAt, isDel, bData);
@@ -277,7 +416,6 @@ export async function onRequestPost(context: any) {
       }
     }
 
-    
     return new Response(JSON.stringify({
       status: "SUCCESS",
       event: record,
@@ -298,7 +436,7 @@ export async function onRequestGet(context: any) {
   try {
     const url = new URL(context.request.url);
     const storeToken = (url.searchParams.get("storeToken") || "").trim().toUpperCase();
-    let lastSeenTs = parseInt(url.searchParams.get("lastSeenTs") || "0", 10);
+    let lastSeenTs = parseInt(url.searchParams.get("lastSeenTs") || url.searchParams.get("since") || "0", 10);
     if (lastSeenTs > 100000000000000) lastSeenTs = Math.floor(lastSeenTs / 1000);
     const sinceSeq = parseInt(url.searchParams.get("since_seq") || "-1", 10);
 
@@ -367,7 +505,6 @@ export async function onRequestGet(context: any) {
     let current: SignalRecord | null = null;
     let mutations: SignalRecord[] = [];
     let tombstones: string[] = [];
-    let foundInD1 = false;
 
     // 1. PRIMARY ENGINE: CLOUDFLARE D1
     if (context.env && context.env.SIGNAL_DB) {
@@ -383,14 +520,12 @@ export async function onRequestGet(context: any) {
           if (Array.isArray(chanData.tombstones)) {
             tombstones = chanData.tombstones;
           }
-          foundInD1 = true;
         }
       } catch (d1Err) {
         console.error("D1 Read Exception:", d1Err);
       }
     }
 
-    
     // Query D1 Master Sync for Delta Batch Operations
     let batchOperations: any[] = [];
     if (context.env && context.env.SIGNAL_DB) {
@@ -417,8 +552,8 @@ export async function onRequestGet(context: any) {
       }
     }
 
-    if (!current && batchOperations.length === 0) {
-      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], tombstones: [], batch_operations: [] }), {
+    if (!current && batchOperations.length === 0 && mutations.length === 0) {
+      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], events: [], tombstones: [], batch_operations: [] }), {
         status: 200,
         headers: {
           ...CORS_HEADERS,
@@ -432,8 +567,9 @@ export async function onRequestGet(context: any) {
     return new Response(JSON.stringify({
       status: "SUCCESS",
       hasUpdate,
-      event: (current && current.timestamp > lastSeenTs) ? current : null,
+      event: (current && current.timestamp > lastSeenTs) ? current : (mutations.length > 0 ? mutations[mutations.length - 1] : null),
       mutations,
+      events: mutations,
       tombstones,
       batch_operations: batchOperations,
       serverTime: Date.now(),

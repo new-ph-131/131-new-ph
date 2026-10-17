@@ -134,13 +134,39 @@ class FastPullEngine {
             if (item is Map) {
               final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" || item["status"] == "Cancelled" ? "1" : "0")) ?? 0;
               if (isDel == 1) continue;
+              final String primaryId = (item["id"] ?? item["sync_id"] ?? "").toString().trim();
+              final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
+              final int itemTs = int.tryParse(item["updated_at"]?.toString() ?? item["updatedAt"]?.toString() ?? "0") ?? 0;
               final keys = keyExtractor(item);
               bool isBlocked = false;
-              for (final k in keys) {
+              for (int ki = 0; ki < keys.length; ki++) {
+                final k = keys[ki];
                 final clean = k.trim().toUpperCase();
-                if (clean.isNotEmpty && (localTombstones.contains(clean) || localRegistry.containsKey(clean) || localTombstones.contains(k.trim()) || localRegistry.containsKey(k.trim()))) {
-                  isBlocked = true;
-                  break;
+                if (clean.isEmpty) continue;
+                final bool inTombs = localTombstones.contains(clean) || localTombstones.contains(k.trim());
+                final int regTs = localRegistry[clean] ?? localRegistry[k.trim()] ?? 0;
+                if (inTombs || regTs > 0) {
+                  // Primary ID (index 0) is permanently dead unless explicitly unmarked
+                  if (ki == 0 && primaryId.isNotEmpty && (localTombstones.contains(primaryId) || localRegistry.containsKey(primaryId))) {
+                    if (regTs > 0 && itemTs > regTs) {
+                      localTombstones.remove(primaryId);
+                      localRegistry.remove(primaryId);
+                    } else {
+                      isBlocked = true;
+                      break;
+                    }
+                  } else {
+                    // Secondary / Composite / InternalNo key: allow rebirth if newer timestamp or version > 1 or fresh primaryId
+                    if ((regTs > 0 && itemTs > regTs) || itemVer > 1) {
+                      localTombstones.remove(clean);
+                      localTombstones.remove(k.trim());
+                      localRegistry.remove(clean);
+                      localRegistry.remove(k.trim());
+                    } else if (regTs == 0 || itemTs <= regTs) {
+                      isBlocked = true;
+                      break;
+                    }
+                  }
                 }
               }
               if (!isBlocked) filtered.add(item);
@@ -173,14 +199,26 @@ class FastPullEngine {
       }
 
       applyUniversalD1Shield("sales.json", "SALE", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
-      applyUniversalD1Shield("purc.json", "PURCHASE", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString(), (m["internalNo"] ?? "").toString()]);
+      applyUniversalD1Shield("purc.json", "PURCHASE", (m) {
+        final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
+        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
+        final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
+        final comp = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+        return [(m["id"] ?? "").toString(), comp, iNo];
+      });
       applyUniversalD1Shield("vouc.json", "VOUCHER", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
       applyUniversalD1Shield("s_challan.json", "CHALLAN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       applyUniversalD1Shield("p_challan.json", "PURCHASE_CHALLAN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString(), (m["internalNo"] ?? "").toString()]);
       applyUniversalD1Shield("s_return.json", "SALE_RETURN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       applyUniversalD1Shield("p_return.json", "PURCHASE_RETURN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("sales.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
-      sanitizeCloudFile("purc.json", (m) => [(m["id"] ?? "").toString(), (m["internalNo"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("purc.json", (m) {
+        final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
+        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
+        final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
+        final comp = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+        return [(m["id"] ?? "").toString(), iNo, comp];
+      });
       sanitizeCloudFile("vouc.json", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
       sanitizeCloudFile("s_challan.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("p_challan.json", (m) => [(m["id"] ?? "").toString(), (m["internalNo"] ?? "").toString(), (m["billNo"] ?? "").toString()]);

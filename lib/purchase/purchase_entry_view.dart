@@ -51,10 +51,15 @@ class _PurchaseEntryViewState extends State<PurchaseEntryView> {
           paymentMode = widget.existingPurchase!.paymentMode;
           try {
             selectedDistributor = ph.parties.firstWhere(
-              (p) => p.name == widget.existingPurchase!.distributorName
+              (p) => (widget.existingPurchase!.partyId.isNotEmpty && p.id == widget.existingPurchase!.partyId) ||
+                     p.name.trim().toUpperCase() == widget.existingPurchase!.distributorName.trim().toUpperCase()
             );
           } catch(e) {
-            selectedDistributor = Party(id: '0', name: widget.existingPurchase!.distributorName);
+            selectedDistributor = Party(
+              id: widget.existingPurchase!.partyId.isNotEmpty ? widget.existingPurchase!.partyId : '0',
+              name: widget.existingPurchase!.distributorName,
+              group: "Sundry Creditors",
+            );
           }
           isLoading = false;
         });

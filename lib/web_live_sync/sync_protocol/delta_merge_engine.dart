@@ -115,11 +115,11 @@ class DeltaMergeEngine {
         String intNoKey = internalNo.toUpperCase();
         final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? "";
 
-        // 🛡️ SMART TIME & VERSION AWARE REBIRTH PROTOCOL (#PH-REV-700)
+        // 🛡️ SMART TIME & VERSION AWARE REBIRTH PROTOCOL (#PH-REV-710)
         int delTs = tombstoneRegistry[id] ??
-            (bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ??
+            (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ??
             (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null) ??
-            (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ?? 0;
+            (getCloudCompositeKey == null && bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ?? 0;
 
         if (delTs > 0) {
           if (delTs >= cloudTimestamp && cloudVersion <= 1) {
@@ -145,9 +145,9 @@ class DeltaMergeEngine {
         int idx = localList.indexWhere((e) {
           if (getId(e) == id) return true;
           final localBNo = getBillNo(e).trim().toUpperCase();
-          if (bNoKey.isNotEmpty && localBNo == bNoKey) return true;
-          if (intNoKey.isNotEmpty && localBNo == intNoKey) return true;
           if (compositeKey.isNotEmpty && localBNo == compositeKey) return true;
+          if (intNoKey.isNotEmpty && (localBNo == intNoKey || localBNo == "INT:$intNoKey")) return true;
+          if (getCloudCompositeKey == null && bNoKey.isNotEmpty && localBNo == bNoKey) return true;
           return false;
         });
 
@@ -180,22 +180,24 @@ class DeltaMergeEngine {
         }
       }
 
-      // 2. Safe Deduplication Pass (preserving items without bill numbers)
+      // 2. Safe Deduplication Pass (preserving items without bill numbers & preventing Cross-Bill Collisions)
       Map<String, T> uniqueByBillNo = {};
       List<T> nonBillItems = [];
       for (var item in localList) {
         String bNo = getBillNo(item).trim().toUpperCase();
-        if (bNo.isNotEmpty) {
-          if (!uniqueByBillNo.containsKey(bNo)) {
-            uniqueByBillNo[bNo] = item;
+        String itemId = getId(item).trim();
+        String dedupKey = bNo.isNotEmpty ? bNo : (itemId.isNotEmpty ? "ID:$itemId" : "");
+        if (dedupKey.isNotEmpty) {
+          if (!uniqueByBillNo.containsKey(dedupKey)) {
+            uniqueByBillNo[dedupKey] = item;
           } else {
-            var existing = uniqueByBillNo[bNo]!;
+            var existing = uniqueByBillNo[dedupKey]!;
             int existingUpdated = (toMap(existing)['updated_at'] ?? toMap(existing)['updatedAt'] ?? 0).toInt();
             int currentUpdated = (toMap(item)['updated_at'] ?? toMap(item)['updatedAt'] ?? 0).toInt();
             int existingVer = (toMap(existing)['version'] ?? 1).toInt();
             int currentVer = (toMap(item)['version'] ?? 1).toInt();
             if (currentVer > existingVer || (currentVer == existingVer && currentUpdated >= existingUpdated)) {
-              uniqueByBillNo[bNo] = item;
+              uniqueByBillNo[dedupKey] = item;
             }
           }
         } else {
@@ -226,7 +228,13 @@ class DeltaMergeEngine {
       decodeJson('purc.json'), 
       ph.purchases, 
       (e) => e.id, 
-      (e) => PurchaseSyncModule.getCompositeKey(e), 
+      (e) {
+        final comp = PurchaseSyncModule.getCompositeKey(e);
+        if (comp.isNotEmpty) return comp;
+        final intNo = e.internalNo.trim().toUpperCase();
+        if (intNo.isNotEmpty) return "INT:$intNo";
+        return "ID:${e.id}";
+      }, 
       (m) => Purchase.fromMap(m),
       (e) => e.toMap(),
       (m) => PurchaseSyncModule.makeCompositeKey(
