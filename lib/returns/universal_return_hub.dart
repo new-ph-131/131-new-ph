@@ -268,10 +268,12 @@ class _UniversalReturnHubState extends State<UniversalReturnHub> {
                 ? SaleReturnView(existingRecord: ret, isReadOnly: true) 
                 : PurchaseReturnView(existingRecord: ret, isReadOnly: true)));
             }),
-            if (canEdit && isSR)
+            if (canEdit)
               _menuTile(Icons.edit_note_rounded, "Modify / Edit Bill", Colors.orange, () {
                 Navigator.pop(c);
-                Navigator.push(context, MaterialPageRoute(builder: (context) => SaleReturnView(existingRecord: ret)));
+                Navigator.push(context, MaterialPageRoute(builder: (context) => isSR 
+                  ? SaleReturnView(existingRecord: ret) 
+                  : PurchaseReturnView(existingRecord: ret)));
               }),
             _menuTile(Icons.print_rounded, "Print / Share PDF", Colors.teal, () {
               Navigator.pop(c);
