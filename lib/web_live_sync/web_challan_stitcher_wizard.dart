@@ -234,13 +234,13 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         );
       }
     } else {
-      finalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "PUR-", startFrom: 1, currentList: webPh.purchases);
+      finalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "WPUR-", startFrom: 1, currentList: webPh.purchases);
       final Party pRef = b['party'] as Party;
 
       final newPurchase = Purchase(
         id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalNo",
         internalNo: finalNo,
-        billNo: "CH-CONV-${finalNo.replaceAll('PUR-', '')}",
+        billNo: "CH-CONV-${finalNo.replaceAll('WPUR-', '').replaceAll('PUR-', '')}",
         partyId: pRef.id,
         distributorName: pRef.name,
         date: b['date'],
@@ -389,13 +389,13 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         });
         await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to paint
 
-        String finalInternalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "PUR-", startFrom: 1, currentList: webPh.purchases);
+        String finalInternalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "WPUR-", startFrom: 1, currentList: webPh.purchases);
         final Party pRef = b['party'] as Party;
 
         final newPurchase = Purchase(
           id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalInternalNo",
           internalNo: finalInternalNo,
-          billNo: "CH-CONV-${finalInternalNo.replaceAll('PUR-', '')}",
+          billNo: "CH-CONV-${finalInternalNo.replaceAll('WPUR-', '').replaceAll('PUR-', '')}",
           partyId: pRef.id,
           distributorName: pRef.name,
           date: b['date'],

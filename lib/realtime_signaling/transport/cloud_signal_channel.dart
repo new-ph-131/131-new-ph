@@ -58,7 +58,8 @@ class CloudSignalChannel {
     stopListening();
     if (storeToken.isEmpty) return;
 
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Subtract 30s lookback window to prevent device clock skew between Mobile App & Web PC from skipping fresh events
+    final int nowMs = DateTime.now().millisecondsSinceEpoch - 30000;
     _lastKnownSignalTime = nowMs;
     _lastKnownBatchTime = nowMs;
     final cleanToken = storeToken.trim().toUpperCase();

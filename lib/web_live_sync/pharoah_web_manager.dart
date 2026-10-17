@@ -936,9 +936,7 @@ class PharoahWebManager with ChangeNotifier {
 
     final int existingIdx = purchases.indexWhere((p) => 
       p.id == purchase.id || 
-      (cleanIntNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
-      (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty && p.billNo.isNotEmpty && p.partyId.isNotEmpty &&
-       p.billNo.trim().toUpperCase() == cleanBillNo && p.partyId.trim().toUpperCase() == cleanPartyId)
+      (cleanIntNo.isNotEmpty && p.internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
     );
     final bool isUpdate = existingIdx != -1;
 
@@ -1345,6 +1343,11 @@ class PharoahWebManager with ChangeNotifier {
 
     String prefix = s?.prefix ?? defaultPrefix;
     int start = s?.startNumber ?? defaultStart;
+    if (type == "SALE" && prefix.trim().toUpperCase() == "INV-") {
+      prefix = "W-";
+    } else if (type == "PURCHASE" && prefix.trim().toUpperCase() == "PUR-") {
+      prefix = "WPUR-";
+    }
 
     List<dynamic> targetList;
     if (type == "SALE") {

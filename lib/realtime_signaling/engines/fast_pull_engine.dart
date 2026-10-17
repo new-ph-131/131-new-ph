@@ -203,7 +203,9 @@ class FastPullEngine {
         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
         final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
-        final comp = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+        final comp = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty)
+            ? "${pId}_${bNo}_$iNo"
+            : ((pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "");
         return [(m["id"] ?? "").toString(), comp, iNo];
       });
       applyUniversalD1Shield("vouc.json", "VOUCHER", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
@@ -216,7 +218,9 @@ class FastPullEngine {
         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
         final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
-        final comp = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+        final comp = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty)
+            ? "${pId}_${bNo}_$iNo"
+            : ((pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "");
         return [(m["id"] ?? "").toString(), iNo, comp];
       });
       sanitizeCloudFile("vouc.json", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);

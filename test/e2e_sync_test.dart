@@ -223,4 +223,85 @@ void main() {
     expect(purchasesList.first.id, equals("PUR-WEB-2002"));
     expect(purchasesList.first.internalNo, equals("PUR-2"));
   });
+
+  test('E2E TEST 5: Dual-Series Purchase (App PUR-1, PUR-2 + Web WPUR-1, WPUR-2 -> Next App PUR-3 & Zero Overwrite)', () async {
+    final List<Purchase> purchasesList = [
+      Purchase(
+        id: "PUR-APP-1",
+        internalNo: "PUR-1",
+        billNo: "101",
+        partyId: "SUP-1",
+        distributorName: "Apex Pharma",
+        date: DateTime.utc(2025, 1, 10),
+        entryDate: DateTime.utc(2025, 1, 10),
+        items: [],
+        totalAmount: 1000.0,
+        paymentMode: "CREDIT",
+        updatedAt: 1000,
+        version: 1,
+      ),
+      Purchase(
+        id: "PUR-APP-2",
+        internalNo: "PUR-2",
+        billNo: "102",
+        partyId: "SUP-1",
+        distributorName: "Apex Pharma",
+        date: DateTime.utc(2025, 1, 10),
+        entryDate: DateTime.utc(2025, 1, 10),
+        items: [],
+        totalAmount: 2000.0,
+        paymentMode: "CREDIT",
+        updatedAt: 2000,
+        version: 1,
+      ),
+    ];
+
+    final List<dynamic> cloudWebPurchases = [
+      {
+        "id": "PUR-WEB-1",
+        "internalNo": "WPUR-1",
+        "billNo": "101", // Even with same supplier and same billNo!
+        "partyId": "SUP-1",
+        "distributorName": "Apex Pharma",
+        "date": DateTime.utc(2025, 1, 10).toIso8601String(),
+        "entryDate": DateTime.utc(2025, 1, 10).toIso8601String(),
+        "items": [],
+        "totalAmount": 3000.0,
+        "paymentMode": "CREDIT",
+        "updatedAt": 3000,
+        "version": 1,
+      },
+      {
+        "id": "PUR-WEB-2",
+        "internalNo": "WPUR-2",
+        "billNo": "103",
+        "partyId": "SUP-1",
+        "distributorName": "Apex Pharma",
+        "date": DateTime.utc(2025, 1, 10).toIso8601String(),
+        "entryDate": DateTime.utc(2025, 1, 10).toIso8601String(),
+        "items": [],
+        "totalAmount": 4000.0,
+        "paymentMode": "CREDIT",
+        "updatedAt": 4000,
+        "version": 1,
+      },
+    ];
+
+    final Set<String> tombstones = {};
+    UniversalDeltaMerger.reconcileAllCollections(
+      cloudFiles: {'purc.json': '[${cloudWebPurchases.map((m) => '''{"id":"${m['id']}","internalNo":"${m['internalNo']}","billNo":"${m['billNo']}","partyId":"${m['partyId']}","distributorName":"${m['distributorName']}","date":"${m['date']}","entryDate":"${m['entryDate']}","items":[],"totalAmount":${m['totalAmount']},"paymentMode":"CREDIT","updatedAt":${m['updatedAt']},"version":1}''').join(",")}]'},
+      tombstones: tombstones,
+      sales: [],
+      purchases: purchasesList,
+      vouchers: [],
+      saleChallans: [],
+      purchaseChallans: [],
+      saleReturns: [],
+      purchaseReturns: [],
+    );
+
+    // All 4 bills (PUR-1, PUR-2, WPUR-1, WPUR-2) must coexist without overwriting!
+    expect(purchasesList.length, equals(4));
+    expect(purchasesList.map((p) => p.internalNo).toSet(), equals({"PUR-1", "PUR-2", "WPUR-1", "WPUR-2"}));
+  });
 }

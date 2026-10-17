@@ -65,7 +65,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
           selectedSupplier = Party(id: p.partyId, name: p.distributorName, group: "Sundry Creditors");
         }
       } else {
-        internalNoC.text = webPh.getNextBillNumber("PURCHASE", "PUR-", 1);
+        internalNoC.text = webPh.getNextBillNumber("PURCHASE", "WPUR-", 1);
         selectedBillDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
         selectedEntryDate = DateTime.now();
       }

@@ -297,7 +297,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
     setState(() => isSaving = true);
 
     String internalNo = WebPharoahNumberingEngine.getNextNumber(
-      prefix: "PUR-",
+      prefix: "WPUR-",
       startFrom: 1,
       currentList: webPh.purchases,
     );

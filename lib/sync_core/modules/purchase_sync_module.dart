@@ -4,28 +4,32 @@ import '../../models.dart';
 import '../models/sync_envelope.dart';
 import '../outbox/sync_queue_manager.dart';
 
-/// Purchase synchronization with supplier-scoped invoice identity.
+/// Purchase synchronization with Dual-Series (PUR- & WPUR-) & internalNo-isolated identity (#PH-REV-711).
 class PurchaseSyncModule {
   static const String documentType = "PURCHASE";
 
-  /// A supplier invoice is identified by supplier/party + supplier invoice number.
-  /// internalNo is only a fallback when that pair is unavailable.
+  /// Every Purchase inward entry is uniquely identified by its series number (internalNo: PUR-* or WPUR-*)
+  /// combined with supplier/party + supplier invoice number so separate entries never overwrite each other.
   static String getCompositeKey(Purchase p) =>
       makeCompositeKey(p.partyId, p.billNo, p.internalNo);
 
   static String makeCompositeKey(String partyId, String billNo, [String internalNo = ""]) {
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    if (cleanParty.isNotEmpty && cleanBill.isNotEmpty) {
-      return "${cleanParty}_${cleanBill}";
-    }
     final cleanInt = internalNo.trim().toUpperCase();
+    if (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty) {
+      return "${cleanParty}_${cleanBill}_$cleanInt";
+    }
     if (cleanInt.isNotEmpty) return cleanInt;
+    if (cleanParty.isNotEmpty && cleanBill.isNotEmpty) {
+      return "${cleanParty}_$cleanBill";
+    }
     return cleanBill.isNotEmpty ? cleanBill : "UNKNOWN_PURCHASE";
   }
 
   static void onPurchaseSaved(Purchase purchase, String storeToken) {
     if (storeToken.trim().isEmpty) return;
+
     SyncQueueManager.enqueueMutation(
       syncId: purchase.id,
       storeToken: storeToken,
@@ -38,9 +42,11 @@ class PurchaseSyncModule {
 
   static void onPurchaseDeleted(Purchase purchase, String storeToken) {
     if (storeToken.trim().isEmpty) return;
+
     purchase.isDeleted = 1;
     purchase.version += 1;
     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
     SyncQueueManager.enqueueMutation(
       syncId: purchase.id,
       storeToken: storeToken,
@@ -60,11 +66,13 @@ class PurchaseSyncModule {
     if (envelope.documentType != documentType) return false;
     final targetId = envelope.syncId.trim();
     if (targetId.isEmpty) return false;
+
     final incomingPurchase = Purchase.fromMap(envelope.billData);
     incomingPurchase.id = targetId;
     incomingPurchase.version = envelope.version;
     incomingPurchase.updatedAt = envelope.updatedAt;
     incomingPurchase.isDeleted = envelope.isDeleted;
+
     return applyPurchaseMutation(currentPurchases, incomingPurchase);
   }
 
@@ -82,15 +90,12 @@ class PurchaseSyncModule {
     final cleanIntNo = incoming.internalNo.trim().toUpperCase();
     final hasSupplierInvoice = incoming.partyId.trim().isNotEmpty && incoming.billNo.trim().isNotEmpty;
 
-    // Prefer stable ID, then supplier-scoped invoice identity. Never use internalNo
-    // as a global key when supplier + invoice number are available.
+    // Match by immutable ID first, then by series internalNo (e.g. PUR-1 vs WPUR-1).
+    // Only fallback to supplier+billNo when internalNo is absent.
     int idx = currentPurchases.indexWhere((p) {
       if (incoming.id.trim().isNotEmpty && p.id.trim() == incoming.id.trim()) return true;
-      if (hasSupplierInvoice && _sameSupplierInvoice(p, incoming)) return true;
-      if (!hasSupplierInvoice && cleanIntNo.isNotEmpty &&
-          p.internalNo.trim().toUpperCase() == cleanIntNo &&
-          (incoming.partyId.trim().isEmpty || p.partyId.trim().isEmpty ||
-           p.partyId.trim().toUpperCase() == incoming.partyId.trim().toUpperCase())) {
+      if (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) return true;
+      if (cleanIntNo.isEmpty && p.internalNo.trim().isEmpty && hasSupplierInvoice && _sameSupplierInvoice(p, incoming)) {
         return true;
       }
       return false;
@@ -104,7 +109,7 @@ class PurchaseSyncModule {
         return false;
       }
       currentPurchases.removeAt(idx);
-      debugPrint("🗑️ [PurchaseSyncModule] Deleted purchase: ${incoming.billNo} (${incoming.id})");
+      debugPrint("🗑️ [PurchaseSyncModule] Deleted purchase: ${incoming.internalNo} / ${incoming.billNo} (${incoming.id})");
       return true;
     }
 
@@ -116,12 +121,11 @@ class PurchaseSyncModule {
       currentPurchases.insert(0, incoming);
     }
 
-    // Clean up any pre-existing duplicates for this supplier invoice while
-    // retaining the just-applied record.
+    // Deduplicate only records that share the exact same ID or exact same non-empty internalNo
     currentPurchases.removeWhere((p) =>
         !identical(p, incoming) &&
         ((incoming.id.isNotEmpty && p.id == incoming.id) ||
-         (hasSupplierInvoice && _sameSupplierInvoice(p, incoming))));
+         (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)));
     return true;
   }
 }

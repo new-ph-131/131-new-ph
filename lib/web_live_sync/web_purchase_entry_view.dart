@@ -52,7 +52,7 @@ class WebPurchaseEntryView extends StatelessWidget {
     if (reconstructedPurchase == null && modifyPurchaseId != null && initialSupplier != null && existingItems != null) {
       reconstructedPurchase = Purchase(
         id: modifyPurchaseId!,
-        internalNo: initialInternalNo ?? "PUR-1",
+        internalNo: initialInternalNo ?? "WPUR-1",
         billNo: initialBillNo ?? "",
         partyId: initialSupplier!.id,
         distributorName: initialSupplier!.name,

@@ -320,7 +320,7 @@ class PharoahManager with ChangeNotifier {
     notifyListeners();
     // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Single Unified Debounced Push via AppRealtimeCoordinator)
     AppRealtimeCoordinator.instance.notifyAppMutation(this);
-    LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-710)");
+    LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-711)");
   }
 
   Future<void> loadAllData() async {
@@ -501,9 +501,7 @@ Future<void> finalizePurchase({
     if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo);
     final int existingIdx = purchases.indexWhere((p) => 
       p.id == pId || 
-      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
-      (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty &&
-       p.billNo.trim().toUpperCase() == cleanBillNo && p.partyId.trim().toUpperCase() == cleanPartyId)
+      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
     );
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
@@ -521,9 +519,7 @@ Future<void> finalizePurchase({
 
     purchases.removeWhere((p) => 
       p.id == pId || 
-      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
-      (cleanBillNo.isNotEmpty && cleanPartyId.isNotEmpty &&
-       p.billNo.trim().toUpperCase() == cleanBillNo && p.partyId.trim().toUpperCase() == cleanPartyId)
+      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
     );
     final newFinalPurchase = Purchase(
       id: pId, 

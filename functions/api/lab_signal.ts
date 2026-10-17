@@ -1,7 +1,7 @@
 // FILE: functions/api/lab_signal.ts
 // Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal & Tombstone Resolution Bus (<30ms)
 // Features: Server-Authoritative Tombstone Sanitization, 100,000 Writes/Day, 5,000,000 Reads/Day.
-// Revision: #PH-REV-710 (PURCHASE-LIFECYCLE-ATOMIC-SYNC-PRO)
+// Revision: #PH-REV-711 (WEB-PURCHASE-DUAL-SERIES-WPUR-AND-INSTANT-SYNC)
 
 interface SignalRecord {
   id: string;
@@ -235,7 +235,7 @@ export async function onRequestPost(context: any) {
       action: body.action || "DELTA_MUTATION",
       entityType: body.entityType || "",
       entityId: (body.entityId || "").trim(),
-      timestamp: (body.timestamp && body.timestamp > 100000000000000) ? Math.floor(body.timestamp / 1000) : (body.timestamp || Date.now()),
+      timestamp: Math.max((body.timestamp && body.timestamp > 100000000000000) ? Math.floor(body.timestamp / 1000) : (body.timestamp || 0), Date.now()),
       serverReceivedAt: Date.now(),
       deletedIds: mergedDeletedIds,
       unmarkedIds: mergedUnmarkedIds,
@@ -360,7 +360,7 @@ export async function onRequestPost(context: any) {
               if (!sId) continue;
               const dType = (op.document_type || "SALE").toString().toUpperCase();
               const ver = parseInt(op.version || 1, 10);
-              const uAt = parseInt(op.updated_at || Date.now(), 10);
+              const uAt = Math.max(parseInt(op.updated_at || 0, 10), Date.now());
               const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
               const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
               const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();

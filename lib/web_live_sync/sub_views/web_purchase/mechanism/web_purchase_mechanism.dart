@@ -21,24 +21,33 @@ class WebPurchaseMechanism {
     String? existingId,
   }) async {
     int currentVer = 1;
-    final cleanIntNo = internalNo.trim().toUpperCase();
-    final cleanBillNo = billNo.trim().toUpperCase();
-
+    String finalInternalNo = internalNo.trim();
     if (existingId != null && existingId.isNotEmpty) {
+      final cleanIntNo = finalInternalNo.toUpperCase();
       final int idx = webPh.purchases.indexWhere((p) => 
         p.id == existingId || 
-        (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) || 
-        (cleanBillNo.isNotEmpty && p.partyId == supplier.id && p.billNo.trim().toUpperCase() == cleanBillNo)
+        (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
       );
       if (idx != -1) {
         currentVer = webPh.purchases[idx].version + 1;
         supplier.opBal -= webPh.purchases[idx].totalAmount;
       }
+    } else {
+      if (finalInternalNo.isEmpty || finalInternalNo.toUpperCase().startsWith("PUR-")) {
+        finalInternalNo = webPh.getNextBillNumber("PURCHASE", "WPUR-", 1);
+      } else {
+        final bool alreadyTaken = webPh.purchases.any(
+          (p) => p.id != purchaseId && p.internalNo.trim().toUpperCase() == finalInternalNo.toUpperCase(),
+        );
+        if (alreadyTaken) {
+          finalInternalNo = webPh.getNextBillNumber("PURCHASE", "WPUR-", 1);
+        }
+      }
     }
 
     final newPurchase = Purchase(
       id: purchaseId,
-      internalNo: internalNo,
+      internalNo: finalInternalNo,
       billNo: billNo,
       partyId: supplier.id,
       distributorName: supplier.name,
@@ -57,8 +66,8 @@ class WebPurchaseMechanism {
     );
 
     // Unmark any tombstone for this purchase using Composite Key (Never naked billNo!)
-    final compKey = PurchaseSyncModule.makeCompositeKey(supplier.id, billNo, internalNo);
-    webPh.unmarkDeletedId(purchaseId, referenceNo: internalNo);
+    final compKey = PurchaseSyncModule.makeCompositeKey(supplier.id, billNo, finalInternalNo);
+    webPh.unmarkDeletedId(purchaseId, referenceNo: finalInternalNo);
     if (compKey.isNotEmpty) webPh.unmarkDeletedId(compKey);
 
     webPh.addPurchaseAndSync(newPurchase);

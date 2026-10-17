@@ -1,16 +1,19 @@
-import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
-import '../../sync_core/orchestrator/master_sync_orchestrator.dart';
 // FILE: lib/realtime_signaling/coordinators/app_realtime_coordinator.dart
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../pharoah_manager.dart';
-import '../../web_live_sync/weblivetoken.dart';
+import '../../sync_core/orchestrator/master_sync_orchestrator.dart';
+import '../../sync_core/outbox/sync_queue_manager.dart';
 import '../../web_live_sync/app_sync_engine.dart';
+import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
+import '../../web_live_sync/weblivetoken.dart';
+import '../engines/fast_pull_engine.dart';
 import '../models/sync_signal_event.dart';
 import '../transport/cloud_signal_channel.dart';
-import '../engines/fast_pull_engine.dart';
 
-/// AppRealtimeCoordinator: Coordinates real-time signaling & sync for Native App.
+/// AppRealtimeCoordinator: Coordinates real-time signaling & sync for Native App (#PH-REV-711).
 class AppRealtimeCoordinator {
   static final AppRealtimeCoordinator instance = AppRealtimeCoordinator._internal();
   AppRealtimeCoordinator._internal();
@@ -32,13 +35,30 @@ class AppRealtimeCoordinator {
     // 1. Initial Quick Pull
     FastPullEngine.pullAndMerge(ph);
 
-    // 2. Connect to Real-time Signal Channel
+    // 2. Connect to Real-time Signal Channel (fast 2s poll)
     CloudSignalChannel.instance.listenToSignals(
       storeToken: token,
       mySource: 'app',
-      interval: const Duration(milliseconds: 4000),
-      onBatchReceived: (batchOps) {
+      interval: const Duration(milliseconds: 2000),
+      onBatchReceived: (batchOps) async {
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phApp: ph);
+        try {
+          final workingDir = await ph.getWorkingPath();
+          if (workingDir.isNotEmpty) {
+            await File('$workingDir/sales.json').writeAsString(
+              jsonEncode(ph.sales.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/purc.json').writeAsString(
+              jsonEncode(ph.purchases.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/vouc.json').writeAsString(
+              jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/bats.json').writeAsString(
+              jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
+            );
+          }
+        } catch (_) {}
       },
       onSignal: (event) async {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
@@ -60,8 +80,8 @@ class AppRealtimeCoordinator {
       },
     );
 
-    // 3. Fallback Safety Net (pulls every 10s if signal missed)
-    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+    // 3. Fallback Safety Net (pulls every 12s if signal missed)
+    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
       if (ph.activeCompany != null && ph.currentFY.isNotEmpty) {
         await FastPullEngine.pullAndMerge(ph);
       }
@@ -101,7 +121,7 @@ class AppRealtimeCoordinator {
     }
 
     _pushDebounceTimer?.cancel();
-    _pushDebounceTimer = Timer(const Duration(milliseconds: 550), () async {
+    _pushDebounceTimer = Timer(const Duration(milliseconds: 350), () async {
       if (_isPushing) {
         _hasPendingPush = true;
         return;
@@ -114,7 +134,10 @@ class AppRealtimeCoordinator {
           final batchUnmarked = List<String>.from(_pendingUnmarkedIds.toSet());
           final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
 
-          // 1. Broadcast instant signal to Cloudflare Edge (<30ms) with accumulated tombstones/unmarks
+          // 1. Flush Outbox first so D1 erp_master_sync has the latest App records immediately
+          await SyncQueueManager.flushOutboxAsJSONBatch();
+
+          // 2. Broadcast instant signal to Cloudflare Edge (<30ms)
           if (token.isNotEmpty) {
             await CloudSignalChannel.instance.broadcastSignal(
               SyncSignalEvent(
@@ -129,12 +152,26 @@ class AppRealtimeCoordinator {
             );
           }
 
-          // 2. Push full snapshot to Cloud Relay (Google Drive) + Flush Outbox
+          // 3. Push full snapshot to Cloud Relay (Google Drive) + Flush Outbox
           final success = await AppSyncEngine.pushStoreData(ph);
           if (success) {
+            // 4. Broadcast post-upload signal so Web refreshes the freshly uploaded snapshot
+            if (token.isNotEmpty) {
+              await CloudSignalChannel.instance.broadcastSignal(
+                SyncSignalEvent(
+                  storeToken: token,
+                  source: 'app',
+                  action: '${action}_COMMITTED',
+                  entityId: entityId,
+                  deletedIds: batchDeleted,
+                  unmarkedIds: batchUnmarked,
+                  companyId: ph.activeCompany!.id,
+                ),
+              );
+            }
             _pendingDeletedIds.removeWhere((id) => batchDeleted.contains(id));
             _pendingUnmarkedIds.removeWhere((id) => batchUnmarked.contains(id));
-            debugPrint("⚡ [AppRealtimeCoordinator] Pushed to cloud and broadcast signal to Web (#PH-REV-710)!");
+            debugPrint("⚡ [AppRealtimeCoordinator] Pushed to cloud and broadcast signal to Web (#PH-REV-711)!");
           }
         } while (_hasPendingPush);
       } catch (e) {
@@ -150,5 +187,8 @@ class AppRealtimeCoordinator {
     _safetyHeartbeatTimer?.cancel();
     CloudSignalChannel.instance.stopListening();
     _isPushing = false;
+    _hasPendingPush = false;
+    _pendingDeletedIds.clear();
+    _pendingUnmarkedIds.clear();
   }
 }
