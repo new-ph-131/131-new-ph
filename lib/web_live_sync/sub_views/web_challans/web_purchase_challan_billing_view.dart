@@ -609,46 +609,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Stock inward verified.",
     );
 
-    if (widget.existingRecord != null) { webPh.purchaseChallans.removeWhere((c) => c.id == widget.existingRecord!.id); }
-    
-    webPh.purchaseChallans.add(newChallan);
-    webPh.notifyListeners();
-
-    // 2-Way Batch Inventory Activity + Medicine Master Auto-Update
-    for (var item in items) {
-      String resolvedKey = item.medicineID;
-      try {
-        int mIdx = webPh.medicines.indexWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
-        if (mIdx != -1) {
-          final med = webPh.medicines[mIdx];
-          resolvedKey = med.identityKey;
-
-          // 🔥 AUTO-UPDATE MEDICINE MASTER WITH LATEST PURCHASE RATE (L.P.R.)
-          med.purRate = item.purchaseRate;
-          if (item.mrp > 0) med.mrp = item.mrp;
-          if (item.rateA > 0) med.rateA = item.rateA;
-          if (item.rateB > 0) med.rateB = item.rateB;
-          if (item.rateC > 0) med.rateC = item.rateC;
-          webPh.updateMedicine(med);
-        }
-      } catch (_) {}
-
-      webPh.registerBatchActivity(
-        productKey: resolvedKey,
-        batchNo: item.batch,
-        exp: item.exp,
-        packing: item.packing,
-        mrp: item.mrp,
-        rate: item.purchaseRate,
-        rateA: item.rateA,
-        rateB: item.rateB,
-        rateC: item.rateC,
-        rateCFormula: item.rateCFormula,
-        appliedRateType: item.appliedRateType,
-      );
-    }
-
-    webPh.rebuildInventory();
+    webPh.addPurchaseChallanAndSync(newChallan);
     await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 

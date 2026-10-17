@@ -1,6 +1,8 @@
 import "sync_core/d1_sales_ledger_service.dart";
 import 'sync_core/modules/sales_sync_module.dart';
 import 'sync_core/modules/purchase_sync_module.dart';
+import 'sync_core/modules/sale_challan_sync_module.dart';
+import 'sync_core/modules/purchase_challan_sync_module.dart';
 import 'sync_core/modules/challan_sync_module.dart';
 import 'sync_core/modules/voucher_sync_module.dart';
 import 'sync_core/modules/returns_sync_module.dart';
@@ -343,8 +345,14 @@ class PharoahManager with ChangeNotifier {
         .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
         .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
-    saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
-    purchaseChallans = (load('p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
+    saleChallans = (load('s_challan.json') as List?)
+        ?.map((e) => SaleChallan.fromMap(e))
+        .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))
+        .toList() ?? [];
+    purchaseChallans = (load('p_challan.json') as List?)
+        ?.map((e) => PurchaseChallan.fromMap(e))
+        .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
+        .toList() ?? [];
     saleReturns = (load('s_return.json') as List?)?.map((e) => SaleReturn.fromMap(e)).toList() ?? [];
     purchaseReturns = (load('p_return.json') as List?)?.map((e) => PurchaseReturn.fromMap(e)).toList() ?? [];
     cheques = (load('cheques.json') as List?)?.map((e) => ChequeEntry.fromMap(e)).toList() ?? [];
@@ -727,7 +735,7 @@ Future<void> finalizePurchase({
   }
 
 // --- CHALLANS & RETURNS ---
-  void finalizeSaleChallan({
+  Future<void> finalizeSaleChallan({
     required String billNo, 
     required DateTime date, 
     required Party party, 
@@ -736,7 +744,7 @@ Future<void> finalizePurchase({
     String remarks = "", 
     required String partyId,
     String? existingId,
-  }) { 
+  }) async { 
     final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final cleanBNo = billNo.trim().toUpperCase();
@@ -745,7 +753,8 @@ Future<void> finalizePurchase({
       currentVer = saleChallans[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cId, secondaryKey: billNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo);
     }
     saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo));
     final newChallan = SaleChallan(
@@ -765,7 +774,7 @@ Future<void> finalizePurchase({
     saleChallans.add(newChallan);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) ChallanSyncModule.onChallanSaved(newChallan, t);
+        if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
       });
     } 
     
@@ -791,10 +800,16 @@ Future<void> finalizePurchase({
         appliedRateType: item.appliedRateType,
       );
     }
-    save(); 
+    await save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: 'SALE_CHALLAN_SAVED',
+      entityId: cId,
+      unmarkedIds: [cId, if (billNo.isNotEmpty) billNo],
+    );
   }
 
-  void finalizePurchaseChallan({
+  Future<void> finalizePurchaseChallan({
     required String billNo, 
     required String internalNo, 
     required DateTime date, 
@@ -804,7 +819,7 @@ Future<void> finalizePurchase({
     String remarks = "", 
     required String partyId,
     String? existingId,
-  }) { 
+  }) async { 
     final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final cleanINo = internalNo.trim().toUpperCase();
@@ -813,7 +828,8 @@ Future<void> finalizePurchase({
       currentVer = purchaseChallans[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cId, secondaryKey: internalNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo, internalNo);
     }
     purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
     final newPChallan = PurchaseChallan(
@@ -832,7 +848,7 @@ Future<void> finalizePurchase({
     purchaseChallans.add(newPChallan);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) ChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
+        if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
       });
     } 
     
@@ -858,7 +874,13 @@ Future<void> finalizePurchase({
         appliedRateType: item.appliedRateType,
       );
     }
-    save(); 
+    await save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: 'PURCHASE_CHALLAN_SAVED',
+      entityId: cId,
+      unmarkedIds: [cId, if (internalNo.isNotEmpty) internalNo, if (billNo.isNotEmpty) billNo],
+    );
   }
   
   // --- NEW CODE ---
@@ -1441,7 +1463,7 @@ void registerBatchActivity({
       D1SalesLedgerService.markPermanentlyDeleted(cId, bNo);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) ChallanSyncModule.onChallanDeleted(c, t);
+          if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanDeleted(c, t);
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
@@ -1469,6 +1491,9 @@ void registerBatchActivity({
       final List<String> delKeys = [cId, if (bNo.isNotEmpty) bNo, if (iNo.isNotEmpty) iNo];
       D1SalesLedgerService.markPermanentlyDeleted(cId, bNo, iNo);
       if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
+        });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
@@ -1864,8 +1889,14 @@ void registerBatchActivity({
         .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
         .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
-    saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
-    purchaseChallans = (load('p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
+    saleChallans = (load('s_challan.json') as List?)
+        ?.map((e) => SaleChallan.fromMap(e))
+        .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))
+        .toList() ?? [];
+    purchaseChallans = (load('p_challan.json') as List?)
+        ?.map((e) => PurchaseChallan.fromMap(e))
+        .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
+        .toList() ?? [];
     saleReturns = (load('s_return.json') as List?)?.map((e) => SaleReturn.fromMap(e)).toList() ?? [];
     purchaseReturns = (load('p_return.json') as List?)?.map((e) => PurchaseReturn.fromMap(e)).toList() ?? [];
     cheques = (load('cheques.json') as List?)?.map((e) => ChequeEntry.fromMap(e)).toList() ?? [];

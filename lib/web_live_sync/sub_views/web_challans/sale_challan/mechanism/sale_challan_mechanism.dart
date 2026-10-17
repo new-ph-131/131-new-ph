@@ -40,32 +40,7 @@ class SaleChallanMechanism {
       remarks: remarks,
     );
 
-    webPh.saleChallans.add(newChallan);
-
-    // 2-Way Batch Inventory Activity
-    for (var item in items) {
-      String resolvedKey = item.medicineID;
-      try {
-        final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
-        resolvedKey = med.identityKey;
-      } catch (_) {}
-
-      webPh.registerBatchActivity(
-        productKey: resolvedKey,
-        batchNo: item.batch,
-        exp: item.exp,
-        packing: item.packing,
-        mrp: item.mrp,
-        rate: item.rate,
-        rateA: item.appliedRateType == "A" ? item.rate : 0.0,
-        rateB: item.appliedRateType == "B" ? item.rate : 0.0,
-        rateC: item.appliedRateType == "C" ? item.rate : 0.0,
-        rateCFormula: item.rateCFormula,
-        appliedRateType: item.appliedRateType,
-      );
-    }
-
-    webPh.rebuildInventory();
+    webPh.addSaleChallanAndSync(newChallan);
     return await webPh.pushUpdatedDataToCloud();
   }
 }

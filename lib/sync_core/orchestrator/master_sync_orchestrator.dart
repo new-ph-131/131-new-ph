@@ -4,6 +4,8 @@ import '../d1_sales_ledger_service.dart';
 import '../models/sync_envelope.dart';
 import '../modules/sales_sync_module.dart';
 import '../modules/purchase_sync_module.dart';
+import '../modules/sale_challan_sync_module.dart';
+import '../modules/purchase_challan_sync_module.dart';
 import '../modules/challan_sync_module.dart';
 import '../modules/returns_sync_module.dart';
 import '../modules/voucher_sync_module.dart';
@@ -66,10 +68,39 @@ class MasterSyncOrchestrator {
           break;
         case 'CHALLAN':
         case 'SALE_CHALLAN':
-          mutated = ChallanSyncModule.mergeIncomingChallanEnvelope(phApp.saleChallans, envelope);
+          final bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (bNo.isNotEmpty) bNo]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: bNo);
+            }
+          }
+          mutated = SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(phApp.saleChallans, envelope);
           break;
         case 'PURCHASE_CHALLAN':
-          mutated = ChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phApp.purchaseChallans, envelope);
+          final pBill = envelope.billData;
+          final iNo = (pBill['internalNo'] ?? '').toString().trim().toUpperCase();
+          final bNo = (pBill['billNo'] ?? '').toString().trim().toUpperCase();
+          final pId = (pBill['partyId'] ?? '').toString().trim().toUpperCase();
+          final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, iNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo, if (comp2.isNotEmpty) comp2]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, iNo);
+            if (phApp.activeCompany != null) {
+              final cid = phApp.activeCompany!.id;
+              TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: iNo.isNotEmpty ? iNo : bNo);
+            }
+          }
+          mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phApp.purchaseChallans, envelope);
           break;
         case 'SALE_RETURN':
         case 'CREDIT_NOTE':
@@ -130,10 +161,27 @@ class MasterSyncOrchestrator {
           break;
         case 'CHALLAN':
         case 'SALE_CHALLAN':
-          mutated = ChallanSyncModule.mergeIncomingChallanEnvelope(phWeb.saleChallans, envelope);
+          final bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
+          } else {
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
+          }
+          mutated = SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(phWeb.saleChallans, envelope);
           break;
         case 'PURCHASE_CHALLAN':
-          mutated = ChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phWeb.purchaseChallans, envelope);
+          final pBill = envelope.billData;
+          final iNo = (pBill['internalNo'] ?? '').toString().trim().toUpperCase();
+          final bNo = (pBill['billNo'] ?? '').toString().trim().toUpperCase();
+          final pId = (pBill['partyId'] ?? '').toString().trim().toUpperCase();
+          final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            phWeb.purgeDeletedIds([envelope.syncId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo, if (comp2.isNotEmpty) comp2]);
+          } else {
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: iNo.isNotEmpty ? iNo : bNo);
+            if (comp2.isNotEmpty) phWeb.unmarkDeletedId(comp2);
+          }
+          mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phWeb.purchaseChallans, envelope);
           break;
         case 'SALE_RETURN':
         case 'CREDIT_NOTE':

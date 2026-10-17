@@ -2,6 +2,8 @@ import '../sync_core/modules/returns_sync_module.dart';
 import "../sync_core/d1_sales_ledger_service.dart";
 import '../sync_core/modules/sales_sync_module.dart';
 import '../sync_core/modules/purchase_sync_module.dart';
+import '../sync_core/modules/sale_challan_sync_module.dart';
+import '../sync_core/modules/purchase_challan_sync_module.dart';
 import '../sync_core/modules/challan_sync_module.dart';
 import '../sync_core/modules/voucher_sync_module.dart';
 // FILE: lib/web_live_sync/pharoah_web_manager.dart
@@ -569,7 +571,7 @@ class PharoahWebManager with ChangeNotifier {
       vouchers = masterVoucMap.values.toList();
     }
 
-    // 4. Sale Challans Sync with Anti-Zombie Multi-Key Protection
+    // 4. Sale Challans Sync with Anti-Zombie Multi-Key Protection & Chronological LWW Guard
     var allParsedSCh = (decodeJson('s_challan.json') as List?)
         ?.map((e) => SaleChallan.fromMap(e))
         .toList();
@@ -577,11 +579,20 @@ class PharoahWebManager with ChangeNotifier {
       for (var c in allParsedSCh) {
         if (c.isDeleted == 1) continue;
         final String cleanBNo = c.billNo.trim().toUpperCase();
-        if ((c.id.isNotEmpty && deletedRecordIds.contains(c.id)) ||
-            (cleanBNo.isNotEmpty && deletedRecordIds.contains(cleanBNo)) ||
-            (c.id.isNotEmpty && localTombstoneRegistry.containsKey(c.id)) ||
-            (cleanBNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBNo))) {
-          continue;
+        if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) {
+          continue; // Blocked by immutable ID tombstone
+        }
+        int secDelTs = 0;
+        if (cleanBNo.isNotEmpty) {
+          final t = localTombstoneRegistry[cleanBNo] ?? localTombstoneRegistry[cleanBNo.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (secDelTs > 0 && secDelTs >= c.updatedAt) {
+          continue; // Blocked by newer or same age series tombstone
+        }
+        if (cleanBNo.isNotEmpty) {
+          deletedRecordIds.remove(cleanBNo);
+          deletedRecordIds.remove(cleanBNo.toUpperCase());
         }
         int idx = saleChallans.indexWhere((lc) => 
           (c.id.isNotEmpty && lc.id == c.id) ||
@@ -596,9 +607,29 @@ class PharoahWebManager with ChangeNotifier {
           saleChallans.insert(0, c);
         }
       }
+      Map<String, SaleChallan> masterSChMap = {};
+      for (var c in saleChallans) {
+        String key = c.billNo.trim().toUpperCase();
+        if (key.isEmpty) key = c.id.trim();
+        if (!masterSChMap.containsKey(key) || c.version >= masterSChMap[key]!.version) {
+          masterSChMap[key] = c;
+        }
+      }
+      saleChallans = masterSChMap.values.where((c) {
+        final bNo = c.billNo.trim().toUpperCase();
+        if (D1SalesLedgerService.isBillDeleted(c.id, c.billNo)) return false;
+        if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
+        int secDelTs = 0;
+        if (bNo.isNotEmpty) {
+          final t = localTombstoneRegistry[bNo] ?? localTombstoneRegistry[bNo.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (secDelTs > 0 && secDelTs >= c.updatedAt) return false;
+        return true;
+      }).toList();
     }
 
-    // 5. Purchase Challans Sync with Anti-Zombie Multi-Key Protection
+    // 5. Purchase Challans Sync with Anti-Zombie Multi-Key Protection & Chronological LWW Guard
     var allParsedPCh = (decodeJson('p_challan.json') as List?)
         ?.map((e) => PurchaseChallan.fromMap(e))
         .toList();
@@ -607,13 +638,38 @@ class PharoahWebManager with ChangeNotifier {
         if (c.isDeleted == 1) continue;
         final String cleanINo = c.internalNo.trim().toUpperCase();
         final String cleanBNo = c.billNo.trim().toUpperCase();
-        if ((c.id.isNotEmpty && deletedRecordIds.contains(c.id)) ||
-            (cleanINo.isNotEmpty && deletedRecordIds.contains(cleanINo)) ||
-            (cleanBNo.isNotEmpty && deletedRecordIds.contains(cleanBNo)) ||
-            (c.id.isNotEmpty && localTombstoneRegistry.containsKey(c.id)) ||
-            (cleanINo.isNotEmpty && localTombstoneRegistry.containsKey(cleanINo)) ||
-            (cleanBNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanBNo))) {
-          continue;
+        final String cleanPId = c.partyId.trim().toUpperCase();
+        final String compKey = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
+        if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) {
+          continue; // Blocked by immutable ID tombstone
+        }
+        int secDelTs = 0;
+        if (cleanINo.isNotEmpty) {
+          final t = localTombstoneRegistry[cleanINo] ?? localTombstoneRegistry[cleanINo.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (cleanBNo.isNotEmpty) {
+          final t = localTombstoneRegistry[cleanBNo] ?? localTombstoneRegistry[cleanBNo.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (compKey.isNotEmpty) {
+          final t = localTombstoneRegistry[compKey] ?? localTombstoneRegistry[compKey.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (secDelTs > 0 && secDelTs >= c.updatedAt) {
+          continue; // Blocked by newer or same age series tombstone
+        }
+        if (cleanINo.isNotEmpty) {
+          deletedRecordIds.remove(cleanINo);
+          deletedRecordIds.remove(cleanINo.toUpperCase());
+        }
+        if (cleanBNo.isNotEmpty) {
+          deletedRecordIds.remove(cleanBNo);
+          deletedRecordIds.remove(cleanBNo.toUpperCase());
+        }
+        if (compKey.isNotEmpty) {
+          deletedRecordIds.remove(compKey);
+          deletedRecordIds.remove(compKey.toUpperCase());
         }
         int idx = purchaseChallans.indexWhere((lc) => 
           (c.id.isNotEmpty && lc.id == c.id) ||
@@ -629,6 +685,40 @@ class PharoahWebManager with ChangeNotifier {
           purchaseChallans.insert(0, c);
         }
       }
+      Map<String, PurchaseChallan> masterPChMap = {};
+      for (var c in purchaseChallans) {
+        String key = c.internalNo.trim().toUpperCase();
+        if (key.isEmpty && c.partyId.isNotEmpty && c.billNo.isNotEmpty) {
+          key = "${c.partyId.trim().toUpperCase()}_${c.billNo.trim().toUpperCase()}";
+        }
+        if (key.isEmpty) key = c.id.trim();
+        if (!masterPChMap.containsKey(key) || c.version >= masterPChMap[key]!.version) {
+          masterPChMap[key] = c;
+        }
+      }
+      purchaseChallans = masterPChMap.values.where((c) {
+        final iNo = c.internalNo.trim().toUpperCase();
+        final bNo = c.billNo.trim().toUpperCase();
+        final pId = c.partyId.trim().toUpperCase();
+        final comp = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
+        if (D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo)) return false;
+        if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
+        int secDelTs = 0;
+        if (iNo.isNotEmpty) {
+          final t = localTombstoneRegistry[iNo] ?? localTombstoneRegistry[iNo.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (bNo.isNotEmpty) {
+          final t = localTombstoneRegistry[bNo] ?? localTombstoneRegistry[bNo.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (comp.isNotEmpty) {
+          final t = localTombstoneRegistry[comp] ?? localTombstoneRegistry[comp.toUpperCase()] ?? 0;
+          if (t > secDelTs) secDelTs = t;
+        }
+        if (secDelTs > 0 && secDelTs >= c.updatedAt) return false;
+        return true;
+      }).toList();
     }
 
     // 6. Sale Returns Sync with Anti-Zombie Multi-Key Protection
@@ -1167,25 +1257,155 @@ class PharoahWebManager with ChangeNotifier {
     );
   }
 
+  void addSaleChallanAndSync(SaleChallan challan) {
+    unmarkDeletedId(challan.id, referenceNo: challan.billNo);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(challan.id, challan.billNo);
+
+    final cleanBNo = challan.billNo.trim().toUpperCase();
+    final int existingIdx = saleChallans.indexWhere((c) =>
+      c.id == challan.id ||
+      (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo)
+    );
+    final bool isUpdate = existingIdx != -1;
+    if (isUpdate && saleChallans[existingIdx].version >= challan.version) {
+      challan.version = saleChallans[existingIdx].version + 1;
+    }
+    challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+    if (isUpdate) {
+      saleChallans[existingIdx] = challan;
+    } else {
+      saleChallans.insert(0, challan);
+    }
+    SaleChallanSyncModule.onSaleChallanSaved(challan, activeStoreToken);
+
+    for (var item in challan.items) {
+      String resolvedKey = item.medicineID;
+      try {
+        final med = medicines.firstWhere((m) => m.id == item.medicineID);
+        resolvedKey = med.identityKey;
+      } catch (_) {}
+
+      registerBatchActivity(
+        productKey: resolvedKey,
+        batchNo: item.batch,
+        exp: item.exp,
+        packing: item.packing,
+        mrp: item.mrp,
+        rate: item.rate,
+        rateA: item.appliedRateType == "A" ? item.rate : 0.0,
+        rateB: item.appliedRateType == "B" ? item.rate : 0.0,
+        rateC: item.appliedRateType == "C" ? item.rate : 0.0,
+        rateCFormula: item.rateCFormula,
+        appliedRateType: item.appliedRateType,
+      );
+    }
+    rebuildInventory();
+    notifyListeners();
+
+    _autoSyncService.triggerAutoSync(
+      action: 'DATA_SAVED',
+      entityId: challan.id,
+      unmarkedIds: [
+        challan.id,
+        if (challan.billNo.isNotEmpty) challan.billNo,
+      ],
+    );
+  }
+
+  void addPurchaseChallanAndSync(PurchaseChallan challan) {
+    final compKey = PurchaseChallanSyncModule.makeCompositeKey(challan.partyId, challan.billNo, challan.internalNo);
+    unmarkDeletedId(challan.id, referenceNo: challan.internalNo);
+    if (challan.billNo.isNotEmpty) unmarkDeletedId(challan.billNo);
+    if (compKey.isNotEmpty) unmarkDeletedId(compKey);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(challan.id, challan.billNo, challan.internalNo);
+
+    final cleanINo = challan.internalNo.trim().toUpperCase();
+    final cleanBNo = challan.billNo.trim().toUpperCase();
+    final cleanParty = challan.partyId.trim().toUpperCase();
+
+    final int existingIdx = purchaseChallans.indexWhere((c) =>
+      c.id == challan.id ||
+      (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo) ||
+      (cleanBNo.isNotEmpty && cleanParty.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.partyId.trim().toUpperCase() == cleanParty)
+    );
+    final bool isUpdate = existingIdx != -1;
+    if (isUpdate && purchaseChallans[existingIdx].version >= challan.version) {
+      challan.version = purchaseChallans[existingIdx].version + 1;
+    }
+    challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+    if (isUpdate) {
+      purchaseChallans[existingIdx] = challan;
+    } else {
+      purchaseChallans.insert(0, challan);
+    }
+    PurchaseChallanSyncModule.onPurchaseChallanSaved(challan, activeStoreToken);
+
+    for (var item in challan.items) {
+      String resolvedKey = item.medicineID;
+      try {
+        final med = medicines.firstWhere((m) => m.id == item.medicineID);
+        resolvedKey = med.identityKey;
+        med.purRate = item.purchaseRate;
+        if (item.mrp > 0) med.mrp = item.mrp;
+        if (item.rateA > 0) med.rateA = item.rateA;
+        if (item.rateB > 0) med.rateB = item.rateB;
+        if (item.rateC > 0) med.rateC = item.rateC;
+        updateMedicine(med);
+      } catch (_) {}
+
+      registerBatchActivity(
+        productKey: resolvedKey,
+        batchNo: item.batch,
+        exp: item.exp,
+        packing: item.packing,
+        mrp: item.mrp,
+        rate: item.purchaseRate,
+        rateA: item.rateA,
+        rateB: item.rateB,
+        rateC: item.rateC,
+        rateCFormula: item.rateCFormula,
+        appliedRateType: item.appliedRateType,
+      );
+    }
+    rebuildInventory();
+    notifyListeners();
+
+    _autoSyncService.triggerAutoSync(
+      action: 'DATA_SAVED',
+      entityId: challan.id,
+      unmarkedIds: [
+        challan.id,
+        if (challan.internalNo.isNotEmpty) challan.internalNo,
+        if (challan.billNo.isNotEmpty) challan.billNo,
+        if (compKey.isNotEmpty) compKey,
+      ],
+    );
+  }
+
   void deleteSaleChallan(String challanId) {
     String bNo = "";
     try {
       final targetC = saleChallans.firstWhere((item) => item.id == challanId || item.billNo == challanId);
       bNo = targetC.billNo.trim().toUpperCase();
-      ChallanSyncModule.onChallanDeleted(targetC, activeStoreToken);
+      SaleChallanSyncModule.onSaleChallanDeleted(targetC, activeStoreToken);
     } catch (_) {}
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final List<String> delKeys = [challanId, if (bNo.isNotEmpty) bNo];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
+      localTombstoneRegistry[k.toUpperCase()] = delTime;
       deletedRecordIds.add(k);
+      deletedRecordIds.add(k.toUpperCase());
       unmarkedRecordIds.remove(k);
+      unmarkedRecordIds.remove(k.toUpperCase());
     }
     _saveLocalTombstones();
     saleChallans.removeWhere((item) => item.id == challanId || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
-      action: 'RECORD_DELETED',
+      action: 'DELETE_SALE_CHALLAN',
       entityId: challanId,
       deletedIds: delKeys,
     );
@@ -1194,24 +1414,37 @@ class PharoahWebManager with ChangeNotifier {
   void deletePurchaseChallan(String challanId) {
     String iNo = "";
     String bNo = "";
+    String pId = "";
+    String compKey = "";
     try {
       final targetC = purchaseChallans.firstWhere((item) => item.id == challanId || item.internalNo == challanId || item.billNo == challanId);
       iNo = targetC.internalNo.trim().toUpperCase();
       bNo = targetC.billNo.trim().toUpperCase();
+      pId = targetC.partyId.trim().toUpperCase();
+      compKey = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
+      PurchaseChallanSyncModule.onPurchaseChallanDeleted(targetC, activeStoreToken);
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(challanId, bNo, iNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final List<String> delKeys = [challanId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo];
+    final List<String> delKeys = [
+      challanId,
+      if (iNo.isNotEmpty) iNo,
+      if (bNo.isNotEmpty) bNo,
+      if (compKey.isNotEmpty) compKey,
+    ];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
+      localTombstoneRegistry[k.toUpperCase()] = delTime;
       deletedRecordIds.add(k);
+      deletedRecordIds.add(k.toUpperCase());
       unmarkedRecordIds.remove(k);
+      unmarkedRecordIds.remove(k.toUpperCase());
     }
     _saveLocalTombstones();
     purchaseChallans.removeWhere((item) => item.id == challanId || (iNo.isNotEmpty && item.internalNo.trim().toUpperCase() == iNo) || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
     notifyListeners();
     _autoSyncService.triggerAutoSync(
-      action: 'RECORD_DELETED',
+      action: 'DELETE_PURCHASE_CHALLAN',
       entityId: challanId,
       deletedIds: delKeys,
     );
