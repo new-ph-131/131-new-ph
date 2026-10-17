@@ -1328,7 +1328,7 @@ void registerBatchActivity({
       purchaseReturns[i] = updatedPReturn;
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) ReturnsSyncModule.onPurchaseReturnSaved(updatedPReturn, t);
+          if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteSaved(updatedPReturn, t);
         });
       }
 

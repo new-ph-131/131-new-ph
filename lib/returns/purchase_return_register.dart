@@ -197,9 +197,13 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
           children: [
             Text(ret.distributorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const Divider(),
+            _menuTile(Icons.edit_rounded, "Modify Debit Note", Colors.amber.shade900, () {
+              Navigator.pop(c);
+              Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: ret)));
+            }),
             _menuTile(Icons.visibility_outlined, "View DN Items", Colors.blue, () {
               Navigator.pop(c);
-              Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView())); // Can add readOnly later
+              Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: ret, isReadOnly: true)));
             }),
             _menuTile(Icons.print_rounded, "Print Debit Note", Colors.teal, () {
               Navigator.pop(c);
