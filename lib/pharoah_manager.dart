@@ -340,7 +340,7 @@ class PharoahManager with ChangeNotifier {
     sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
     purchases = (load('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
-        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, partyId: p.partyId, billNo: p.billNo, internalNo: p.internalNo))
+        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
         .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
@@ -1861,7 +1861,7 @@ void registerBatchActivity({
     sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
     purchases = (load('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
-        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, partyId: p.partyId, billNo: p.billNo, internalNo: p.internalNo))
+        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
         .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
