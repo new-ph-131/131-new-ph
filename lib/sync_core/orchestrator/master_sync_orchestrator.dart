@@ -8,6 +8,8 @@ import '../modules/sale_challan_sync_module.dart';
 import '../modules/purchase_challan_sync_module.dart';
 import '../modules/challan_sync_module.dart';
 import '../modules/returns_sync_module.dart';
+import '../modules/credit_note_sync_module.dart';
+import '../modules/debit_note_sync_module.dart';
 import '../modules/voucher_sync_module.dart';
 import '../../inventory_logic_center.dart';
 import '../../pharoah_manager.dart';
@@ -104,11 +106,35 @@ class MasterSyncOrchestrator {
           break;
         case 'SALE_RETURN':
         case 'CREDIT_NOTE':
-          mutated = ReturnsSyncModule.mergeIncomingSaleReturn(phApp.saleReturns, envelope);
+          final bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (bNo.isNotEmpty) bNo]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: bNo);
+            }
+          }
+          mutated = CreditNoteSyncModule.mergeIncomingCreditNoteEnvelope(phApp.saleReturns, envelope);
           break;
         case 'PURCHASE_RETURN':
         case 'DEBIT_NOTE':
-          mutated = ReturnsSyncModule.mergeIncomingPurchaseReturn(phApp.purchaseReturns, envelope);
+          final bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (bNo.isNotEmpty) bNo]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: bNo);
+            }
+          }
+          mutated = DebitNoteSyncModule.mergeIncomingDebitNoteEnvelope(phApp.purchaseReturns, envelope);
           break;
         case 'VOUCHER':
           mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phApp.vouchers, envelope);
@@ -185,11 +211,23 @@ class MasterSyncOrchestrator {
           break;
         case 'SALE_RETURN':
         case 'CREDIT_NOTE':
-          mutated = ReturnsSyncModule.mergeIncomingSaleReturn(phWeb.saleReturns, envelope);
+          final bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
+          } else {
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
+          }
+          mutated = CreditNoteSyncModule.mergeIncomingCreditNoteEnvelope(phWeb.saleReturns, envelope);
           break;
         case 'PURCHASE_RETURN':
         case 'DEBIT_NOTE':
-          mutated = ReturnsSyncModule.mergeIncomingPurchaseReturn(phWeb.purchaseReturns, envelope);
+          final bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
+          } else {
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
+          }
+          mutated = DebitNoteSyncModule.mergeIncomingDebitNoteEnvelope(phWeb.purchaseReturns, envelope);
           break;
         case 'VOUCHER':
           mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phWeb.vouchers, envelope);

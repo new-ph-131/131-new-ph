@@ -203,44 +203,77 @@ class _PurchaseChallanViewState extends State<PurchaseChallanView> {
     )
   );
 
-  Widget _buildSupplierList(PharoahManager ph) => Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: "Search Distributor...", 
-                  prefixIcon: const Icon(Icons.search, color: Colors.amber), 
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  filled: true, fillColor: Colors.white
-                ), 
-                onChanged: (v) => setState(() => searchQuery = v)
-              )
-            ),
-            const SizedBox(width: 10),
-            IconButton.filled(
-              onPressed: _handleQuickAddSupplier, 
-              icon: const Icon(Icons.person_add_alt_1), 
-              style: IconButton.styleFrom(backgroundColor: Colors.amber.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))
-            ),
-          ]
-        )
-      ),
-      const SizedBox(height: 10),
-      Expanded(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          children: ph.parties.where((p) => p.group == "Sundry Creditors" && p.name.toLowerCase().contains(searchQuery.toLowerCase())).map((p) => ListTile(
-            leading: const Icon(Icons.business_outlined, color: Colors.grey),
-            title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(p.city),
-            onTap: () => setState(() => selectedDistributor = p),
-          )).toList(),
+  bool _isCreditorGroup(String group) {
+    final g = group.trim().toLowerCase();
+    return g.contains("creditor") || g.contains("supplier") || g.contains("vendor") || g.contains("distributor");
+  }
+
+  bool _isSystemNonParty(Party p) {
+    final nameUpper = p.name.trim().toUpperCase();
+    final grpLower = p.group.trim().toLowerCase();
+    if (nameUpper == "CASH") return true;
+    if (grpLower == "bank accounts" || grpLower == "cash in hand" || grpLower == "expenses") return true;
+    return false;
+  }
+
+  Widget _buildSupplierList(PharoahManager ph) {
+    final query = searchQuery.trim().toLowerCase();
+    final matchingParties = ph.parties.where((p) {
+      if (_isSystemNonParty(p)) return false;
+      if (query.isEmpty) return true;
+      return p.name.toLowerCase().contains(query) ||
+             p.city.toLowerCase().contains(query) ||
+             p.gst.toLowerCase().contains(query) ||
+             p.group.toLowerCase().contains(query) ||
+             p.phone.toLowerCase().contains(query);
+    }).toList();
+
+    matchingParties.sort((a, b) {
+      final aCred = _isCreditorGroup(a.group);
+      final bCred = _isCreditorGroup(b.group);
+      if (aCred != bCred) return aCred ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: "Search Distributor...", 
+                    prefixIcon: const Icon(Icons.search, color: Colors.amber), 
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    filled: true, fillColor: Colors.white
+                  ), 
+                  onChanged: (v) => setState(() => searchQuery = v)
+                )
+              ),
+              const SizedBox(width: 10),
+              IconButton.filled(
+                onPressed: _handleQuickAddSupplier, 
+                icon: const Icon(Icons.person_add_alt_1), 
+                style: IconButton.styleFrom(backgroundColor: Colors.amber.shade900, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))
+              ),
+            ]
+          )
         ),
-      )
-    ],
-  );
+        const SizedBox(height: 10),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            children: matchingParties.map((p) => ListTile(
+              leading: const Icon(Icons.business_outlined, color: Colors.grey),
+              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(p.city.isNotEmpty ? "${p.city} • ${p.group}" : p.group),
+              onTap: () => setState(() => selectedDistributor = p),
+            )).toList(),
+          ),
+        )
+      ],
+    );
+  }
 }

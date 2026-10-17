@@ -89,57 +89,12 @@ class DebitNoteMechanism {
     required String returnType,
     String? existingId,
   }) async {
-    // अगर एडिट मोड है तो पुराना डेबिट नोट हटाएं
-    if (existingId != null) { webPh.purchaseReturns.removeWhere((r) => r.id == existingId); }
-
-    final newReturn = PurchaseReturn(
-      id: noteId,
-      billNo: noteNo,
-      distributorName: supplier.name,
-      date: date,
-      items: List.from(items),
-      totalAmount: totalAmount,
-      extraDiscount: extraDiscount,
-      roundOff: roundOff,
-      returnType: returnType,
-      status: "Active",
-    );
-
-    webPh.purchaseReturns.add(newReturn);
-
-    // 2-Way Batch Inventory Activity (Stock OUT -)
-    for (var item in items) {
-      String resolvedKey = item.medicineID;
-      try {
-        final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
-        resolvedKey = med.identityKey;
-      } catch (_) {}
-
-      // अगर आइटम Sellable है, तो स्टॉक घटेगा -(qty + freeQty)
-      // अगर Breakage/Expiry है, तो बेचने लायक स्टॉक में 0 परिवर्तन होगा
-      double qtyChange = item.isBreakage ? 0.0 : -(item.qty + item.freeQty);
-
-      webPh.registerBatchActivity(
-        productKey: resolvedKey,
-        batchNo: item.batch,
-        exp: item.exp,
-        packing: item.packing,
-        mrp: item.mrp,
-        rate: item.purchaseRate,
-        rateA: item.rateA,
-        rateB: item.rateB,
-        rateC: item.rateC,
-        rateCFormula: item.rateCFormula,
-        appliedRateType: item.appliedRateType,
-        qtyChange: qtyChange,
-      );
-    }
+    webPh.addPurchaseReturnAndSync(newReturn);
 
     // सप्लायर के बकाए (Payable) में से डेबिट नोट घटाएं
     supplier.opBal -= totalAmount;
     webPh.updateParty(supplier);
 
-    webPh.rebuildInventory();
     return await webPh.pushUpdatedDataToCloud();
   }
 }

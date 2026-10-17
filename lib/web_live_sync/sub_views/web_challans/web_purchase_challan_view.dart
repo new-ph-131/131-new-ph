@@ -63,7 +63,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
         }
         setState(() => isLoading = false);
       } else {
-        String nextNo = webPh.getNextBillNumber("PURCHASE_CHALLAN", "PCH-", 1);
+        String nextNo = webPh.getNextBillNumber("PURCHASE_CHALLAN", "WPCH-", 1);
         setState(() {
           internalNoC.text = nextNo;
           selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
@@ -358,18 +358,39 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
         ),
       );
 
+  bool _isCreditorGroup(String group) {
+    final g = group.trim().toLowerCase();
+    return g.contains("creditor") || g.contains("supplier") || g.contains("vendor") || g.contains("distributor");
+  }
+
+  bool _isSystemNonParty(Party p) {
+    final nameUpper = p.name.trim().toUpperCase();
+    final grpLower = p.group.trim().toLowerCase();
+    if (nameUpper == "CASH") return true;
+    if (grpLower == "bank accounts" || grpLower == "cash in hand" || grpLower == "expenses") return true;
+    return false;
+  }
+
   Widget _buildSupplierList(PharoahWebManager webPh) {
     final query = searchQuery.trim().toLowerCase();
     final matchingSuppliers = webPh.parties.where((p) {
-      if (query.isEmpty) {
-        return p.group.toLowerCase().contains("creditor") || p.group.toLowerCase().contains("supplier") || p.group.isEmpty;
-      }
+      if (_isSystemNonParty(p)) return false;
+      if (query.isEmpty) return true;
       final name = p.name.toLowerCase();
       final city = p.city.toLowerCase();
       final gst = p.gst.toLowerCase();
       final phone = p.phone.toLowerCase();
-      return name.contains(query) || city.contains(query) || gst.contains(query) || phone.contains(query);
+      final grp = p.group.toLowerCase();
+      return name.contains(query) || city.contains(query) || gst.contains(query) || phone.contains(query) || grp.contains(query);
     }).toList();
+
+    // Sort: Creditors / Suppliers always appear at the top, then alphabetically
+    matchingSuppliers.sort((a, b) {
+      final aCred = _isCreditorGroup(a.group);
+      final bCred = _isCreditorGroup(b.group);
+      if (aCred != bCred) return aCred ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

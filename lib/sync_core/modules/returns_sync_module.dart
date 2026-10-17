@@ -1,129 +1,41 @@
 // FILE: lib/sync_core/modules/returns_sync_module.dart
-import 'package:flutter/foundation.dart';
 import '../../models.dart';
 import '../models/sync_envelope.dart';
-import '../outbox/sync_queue_manager.dart';
+import 'credit_note_sync_module.dart';
+import 'debit_note_sync_module.dart';
 
-/// ReturnsSyncModule: Isolated Synchronization & Conflict Resolution Engine for Returns
-/// (Sale Return / Credit Note & Purchase Return / Debit Note).
-/// Conforms to Enterprise File Separation Architecture.
+export 'credit_note_sync_module.dart';
+export 'debit_note_sync_module.dart';
+
+/// Legacy adapter maintaining backward compatibility.
+/// Delegates directly to the isolated CreditNoteSyncModule and DebitNoteSyncModule.
 class ReturnsSyncModule {
-  static const String docTypeSaleReturn = "SALE_RETURN";
-  static const String docTypePurchaseReturn = "PURCHASE_RETURN";
+  static const String docTypeSaleReturn = CreditNoteSyncModule.docTypeSaleReturn;
+  static const String docTypePurchaseReturn = DebitNoteSyncModule.docTypePurchaseReturn;
 
-  // --- SALE RETURN (CREDIT NOTE) ---
-  static void onSaleReturnSaved(SaleReturn ret, String storeToken) {
-    if (storeToken.trim().isEmpty) return;
-    SyncQueueManager.enqueueMutation(
-      syncId: ret.id,
-      storeToken: storeToken,
-      docType: docTypeSaleReturn,
-      currentVersion: ret.version,
-      isDelete: false,
-      rawPayload: ret.toMap(),
-    );
-  }
+  // --- SALE RETURN (CREDIT NOTE) DELEGATIONS ---
+  static void onSaleReturnSaved(SaleReturn ret, String storeToken) =>
+      CreditNoteSyncModule.onCreditNoteSaved(ret, storeToken);
 
-  static void onSaleReturnDeleted(SaleReturn ret, String storeToken) {
-    if (storeToken.trim().isEmpty) return;
-    ret.isDeleted = 1;
-    ret.status = "Cancelled";
-    ret.version += 1;
-    ret.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    SyncQueueManager.enqueueMutation(
-      syncId: ret.id,
-      storeToken: storeToken,
-      docType: docTypeSaleReturn,
-      currentVersion: ret.version,
-      isDelete: true,
-      rawPayload: ret.toMap(),
-    );
-  }
+  static void onSaleReturnDeleted(SaleReturn ret, String storeToken) =>
+      CreditNoteSyncModule.onCreditNoteDeleted(ret, storeToken);
 
-  static bool mergeIncomingSaleReturn(List<SaleReturn> currentList, SyncEnvelope envelope) {
-    if (envelope.documentType != docTypeSaleReturn && envelope.documentType != "CREDIT_NOTE") return false;
-    final targetId = envelope.syncId.trim();
-    if (targetId.isEmpty) return false;
-    final incoming = SaleReturn.fromMap(envelope.billData);
-    incoming.id = targetId;
-    incoming.version = envelope.version;
-    incoming.updatedAt = envelope.updatedAt;
-    incoming.isDeleted = envelope.isDeleted;
+  static bool mergeIncomingSaleReturn(List<SaleReturn> currentList, SyncEnvelope envelope) =>
+      CreditNoteSyncModule.mergeIncomingCreditNoteEnvelope(currentList, envelope);
 
-    final idx = currentList.indexWhere((r) => r.id == incoming.id || (incoming.billNo.isNotEmpty && r.billNo.trim().toUpperCase() == incoming.billNo.trim().toUpperCase()));
-    if (incoming.isDeleted == 1) {
-      if (idx != -1) {
-        currentList.removeAt(idx);
-        return true;
-      }
-      return false;
-    }
-    if (idx != -1) {
-      final local = currentList[idx];
-      if (incoming.version <= local.version && incoming.updatedAt < local.updatedAt) return false;
-      currentList[idx] = incoming;
-      return true;
-    } else {
-      currentList.insert(0, incoming);
-      return true;
-    }
-  }
+  static bool applySaleReturnMutation(List<SaleReturn> currentList, SaleReturn incoming) =>
+      CreditNoteSyncModule.applyCreditNoteMutation(currentList, incoming);
 
-  // --- PURCHASE RETURN (DEBIT NOTE) ---
-  static void onPurchaseReturnSaved(PurchaseReturn ret, String storeToken) {
-    if (storeToken.trim().isEmpty) return;
-    SyncQueueManager.enqueueMutation(
-      syncId: ret.id,
-      storeToken: storeToken,
-      docType: docTypePurchaseReturn,
-      currentVersion: ret.version,
-      isDelete: false,
-      rawPayload: ret.toMap(),
-    );
-  }
+  // --- PURCHASE RETURN (DEBIT NOTE) DELEGATIONS ---
+  static void onPurchaseReturnSaved(PurchaseReturn ret, String storeToken) =>
+      DebitNoteSyncModule.onDebitNoteSaved(ret, storeToken);
 
-  static void onPurchaseReturnDeleted(PurchaseReturn ret, String storeToken) {
-    if (storeToken.trim().isEmpty) return;
-    ret.isDeleted = 1;
-    ret.status = "Cancelled";
-    ret.version += 1;
-    ret.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    SyncQueueManager.enqueueMutation(
-      syncId: ret.id,
-      storeToken: storeToken,
-      docType: docTypePurchaseReturn,
-      currentVersion: ret.version,
-      isDelete: true,
-      rawPayload: ret.toMap(),
-    );
-  }
+  static void onPurchaseReturnDeleted(PurchaseReturn ret, String storeToken) =>
+      DebitNoteSyncModule.onDebitNoteDeleted(ret, storeToken);
 
-  static bool mergeIncomingPurchaseReturn(List<PurchaseReturn> currentList, SyncEnvelope envelope) {
-    if (envelope.documentType != docTypePurchaseReturn && envelope.documentType != "DEBIT_NOTE") return false;
-    final targetId = envelope.syncId.trim();
-    if (targetId.isEmpty) return false;
-    final incoming = PurchaseReturn.fromMap(envelope.billData);
-    incoming.id = targetId;
-    incoming.version = envelope.version;
-    incoming.updatedAt = envelope.updatedAt;
-    incoming.isDeleted = envelope.isDeleted;
+  static bool mergeIncomingPurchaseReturn(List<PurchaseReturn> currentList, SyncEnvelope envelope) =>
+      DebitNoteSyncModule.mergeIncomingDebitNoteEnvelope(currentList, envelope);
 
-    final idx = currentList.indexWhere((r) => r.id == incoming.id || (incoming.billNo.isNotEmpty && r.billNo.trim().toUpperCase() == incoming.billNo.trim().toUpperCase()));
-    if (incoming.isDeleted == 1) {
-      if (idx != -1) {
-        currentList.removeAt(idx);
-        return true;
-      }
-      return false;
-    }
-    if (idx != -1) {
-      final local = currentList[idx];
-      if (incoming.version <= local.version && incoming.updatedAt < local.updatedAt) return false;
-      currentList[idx] = incoming;
-      return true;
-    } else {
-      currentList.insert(0, incoming);
-      return true;
-    }
-  }
+  static bool applyPurchaseReturnMutation(List<PurchaseReturn> currentList, PurchaseReturn incoming) =>
+      DebitNoteSyncModule.applyDebitNoteMutation(currentList, incoming);
 }

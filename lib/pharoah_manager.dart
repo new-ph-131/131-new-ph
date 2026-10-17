@@ -6,6 +6,8 @@ import 'sync_core/modules/purchase_challan_sync_module.dart';
 import 'sync_core/modules/challan_sync_module.dart';
 import 'sync_core/modules/voucher_sync_module.dart';
 import 'sync_core/modules/returns_sync_module.dart';
+import 'sync_core/modules/credit_note_sync_module.dart';
+import 'sync_core/modules/debit_note_sync_module.dart';
 import 'event_sync_lab/workflow/lab_sync_orchestrator.dart';
 // FILE: lib/pharoah_manager.dart (FULLY INTEGRATED, COMPILE-SAFE VERSION)
 
@@ -353,8 +355,14 @@ class PharoahManager with ChangeNotifier {
         ?.map((e) => PurchaseChallan.fromMap(e))
         .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
         .toList() ?? [];
-    saleReturns = (load('s_return.json') as List?)?.map((e) => SaleReturn.fromMap(e)).toList() ?? [];
-    purchaseReturns = (load('p_return.json') as List?)?.map((e) => PurchaseReturn.fromMap(e)).toList() ?? [];
+    saleReturns = (load('s_return.json') as List?)
+        ?.map((e) => SaleReturn.fromMap(e))
+        .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+        .toList() ?? [];
+    purchaseReturns = (load('p_return.json') as List?)
+        ?.map((e) => PurchaseReturn.fromMap(e))
+        .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+        .toList() ?? [];
     cheques = (load('cheques.json') as List?)?.map((e) => ChequeEntry.fromMap(e)).toList() ?? [];
     shortages = (load('shortage.json') as List?)?.map((e) => ShortageItem.fromMap(e)).toList() ?? [];
     logs = (load('logs.json') as List?)?.map((e) => LogEntry.fromMap(e)).toList() ?? [];
@@ -904,7 +912,8 @@ Future<void> finalizePurchase({
       currentVer = saleReturns[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: rId, secondaryKey: billNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: rId, secondaryKey: billNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(rId, billNo);
     }
     saleReturns.removeWhere((r) => r.id == rId || (cleanBNo.isNotEmpty && r.billNo.trim().toUpperCase() == cleanBNo));
     final newSReturn = SaleReturn(
@@ -924,7 +933,7 @@ Future<void> finalizePurchase({
     saleReturns.add(newSReturn);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) ReturnsSyncModule.onSaleReturnSaved(newSReturn, t);
+        if (t.isNotEmpty) CreditNoteSyncModule.onCreditNoteSaved(newSReturn, t);
       });
     } 
     
@@ -954,6 +963,12 @@ Future<void> finalizePurchase({
     // Rebuild first, then Save
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: 'SALE_RETURN_SAVED',
+      entityId: rId,
+      unmarkedIds: [rId, if (billNo.isNotEmpty) billNo],
+    );
     notifyListeners();
   }
 
@@ -976,7 +991,8 @@ Future<void> finalizePurchase({
       currentVer = purchaseReturns[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: rId, secondaryKey: billNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: rId, secondaryKey: billNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(rId, billNo);
     }
     purchaseReturns.removeWhere((r) => r.id == rId || (cleanBNo.isNotEmpty && r.billNo.trim().toUpperCase() == cleanBNo));
     final newPReturn = PurchaseReturn(
@@ -989,14 +1005,14 @@ Future<void> finalizePurchase({
       status: "Active", 
       returnType: type, 
       extraDiscount: extraDiscount, 
-      roundOff: roundOff,
+      roundOff: roundOff, 
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       version: currentVer,
     );
     purchaseReturns.add(newPReturn);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) ReturnsSyncModule.onPurchaseReturnSaved(newPReturn, t);
+        if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteSaved(newPReturn, t);
       });
     } 
     
@@ -1026,6 +1042,12 @@ Future<void> finalizePurchase({
     // Rebuild first, then Save
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: 'PURCHASE_RETURN_SAVED',
+      entityId: rId,
+      unmarkedIds: [rId, if (billNo.isNotEmpty) billNo],
+    );
     notifyListeners();
   }
   // ===========================================================================
@@ -1519,6 +1541,9 @@ void registerBatchActivity({
       final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
       D1SalesLedgerService.markPermanentlyDeleted(rId, bNo);
       if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) CreditNoteSyncModule.onCreditNoteDeleted(r, t);
+        });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
@@ -1526,7 +1551,7 @@ void registerBatchActivity({
           entityId: rId,
           deletedIds: delKeys,
         );
-        }
+      }
       saleReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save().then((_) => loadAllData());
     } catch (_) {
@@ -1542,6 +1567,9 @@ void registerBatchActivity({
       final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
       D1SalesLedgerService.markPermanentlyDeleted(rId, bNo);
       if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteDeleted(r, t);
+        });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
@@ -1549,7 +1577,7 @@ void registerBatchActivity({
           entityId: rId,
           deletedIds: delKeys,
         );
-        }
+      }
       purchaseReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save().then((_) => loadAllData());
     } catch (_) {
@@ -1897,8 +1925,14 @@ void registerBatchActivity({
         ?.map((e) => PurchaseChallan.fromMap(e))
         .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
         .toList() ?? [];
-    saleReturns = (load('s_return.json') as List?)?.map((e) => SaleReturn.fromMap(e)).toList() ?? [];
-    purchaseReturns = (load('p_return.json') as List?)?.map((e) => PurchaseReturn.fromMap(e)).toList() ?? [];
+    saleReturns = (load('s_return.json') as List?)
+        ?.map((e) => SaleReturn.fromMap(e))
+        .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+        .toList() ?? [];
+    purchaseReturns = (load('p_return.json') as List?)
+        ?.map((e) => PurchaseReturn.fromMap(e))
+        .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+        .toList() ?? [];
     cheques = (load('cheques.json') as List?)?.map((e) => ChequeEntry.fromMap(e)).toList() ?? [];
     shortages = (load('shortage.json') as List?)?.map((e) => ShortageItem.fromMap(e)).toList() ?? [];
     logs = (load('logs.json') as List?)?.map((e) => LogEntry.fromMap(e)).toList() ?? [];

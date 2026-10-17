@@ -89,57 +89,12 @@ class CreditNoteMechanism {
     required String returnType,
     String? existingId,
   }) async {
-    // अगर एडिट मोड है तो पुराना रिटर्न रिकॉर्ड हटाएं
-    if (existingId != null) { webPh.saleReturns.removeWhere((r) => r.id == existingId); }
-
-    final newReturn = SaleReturn(
-      id: noteId,
-      billNo: noteNo,
-      date: date,
-      partyName: customer.name,
-      items: List.from(items),
-      totalAmount: totalAmount,
-      extraDiscount: extraDiscount,
-      roundOff: roundOff,
-      returnType: returnType,
-      status: "Active",
-    );
-
-    webPh.saleReturns.add(newReturn);
-
-    // 2-Way Batch Inventory Activity
-    for (var item in items) {
-      String resolvedKey = item.medicineID;
-      try {
-        final med = webPh.medicines.firstWhere((m) => m.id == item.medicineID);
-        resolvedKey = med.identityKey;
-      } catch (_) {}
-
-      // अगर आइटम Sellable है, तो स्टॉक बढ़ेगा (qty + freeQty)
-      // अगर Breakage/Expiry है, तो बेचने लायक स्टॉक में 0 जुड़ेगा
-      double qtyChange = item.isBreakage ? 0.0 : (item.qty + item.freeQty);
-
-      webPh.registerBatchActivity(
-        productKey: resolvedKey,
-        batchNo: item.batch,
-        exp: item.exp,
-        packing: item.packing,
-        mrp: item.mrp,
-        rate: item.rate,
-        rateA: item.appliedRateType == "A" ? item.rate : 0.0,
-        rateB: item.appliedRateType == "B" ? item.rate : 0.0,
-        rateC: item.appliedRateType == "C" ? item.rate : 0.0,
-        rateCFormula: item.rateCFormula,
-        appliedRateType: item.appliedRateType,
-        qtyChange: qtyChange,
-      );
-    }
+    webPh.addSaleReturnAndSync(newReturn);
 
     // ग्राहक के लेजर बैलेंस में क्रेडिट घटाएं (कस्टमर का बकाया कम होगा)
     customer.opBal -= totalAmount;
     webPh.updateParty(customer);
 
-    webPh.rebuildInventory();
     return await webPh.pushUpdatedDataToCloud();
   }
 }
