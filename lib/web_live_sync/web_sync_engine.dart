@@ -30,7 +30,9 @@ class WebSyncEngine {
           return {
             'success': true,
             'companyName': result['companyName'] ?? 'STORE WORKSTATION',
-            'fy': result['fy'] ?? '',
+            'fy': (result['fy'] != null && result['fy'].toString().trim().isNotEmpty)
+                ? result['fy'].toString().trim()
+                : '',
             'profile': result['registryProfile'] ?? {},
             'files': result['files'] ?? {},
             'syncedAt': result['syncedAt'] ?? '',

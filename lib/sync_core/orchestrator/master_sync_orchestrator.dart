@@ -1,13 +1,16 @@
 // FILE: lib/sync_core/orchestrator/master_sync_orchestrator.dart
 import 'package:flutter/foundation.dart';
+import '../d1_sales_ledger_service.dart';
 import '../models/sync_envelope.dart';
 import '../modules/sales_sync_module.dart';
 import '../modules/purchase_sync_module.dart';
 import '../modules/challan_sync_module.dart';
 import '../modules/returns_sync_module.dart';
 import '../modules/voucher_sync_module.dart';
+import '../../inventory_logic_center.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
+import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
 
 /// MasterSyncOrchestrator: Combined routing facade merging all domain modules.
 /// Complies with Enterprise File Separation Architecture: Sales, Purchases, Challans,
@@ -32,6 +35,33 @@ class MasterSyncOrchestrator {
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phApp.sales, envelope);
           break;
         case 'PURCHASE':
+          final billData = envelope.billData;
+          final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
+          final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
+          final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
+          final String comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+          final String comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
+            if (phApp.activeCompany != null) {
+              final delKeys = [
+                envelope.syncId,
+                if (iNo.isNotEmpty) iNo,
+                if (comp2.isNotEmpty) comp2,
+                if (comp3.isNotEmpty) comp3,
+              ];
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, delKeys);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
+            if (phApp.activeCompany != null) {
+              final cid = phApp.activeCompany!.id;
+              TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: comp3.isNotEmpty ? comp3 : comp2);
+              if (iNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: iNo);
+              if (comp2.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2);
+              if (bNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: bNo);
+            }
+          }
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope);
           break;
         case 'CHALLAN':
@@ -63,17 +93,38 @@ class MasterSyncOrchestrator {
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phWeb.sales, envelope);
           break;
         case 'PURCHASE':
+          final billData = envelope.billData;
+          final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
+          final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
+          final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
+          final String comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+          final String comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            final billData = envelope.billData;
-            final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
-            final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
-            final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
             final List<String> delList = [
               envelope.syncId,
               if (iNo.isNotEmpty) iNo,
-              if (pId.isNotEmpty && bNo.isNotEmpty) "${pId}_$bNo",
+              if (comp2.isNotEmpty) comp2,
+              if (comp3.isNotEmpty) comp3,
             ];
             phWeb.purgeDeletedIds(delList);
+          } else {
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
+            final List<String> unmList = [
+              envelope.syncId,
+              if (iNo.isNotEmpty) iNo,
+              if (bNo.isNotEmpty) bNo,
+              if (comp2.isNotEmpty) comp2,
+              if (comp3.isNotEmpty) comp3,
+            ];
+            for (final k in unmList) {
+              phWeb.deletedRecordIds.remove(k);
+              phWeb.deletedRecordIds.remove(k.toUpperCase());
+              phWeb.localTombstoneRegistry.remove(k);
+              phWeb.localTombstoneRegistry.remove(k.toUpperCase());
+              phWeb.unmarkedRecordIds.add(k);
+              phWeb.unmarkedRecordIds.add(k.toUpperCase());
+            }
           }
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope);
           break;
@@ -126,7 +177,14 @@ class MasterSyncOrchestrator {
 
     if (appliedCount > 0) {
       if (phApp != null) {
-        phApp.save();
+        InventoryLogicCenter.rebuildAllInventory(
+          medicines: phApp.medicines,
+          batchHistory: phApp.batchHistory,
+          purchases: phApp.purchases,
+          sales: phApp.sales,
+          saleReturns: phApp.saleReturns,
+          purchaseReturns: phApp.purchaseReturns,
+        );
         phApp.notifyListeners();
       }
       if (phWeb != null) {

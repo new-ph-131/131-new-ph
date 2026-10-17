@@ -95,6 +95,10 @@ class D1SalesLedgerService {
   // =========================================================================
   static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
     final cleanId = id.trim();
+    if (cleanId.isNotEmpty) {
+      return _permanentDeletedKeys.contains(cleanId) ||
+             _permanentDeletedKeys.contains(cleanId.toUpperCase());
+    }
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
@@ -102,15 +106,16 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    return (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId)) ||
-           (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId.toUpperCase())) ||
-           (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
+    return (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
            (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
            (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3));
   }
 
   static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = ""]) {
     final cleanId = id.trim();
+    if (cleanId.isNotEmpty) {
+      return _knownBillVersions[cleanId] ?? 0;
+    }
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
@@ -118,7 +123,7 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    int maxV = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
+    int maxV = 0;
     if (cleanInt.isNotEmpty && (_knownBillVersions[cleanInt] ?? 0) > maxV) {
       maxV = _knownBillVersions[cleanInt]!;
     }
@@ -140,16 +145,16 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    if (cleanId.isNotEmpty && version > (_knownBillVersions[cleanId] ?? 0)) {
+    if (cleanId.isNotEmpty) {
       _knownBillVersions[cleanId] = version;
     }
-    if (cleanInt.isNotEmpty && version > (_knownBillVersions[cleanInt] ?? 0)) {
+    if (cleanInt.isNotEmpty) {
       _knownBillVersions[cleanInt] = version;
     }
-    if (compKey2.isNotEmpty && version > (_knownBillVersions[compKey2] ?? 0)) {
+    if (compKey2.isNotEmpty) {
       _knownBillVersions[compKey2] = version;
     }
-    if (compKey3.isNotEmpty && version > (_knownBillVersions[compKey3] ?? 0)) {
+    if (compKey3.isNotEmpty) {
       _knownBillVersions[compKey3] = version;
     }
   }
@@ -161,19 +166,38 @@ class D1SalesLedgerService {
     bool isUpdate = false,
     String clientSource = "APP_MOBILE",
   }) async {
+    unmarkPurchasePermanentlyDeleted(
+      purchase.id,
+      purchase.partyId,
+      purchase.billNo,
+      purchase.internalNo,
+    );
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
       final purMap = purchase.toMap();
       purMap["doc_type"] = "PURCHASE";
-      final String refNo = purchase.internalNo.trim().isNotEmpty
-          ? purchase.internalNo.trim().toUpperCase()
-          : purchase.billNo.trim().toUpperCase();
+      final String cleanParty = purchase.partyId.trim().toUpperCase();
+      final String cleanBill = purchase.billNo.trim().toUpperCase();
+      final String cleanInt = purchase.internalNo.trim().toUpperCase();
+      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+      final String compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+          ? "${cleanParty}_${cleanBill}_$cleanInt"
+          : "";
+      final String refNo = cleanInt.isNotEmpty ? cleanInt : cleanBill;
 
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
         "action": isUpdate ? "UPDATE_PURCHASE" : "INSERT_PURCHASE",
+        "entityId": purchase.id,
+        "unmarkedIds": [
+          purchase.id,
+          if (cleanInt.isNotEmpty) cleanInt,
+          if (cleanBill.isNotEmpty) cleanBill,
+          if (compKey2.isNotEmpty) compKey2,
+          if (compKey3.isNotEmpty) compKey3,
+        ],
         "sale_event": {
           "id": purchase.id,
           "bill_no": refNo,
@@ -579,10 +603,14 @@ class D1SalesLedgerService {
         // INSERT or UPDATE
         if (rawSale is Map<String, dynamic>) {
           final incomingSale = Sale.fromMap(rawSale);
+          if (billId.isNotEmpty) incomingSale.id = billId;
+          incomingSale.version = version;
+          unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo);
           int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
           if (existingIdx != -1) {
-            // OCC / Version Check
-            if (version >= localSales[existingIdx].version) {
+            if (version >= localSales[existingIdx].version ||
+                incomingSale.id != localSales[existingIdx].id ||
+                incomingSale.updatedAt >= localSales[existingIdx].updatedAt) {
               localSales[existingIdx] = incomingSale;
               mutated = true;
             }
@@ -637,6 +665,12 @@ class D1SalesLedgerService {
         final incomingPur = Purchase.fromMap(rawData);
         if (billId.isNotEmpty) incomingPur.id = billId;
         incomingPur.version = version;
+        unmarkPurchasePermanentlyDeleted(
+          incomingPur.id,
+          incomingPur.partyId,
+          incomingPur.billNo,
+          incomingPur.internalNo,
+        );
         recordPurchaseKnownVersion(
           incomingPur.id,
           incomingPur.partyId,
@@ -650,11 +684,13 @@ class D1SalesLedgerService {
           (cleanInt.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanInt)
         );
         if (existingIdx != -1) {
-          if (version >= localPurchases[existingIdx].version) {
+          if (version >= localPurchases[existingIdx].version ||
+              incomingPur.id != localPurchases[existingIdx].id ||
+              incomingPur.updatedAt >= localPurchases[existingIdx].updatedAt) {
             localPurchases[existingIdx] = incomingPur;
             mutated = true;
           }
-        } else if (!isPurchaseDeleted(incomingPur.id, incomingPur.partyId, incomingPur.billNo, incomingPur.internalNo)) {
+        } else {
           localPurchases.insert(0, incomingPur);
           mutated = true;
         }

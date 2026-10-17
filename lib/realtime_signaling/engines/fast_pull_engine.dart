@@ -43,24 +43,83 @@ class FastPullEngine {
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
             final List<String> newTombKeys = [];
+            final List<String> newUnmarkKeys = [];
             for (final ev in edgeEvents) {
               final String action = (ev["action"] ?? "").toString().toUpperCase();
               final String bId = (ev["bill_id"] ?? "").toString().trim();
               final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
               final dynamic rawPayload = ev["sale_data"];
               if (action == "DELETE") {
-                if (bId.isNotEmpty) newTombKeys.add(bId);
-                if (bNo.isNotEmpty) newTombKeys.add(bNo);
+                if (bId.isNotEmpty) {
+                  newTombKeys.add(bId);
+                  newUnmarkKeys.remove(bId);
+                  newUnmarkKeys.remove(bId.toUpperCase());
+                }
+                if (bNo.isNotEmpty) {
+                  newTombKeys.add(bNo);
+                  newUnmarkKeys.remove(bNo);
+                }
                 if (rawPayload is Map) {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                   final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                  if (iNo.isNotEmpty) newTombKeys.add(iNo);
+                  if (iNo.isNotEmpty) {
+                    newTombKeys.add(iNo);
+                    newUnmarkKeys.remove(iNo);
+                  }
                   if (pId.isNotEmpty && pBill.isNotEmpty) {
-                    newTombKeys.add("${pId}_$pBill");
-                    if (iNo.isNotEmpty) newTombKeys.add("${pId}_${pBill}_$iNo");
+                    final c2 = "${pId}_$pBill";
+                    newTombKeys.add(c2);
+                    newUnmarkKeys.remove(c2);
+                    if (iNo.isNotEmpty) {
+                      final c3 = "${pId}_${pBill}_$iNo";
+                      newTombKeys.add(c3);
+                      newUnmarkKeys.remove(c3);
+                    }
                   }
                 }
+              } else {
+                if (bId.isNotEmpty) {
+                  newUnmarkKeys.add(bId);
+                  newTombKeys.remove(bId);
+                  newTombKeys.remove(bId.toUpperCase());
+                }
+                if (bNo.isNotEmpty) {
+                  newUnmarkKeys.add(bNo);
+                  newTombKeys.remove(bNo);
+                }
+                if (rawPayload is Map) {
+                  final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                  final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                  if (iNo.isNotEmpty) {
+                    newUnmarkKeys.add(iNo);
+                    newTombKeys.remove(iNo);
+                  }
+                  if (pBill.isNotEmpty) {
+                    newUnmarkKeys.add(pBill);
+                    newTombKeys.remove(pBill);
+                  }
+                  if (pId.isNotEmpty && pBill.isNotEmpty) {
+                    final c2 = "${pId}_$pBill";
+                    newUnmarkKeys.add(c2);
+                    newTombKeys.remove(c2);
+                    if (iNo.isNotEmpty) {
+                      final c3 = "${pId}_${pBill}_$iNo";
+                      newUnmarkKeys.add(c3);
+                      newTombKeys.remove(c3);
+                    }
+                  }
+                }
+              }
+            }
+            if (newUnmarkKeys.isNotEmpty) {
+              for (final uk in newUnmarkKeys.toSet()) {
+                localRegistry.remove(uk);
+                localRegistry.remove(uk.toUpperCase());
+                localTombstones.remove(uk);
+                localTombstones.remove(uk.toUpperCase());
+                await TombstoneEngine.unmarkTombstoneWithTimestamp(companyId, id: uk);
               }
             }
             if (newTombKeys.isNotEmpty) {
@@ -167,6 +226,7 @@ class FastPullEngine {
             if (item is Map) {
               final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" || item["status"] == "Cancelled" ? "1" : "0")) ?? 0;
               if (isDel == 1) continue;
+              final int itemUpdatedAt = int.tryParse(item["updated_at"]?.toString() ?? item["updatedAt"]?.toString() ?? "0") ?? 0;
               final keys = keyExtractor(item);
               bool isBlocked = false;
               for (int ki = 0; ki < keys.length; ki++) {
@@ -175,10 +235,21 @@ class FastPullEngine {
                 if (clean.isEmpty) continue;
                 final bool inTombs = localTombstones.contains(clean) || localTombstones.contains(k);
                 final int regTs = localRegistry[clean] ?? localRegistry[k] ?? 0;
-                if (inTombs || regTs > 0) {
-                  // Strict Anti-Zombie Shield: Never allow a tombstoned key to resurrect from a lagging Google Drive snapshot!
-                  isBlocked = true;
-                  break;
+                if (ki == 0) {
+                  // Primary immutable ID check
+                  if (inTombs || regTs > 0) {
+                    isBlocked = true;
+                    break;
+                  }
+                } else {
+                  // Secondary / Series key check: allow newer re-created bills with a newer timestamp!
+                  if (regTs > 0 && (itemUpdatedAt == 0 || regTs >= itemUpdatedAt)) {
+                    isBlocked = true;
+                    break;
+                  } else if (regTs == 0 && inTombs && itemUpdatedAt == 0) {
+                    isBlocked = true;
+                    break;
+                  }
                 }
               }
               if (!isBlocked) filtered.add(item);

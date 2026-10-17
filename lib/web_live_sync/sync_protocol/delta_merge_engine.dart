@@ -128,16 +128,20 @@ class DeltaMergeEngine {
           }
         }
 
-        // 🛡️ 2. STRICT TOMBSTONE REGISTRY CHECK (Protected across ID, InternalNo, 2-part & 3-part Composite Keys)
-        int delTs = tombstoneRegistry[id] ??
-            tombstoneRegistry[id.toUpperCase()] ??
-            (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null) ??
+        // 🛡️ 2. STRICT TOMBSTONE REGISTRY CHECK (Immutable ID vs Chronological Series/Composite Keys)
+        final int idDelTs = tombstoneRegistry[id] ?? tombstoneRegistry[id.toUpperCase()] ?? 0;
+        if (idDelTs > 0) {
+          // Exact UUID was deleted — never resurrect it
+          continue;
+        }
+
+        final int secDelTs = (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null) ??
             (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ??
             (compKey2.isNotEmpty ? tombstoneRegistry[compKey2] : null) ??
             (getCloudCompositeKey == null && bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ?? 0;
 
-        if (delTs > 0) {
-          // Never auto-remove tombstones during passive cloud snapshot merge!
+        if (secDelTs > 0 && (cloudTimestamp == 0 || secDelTs >= cloudTimestamp)) {
+          // Secondary key was deleted at or after this record's timestamp — block stale snapshot record
           continue;
         }
 
@@ -172,7 +176,10 @@ class DeltaMergeEngine {
           int localVer = (localMap['version'] ?? 1).toInt();
 
           // 🛡️ Last-Write-Wins (LWW) Clock Auditing
-          if (cloudVersion > localVer || (cloudVersion == localVer && cloudTimestamp >= localTimestamp) || localTimestamp == 0) {
+          if (cloudVersion > localVer ||
+              (cloudVersion == localVer && cloudTimestamp >= localTimestamp) ||
+              (getId(localItem) != id && cloudTimestamp > localTimestamp) ||
+              localTimestamp == 0) {
             localList[idx] = fromMap(cloudMap);
             changed = true;
           }

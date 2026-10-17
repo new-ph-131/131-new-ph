@@ -88,6 +88,11 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
     }
   }
 
+  bool _isCreditorGroup(String group) {
+    final g = group.trim().toLowerCase();
+    return g.contains("creditor") || g.contains("supplier") || g.contains("vendor") || g.contains("distributor");
+  }
+
   void _openQuickAddSupplier(PharoahWebManager webPh) {
     showDialog(
       context: context,
@@ -550,7 +555,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
 
     // Default Inward Intelligence when no supplier is chosen yet
     double totalMonthPur = webPh.purchases.fold(0.0, (s, p) => s + p.totalAmount);
-    final allSuppliers = webPh.parties.where((p) => p.group == "Sundry Creditors").toList();
+    final allSuppliers = webPh.parties.where((p) => _isCreditorGroup(p.group)).toList();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -650,12 +655,23 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
   Widget _buildSupplierList(PharoahWebManager webPh) {
     final query = searchQuery.trim().toLowerCase();
     final matchingSuppliers = webPh.parties.where((p) {
-      if (query.isEmpty) return p.group == "Sundry Creditors";
-      return p.group == "Sundry Creditors" &&
-          (p.name.toLowerCase().contains(query) ||
-           p.city.toLowerCase().contains(query) ||
-           p.gst.toLowerCase().contains(query));
+      if (p.name.trim().toUpperCase() == "CASH") return false;
+      final grp = p.group.trim().toLowerCase();
+      if (grp == "bank accounts" || grp == "cash in hand" || grp == "expenses") return false;
+      if (query.isEmpty) return true;
+      return p.name.toLowerCase().contains(query) ||
+             p.city.toLowerCase().contains(query) ||
+             p.gst.toLowerCase().contains(query) ||
+             p.group.toLowerCase().contains(query);
     }).toList();
+
+    // Sort: Creditors / Suppliers always appear at the top, then alphabetically
+    matchingSuppliers.sort((a, b) {
+      final aCred = _isCreditorGroup(a.group);
+      final bCred = _isCreditorGroup(b.group);
+      if (aCred != bCred) return aCred ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -667,7 +683,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
                 controller: searchController,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
                 decoration: InputDecoration(
-                  hintText: "Search Distributor by Name, City or GST...",
+                  hintText: "Search Supplier / Party by Name, City or GST...",
                   hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
                   prefixIcon: const Icon(Icons.search, color: Color(0xFFF59E0B), size: 16),
                   suffixIcon: searchQuery.isNotEmpty
@@ -714,7 +730,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Text(
-                      searchQuery.isEmpty ? "No suppliers registered under Sundry Creditors." : "No supplier found matching '$searchQuery'.",
+                      searchQuery.isEmpty ? "No suppliers or parties registered." : "No supplier or party found matching '$searchQuery'.",
                       style: const TextStyle(color: Colors.white38, fontSize: 11),
                     ),
                   ),
@@ -725,18 +741,46 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
                   itemCount: matchingSuppliers.length,
                   itemBuilder: (context, idx) {
                     final p = matchingSuppliers[idx];
+                    final isCred = _isCreditorGroup(p.group);
                     return Container(
                       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
                       child: ListTile(
                         dense: true,
                         leading: Container(
                           padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(color: Color(0x26F59E0B), shape: BoxShape.circle),
-                          child: const Icon(Icons.business_outlined, color: Color(0xFFF59E0B), size: 16),
+                          decoration: BoxDecoration(
+                            color: isCred ? const Color(0x26F59E0B) : const Color(0x2238BDF8),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isCred ? Icons.local_shipping_rounded : Icons.storefront_rounded,
+                            color: isCred ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
+                            size: 16,
+                          ),
                         ),
                         title: Text(p.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.5)),
-                        subtitle: Text("${p.city.isEmpty ? 'No City' : p.city} | GST: ${p.gst.isEmpty ? 'N/A' : p.gst}", style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: 12),
+                        subtitle: Text(
+                          "${p.city.isEmpty ? (p.state.isNotEmpty ? p.state : 'No City') : p.city} | GST: ${p.gst.isEmpty ? 'N/A' : p.gst}",
+                          style: const TextStyle(color: Colors.white54, fontSize: 10),
+                        ),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: isCred ? const Color(0x33F59E0B) : const Color(0x2238BDF8),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: isCred ? const Color(0x66F59E0B) : const Color(0x4438BDF8),
+                            ),
+                          ),
+                          child: Text(
+                            isCred ? "CREDITOR" : "DEBTOR",
+                            style: TextStyle(
+                              color: isCred ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                         onTap: () => setState(() => selectedSupplier = p),
                       ),
                     );

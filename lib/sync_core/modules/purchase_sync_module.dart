@@ -1,6 +1,7 @@
 // FILE: lib/sync_core/modules/purchase_sync_module.dart
 import 'package:flutter/foundation.dart';
 import '../../models.dart';
+import '../d1_sales_ledger_service.dart';
 import '../models/sync_envelope.dart';
 import '../outbox/sync_queue_manager.dart';
 
@@ -102,6 +103,12 @@ class PurchaseSyncModule {
     });
 
     if (incoming.isDeleted == 1) {
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(
+        incoming.id,
+        incoming.partyId,
+        incoming.billNo,
+        incoming.internalNo,
+      );
       if (idx == -1) return false;
       final local = currentPurchases[idx];
       if (incoming.updatedAt < local.updatedAt &&
@@ -113,9 +120,27 @@ class PurchaseSyncModule {
       return true;
     }
 
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(
+      incoming.id,
+      incoming.partyId,
+      incoming.billNo,
+      incoming.internalNo,
+    );
+    D1SalesLedgerService.recordPurchaseKnownVersion(
+      incoming.id,
+      incoming.partyId,
+      incoming.billNo,
+      incoming.version,
+      incoming.internalNo,
+    );
+
     if (idx != -1) {
       final local = currentPurchases[idx];
-      if (incoming.version < local.version && incoming.updatedAt < local.updatedAt) return false;
+      if (incoming.id == local.id &&
+          incoming.version < local.version &&
+          incoming.updatedAt < local.updatedAt) {
+        return false;
+      }
       currentPurchases[idx] = incoming;
     } else {
       currentPurchases.insert(0, incoming);

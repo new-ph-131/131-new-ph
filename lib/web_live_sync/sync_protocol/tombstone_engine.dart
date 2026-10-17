@@ -60,6 +60,7 @@ class TombstoneEngine {
     final cleanId = id.trim();
     if (cleanId.isNotEmpty) {
       registry.remove(cleanId);
+      registry.remove(cleanId.toUpperCase());
     }
     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
       registry.remove(secondaryKey.trim());
@@ -98,7 +99,9 @@ class TombstoneEngine {
     final cleanId = id.trim();
     if (cleanId.isNotEmpty) {
       tombstones.remove(cleanId);
+      tombstones.remove(cleanId.toUpperCase());
       unmarked.add(cleanId);
+      unmarked.add(cleanId.toUpperCase());
     }
     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
       final cleanSec = secondaryKey.trim();
@@ -118,6 +121,7 @@ class TombstoneEngine {
     if (cleanId.isNotEmpty) {
       tombstones.add(cleanId);
       unmarked.remove(cleanId);
+      unmarked.remove(cleanId.toUpperCase());
     }
     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
       final cleanSec = secondaryKey.trim().toUpperCase();
@@ -179,13 +183,12 @@ class TombstoneEngine {
       final bNo = e.billNo.trim().toUpperCase();
       final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
       final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
-      if (registry.containsKey(e.id) ||
-          registry.containsKey(e.id.toUpperCase()) ||
-          (iNo.isNotEmpty && registry.containsKey(iNo)) ||
-          (compKey3.isNotEmpty && registry.containsKey(compKey3))) {
+      if (registry.containsKey(e.id) || registry.containsKey(e.id.toUpperCase())) {
         return true;
       }
-      final delTime = compKey2.isNotEmpty ? registry[compKey2] : null;
+      final int? delTime = (iNo.isNotEmpty ? registry[iNo] : null) ??
+          (compKey3.isNotEmpty ? registry[compKey3] : null) ??
+          (compKey2.isNotEmpty ? registry[compKey2] : null);
       return delTime != null && delTime >= e.updatedAt;
     });
     ph.saleChallans.removeWhere((e) {
@@ -244,16 +247,17 @@ class TombstoneEngine {
       final bNo = e.billNo.trim().toUpperCase();
       final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
       final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
-      if (allTombstones.contains(e.id) ||
-          upperTombstones.contains(e.id.toUpperCase()) ||
-          (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
-          (compKey3.isNotEmpty && (allTombstones.contains(compKey3) || upperTombstones.contains(compKey3)))) {
+      if (allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase())) {
         return true;
       }
-      final isTomb = compKey2.isNotEmpty && (allTombstones.contains(compKey2) || upperTombstones.contains(compKey2));
+      final isTomb = (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
+          (compKey3.isNotEmpty && (allTombstones.contains(compKey3) || upperTombstones.contains(compKey3))) ||
+          (compKey2.isNotEmpty && (allTombstones.contains(compKey2) || upperTombstones.contains(compKey2)));
       if (!isTomb) return false;
       if (registry != null) {
-        final delTime = registry[compKey2];
+        final delTime = (iNo.isNotEmpty ? registry[iNo] : null) ??
+            (compKey3.isNotEmpty ? registry[compKey3] : null) ??
+            (compKey2.isNotEmpty ? registry[compKey2] : null);
         if (delTime != null) return delTime >= e.updatedAt;
       }
       return true;

@@ -338,7 +338,10 @@ class PharoahManager with ChangeNotifier {
     salts = (load('salts.json') as List?)?.map((e) => Salt.fromMap(e)).toList() ?? MasterDataLibrary.getTopSalts();
     drugTypes = (load('dtypes.json') as List?)?.map((e) => DrugType.fromMap(e)).toList() ?? MasterDataLibrary.getDrugTypes();
     sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
-    purchases = (load('purc.json') as List?)?.map((e) => Purchase.fromMap(e)).toList() ?? [];
+    purchases = (load('purc.json') as List?)
+        ?.map((e) => Purchase.fromMap(e))
+        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, partyId: p.partyId, billNo: p.billNo, internalNo: p.internalNo))
+        .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
     purchaseChallans = (load('p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
@@ -392,8 +395,9 @@ Future<void> finalizeSale({
       currentVer = sales[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: sId, secondaryKey: billNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: sId, secondaryKey: billNo);
     }
+    D1SalesLedgerService.unmarkPermanentlyDeleted(sId, billNo);
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
     final newFinalSale = Sale(
       id: sId, 
@@ -467,7 +471,12 @@ Future<void> finalizeSale({
     // Rebuild first, then Save
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save(); 
-    
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: existingIdx != -1 ? 'SALE_UPDATED' : 'SALE_ADDED',
+      entityId: sId,
+      unmarkedIds: [sId, if (billNo.trim().isNotEmpty) billNo.trim().toUpperCase()],
+    );
     notifyListeners();
   }
 
@@ -491,11 +500,13 @@ Future<void> finalizePurchase({
     final cleanIntNo = internalNo.trim().toUpperCase();
     final cleanBillNo = billNo.trim().toUpperCase();
     final cleanPartyId = party.id.trim().toUpperCase();
+    final compKey2 = (cleanPartyId.isNotEmpty && cleanBillNo.isNotEmpty) ? "${cleanPartyId}_$cleanBillNo" : "";
     final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
     if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: compKey);
-      if (cleanBillNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanBillNo);
-      if (cleanIntNo.isNotEmpty) TombstoneEngine.unmarkTombstone(activeCompany!.id, id: cleanIntNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: pId, secondaryKey: compKey);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2);
+      if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo);
+      if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo);
     }
     D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo);
     if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo);
@@ -506,13 +517,6 @@ Future<void> finalizePurchase({
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
     }
-    if (activeCompany != null) {
-      TombstoneEngine.unmarkTombstone(activeCompany!.id, id: pId, secondaryKey: compKey);
-      if (internalNo.isNotEmpty) {
-        TombstoneEngine.unmarkTombstone(activeCompany!.id, id: internalNo);
-      }
-    }
-    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo);
     final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(pId, party.id, billNo, internalNo);
     if (d1Known >= currentVer) currentVer = d1Known + 1;
     D1SalesLedgerService.recordPurchaseKnownVersion(pId, party.id, billNo, currentVer, internalNo);
@@ -540,8 +544,8 @@ Future<void> finalizePurchase({
       version: currentVer,
     );
     purchases.add(newFinalPurchase);
+    final bool isModify = existingIdx != -1;
     if (activeCompany != null) {
-      final bool isModify = existingIdx != -1;
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
         if (t.isNotEmpty) {
           PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, t);
@@ -587,6 +591,18 @@ Future<void> finalizePurchase({
     // Rebuild first, then Save
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: isModify ? 'PURCHASE_UPDATED' : 'PURCHASE_ADDED',
+      entityId: pId,
+      unmarkedIds: [
+        pId,
+        if (cleanIntNo.isNotEmpty) cleanIntNo,
+        if (cleanBillNo.isNotEmpty) cleanBillNo,
+        if (compKey2.isNotEmpty) compKey2,
+        if (compKey.isNotEmpty) compKey,
+      ],
+    );
     notifyListeners();
   }
 
@@ -607,11 +623,21 @@ Future<void> finalizePurchase({
     int idx = purchases.indexWhere((p) => p.id == id || (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase())); 
     if (idx == -1) return; 
     String t = purchases[idx].sourceTag; 
-    int maxKnown = D1SalesLedgerService.getKnownVersion(id, billNo, internalNo);
+    final cleanIntNo = internalNo.trim().toUpperCase();
+    final cleanBillNo = billNo.trim().toUpperCase();
+    final cleanPartyId = party.id.trim().toUpperCase();
+    final compKey2 = (cleanPartyId.isNotEmpty && cleanBillNo.isNotEmpty) ? "${cleanPartyId}_$cleanBillNo" : "";
+    final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
+    if (activeCompany != null) {
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: id, secondaryKey: compKey);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2);
+      if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo);
+      if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo);
+    }
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(id, party.id, billNo, internalNo);
+    int maxKnown = D1SalesLedgerService.getPurchaseKnownVersion(id, party.id, billNo, internalNo);
     int nextVer = (purchases[idx].version >= maxKnown ? purchases[idx].version : maxKnown) + 1;
-    D1SalesLedgerService.recordKnownVersion(id, billNo, nextVer);
-    if (internalNo.isNotEmpty) D1SalesLedgerService.recordKnownVersion(internalNo, "", nextVer);
-    D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo, internalNo);
+    D1SalesLedgerService.recordPurchaseKnownVersion(id, party.id, billNo, nextVer, internalNo);
     int nowTs = DateTime.now().millisecondsSinceEpoch;
 
     final updatedPurchase = Purchase(
@@ -669,6 +695,18 @@ Future<void> finalizePurchase({
     // Rebuild first, then Save & Silent Push
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: 'PURCHASE_UPDATED',
+      entityId: id,
+      unmarkedIds: [
+        id,
+        if (cleanIntNo.isNotEmpty) cleanIntNo,
+        if (cleanBillNo.isNotEmpty) cleanBillNo,
+        if (compKey2.isNotEmpty) compKey2,
+        if (compKey.isNotEmpty) compKey,
+      ],
+    );
     notifyListeners();
   }
 
@@ -1821,7 +1859,10 @@ void registerBatchActivity({
     salts = (load('salts.json') as List?)?.map((e) => Salt.fromMap(e)).toList() ?? MasterDataLibrary.getTopSalts();
     drugTypes = (load('dtypes.json') as List?)?.map((e) => DrugType.fromMap(e)).toList() ?? MasterDataLibrary.getDrugTypes();
     sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
-    purchases = (load('purc.json') as List?)?.map((e) => Purchase.fromMap(e)).toList() ?? [];
+    purchases = (load('purc.json') as List?)
+        ?.map((e) => Purchase.fromMap(e))
+        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, partyId: p.partyId, billNo: p.billNo, internalNo: p.internalNo))
+        .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
     purchaseChallans = (load('p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];

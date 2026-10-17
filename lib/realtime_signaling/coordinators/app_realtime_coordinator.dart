@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../pharoah_manager.dart';
+import '../../sync_core/d1_sales_ledger_service.dart';
 import '../../sync_core/orchestrator/master_sync_orchestrator.dart';
 import '../../sync_core/outbox/sync_queue_manager.dart';
 import '../../web_live_sync/app_sync_engine.dart';
@@ -64,11 +65,16 @@ class AppRealtimeCoordinator {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
         if (event.unmarkedIds.isNotEmpty && ph.activeCompany != null) {
           for (final u in event.unmarkedIds) {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(u);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase());
             await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u);
           }
         }
         if (event.deletedIds.isNotEmpty && ph.activeCompany != null) {
           final companyId = ph.activeCompany!.id;
+          for (final d in event.deletedIds) {
+            D1SalesLedgerService.markPermanentlyDeleted(d);
+          }
           await TombstoneEngine.recordBatchTombstones(companyId, event.deletedIds);
           final reg = await TombstoneEngine.getTombstoneRegistry(companyId);
           final tombstones = await TombstoneEngine.getLocalTombstones(companyId);
