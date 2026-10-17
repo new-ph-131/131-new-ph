@@ -89,6 +89,19 @@ class CreditNoteMechanism {
     required String returnType,
     String? existingId,
   }) async {
+    final newReturn = SaleReturn(
+      id: noteId,
+      billNo: noteNo,
+      date: date,
+      partyName: customer.name,
+      items: List.from(items),
+      totalAmount: totalAmount,
+      extraDiscount: extraDiscount,
+      roundOff: roundOff,
+      returnType: returnType,
+      status: "Active",
+    );
+
     webPh.addSaleReturnAndSync(newReturn);
 
     // ग्राहक के लेजर बैलेंस में क्रेडिट घटाएं (कस्टमर का बकाया कम होगा)

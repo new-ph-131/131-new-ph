@@ -89,6 +89,19 @@ class DebitNoteMechanism {
     required String returnType,
     String? existingId,
   }) async {
+    final newReturn = PurchaseReturn(
+      id: noteId,
+      billNo: noteNo,
+      distributorName: supplier.name,
+      date: date,
+      items: List.from(items),
+      totalAmount: totalAmount,
+      extraDiscount: extraDiscount,
+      roundOff: roundOff,
+      returnType: returnType,
+      status: "Active",
+    );
+
     webPh.addPurchaseReturnAndSync(newReturn);
 
     // सप्लायर के बकाए (Payable) में से डेबिट नोट घटाएं
