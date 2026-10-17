@@ -35,23 +35,45 @@ class FastPullEngine {
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
 
-      // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK
+      // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK (SALES + PURCHASES)
       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
         try {
           final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
           if (edgeEvents.isNotEmpty) {
-            bool d1Mutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
+            bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
+            bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
+            final List<String> newTombKeys = [];
             for (final ev in edgeEvents) {
               final String action = (ev["action"] ?? "").toString().toUpperCase();
               final String bId = (ev["bill_id"] ?? "").toString().trim();
-              if (action == "DELETE" && bId.isNotEmpty) {
-                final nowTs = DateTime.now().millisecondsSinceEpoch;
-                localRegistry[bId] = nowTs;
-                localTombstones.add(bId);
-                await TombstoneEngine.recordTombstoneWithTimestamp(companyId, id: bId, timestamp: nowTs);
+              final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+              final dynamic rawPayload = ev["sale_data"];
+              if (action == "DELETE") {
+                if (bId.isNotEmpty) newTombKeys.add(bId);
+                if (bNo.isNotEmpty) newTombKeys.add(bNo);
+                if (rawPayload is Map) {
+                  final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                  final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                  if (iNo.isNotEmpty) newTombKeys.add(iNo);
+                  if (pId.isNotEmpty && pBill.isNotEmpty) {
+                    newTombKeys.add("${pId}_$pBill");
+                    if (iNo.isNotEmpty) newTombKeys.add("${pId}_${pBill}_$iNo");
+                  }
+                }
               }
             }
-            if (d1Mutated) {
+            if (newTombKeys.isNotEmpty) {
+              final nowTs = DateTime.now().millisecondsSinceEpoch;
+              for (final tk in newTombKeys) {
+                localRegistry[tk] = nowTs;
+                localRegistry[tk.toUpperCase()] = nowTs;
+                localTombstones.add(tk);
+                localTombstones.add(tk.toUpperCase());
+              }
+              await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
+            }
+            if (d1SalesMutated || d1PurcMutated) {
               InventoryLogicCenter.rebuildAllInventory(
                 medicines: ph.medicines,
                 batchHistory: ph.batchHistory,
@@ -60,9 +82,16 @@ class FastPullEngine {
                 saleReturns: ph.saleReturns,
                 purchaseReturns: ph.purchaseReturns,
               );
-              await File('$workingDir/sales.json').writeAsString(
-                jsonEncode(ph.sales.map((e) => e.toMap()).toList()),
-              );
+              if (d1SalesMutated) {
+                await File('$workingDir/sales.json').writeAsString(
+                  jsonEncode(ph.sales.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1PurcMutated) {
+                await File('$workingDir/purc.json').writeAsString(
+                  jsonEncode(ph.purchases.map((e) => e.toMap()).toList()),
+                );
+              }
               ph.notifyListeners();
             }
           }
@@ -105,14 +134,18 @@ class FastPullEngine {
         try {
           dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
           if (rawReg is Map) {
+            final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
             rawReg.forEach((k, v) {
               final cleanK = k.toString().trim();
-              if (cleanK.isNotEmpty) {
+              if (cleanK.isNotEmpty && !unmarkedKeys.contains(cleanK) && !unmarkedKeys.contains(cleanK.toUpperCase())) {
                 final cTs = int.tryParse(v.toString()) ?? 0;
                 final lTs = localRegistry[cleanK] ?? 0;
                 if (cTs > lTs) {
                   localRegistry[cleanK] = cTs;
+                  localRegistry[cleanK.toUpperCase()] = cTs;
                 }
+                localTombstones.add(cleanK);
+                localTombstones.add(cleanK.toUpperCase());
               }
             });
           }
@@ -134,39 +167,18 @@ class FastPullEngine {
             if (item is Map) {
               final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" || item["status"] == "Cancelled" ? "1" : "0")) ?? 0;
               if (isDel == 1) continue;
-              final String primaryId = (item["id"] ?? item["sync_id"] ?? "").toString().trim();
-              final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
-              final int itemTs = int.tryParse(item["updated_at"]?.toString() ?? item["updatedAt"]?.toString() ?? "0") ?? 0;
               final keys = keyExtractor(item);
               bool isBlocked = false;
               for (int ki = 0; ki < keys.length; ki++) {
-                final k = keys[ki];
-                final clean = k.trim().toUpperCase();
+                final k = keys[ki].trim();
+                final clean = k.toUpperCase();
                 if (clean.isEmpty) continue;
-                final bool inTombs = localTombstones.contains(clean) || localTombstones.contains(k.trim());
-                final int regTs = localRegistry[clean] ?? localRegistry[k.trim()] ?? 0;
+                final bool inTombs = localTombstones.contains(clean) || localTombstones.contains(k);
+                final int regTs = localRegistry[clean] ?? localRegistry[k] ?? 0;
                 if (inTombs || regTs > 0) {
-                  // Primary ID (index 0) is permanently dead unless explicitly unmarked
-                  if (ki == 0 && primaryId.isNotEmpty && (localTombstones.contains(primaryId) || localRegistry.containsKey(primaryId))) {
-                    if (regTs > 0 && itemTs > regTs) {
-                      localTombstones.remove(primaryId);
-                      localRegistry.remove(primaryId);
-                    } else {
-                      isBlocked = true;
-                      break;
-                    }
-                  } else {
-                    // Secondary / Composite / InternalNo key: allow rebirth if newer timestamp or version > 1 or fresh primaryId
-                    if ((regTs > 0 && itemTs > regTs) || itemVer > 1) {
-                      localTombstones.remove(clean);
-                      localTombstones.remove(k.trim());
-                      localRegistry.remove(clean);
-                      localRegistry.remove(k.trim());
-                    } else if (regTs == 0 || itemTs <= regTs) {
-                      isBlocked = true;
-                      break;
-                    }
-                  }
+                  // Strict Anti-Zombie Shield: Never allow a tombstoned key to resurrect from a lagging Google Drive snapshot!
+                  isBlocked = true;
+                  break;
                 }
               }
               if (!isBlocked) filtered.add(item);
@@ -184,6 +196,17 @@ class FastPullEngine {
           final List<dynamic> filtered = [];
           for (final item in rawList) {
             if (item is Map) {
+              if (docType == "PURCHASE") {
+                final pId = (item["id"] ?? "").toString();
+                final partyId = (item["partyId"] ?? "").toString();
+                final billNo = (item["billNo"] ?? "").toString();
+                final intNo = (item["internalNo"] ?? "").toString();
+                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo)) continue;
+                final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
+                if (D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo) > itemVer) continue;
+                filtered.add(item);
+                continue;
+              }
               final keys = keyExtractor(item);
               final String k1 = keys.isNotEmpty ? keys[0].trim() : "";
               final String k2 = keys.length > 1 ? keys[1].trim() : "";
@@ -199,15 +222,7 @@ class FastPullEngine {
       }
 
       applyUniversalD1Shield("sales.json", "SALE", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
-      applyUniversalD1Shield("purc.json", "PURCHASE", (m) {
-        final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
-        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
-        final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
-        final comp = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty)
-            ? "${pId}_${bNo}_$iNo"
-            : ((pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "");
-        return [(m["id"] ?? "").toString(), comp, iNo];
-      });
+      applyUniversalD1Shield("purc.json", "PURCHASE", (m) => [(m["id"] ?? "").toString()]);
       applyUniversalD1Shield("vouc.json", "VOUCHER", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
       applyUniversalD1Shield("s_challan.json", "CHALLAN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       applyUniversalD1Shield("p_challan.json", "PURCHASE_CHALLAN", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString(), (m["internalNo"] ?? "").toString()]);
@@ -218,10 +233,9 @@ class FastPullEngine {
         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
         final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
-        final comp = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty)
-            ? "${pId}_${bNo}_$iNo"
-            : ((pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "");
-        return [(m["id"] ?? "").toString(), iNo, comp];
+        final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+        final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+        return [(m["id"] ?? "").toString(), iNo, comp2, comp3];
       });
       sanitizeCloudFile("vouc.json", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
       sanitizeCloudFile("s_challan.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);

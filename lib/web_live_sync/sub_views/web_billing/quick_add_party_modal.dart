@@ -125,6 +125,8 @@ class _QuickAddPartyModalState extends State<QuickAddPartyModal> {
       creditDays: int.tryParse(creditDaysC.text) ?? 30,
       priceLevel: selectedPriceLevel,
       defaultSeriesId: selectedSeriesId,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: 1,
     );
 
     widget.webPh.addParty(newParty);

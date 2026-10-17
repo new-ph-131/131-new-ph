@@ -110,35 +110,35 @@ class DeltaMergeEngine {
         int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
 
         if (id.isEmpty) continue;
-        // 🛡️ Multi-Key Anti-Zombie Check: ID, InternalNo, BillNo
+        // 🛡️ Multi-Key Anti-Zombie Check: ID, InternalNo, BillNo, CompositeKey
         String bNoKey = billNo.toUpperCase();
         String intNoKey = internalNo.toUpperCase();
+        String partyIdKey = (cloudMap['partyId'] ?? '').toString().trim().toUpperCase();
+        String compKey2 = (partyIdKey.isNotEmpty && bNoKey.isNotEmpty) ? "${partyIdKey}_$bNoKey" : "";
         final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? "";
 
-        // 🛡️ SMART TIME & VERSION AWARE REBIRTH PROTOCOL (#PH-REV-710)
+        // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Never resurrect deleted records from lagging Drive files)
+        if (getCloudCompositeKey != null) {
+          if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo)) {
+            continue;
+          }
+        } else {
+          if (D1SalesLedgerService.isBillDeleted(id, billNo, internalNo)) {
+            continue;
+          }
+        }
+
+        // 🛡️ 2. STRICT TOMBSTONE REGISTRY CHECK (Protected across ID, InternalNo, 2-part & 3-part Composite Keys)
         int delTs = tombstoneRegistry[id] ??
-            (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ??
+            tombstoneRegistry[id.toUpperCase()] ??
             (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null) ??
+            (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ??
+            (compKey2.isNotEmpty ? tombstoneRegistry[compKey2] : null) ??
             (getCloudCompositeKey == null && bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ?? 0;
 
         if (delTs > 0) {
-          if (delTs >= cloudTimestamp && cloudVersion <= 1) {
-            continue; // Stale deleted snapshot -> Drop!
-          } else {
-            // Reborn! Entity is newly created or updated after deletion!
-            tombstoneRegistry.remove(id);
-            if (bNoKey.isNotEmpty) tombstoneRegistry.remove(bNoKey);
-            if (intNoKey.isNotEmpty) tombstoneRegistry.remove(intNoKey);
-            if (compositeKey.isNotEmpty) tombstoneRegistry.remove(compositeKey);
-            D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo);
-          }
-        }
-        if (D1SalesLedgerService.isBillDeleted(id, billNo)) {
-          if (cloudVersion > 1 || (delTs > 0 && cloudTimestamp > delTs)) {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo);
-          } else {
-            continue;
-          }
+          // Never auto-remove tombstones during passive cloud snapshot merge!
+          continue;
         }
 
         // Match in active local list
@@ -146,7 +146,7 @@ class DeltaMergeEngine {
           if (getId(e) == id) return true;
           final localBNo = getBillNo(e).trim().toUpperCase();
           if (compositeKey.isNotEmpty && localBNo == compositeKey) return true;
-          if (intNoKey.isNotEmpty && (localBNo == intNoKey || localBNo == "INT:$intNoKey")) return true;
+          if (intNoKey.isNotEmpty && (localBNo == intNoKey || localBNo == "INT:$intNoKey" || localBNo.endsWith("_$intNoKey"))) return true;
           if (getCloudCompositeKey == null && bNoKey.isNotEmpty && localBNo == bNoKey) return true;
           return false;
         });
@@ -157,8 +157,10 @@ class DeltaMergeEngine {
             changed = true;
           }
           tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
-          if (bNoKey.isNotEmpty) tombstoneRegistry[bNoKey] = tombstoneRegistry[id]!;
+          tombstoneRegistry[id.toUpperCase()] = tombstoneRegistry[id]!;
+          if (getCloudCompositeKey == null && bNoKey.isNotEmpty) tombstoneRegistry[bNoKey] = tombstoneRegistry[id]!;
           if (intNoKey.isNotEmpty) tombstoneRegistry[intNoKey] = tombstoneRegistry[id]!;
+          if (compKey2.isNotEmpty) tombstoneRegistry[compKey2] = tombstoneRegistry[id]!;
           if (compositeKey.isNotEmpty) tombstoneRegistry[compositeKey] = tombstoneRegistry[id]!;
           continue;
         }
@@ -289,21 +291,28 @@ class DeltaMergeEngine {
       (e) => e.toMap()
     );
 
-    // Master Records Sync with LWW
+    // Master Records Sync with LWW (Supports legacy updatedAt == 0 updates & Name/ID matching)
     var rawParts = decodeJson('parts.json') as List?;
     if (rawParts != null) {
       for (var rawPart in rawParts) {
         final partMap = rawPart as Map<String, dynamic>;
+        final String partId = (partMap['id'] ?? '').toString().trim();
+        if (partId.isNotEmpty && (tombstoneRegistry.containsKey(partId) || tombstoneRegistry.containsKey(partId.toUpperCase()))) {
+          continue;
+        }
         String cleanName = (partMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
         if (cleanName.isEmpty) continue;
-        int existingIdx = ph.parties.indexWhere((p) => p.id == partMap['id']);
+        int existingIdx = ph.parties.indexWhere((p) =>
+          (partId.isNotEmpty && p.id == partId) ||
+          p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanName
+        );
         if (existingIdx != -1) {
           String lJson = jsonEncode(ph.parties[existingIdx].toMap());
           String cJson = jsonEncode(partMap);
           if (lJson != cJson) {
-            int cUpdated = (partMap['updated_at'] ?? partMap['updatedAt'] ?? 0).toInt();
+            int cUpdated = int.tryParse((partMap['updated_at'] ?? partMap['updatedAt'] ?? 0).toString()) ?? 0;
             int lUpdated = ph.parties[existingIdx].updatedAt;
-            if (cUpdated > lUpdated) {
+            if (cUpdated >= lUpdated || lUpdated == 0) {
               ph.parties[existingIdx] = Party.fromMap(partMap);
               hasChanges = true;
             }
@@ -326,9 +335,9 @@ class DeltaMergeEngine {
           String lJson = jsonEncode(ph.medicines[existingIdx].toMap());
           String cJson = jsonEncode(medMap);
           if (lJson != cJson) {
-            int cUpdated = (medMap['updated_at'] ?? medMap['updatedAt'] ?? 0).toInt();
+            int cUpdated = int.tryParse((medMap['updated_at'] ?? medMap['updatedAt'] ?? 0).toString()) ?? 0;
             int lUpdated = ph.medicines[existingIdx].updatedAt;
-            if (cUpdated > lUpdated) {
+            if (cUpdated >= lUpdated || lUpdated == 0) {
               ph.medicines[existingIdx] = Medicine.fromMap(medMap);
               hasChanges = true;
             }

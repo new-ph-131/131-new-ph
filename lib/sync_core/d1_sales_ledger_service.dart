@@ -91,17 +91,22 @@ class D1SalesLedgerService {
   }
 
   // =========================================================================
-  // 🛡️ PURCHASE COMPOSITE CONCURRENCY & GRAVESTONES (PARTY_ID + BILL_NO)
+  // 🛡️ PURCHASE COMPOSITE CONCURRENCY & GRAVESTONES (PARTY_ID + BILL_NO + INTERNAL_NO)
   // =========================================================================
   static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+        ? "${cleanParty}_${cleanBill}_$cleanInt"
+        : "";
     return (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId)) ||
+           (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId.toUpperCase())) ||
            (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
-           (compKey.isNotEmpty && _permanentDeletedKeys.contains(compKey));
+           (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
+           (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3));
   }
 
   static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = ""]) {
@@ -109,13 +114,19 @@ class D1SalesLedgerService {
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+        ? "${cleanParty}_${cleanBill}_$cleanInt"
+        : "";
     int maxV = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
     if (cleanInt.isNotEmpty && (_knownBillVersions[cleanInt] ?? 0) > maxV) {
       maxV = _knownBillVersions[cleanInt]!;
     }
-    if (compKey.isNotEmpty && (_knownBillVersions[compKey] ?? 0) > maxV) {
-      maxV = _knownBillVersions[compKey]!;
+    if (compKey2.isNotEmpty && (_knownBillVersions[compKey2] ?? 0) > maxV) {
+      maxV = _knownBillVersions[compKey2]!;
+    }
+    if (compKey3.isNotEmpty && (_knownBillVersions[compKey3] ?? 0) > maxV) {
+      maxV = _knownBillVersions[compKey3]!;
     }
     return maxV;
   }
@@ -125,16 +136,98 @@ class D1SalesLedgerService {
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+        ? "${cleanParty}_${cleanBill}_$cleanInt"
+        : "";
     if (cleanId.isNotEmpty && version > (_knownBillVersions[cleanId] ?? 0)) {
       _knownBillVersions[cleanId] = version;
     }
     if (cleanInt.isNotEmpty && version > (_knownBillVersions[cleanInt] ?? 0)) {
       _knownBillVersions[cleanInt] = version;
     }
-    if (compKey.isNotEmpty && version > (_knownBillVersions[compKey] ?? 0)) {
-      _knownBillVersions[compKey] = version;
+    if (compKey2.isNotEmpty && version > (_knownBillVersions[compKey2] ?? 0)) {
+      _knownBillVersions[compKey2] = version;
     }
+    if (compKey3.isNotEmpty && version > (_knownBillVersions[compKey3] ?? 0)) {
+      _knownBillVersions[compKey3] = version;
+    }
+  }
+
+  /// Called when a Purchase is created or modified from either App or Web
+  static Future<bool> onPurchaseSaved(
+    Purchase purchase,
+    String storeToken, {
+    bool isUpdate = false,
+    String clientSource = "APP_MOBILE",
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+
+    try {
+      final purMap = purchase.toMap();
+      purMap["doc_type"] = "PURCHASE";
+      final String refNo = purchase.internalNo.trim().isNotEmpty
+          ? purchase.internalNo.trim().toUpperCase()
+          : purchase.billNo.trim().toUpperCase();
+
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": isUpdate ? "UPDATE_PURCHASE" : "INSERT_PURCHASE",
+        "sale_event": {
+          "id": purchase.id,
+          "bill_no": refNo,
+          "version": purchase.version,
+          "action": isUpdate ? "UPDATE" : "INSERT",
+          "status": "Active",
+          "client_source": clientSource,
+          "payload": purMap,
+        },
+      };
+
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data["status"] == "SUCCESS") {
+          recordPurchaseKnownVersion(
+            purchase.id,
+            purchase.partyId,
+            purchase.billNo,
+            purchase.version,
+            purchase.internalNo,
+          );
+          final int? newSeq = data["seq"];
+          if (newSeq != null && newSeq > 0) {
+            await _updateHighestLocalSeq(storeToken, newSeq);
+          }
+          return true;
+        }
+      } else if (res.statusCode == 409) {
+        try {
+          final data = jsonDecode(res.body);
+          final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
+          if (serverVer > 0) {
+            recordPurchaseKnownVersion(
+              purchase.id,
+              purchase.partyId,
+              purchase.billNo,
+              serverVer,
+              purchase.internalNo,
+            );
+            purchase.version = serverVer + 1;
+            return await onPurchaseSaved(purchase, storeToken, isUpdate: true, clientSource: clientSource);
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onPurchaseSaved Network Error: $e");
+    }
+    return false;
   }
 
   /// Called when a Purchase is permanently deleted from either App or Web
@@ -151,7 +244,11 @@ class D1SalesLedgerService {
     try {
       final cleanParty = partyId.trim().toUpperCase();
       final cleanBill = billNo.trim().toUpperCase();
-      final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+      final cleanInt = internalNo.trim().toUpperCase();
+      final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+      final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+          ? "${cleanParty}_${cleanBill}_$cleanInt"
+          : "";
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
@@ -159,25 +256,41 @@ class D1SalesLedgerService {
         "entityId": purchaseId,
         "deletedIds": [
           purchaseId,
-          if (internalNo.trim().isNotEmpty) internalNo.trim().toUpperCase(),
-          if (compKey.isNotEmpty) compKey,
+          if (cleanInt.isNotEmpty) cleanInt,
+          if (compKey2.isNotEmpty) compKey2,
+          if (compKey3.isNotEmpty) compKey3,
         ],
         "sale_event": {
           "id": purchaseId,
-          "bill_no": billNo,
+          "bill_no": cleanInt.isNotEmpty ? cleanInt : cleanBill,
           "version": 999999,
           "action": "DELETE",
           "status": "Deleted",
           "client_source": clientSource,
-          "payload": {"partyId": partyId, "billNo": billNo, "internalNo": internalNo},
+          "payload": {
+            "doc_type": "PURCHASE",
+            "id": purchaseId,
+            "partyId": partyId,
+            "billNo": billNo,
+            "internalNo": internalNo,
+            "is_deleted": 1,
+          },
         },
       };
       final res = await http.post(
         Uri.parse(endpoint),
         headers: _headers,
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 4));
-      return res.statusCode == 200;
+      ).timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        try {
+          final data = jsonDecode(res.body);
+          if (data["seq"] != null) {
+            await _updateHighestLocalSeq(storeToken, data["seq"]);
+          }
+        } catch (_) {}
+        return true;
+      }
     } catch (e) {
       debugPrint("⚠ [D1SalesLedger] onPurchaseDeleted Network Error: $e");
     }
@@ -189,9 +302,13 @@ class D1SalesLedgerService {
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
-    markPermanentlyDeleted(cleanId, cleanInt, compKey);
-    if (cleanBill.isNotEmpty) markPermanentlyDeleted(cleanBill);
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+        ? "${cleanParty}_${cleanBill}_$cleanInt"
+        : "";
+    markPermanentlyDeleted(cleanId, cleanInt, compKey2);
+    if (cleanId.isNotEmpty) markPermanentlyDeleted(cleanId.toUpperCase());
+    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3);
   }
 
   static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
@@ -199,8 +316,13 @@ class D1SalesLedgerService {
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
-    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey);
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+        ? "${cleanParty}_${cleanBill}_$cleanInt"
+        : "";
+    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey2);
+    if (cleanId.isNotEmpty) unmarkPermanentlyDeleted(cleanId.toUpperCase());
+    if (compKey3.isNotEmpty) unmarkPermanentlyDeleted(compKey3);
     if (cleanBill.isNotEmpty) unmarkPermanentlyDeleted(cleanBill);
   }
 
@@ -415,7 +537,7 @@ class D1SalesLedgerService {
     return [];
   }
 
-  /// Merges incoming edge events into local memory list
+  /// Merges incoming edge events into local Sales memory list
   static bool applyEventsToLocalSales(
     List<Sale> localSales, 
     List<Map<String, dynamic>> events,
@@ -429,6 +551,14 @@ class D1SalesLedgerService {
       final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
       final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
       final dynamic rawSale = ev["sale_data"];
+
+      // Skip Purchase events so they never pollute Sales
+      if (rawSale is Map &&
+          (rawSale["doc_type"] == "PURCHASE" ||
+           rawSale.containsKey("distributorName") ||
+           rawSale.containsKey("internalNo"))) {
+        continue;
+      }
 
       if (billId.isEmpty && billNo.isEmpty) continue;
 
@@ -460,6 +590,73 @@ class D1SalesLedgerService {
             localSales.add(incomingSale);
             mutated = true;
           }
+        }
+      }
+    }
+
+    return mutated;
+  }
+
+  /// Merges incoming edge events into local Purchases memory list
+  static bool applyEventsToLocalPurchases(
+    List<Purchase> localPurchases,
+    List<Map<String, dynamic>> events,
+  ) {
+    if (events.isEmpty) return false;
+    bool mutated = false;
+
+    for (final ev in events) {
+      final String billId = (ev["bill_id"] ?? "").toString().trim();
+      final String billNo = (ev["bill_no"] ?? "").toString().trim();
+      final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
+      final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
+      final dynamic rawData = ev["sale_data"];
+
+      final bool isPurchasePayload = rawData is Map &&
+          (rawData["doc_type"] == "PURCHASE" ||
+           rawData.containsKey("distributorName") ||
+           rawData.containsKey("internalNo"));
+
+      if (action == "DELETE") {
+        final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
+        final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
+        final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
+        if (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty) {
+          markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo);
+        }
+        final initialLen = localPurchases.length;
+        localPurchases.removeWhere((p) =>
+          (billId.isNotEmpty && p.id == billId) ||
+          (intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo) ||
+          (billNo.isNotEmpty && p.internalNo.trim().toUpperCase() == billNo.toUpperCase()) ||
+          (partyId.isNotEmpty && pBillNo.isNotEmpty &&
+           p.partyId.trim().toUpperCase() == partyId && p.billNo.trim().toUpperCase() == pBillNo)
+        );
+        if (localPurchases.length != initialLen) mutated = true;
+      } else if (isPurchasePayload && rawData is Map<String, dynamic>) {
+        final incomingPur = Purchase.fromMap(rawData);
+        if (billId.isNotEmpty) incomingPur.id = billId;
+        incomingPur.version = version;
+        recordPurchaseKnownVersion(
+          incomingPur.id,
+          incomingPur.partyId,
+          incomingPur.billNo,
+          version,
+          incomingPur.internalNo,
+        );
+        final cleanInt = incomingPur.internalNo.trim().toUpperCase();
+        int existingIdx = localPurchases.indexWhere((p) =>
+          (incomingPur.id.isNotEmpty && p.id == incomingPur.id) ||
+          (cleanInt.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanInt)
+        );
+        if (existingIdx != -1) {
+          if (version >= localPurchases[existingIdx].version) {
+            localPurchases[existingIdx] = incomingPur;
+            mutated = true;
+          }
+        } else if (!isPurchaseDeleted(incomingPur.id, incomingPur.partyId, incomingPur.billNo, incomingPur.internalNo)) {
+          localPurchases.insert(0, incomingPur);
+          mutated = true;
         }
       }
     }

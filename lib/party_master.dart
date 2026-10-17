@@ -106,7 +106,8 @@ class _PartyMasterViewState extends State<PartyMasterView> {
     final dlExpC = TextEditingController(text: party?.dlExp);
     final opBalC = TextEditingController(text: party?.opBal.toString() ?? "0.0");
 
-    String selectedGroup = party?.group ?? "Sundry Debtors";
+    String selectedGroup = party?.group ?? pf?['group']?.toString() ?? "Sundry Debtors";
+    if (!accountGroups.contains(selectedGroup)) selectedGroup = "Sundry Debtors";
     String selectedState = party?.state ?? pf?['state'] ?? "Rajasthan";
     String selectedSeriesId = party?.defaultSeriesId ?? "";
 
@@ -205,7 +206,9 @@ class _PartyMasterViewState extends State<PartyMasterView> {
                   dl: dlC.text.trim().toUpperCase(),
                   dlExp: dlExpC.text.trim(),
                   opBal: double.tryParse(opBalC.text) ?? 0.0,
-                  defaultSeriesId: selectedSeriesId, 
+                  defaultSeriesId: selectedSeriesId,
+                  updatedAt: DateTime.now().millisecondsSinceEpoch,
+                  version: (party?.version ?? 0) + 1,
                 );
                 if (party == null) ph.parties.add(newParty);
                 else { int i = ph.parties.indexWhere((p) => p.id == party.id); if (i != -1) ph.parties[i] = newParty; }

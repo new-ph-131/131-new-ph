@@ -68,26 +68,74 @@ class AppSyncEngine {
                 cloudT.map((e) => e.toString()),
               );
               localTombstones.addAll(sanitizedCloudT);
+              for (final tk in sanitizedCloudT) {
+                localRegistry.putIfAbsent(tk, () => DateTime.now().millisecondsSinceEpoch);
+                localRegistry.putIfAbsent(tk.toUpperCase(), () => DateTime.now().millisecondsSinceEpoch);
+              }
+            } catch (_) {}
+          }
+          if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
+            try {
+              dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
+              if (rawReg is Map) {
+                final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
+                rawReg.forEach((k, v) {
+                  final cleanK = k.toString().trim();
+                  if (cleanK.isNotEmpty && !unmarkedKeys.contains(cleanK) && !unmarkedKeys.contains(cleanK.toUpperCase())) {
+                    final cTs = int.tryParse(v.toString()) ?? 0;
+                    final lTs = localRegistry[cleanK] ?? 0;
+                    if (cTs > lTs) {
+                      localRegistry[cleanK] = cTs;
+                      localRegistry[cleanK.toUpperCase()] = cTs;
+                    }
+                    localTombstones.add(cleanK);
+                    localTombstones.add(cleanK.toUpperCase());
+                  }
+                });
+              }
             } catch (_) {}
           }
           localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
 
-          // STEP 3: EXECUTE DEATH (The Graveyard - Monotonic Anti-Zombie & ID Only)
-          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
-          TombstoneEngine.purgeDeletedRecords(ph, localTombstones);
-
-          // STEP 4: DELTA MERGE (The Updater)
-          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
-          // 🚀 STEP 4.5: EDGE D1 REAL-TIME SALES DELTA MERGE (#PH-REV-680)
+          // 🚀 STEP 2.5: EDGE D1 REAL-TIME SALES & PURCHASES DELTA HARVEST BEFORE CLOUD MERGE
+          bool d1HasChanges = false;
           if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
             try {
               final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
               if (edgeEvents.isNotEmpty) {
-                bool d1Mutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
-                if (d1Mutated) hasChanges = true;
+                bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
+                bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
+                if (d1Sales || d1Purc) d1HasChanges = true;
+                final nowTs = DateTime.now().millisecondsSinceEpoch;
+                for (final ev in edgeEvents) {
+                  if ((ev["action"] ?? "").toString().toUpperCase() == "DELETE") {
+                    final String bId = (ev["bill_id"] ?? "").toString().trim();
+                    final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+                    if (bId.isNotEmpty) {
+                      localRegistry[bId] = nowTs;
+                      localRegistry[bId.toUpperCase()] = nowTs;
+                      localTombstones.add(bId);
+                    }
+                    if (bNo.isNotEmpty) {
+                      localRegistry[bNo] = nowTs;
+                      localTombstones.add(bNo);
+                    }
+                  }
+                }
               }
             } catch (_) {}
           }
+
+          // STEP 3: EXECUTE DEATH (The Graveyard - Monotonic Anti-Zombie & Multi-Key)
+          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
+          TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
+
+          // STEP 4: DELTA MERGE (The Updater)
+          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes) || d1HasChanges;
+
+          // Final post-merge tombstone sweep so nothing slips through
+          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
+          TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
           if (hasChanges || newlyDeleted.isNotEmpty || localTombstones.isNotEmpty) {
             InventoryLogicCenter.rebuildAllInventory(
@@ -107,6 +155,13 @@ class AppSyncEngine {
       await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
       await SnapshotWatcher.takeSnapshot(ph);
+
+      // Ensure local disk files for sales, purchases, and parties strictly match in-memory state before pushing!
+      try {
+        await File('$workingDir/sales.json').writeAsString(jsonEncode(ph.sales.map((e) => e.toMap()).toList()));
+        await File('$workingDir/purc.json').writeAsString(jsonEncode(ph.purchases.map((e) => e.toMap()).toList()));
+        await File('$workingDir/parts.json').writeAsString(jsonEncode(ph.parties.map((e) => e.toMap()).toList()));
+      } catch (_) {}
 
       // STEP 5: PUSH TO CLOUD (The Rebirth)
       Map<String, String> filesPayload = {};

@@ -231,6 +231,8 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
                     priceLevel: selectedPriceLevel,
                     route: selectedRoute,
                     transport: transportC.text.trim(),
+                    updatedAt: DateTime.now().millisecondsSinceEpoch,
+                    version: (party?.version ?? 0) + 1,
                   );
 
                   if (party == null) {

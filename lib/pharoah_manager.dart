@@ -541,8 +541,12 @@ Future<void> finalizePurchase({
     );
     purchases.add(newFinalPurchase);
     if (activeCompany != null) {
+      final bool isModify = existingIdx != -1;
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, t);
+        if (t.isNotEmpty) {
+          PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, t);
+          D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, t, isUpdate: isModify, clientSource: "APP_MOBILE");
+        }
       });
     } 
     
@@ -630,10 +634,13 @@ Future<void> finalizePurchase({
     );
     purchases[idx] = updatedPurchase; 
 
-    // ⚡ Outbox Queue Event Dispatch
+    // ⚡ Outbox Queue & D1 Edge Dispatch
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((token) {
-        if (token.isNotEmpty) PurchaseSyncModule.onPurchaseSaved(updatedPurchase, token);
+        if (token.isNotEmpty) {
+          PurchaseSyncModule.onPurchaseSaved(updatedPurchase, token);
+          D1SalesLedgerService.onPurchaseSaved(updatedPurchase, token, isUpdate: true, clientSource: "APP_MOBILE");
+        }
       });
     }
 
@@ -1339,7 +1346,8 @@ void registerBatchActivity({
       final String intNo = p.internalNo.trim().toUpperCase();
       final String bNo = p.billNo.trim().toUpperCase();
       final String partyId = p.partyId.trim().toUpperCase();
-      final String compKey = PurchaseSyncModule.makeCompositeKey(partyId, bNo, intNo);
+      final String compKey2 = (partyId.isNotEmpty && bNo.isNotEmpty) ? "${partyId}_$bNo" : "";
+      final String compKey3 = PurchaseSyncModule.makeCompositeKey(partyId, bNo, intNo);
 
       // Deduplicate remove across composite identity (never naked bNo alone!)
       purchases.removeWhere((x) => 
@@ -1350,7 +1358,20 @@ void registerBatchActivity({
       );
 
       D1SalesLedgerService.markPurchasePermanentlyDeleted(pId, partyId, bNo, intNo);
-      final List<String> delKeys = [pId, if (intNo.isNotEmpty) intNo, if (compKey.isNotEmpty) compKey];
+      try {
+        getWorkingPath().then((dir) {
+          if (dir.isNotEmpty) {
+            File('$dir/purc.json').writeAsStringSync(jsonEncode(purchases.map((e) => e.toMap()).toList()));
+          }
+        });
+      } catch (_) {}
+
+      final List<String> delKeys = [
+        pId,
+        if (intNo.isNotEmpty) intNo,
+        if (compKey2.isNotEmpty) compKey2,
+        if (compKey3.isNotEmpty) compKey3,
+      ];
 
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
@@ -1359,14 +1380,15 @@ void registerBatchActivity({
             D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE");
           }
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
-        AppRealtimeCoordinator.instance.notifyAppMutation(
-          this,
-          action: 'DELETE_PURCHASE',
-          entityId: pId,
-          deletedIds: delKeys,
-        );
-        }
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys).then((_) {
+          AppRealtimeCoordinator.instance.notifyAppMutation(
+            this,
+            action: 'DELETE_PURCHASE',
+            entityId: pId,
+            deletedIds: delKeys,
+          );
+        });
+      }
       InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
       save();
       notifyListeners();

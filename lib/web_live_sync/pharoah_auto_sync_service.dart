@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/pharoah_auto_sync_service.dart
-// Live Revision: #PH-REV-711 (WEB-PURCHASE-DUAL-SERIES-WPUR-PRO)
+// Live Revision: #PH-REV-712 (PURCHASE-ANTI-ZOMBIE-AND-PARTY-SYNC)
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -18,7 +18,7 @@ class PharoahAutoSyncService {
   /// Starts real-time signaling listeners when web user logs in
   void startRealtimeSync() {
     _coordinator.start();
-    LabSyncOrchestrator.instance.addLog("🟢 Web Unified Realtime Listener Active (#PH-REV-711)");
+    LabSyncOrchestrator.instance.addLog("🟢 Web Unified Realtime Listener Active (#PH-REV-712)");
   }
 
   /// Legacy alias for compatibility

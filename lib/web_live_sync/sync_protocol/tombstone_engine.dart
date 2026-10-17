@@ -164,48 +164,59 @@ class TombstoneEngine {
   }
 
   /// 🛡️ Chronological Anti-Zombie Registry Purge:
-  /// Evaluates ID AND secondary human identifiers (BillNo, InternalNo, VoucherNo).
+  /// Evaluates ID AND secondary human identifiers (BillNo, InternalNo, VoucherNo, 2-part & 3-part Composite Keys).
   static void purgeDeletedRecordsWithRegistry(PharoahManager ph, Map<String, int> registry) {
     if (registry.isEmpty) return;
     ph.sales.removeWhere((e) {
       final bNo = e.billNo.trim().toUpperCase();
-      final delTime = registry[e.id] ?? (bNo.isNotEmpty ? registry[bNo] : null);
+      if (registry.containsKey(e.id) || registry.containsKey(e.id.toUpperCase())) return true;
+      final delTime = bNo.isNotEmpty ? registry[bNo] : null;
       return delTime != null && delTime >= e.updatedAt;
     });
     ph.purchases.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
-      final compKey = (e.partyId.isNotEmpty && e.billNo.isNotEmpty) ? "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}" : "";
-      final delTime = registry[e.id] ?? 
-          (iNo.isNotEmpty ? registry[iNo] : null) ?? 
-          (compKey.isNotEmpty ? registry[compKey] : null);
+      final pId = e.partyId.trim().toUpperCase();
+      final bNo = e.billNo.trim().toUpperCase();
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+      final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+      if (registry.containsKey(e.id) ||
+          registry.containsKey(e.id.toUpperCase()) ||
+          (iNo.isNotEmpty && registry.containsKey(iNo)) ||
+          (compKey3.isNotEmpty && registry.containsKey(compKey3))) {
+        return true;
+      }
+      final delTime = compKey2.isNotEmpty ? registry[compKey2] : null;
       return delTime != null && delTime >= e.updatedAt;
     });
     ph.saleChallans.removeWhere((e) {
       final bNo = e.billNo.trim().toUpperCase();
-      final delTime = registry[e.id] ?? (bNo.isNotEmpty ? registry[bNo] : null);
+      if (registry.containsKey(e.id)) return true;
+      final delTime = bNo.isNotEmpty ? registry[bNo] : null;
       return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
     });
     ph.purchaseChallans.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
       final bNo = e.billNo.trim().toUpperCase();
-      final delTime = registry[e.id] ?? 
-          (iNo.isNotEmpty ? registry[iNo] : null) ?? 
-          (bNo.isNotEmpty ? registry[bNo] : null);
+      if (registry.containsKey(e.id) || (iNo.isNotEmpty && registry.containsKey(iNo))) return true;
+      final delTime = bNo.isNotEmpty ? registry[bNo] : null;
       return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
     });
     ph.saleReturns.removeWhere((e) {
       final bNo = e.billNo.trim().toUpperCase();
-      final delTime = registry[e.id] ?? (bNo.isNotEmpty ? registry[bNo] : null);
+      if (registry.containsKey(e.id)) return true;
+      final delTime = bNo.isNotEmpty ? registry[bNo] : null;
       return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
     });
     ph.purchaseReturns.removeWhere((e) {
       final bNo = e.billNo.trim().toUpperCase();
-      final delTime = registry[e.id] ?? (bNo.isNotEmpty ? registry[bNo] : null);
+      if (registry.containsKey(e.id)) return true;
+      final delTime = bNo.isNotEmpty ? registry[bNo] : null;
       return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
     });
     ph.vouchers.removeWhere((e) {
       final vNo = e.voucherNo.trim().toUpperCase();
-      final delTime = registry[e.id] ?? (vNo.isNotEmpty ? registry[vNo] : null);
+      if (registry.containsKey(e.id)) return true;
+      final delTime = vNo.isNotEmpty ? registry[vNo] : null;
       return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
     });
   }
@@ -217,7 +228,8 @@ class TombstoneEngine {
 
     ph.sales.removeWhere((e) {
       final bNo = e.billNo.trim().toUpperCase();
-      final isTomb = allTombstones.contains(e.id) || (bNo.isNotEmpty && (allTombstones.contains(bNo) || upperTombstones.contains(bNo)));
+      if (allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase())) return true;
+      final isTomb = bNo.isNotEmpty && (allTombstones.contains(bNo) || upperTombstones.contains(bNo));
       if (!isTomb) return false;
       if (registry != null) {
         final delTime = registry[e.id] ?? (bNo.isNotEmpty ? registry[bNo] : null);
@@ -228,15 +240,20 @@ class TombstoneEngine {
 
     ph.purchases.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
-      final compKey = (e.partyId.isNotEmpty && e.billNo.isNotEmpty) ? "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}" : "";
-      final isTomb = allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase()) ||
+      final pId = e.partyId.trim().toUpperCase();
+      final bNo = e.billNo.trim().toUpperCase();
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+      final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+      if (allTombstones.contains(e.id) ||
+          upperTombstones.contains(e.id.toUpperCase()) ||
           (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
-          (compKey.isNotEmpty && (allTombstones.contains(compKey) || upperTombstones.contains(compKey)));
+          (compKey3.isNotEmpty && (allTombstones.contains(compKey3) || upperTombstones.contains(compKey3)))) {
+        return true;
+      }
+      final isTomb = compKey2.isNotEmpty && (allTombstones.contains(compKey2) || upperTombstones.contains(compKey2));
       if (!isTomb) return false;
       if (registry != null) {
-        final delTime = registry[e.id] ?? 
-            (iNo.isNotEmpty ? registry[iNo] : null) ?? 
-            (compKey.isNotEmpty ? registry[compKey] : null);
+        final delTime = registry[compKey2];
         if (delTime != null) return delTime >= e.updatedAt;
       }
       return true;

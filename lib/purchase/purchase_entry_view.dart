@@ -86,9 +86,23 @@ class _PurchaseEntryViewState extends State<PurchaseEntryView> {
     });
   }
 
+  bool showOnlyCreditors = false;
+
   Future<void> _handleQuickAddSupplier() async {
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (c) => const PartyMasterView(isSelectionMode: true)));
-    if (result != null && result is Party) { setState(() { selectedDistributor = result; }); }
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => const PartyMasterView(
+          isSelectionMode: true,
+          preFillData: {'group': 'Sundry Creditors'},
+        ),
+      ),
+    );
+    if (result != null && result is Party) {
+      setState(() {
+        selectedDistributor = result;
+      });
+    }
   }
 
   @override Widget build(BuildContext context) {
@@ -193,12 +207,143 @@ class _PurchaseEntryViewState extends State<PurchaseEntryView> {
     )
   );
 
-  Widget _buildSearchList(PharoahManager ph) => Column(children: [
-    Padding(padding: const EdgeInsets.symmetric(horizontal: 15), child: Row(children: [
-      Expanded(child: TextField(decoration: const InputDecoration(hintText: "Search Supplier...", prefixIcon: Icon(Icons.search), border: OutlineInputBorder()), onChanged: (v) => setState(() => distSearchQuery = v))), 
-      const SizedBox(width: 10),
-      IconButton.filled(onPressed: _handleQuickAddSupplier, icon: const Icon(Icons.group_add_rounded), style: IconButton.styleFrom(backgroundColor: Colors.orange.shade800, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)))),
-    ])), 
-    Expanded(child: ListView(padding: const EdgeInsets.all(5), children: ph.parties.where((p) => p.group == "Sundry Creditors" && p.name.toLowerCase().contains(distSearchQuery.toLowerCase())).map((p) => ListTile(title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text(p.city), onTap: () => setState(() => selectedDistributor = p))).toList()))
-  ]);
+  bool _isCreditorGroup(String group) {
+    final g = group.trim().toLowerCase();
+    return g.contains("creditor") || g.contains("supplier") || g.contains("vendor") || g.contains("distributor");
+  }
+
+  bool _isSystemNonParty(Party p) {
+    final nameUpper = p.name.trim().toUpperCase();
+    final grpLower = p.group.trim().toLowerCase();
+    if (nameUpper == "CASH") return true;
+    if (grpLower == "bank accounts" || grpLower == "cash in hand" || grpLower == "expenses") return true;
+    return false;
+  }
+
+  Widget _buildSearchList(PharoahManager ph) {
+    final q = distSearchQuery.trim().toLowerCase();
+    final filteredParties = ph.parties.where((p) {
+      if (_isSystemNonParty(p)) return false;
+      if (showOnlyCreditors && !_isCreditorGroup(p.group)) return false;
+      if (q.isEmpty) return true;
+      return p.name.toLowerCase().contains(q) ||
+             p.city.toLowerCase().contains(q) ||
+             p.gst.toLowerCase().contains(q) ||
+             p.group.toLowerCase().contains(q);
+    }).toList();
+
+    // Sort so Sundry Creditors always appear first, then alphabetical by name
+    filteredParties.sort((a, b) {
+      final aCred = _isCreditorGroup(a.group);
+      final bCred = _isCreditorGroup(b.group);
+      if (aCred != bCred) return aCred ? -1 : 1;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: const InputDecoration(
+                    hintText: "Search Supplier / Party by Name, City or GST...",
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (v) => setState(() => distSearchQuery = v),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilterChip(
+                label: Text(
+                  showOnlyCreditors ? "Creditors Only" : "All Parties (${filteredParties.length})",
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: showOnlyCreditors ? Colors.white : Colors.orange.shade900,
+                  ),
+                ),
+                selected: showOnlyCreditors,
+                selectedColor: Colors.orange.shade800,
+                checkmarkColor: Colors.white,
+                backgroundColor: Colors.orange.shade50,
+                onSelected: (val) => setState(() => showOnlyCreditors = val),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: _handleQuickAddSupplier,
+                icon: const Icon(Icons.group_add_rounded),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.orange.shade800,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: filteredParties.isEmpty
+              ? Center(
+                  child: Text(
+                    "No matching supplier/party found in Party Register.",
+                    style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  itemCount: filteredParties.length,
+                  itemBuilder: (context, index) {
+                    final p = filteredParties[index];
+                    final isCred = _isCreditorGroup(p.group);
+                    return Card(
+                      elevation: 0.5,
+                      margin: const EdgeInsets.symmetric(vertical: 3),
+                      child: ListTile(
+                        dense: true,
+                        leading: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: isCred ? Colors.orange.shade100 : Colors.indigo.shade50,
+                          child: Icon(
+                            isCred ? Icons.local_shipping_rounded : Icons.storefront_rounded,
+                            size: 16,
+                            color: isCred ? Colors.orange.shade900 : Colors.indigo,
+                          ),
+                        ),
+                        title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text(
+                          "${p.city.isNotEmpty ? p.city : p.state} | GST: ${p.gst.isNotEmpty ? p.gst : 'N/A'}",
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isCred ? Colors.orange.shade50 : Colors.indigo.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isCred ? Colors.orange.shade300 : Colors.indigo.shade200,
+                            ),
+                          ),
+                          child: Text(
+                            isCred ? "CREDITOR" : "DEBTOR",
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                              color: isCred ? Colors.orange.shade900 : Colors.indigo.shade800,
+                            ),
+                          ),
+                        ),
+                        onTap: () => setState(() => selectedDistributor = p),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
 }

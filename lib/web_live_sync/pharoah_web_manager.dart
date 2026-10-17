@@ -313,10 +313,12 @@ class PharoahWebManager with ChangeNotifier {
 
     Map<String, Party> uniqueParties = {};
     for (var p in rawParts) {
-      String cleanKey = (p.gst.isNotEmpty && p.gst != 'N/A')
-          ? p.gst.toUpperCase().trim()
-          : p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+      String cleanName = p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+      String cleanKey = p.id.trim().isNotEmpty ? p.id.trim() : cleanName;
+      if (cleanKey.isEmpty) continue;
       if (!uniqueParties.containsKey(cleanKey)) {
+        uniqueParties[cleanKey] = p;
+      } else if (p.updatedAt >= uniqueParties[cleanKey]!.updatedAt) {
         uniqueParties[cleanKey] = p;
       }
     }
@@ -468,12 +470,26 @@ class PharoahWebManager with ChangeNotifier {
       }
       purchases = masterPurcMap.values.where((p) {
         final iNo = p.internalNo.trim().toUpperCase();
-        final comp = (p.partyId.isNotEmpty && p.billNo.isNotEmpty) ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}" : "";
-        return !deletedRecordIds.contains(p.id) &&
+        final comp2 = (p.partyId.isNotEmpty && p.billNo.isNotEmpty) ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}" : "";
+        final comp3 = PurchaseSyncModule.makeCompositeKey(p.partyId, p.billNo, p.internalNo);
+        return !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo) &&
+               !deletedRecordIds.contains(p.id) &&
                !deletedRecordIds.contains(p.id.toUpperCase()) &&
                (iNo.isEmpty || (!deletedRecordIds.contains(iNo) && !deletedRecordIds.contains(iNo.toUpperCase()))) &&
-               (comp.isEmpty || (!deletedRecordIds.contains(comp) && !deletedRecordIds.contains(comp.toUpperCase())));
+               (comp2.isEmpty || (!deletedRecordIds.contains(comp2) && !deletedRecordIds.contains(comp2.toUpperCase()))) &&
+               (comp3.isEmpty || (!deletedRecordIds.contains(comp3) && !deletedRecordIds.contains(comp3.toUpperCase())));
       }).toList();
+
+      if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
+        D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
+          if (edgeEvents.isNotEmpty) {
+            if (D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents)) {
+              rebuildInventory();
+              notifyListeners();
+            }
+          }
+        }).catchError((_) {});
+      }
     }
 
     // 3. Vouchers Sync with Anti-Zombie Multi-Key Protection
@@ -959,6 +975,7 @@ class PharoahWebManager with ChangeNotifier {
       purchases.insert(0, purchase);
     }
     PurchaseSyncModule.onPurchaseSaved(purchase, activeStoreToken);
+    D1SalesLedgerService.onPurchaseSaved(purchase, activeStoreToken, isUpdate: isUpdate, clientSource: "WEB_PORTAL");
     for (var item in purchase.items) {
       String resolvedKey = item.medicineID;
       try {
@@ -1000,7 +1017,8 @@ class PharoahWebManager with ChangeNotifier {
     String targetIntNo = "";
     String targetBillNo = "";
     String targetPartyId = "";
-    String compKey = "";
+    String compKey2 = "";
+    String compKey3 = "";
     try {
       final p = purchases.firstWhere(
         (x) => x.id == purId || x.internalNo == purId,
@@ -1010,8 +1028,17 @@ class PharoahWebManager with ChangeNotifier {
       targetIntNo = p.internalNo.trim().toUpperCase();
       targetBillNo = p.billNo.trim().toUpperCase();
       targetPartyId = p.partyId.trim().toUpperCase();
-      compKey = PurchaseSyncModule.makeCompositeKey(targetPartyId, targetBillNo, targetIntNo);
+      compKey2 = (targetPartyId.isNotEmpty && targetBillNo.isNotEmpty) ? "${targetPartyId}_$targetBillNo" : "";
+      compKey3 = PurchaseSyncModule.makeCompositeKey(targetPartyId, targetBillNo, targetIntNo);
       D1SalesLedgerService.markPurchasePermanentlyDeleted(realId, targetPartyId, targetBillNo, targetIntNo);
+      D1SalesLedgerService.onPurchaseDeleted(
+        realId,
+        targetPartyId,
+        targetBillNo,
+        targetIntNo,
+        activeStoreToken,
+        clientSource: "WEB_PORTAL",
+      );
       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
@@ -1037,13 +1064,17 @@ class PharoahWebManager with ChangeNotifier {
     final List<String> delKeys = [
       realId,
       if (targetIntNo.isNotEmpty) targetIntNo,
-      if (compKey.isNotEmpty) compKey,
+      if (compKey2.isNotEmpty) compKey2,
+      if (compKey3.isNotEmpty) compKey3,
     ];
 
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
+      localTombstoneRegistry[k.toUpperCase()] = delTime;
       deletedRecordIds.add(k);
+      deletedRecordIds.add(k.toUpperCase());
       unmarkedRecordIds.remove(k);
+      unmarkedRecordIds.remove(k.toUpperCase());
     }
     _saveLocalTombstones();
     purchases.removeWhere((p) => 
@@ -1055,7 +1086,7 @@ class PharoahWebManager with ChangeNotifier {
     rebuildInventory();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
-      action: 'RECORD_DELETED',
+      action: 'DELETE_PURCHASE',
       entityId: realId,
       deletedIds: delKeys,
     );
@@ -1209,9 +1240,11 @@ class PharoahWebManager with ChangeNotifier {
   void updateParty(Party updatedParty) {
     int idx = parties.indexWhere((p) => p.id == updatedParty.id);
     if (idx != -1) {
+      updatedParty.updatedAt = DateTime.now().millisecondsSinceEpoch;
+      updatedParty.version = parties[idx].version + 1;
       parties[idx] = updatedParty;
       notifyListeners();
-      _autoSyncService.triggerAutoSync();
+      _autoSyncService.triggerAutoSync(action: 'PARTY_UPDATED', entityId: updatedParty.id);
     }
   }
 
@@ -1220,16 +1253,15 @@ class PharoahWebManager with ChangeNotifier {
     _saveLocalTombstones();
     parties.removeWhere((p) => p.id == partyId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(action: 'PARTY_DELETED', entityId: partyId, deletedIds: [partyId]);
   }
 
   void addParty(Party newParty) {
     String cleanNewName = newParty.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
-    String cleanGst = newParty.gst.trim().toUpperCase();
+    final int nowTs = DateTime.now().millisecondsSinceEpoch;
 
     int existingIdx = parties.indexWhere((p) {
       if (newParty.id.isNotEmpty && p.id == newParty.id) return true;
-      if (cleanGst.isNotEmpty && cleanGst != 'N/A' && p.gst.trim().toUpperCase() == cleanGst) return true;
       return p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanNewName;
     });
 
@@ -1256,13 +1288,17 @@ class PharoahWebManager with ChangeNotifier {
         opBal: newParty.opBal,
         creditLimit: newParty.creditLimit,
         creditDays: newParty.creditDays,
+        updatedAt: nowTs,
+        version: parties[existingIdx].version + 1,
       );
       parties[existingIdx] = newParty;
     } else {
+      newParty.updatedAt = nowTs;
+      if (newParty.version < 1) newParty.version = 1;
       parties.add(newParty);
     }
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    _autoSyncService.triggerAutoSync(action: 'PARTY_SAVED', entityId: newParty.id);
   }
 
   void addMedicine(Medicine newMed) {
