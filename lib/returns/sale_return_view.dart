@@ -10,6 +10,7 @@ import '../item_entry_card.dart';
 import '../pharoah_date_controller.dart';
 import '../app_date_logic.dart';
 import '../pdf/pdf_router_service.dart';
+import '../logic/app_billing_gst_engine.dart';
 
 class SaleReturnView extends StatefulWidget {
   final SaleReturn? existingRecord; 
@@ -79,10 +80,21 @@ class _SaleReturnViewState extends State<SaleReturnView> {
     }
   }
 
-  double get subTotal => items.fold(0, (sum, it) => sum + it.total);
+  // --- GST COMPLIANT CALCULATIONS (Section 15 & 34) ---
+  bool get isLocal {
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    return (selectedParty?.state.trim().toLowerCase() ?? "") == (ph.companyState.trim().toLowerCase());
+  }
+
+  AppBillGstSummary get gstSummary => AppBillingGstEngine.calculate(
+    items: items,
+    extraDiscount: extraDiscount,
+    isLocal: isLocal,
+  );
+
   double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
-  double get grandTotal => (subTotal - extraDiscount).roundToDouble();
-  double get roundOff => double.parse((grandTotal - (subTotal - extraDiscount)).toStringAsFixed(2));
+  double get grandTotal => gstSummary.finalGrandTotal;
+  double get roundOff => gstSummary.roundOff;
 
   void _showMagicHistoryBox(Medicine med, PharoahManager ph) {
     if (selectedParty == null) return;
@@ -249,25 +261,84 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   Widget _buildHeader(PharoahManager ph) => Container(
     padding: const EdgeInsets.all(15), color: Colors.white,
     child: Column(children: [
+        // 🗓️ DATE SELECTOR & CREDIT NOTE NO BAR
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(children: [
+              const Icon(Icons.assignment_return_rounded, color: Color(0xFFB71C1C), size: 18),
+              const SizedBox(width: 6),
+              Text("CREDIT NOTE #${returnNoC.text}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFFB71C1C))),
+            ]),
+            InkWell(
+              onTap: widget.isReadOnly ? null : () async {
+                DateTime? p = await PharoahDateController.pickDate(
+                  context: context,
+                  currentFY: ph.currentFY,
+                  initialDate: selectedDate,
+                );
+                if (p != null) setState(() => selectedDate = p);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_month_rounded, size: 14, color: Color(0xFFB71C1C)),
+                    const SizedBox(width: 6),
+                    Text(
+                      DateFormat('dd/MM/yyyy').format(selectedDate),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFB71C1C)),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_drop_down, size: 16, color: Color(0xFFB71C1C)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
         if (selectedParty == null) ...[
           TextField(
-            decoration: const InputDecoration(hintText: "Search Customer for Credit Note...", prefixIcon: Icon(Icons.person_search), border: OutlineInputBorder()),
-            onChanged: (v) => setState(() { partySearch = v; }), // FIXED SETTER
+            decoration: const InputDecoration(
+              hintText: "Search Customer / Party by Name, City or GST...",
+              prefixIcon: Icon(Icons.person_search),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (v) => setState(() { partySearch = v; }),
           ),
           Container(
-            height: 150, margin: const EdgeInsets.only(top: 5),
+            height: 160, margin: const EdgeInsets.only(top: 5),
             decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(10)),
-            child: ListView(children: ph.parties.where((p) => p.name.toLowerCase().contains(partySearch.toLowerCase())).toList().map((p) => ListTile(
-              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () => setState(() => selectedParty = p),
-            )).toList()),
+            child: ListView(
+              children: ph.parties.where((p) {
+                final q = partySearch.trim().toLowerCase();
+                if (q.isEmpty) return true;
+                return p.name.toLowerCase().contains(q) ||
+                       p.city.toLowerCase().contains(q) ||
+                       p.gst.toLowerCase().contains(q) ||
+                       p.phone.toLowerCase().contains(q);
+              }).map((p) => ListTile(
+                dense: true,
+                title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: Text("${p.city.isNotEmpty ? p.city : 'General'} | GST: ${p.gst.isNotEmpty ? p.gst : 'URP'} | Group: ${p.group.isNotEmpty ? p.group : 'Party'}", style: const TextStyle(fontSize: 11)),
+                onTap: () => setState(() { selectedParty = p; partySearch = ""; }),
+              )).toList(),
+            ),
           )
         ] else
           ListTile(
             tileColor: Colors.red.shade50,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             title: Text(selectedParty!.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("Return Ref: ${returnNoC.text}"),
+            subtitle: Text("City: ${selectedParty!.city.isNotEmpty ? selectedParty!.city : 'N/A'} | GST: ${selectedParty!.gst.isNotEmpty ? selectedParty!.gst : 'URP'}"),
             trailing: widget.isReadOnly ? null : IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => setState(() => selectedParty = null)),
           ),
     ]),
@@ -315,15 +386,46 @@ class _SaleReturnViewState extends State<SaleReturnView> {
     child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           const Text("Extra Discount (-)", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-          SizedBox(width: 100, child: TextField(controller: discountC, keyboardType: TextInputType.number, textAlign: TextAlign.right, onChanged: (v) => setState(() {}), decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()))),
+          SizedBox(
+            width: 100,
+            child: TextField(
+              controller: discountC,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              onChanged: (v) => setState(() {}),
+              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+            ),
+          ),
         ]),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
+          child: Column(children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+              Text("₹${gstSummary.netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 4),
+            if (isLocal)
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text("CGST + SGST", style: TextStyle(fontSize: 11, color: Colors.red.shade900)),
+                Text("₹${gstSummary.totalCGST.toStringAsFixed(2)} + ₹${gstSummary.totalSGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+              ])
+            else
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text("IGST", style: TextStyle(fontSize: 11, color: Colors.red.shade900)),
+                Text("₹${gstSummary.totalIGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+              ]),
+          ]),
+        ),
         const Divider(),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text("NET CREDIT VALUE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
             Text("₹${grandTotal.toStringAsFixed(2)}", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFFB71C1C))),
           ]),
-          Text("R/O: ${roundOff.toStringAsFixed(2)}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          Text("R/O: ${roundOff.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ]),
     ]),
   );
