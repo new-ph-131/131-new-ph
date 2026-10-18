@@ -38,6 +38,7 @@ import 'app_date_logic.dart';
 import 'sync_bridge/engines/app_auto_sync_daemon.dart';
 import 'realtime_signaling/coordinators/app_realtime_coordinator.dart';
 import 'web_live_sync/sync_protocol/tombstone_engine.dart';
+import 'web_live_sync/sync_protocol/snapshot_watcher.dart';
 
 class PharoahManager with ChangeNotifier {
   // ===========================================================================
@@ -835,8 +836,16 @@ Future<void> finalizePurchase({
     if (existingIdx != -1) {
       currentVer = purchaseChallans[existingIdx].version + 1;
     }
+    final cleanBNo = billNo.trim().toUpperCase();
+    final cleanPId = partyId.trim().toUpperCase();
+    final compKey2 = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
+    final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
     if (activeCompany != null) {
       await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2);
+      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3);
+      if (cleanBNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBNo);
+      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo);
       D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo, internalNo);
     }
     purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
@@ -1510,8 +1519,17 @@ void registerBatchActivity({
       final cId = c.id;
       final iNo = c.internalNo.trim().toUpperCase();
       final bNo = c.billNo.trim().toUpperCase();
-      final List<String> delKeys = [cId, if (bNo.isNotEmpty) bNo, if (iNo.isNotEmpty) iNo];
-      D1SalesLedgerService.markPermanentlyDeleted(cId, bNo, iNo);
+      final pId = c.partyId.trim().toUpperCase();
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+      final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
+      final List<String> delKeys = [
+        cId,
+        if (iNo.isNotEmpty) iNo,
+        if (compKey2.isNotEmpty) compKey2,
+        if (compKey3.isNotEmpty) compKey3,
+      ];
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId, pId, bNo, iNo);
+
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
@@ -1523,8 +1541,12 @@ void registerBatchActivity({
           entityId: cId,
           deletedIds: delKeys,
         );
-        }
-      purchaseChallans.removeWhere((x) => x.id == cId || (iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      }
+      purchaseChallans.removeWhere((x) =>
+        x.id == cId ||
+        (iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) ||
+        (pId.isNotEmpty && bNo.isNotEmpty && x.partyId.trim().toUpperCase() == pId && x.billNo.trim().toUpperCase() == bNo)
+      );
       save();
       notifyListeners();
     } catch (_) {
@@ -1667,8 +1689,27 @@ void registerBatchActivity({
         fYears: allFys,
       );
 
-      final root = await getApplicationDocumentsDirectory();
-      final workingDir = Directory("${root.path}/${restoredProfile.id}/$fy");
+      int existIdx = companiesRegistry.indexWhere((c) => c.id == restoredProfile.id);
+      if (existIdx != -1) {
+        companiesRegistry[existIdx] = restoredProfile;
+      } else {
+        companiesRegistry.add(restoredProfile);
+      }
+      await saveRegistry();
+
+      await WebLiveToken.saveToken(cleanToken, companyId: restoredProfile.id);
+
+      activeCompany = restoredProfile;
+      currentFY = fy;
+      isAdminAuthenticated = true;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('active_fy_${restoredProfile.id}', fy);
+      await prefs.setString('last_active_fy_for_${restoredProfile.id}', fy);
+
+      // Write all downloaded files directly to the canonical getWorkingPath() directory
+      final workingDirPath = await getWorkingPath();
+      final workingDir = Directory(workingDirPath);
       if (!await workingDir.exists()) {
         await workingDir.create(recursive: true);
       }
@@ -1686,20 +1727,29 @@ void registerBatchActivity({
         }
       }
 
-      int existIdx = companiesRegistry.indexWhere((c) => c.id == restoredProfile.id);
-      if (existIdx != -1) {
-        companiesRegistry[existIdx] = restoredProfile;
-      } else {
-        companiesRegistry.add(restoredProfile);
+      // Restore tombstone registry with original deletion timestamps (never DateTime.now())
+      if (files.containsKey('tombstone_registry.json') && files['tombstone_registry.json'] != null) {
+        try {
+          final rawReg = files['tombstone_registry.json'] is String
+              ? jsonDecode(files['tombstone_registry.json'])
+              : files['tombstone_registry.json'];
+          if (rawReg is Map) {
+            final Map<String, int> regMap = {};
+            rawReg.forEach((k, v) {
+              final cleanK = k.toString().trim();
+              final ts = int.tryParse(v.toString()) ?? 0;
+              if (cleanK.isNotEmpty && ts > 0) {
+                regMap[cleanK] = ts;
+                regMap[cleanK.toUpperCase()] = ts;
+              }
+            });
+            await TombstoneEngine.saveTombstoneRegistry(restoredProfile.id, regMap);
+          }
+        } catch (_) {}
       }
-      await saveRegistry();
 
-      await WebLiveToken.saveToken(cleanToken, companyId: restoredProfile.id);
-
-      activeCompany = restoredProfile;
-      currentFY = fy;
-      isAdminAuthenticated = true;
       await loadAllData();
+      await SnapshotWatcher.takeSnapshot(this);
       notifyListeners();
 
       return {

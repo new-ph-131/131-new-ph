@@ -267,7 +267,7 @@ class FastPullEngine {
           final List<dynamic> filtered = [];
           for (final item in rawList) {
             if (item is Map) {
-              if (docType == "PURCHASE") {
+              if (docType == "PURCHASE" || docType == "PURCHASE_CHALLAN") {
                 final pId = (item["id"] ?? "").toString();
                 final partyId = (item["partyId"] ?? "").toString();
                 final billNo = (item["billNo"] ?? "").toString();
@@ -310,7 +310,14 @@ class FastPullEngine {
       });
       sanitizeCloudFile("vouc.json", (m) => [(m["id"] ?? "").toString(), (m["voucherNo"] ?? "").toString()]);
       sanitizeCloudFile("s_challan.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
-      sanitizeCloudFile("p_challan.json", (m) => [(m["id"] ?? "").toString(), (m["internalNo"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      sanitizeCloudFile("p_challan.json", (m) {
+        final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
+        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
+        final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
+        final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+        final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+        return [(m["id"] ?? "").toString(), iNo, comp2, comp3];
+      });
       sanitizeCloudFile("s_return.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("p_return.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
 

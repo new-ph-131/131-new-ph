@@ -199,10 +199,15 @@ class TombstoneEngine {
     });
     ph.purchaseChallans.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
+      final pId = e.partyId.trim().toUpperCase();
       final bNo = e.billNo.trim().toUpperCase();
-      if (registry.containsKey(e.id) || (iNo.isNotEmpty && registry.containsKey(iNo))) return true;
-      final delTime = bNo.isNotEmpty ? registry[bNo] : null;
-      return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+      final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+      if (registry.containsKey(e.id) || registry.containsKey(e.id.toUpperCase())) return true;
+      final int? delTime = (iNo.isNotEmpty ? registry[iNo] : null) ??
+          (compKey3.isNotEmpty ? registry[compKey3] : null) ??
+          (compKey2.isNotEmpty ? registry[compKey2] : null);
+      return delTime != null && e.updatedAt > 0 && delTime >= e.updatedAt;
     });
     ph.saleReturns.removeWhere((e) {
       final bNo = e.billNo.trim().toUpperCase();
@@ -258,9 +263,10 @@ class TombstoneEngine {
         final delTime = (iNo.isNotEmpty ? registry[iNo] : null) ??
             (compKey3.isNotEmpty ? registry[compKey3] : null) ??
             (compKey2.isNotEmpty ? registry[compKey2] : null);
-        if (delTime != null) return delTime >= e.updatedAt;
+        if (delTime != null) return e.updatedAt > 0 && delTime >= e.updatedAt;
+        return false; // Secondary key without registry timestamp must not wipe active purchase
       }
-      return true;
+      return false;
     });
 
     ph.saleChallans.removeWhere((e) {
@@ -276,18 +282,25 @@ class TombstoneEngine {
 
     ph.purchaseChallans.removeWhere((e) {
       final iNo = e.internalNo.trim().toUpperCase();
+      final pId = e.partyId.trim().toUpperCase();
       final bNo = e.billNo.trim().toUpperCase();
-      final isTomb = allTombstones.contains(e.id) || 
-          (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
-          (bNo.isNotEmpty && (allTombstones.contains(bNo) || upperTombstones.contains(bNo)));
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+      final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+      if (allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase())) {
+        return true;
+      }
+      final isTomb = (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
+          (compKey3.isNotEmpty && (allTombstones.contains(compKey3) || upperTombstones.contains(compKey3))) ||
+          (compKey2.isNotEmpty && (allTombstones.contains(compKey2) || upperTombstones.contains(compKey2)));
       if (!isTomb) return false;
       if (registry != null) {
-        final delTime = registry[e.id] ?? 
-            (iNo.isNotEmpty ? registry[iNo] : null) ?? 
-            (bNo.isNotEmpty ? registry[bNo] : null);
-        if (delTime != null) return delTime >= (e.toMap()['updatedAt'] ?? 0);
+        final delTime = (iNo.isNotEmpty ? registry[iNo] : null) ??
+            (compKey3.isNotEmpty ? registry[compKey3] : null) ??
+            (compKey2.isNotEmpty ? registry[compKey2] : null);
+        if (delTime != null) return e.updatedAt > 0 && delTime >= e.updatedAt;
+        return false; // Secondary key without registry timestamp must not wipe active purchase challan
       }
-      return true;
+      return false;
     });
 
     ph.saleReturns.removeWhere((e) {

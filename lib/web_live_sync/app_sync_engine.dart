@@ -60,20 +60,6 @@ class AppSyncEngine {
         if (cloudData['status'] == 'SUCCESS' && cloudData['files'] != null) {
           final Map<String, dynamic> cloudFiles = cloudData['files'];
 
-          if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
-            try {
-              List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
-              final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
-                companyId,
-                cloudT.map((e) => e.toString()),
-              );
-              localTombstones.addAll(sanitizedCloudT);
-              for (final tk in sanitizedCloudT) {
-                localRegistry.putIfAbsent(tk, () => DateTime.now().millisecondsSinceEpoch);
-                localRegistry.putIfAbsent(tk.toUpperCase(), () => DateTime.now().millisecondsSinceEpoch);
-              }
-            } catch (_) {}
-          }
           if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
             try {
               dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
@@ -95,6 +81,17 @@ class AppSyncEngine {
               }
             } catch (_) {}
           }
+          if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
+            try {
+              List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
+              final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
+                companyId,
+                cloudT.map((e) => e.toString()),
+              );
+              // Never poison localRegistry with DateTime.now() on flat legacy tombstones
+              localTombstones.addAll(sanitizedCloudT);
+            } catch (_) {}
+          }
           localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
 
           // 🚀 STEP 2.5: EDGE D1 REAL-TIME SALES & PURCHASES DELTA HARVEST BEFORE CLOUD MERGE
@@ -106,19 +103,78 @@ class AppSyncEngine {
                 bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
                 bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
                 if (d1Sales || d1Purc) d1HasChanges = true;
-                final nowTs = DateTime.now().millisecondsSinceEpoch;
                 for (final ev in edgeEvents) {
-                  if ((ev["action"] ?? "").toString().toUpperCase() == "DELETE") {
-                    final String bId = (ev["bill_id"] ?? "").toString().trim();
-                    final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+                  final String action = (ev["action"] ?? "").toString().toUpperCase();
+                  final String bId = (ev["bill_id"] ?? "").toString().trim();
+                  final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+                  final int evTs = int.tryParse(ev["updated_at"]?.toString() ?? "0") ?? 1;
+                  final dynamic rawPayload = ev["sale_data"];
+                  final bool isPurc = rawPayload is Map &&
+                      (rawPayload["doc_type"] == "PURCHASE" ||
+                       rawPayload.containsKey("distributorName") ||
+                       rawPayload.containsKey("internalNo"));
+                  if (action == "DELETE") {
                     if (bId.isNotEmpty) {
-                      localRegistry[bId] = nowTs;
-                      localRegistry[bId.toUpperCase()] = nowTs;
+                      localRegistry[bId] = evTs;
+                      localRegistry[bId.toUpperCase()] = evTs;
                       localTombstones.add(bId);
                     }
-                    if (bNo.isNotEmpty) {
-                      localRegistry[bNo] = nowTs;
+                    if (!isPurc && bNo.isNotEmpty) {
+                      localRegistry[bNo] = evTs;
                       localTombstones.add(bNo);
+                    }
+                    if (rawPayload is Map) {
+                      final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                      final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                      if (iNo.isNotEmpty) {
+                        localRegistry[iNo] = evTs;
+                        localTombstones.add(iNo);
+                      }
+                      if (pId.isNotEmpty && pBill.isNotEmpty) {
+                        final c2 = "${pId}_$pBill";
+                        localRegistry[c2] = evTs;
+                        localTombstones.add(c2);
+                        if (iNo.isNotEmpty) {
+                          final c3 = "${pId}_${pBill}_$iNo";
+                          localRegistry[c3] = evTs;
+                          localTombstones.add(c3);
+                        }
+                      }
+                    }
+                  } else {
+                    if (bId.isNotEmpty) {
+                      localRegistry.remove(bId);
+                      localRegistry.remove(bId.toUpperCase());
+                      localTombstones.remove(bId);
+                      localTombstones.remove(bId.toUpperCase());
+                    }
+                    if (bNo.isNotEmpty) {
+                      localRegistry.remove(bNo);
+                      localTombstones.remove(bNo);
+                    }
+                    if (rawPayload is Map) {
+                      final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                      final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                      if (iNo.isNotEmpty) {
+                        localRegistry.remove(iNo);
+                        localTombstones.remove(iNo);
+                      }
+                      if (pBill.isNotEmpty) {
+                        localRegistry.remove(pBill);
+                        localTombstones.remove(pBill);
+                      }
+                      if (pId.isNotEmpty && pBill.isNotEmpty) {
+                        final c2 = "${pId}_$pBill";
+                        localRegistry.remove(c2);
+                        localTombstones.remove(c2);
+                        if (iNo.isNotEmpty) {
+                          final c3 = "${pId}_${pBill}_$iNo";
+                          localRegistry.remove(c3);
+                          localTombstones.remove(c3);
+                        }
+                      }
                     }
                   }
                 }

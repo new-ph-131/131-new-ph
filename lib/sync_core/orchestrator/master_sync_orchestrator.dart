@@ -90,16 +90,26 @@ class MasterSyncOrchestrator {
           final bNo = (pBill['billNo'] ?? '').toString().trim().toUpperCase();
           final pId = (pBill['partyId'] ?? '').toString().trim().toUpperCase();
           final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+          final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, iNo);
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
             if (phApp.activeCompany != null) {
-              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo, if (comp2.isNotEmpty) comp2]);
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [
+                envelope.syncId,
+                if (iNo.isNotEmpty) iNo,
+                if (comp2.isNotEmpty) comp2,
+                if (comp3.isNotEmpty) comp3,
+              ]);
             }
           } else {
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
             D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, iNo);
             if (phApp.activeCompany != null) {
               final cid = phApp.activeCompany!.id;
-              TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: iNo.isNotEmpty ? iNo : bNo);
+              TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: comp3.isNotEmpty ? comp3 : comp2);
+              if (iNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: iNo);
+              if (comp2.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2);
+              if (bNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: bNo);
             }
           }
           mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phApp.purchaseChallans, envelope);
@@ -201,11 +211,22 @@ class MasterSyncOrchestrator {
           final bNo = (pBill['billNo'] ?? '').toString().trim().toUpperCase();
           final pId = (pBill['partyId'] ?? '').toString().trim().toUpperCase();
           final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+          final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            phWeb.purgeDeletedIds([envelope.syncId, if (iNo.isNotEmpty) iNo, if (bNo.isNotEmpty) bNo, if (comp2.isNotEmpty) comp2]);
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
+            phWeb.purgeDeletedIds([
+              envelope.syncId,
+              if (iNo.isNotEmpty) iNo,
+              if (comp2.isNotEmpty) comp2,
+              if (comp3.isNotEmpty) comp3,
+            ]);
           } else {
-            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: iNo.isNotEmpty ? iNo : bNo);
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, iNo);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: iNo);
+            if (bNo.isNotEmpty) phWeb.unmarkDeletedId(bNo);
             if (comp2.isNotEmpty) phWeb.unmarkDeletedId(comp2);
+            if (comp3.isNotEmpty) phWeb.unmarkDeletedId(comp3);
           }
           mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phWeb.purchaseChallans, envelope);
           break;
