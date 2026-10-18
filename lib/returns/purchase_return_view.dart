@@ -81,7 +81,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   // --- GST COMPLIANT CALCULATIONS (Section 15 & 34) ---
   bool get isLocal {
     final ph = Provider.of<PharoahManager>(context, listen: false);
-    return (selectedSupplier?.state.trim().toLowerCase() ?? "") == (ph.companyState.trim().toLowerCase());
+    return (selectedSupplier?.state.trim().toLowerCase() ?? "") == ((ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase());
   }
 
   double get grossTaxable => items.fold(0.0, (sum, it) {
@@ -445,7 +445,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           decoration: BoxDecoration(color: Colors.brown.shade50, borderRadius: BorderRadius.circular(8)),
           child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+              const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black87)),
               Text("₹${netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
             ]),
             const SizedBox(height: 4),

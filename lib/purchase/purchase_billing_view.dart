@@ -81,7 +81,7 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
     final ph = Provider.of<PharoahManager>(context);
 
     // 🆕 GST SECTION 15 CALCULATIONS (Taxable base reduction & tax bifurcation)
-    bool isLocal = widget.distributor.state.trim().toLowerCase() == ph.companyState.trim().toLowerCase();
+    bool isLocal = widget.distributor.state.trim().toLowerCase() == (ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase();
     double grossTaxable = items.fold(0.0, (sum, it) {
       double itTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
       return sum + (itTaxable > 0 ? itTaxable : 0.0);
@@ -243,7 +243,7 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
         decoration: BoxDecoration(color: Colors.brown.shade50, borderRadius: BorderRadius.circular(8)),
         child: Column(children: [
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+            const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black87)),
             Text("₹${netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
           ]),
           const SizedBox(height: 4),

@@ -304,7 +304,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
 
   // 🆕 RULE 55 GST COMPLIANT CHALLAN FOOTER
   Widget _buildFooter(PharoahManager ph) {
-    bool isLocal = widget.party.state.trim().toLowerCase() == ph.companyState.trim().toLowerCase();
+    bool isLocal = widget.party.state.trim().toLowerCase() == (ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase();
     AppBillGstSummary summary = AppBillingGstEngine.calculate(
       items: items,
       extraDiscount: 0.0,
@@ -333,7 +333,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
             decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: BorderRadius.circular(8)),
             child: Column(children: [
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+                const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black87)),
                 Text("₹${summary.netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               ]),
               const SizedBox(height: 4),
@@ -363,7 +363,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
   }
 
 void _handleSave(PharoahManager ph) async {
-    bool isLocal = widget.party.state.trim().toLowerCase() == ph.companyState.trim().toLowerCase();
+    bool isLocal = widget.party.state.trim().toLowerCase() == (ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase();
     AppBillGstSummary summary = AppBillingGstEngine.calculate(
       items: items,
       extraDiscount: 0.0,

@@ -83,7 +83,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   // --- GST COMPLIANT CALCULATIONS (Section 15 & 34) ---
   bool get isLocal {
     final ph = Provider.of<PharoahManager>(context, listen: false);
-    return (selectedParty?.state.trim().toLowerCase() ?? "") == (ph.companyState.trim().toLowerCase());
+    return (selectedParty?.state.trim().toLowerCase() ?? "") == ((ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase());
   }
 
   AppBillGstSummary get gstSummary => AppBillingGstEngine.calculate(
@@ -403,7 +403,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
           decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
           child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+              const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black87)),
               Text("₹${gstSummary.netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
             ]),
             const SizedBox(height: 4),
