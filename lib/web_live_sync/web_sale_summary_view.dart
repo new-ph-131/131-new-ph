@@ -397,6 +397,32 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
           style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 0.5),
         ),
         const Spacer(),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2563EB),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            elevation: 0,
+          ),
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (ctx) => Scaffold(
+                  backgroundColor: const Color(0xFF0F172A),
+                  body: WebNewSaleView(
+                    onBack: () => Navigator.pop(ctx),
+                  ),
+                ),
+              ),
+            );
+            if (context.mounted) setState(() {});
+          },
+          icon: const Icon(Icons.add_shopping_cart, size: 16),
+          label: const Text("+ NEW BILL", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+        ),
+        const SizedBox(width: 10),
 
         // EXACT APP WORKFLOW: PopupMenuButton for Summary PDF Actions
         if (filteredSales.isNotEmpty) ...[

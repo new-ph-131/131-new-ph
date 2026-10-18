@@ -66,6 +66,20 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
         }
       });
     }
+    if (navKey == "GO_SALE") {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (ctx) => Scaffold(
+            backgroundColor: const Color(0xFF0F172A),
+            body: WebNewSaleView(
+              onBack: () => Navigator.pop(ctx),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     _navigateToHub(navKey, actionTitle.toUpperCase());
   }
 
@@ -125,20 +139,22 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
             ),
 
           Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: screenWidth > 600 ? 18.0 : 10.0,
-                vertical: 14.0,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildBreadcrumbs(),
-                  const SizedBox(height: 14),
-                  _buildCurrentView(webPh),
-                ],
-              ),
-            ),
+            child: currentView == "GO_SALE"
+                ? WebNewSaleView(onBack: () => _navigateToHub("BILLING", "BILLING & SALES"))
+                : SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: screenWidth > 600 ? 18.0 : 10.0,
+                      vertical: 14.0,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildBreadcrumbs(),
+                        const SizedBox(height: 14),
+                        _buildCurrentView(webPh),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),

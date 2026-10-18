@@ -472,10 +472,10 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
-        bool isWideScreen = constraints.maxWidth > 900;
+        bool isWideScreen = constraints.maxWidth >= 850;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,8 +486,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Flexible(
-                    flex: 13,
+                  Expanded(
                     child: Column(
                       children: [
                         if (!widget.isReadOnly) _buildProductSearchCard(webPh),
@@ -497,8 +496,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                     ),
                   ),
                   const SizedBox(width: 18),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 340, maxWidth: 420),
+                  SizedBox(
+                    width: 380,
                     child: Column(
                       children: [
                         _buildCustomerCard(webPh),
@@ -817,10 +816,25 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
           ),
           const Divider(color: Colors.white10, height: 20),
           if (billItems.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(40),
-                child: Text("Cart is empty. Search and add products above.", style: TextStyle(color: Colors.white38, fontSize: 12)),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.shopping_cart_outlined, size: 40, color: Colors.white24),
+                  SizedBox(height: 12),
+                  Text(
+                    "Invoice cart is empty. Type in the search box above to add medicines / products.",
+                    style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             )
           else
