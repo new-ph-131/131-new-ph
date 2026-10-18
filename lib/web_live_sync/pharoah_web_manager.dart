@@ -1102,6 +1102,9 @@ class PharoahWebManager with ChangeNotifier {
           if (targetChallanKeys.contains(ch.id.trim().toUpperCase()) ||
               targetChallanKeys.contains(ch.billNo.trim().toUpperCase())) {
             ch.status = "Pending";
+            ch.version += 1;
+            ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            SaleChallanSyncModule.onSaleChallanSaved(ch, activeStoreToken);
           }
         }
       }
@@ -1265,6 +1268,9 @@ class PharoahWebManager with ChangeNotifier {
               targetChallanKeys.contains(ch.internalNo.trim().toUpperCase()) ||
               targetChallanKeys.contains(ch.billNo.trim().toUpperCase())) {
             ch.status = "Pending";
+            ch.version += 1;
+            ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            PurchaseChallanSyncModule.onPurchaseChallanSaved(ch, activeStoreToken);
           }
         }
       }

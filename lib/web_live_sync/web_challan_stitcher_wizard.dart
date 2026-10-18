@@ -1233,7 +1233,21 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
                         _cardAction(Icons.edit_note_rounded, "EDIT", Colors.orangeAccent, () => _editDraft(b, i)),
                         _cardAction(isSaved ? Icons.verified_rounded : Icons.save_rounded, "SAVE", isSaved ? Colors.greenAccent : Colors.white70, () => _saveSingle(webPh, i)),
                         _cardAction(Icons.print_outlined, "PDF", const Color(0xFF38BDF8), () => _printSingle(webPh, i)),
-                        _cardAction(Icons.delete_outline_rounded, "DEL", Colors.redAccent, () => setState(() => draftBills.removeAt(i))),
+                        _cardAction(Icons.delete_outline_rounded, "DEL", Colors.redAccent, () {
+                          // Revert linked challans back to Pending when draft is discarded
+                          bool isSale = _tabController.index == 0;
+                          List<String> challanIds = List<String>.from(b['challanIds'] ?? []);
+                          for (var cid in challanIds) {
+                            if (isSale) {
+                              int idx = webPh.saleChallans.indexWhere((c) => c.id == cid);
+                              if (idx != -1) webPh.saleChallans[idx].status = "Pending";
+                            } else {
+                              int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cid);
+                              if (idx != -1) webPh.purchaseChallans[idx].status = "Pending";
+                            }
+                          }
+                          setState(() => draftBills.removeAt(i));
+                        }),
                       ],
                     ),
                   ),
