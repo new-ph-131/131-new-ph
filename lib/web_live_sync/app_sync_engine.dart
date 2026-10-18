@@ -156,12 +156,22 @@ class AppSyncEngine {
       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
       await SnapshotWatcher.takeSnapshot(ph);
 
-      // Ensure local disk files for sales, purchases, and parties strictly match in-memory state before pushing!
+      // 🛡️ Ensure ALL core disk files strictly match in-memory state before pushing to Cloud Relay
       try {
         await File('$workingDir/sales.json').writeAsString(jsonEncode(ph.sales.map((e) => e.toMap()).toList()));
         await File('$workingDir/purc.json').writeAsString(jsonEncode(ph.purchases.map((e) => e.toMap()).toList()));
         await File('$workingDir/parts.json').writeAsString(jsonEncode(ph.parties.map((e) => e.toMap()).toList()));
-      } catch (_) {}
+        await File('$workingDir/meds.json').writeAsString(jsonEncode(ph.medicines.map((e) => e.toMap()).toList()));
+        await File('$workingDir/vouc.json').writeAsString(jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()));
+        await File('$workingDir/s_challan.json').writeAsString(jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()));
+        await File('$workingDir/p_challan.json').writeAsString(jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()));
+        await File('$workingDir/s_return.json').writeAsString(jsonEncode(ph.saleReturns.map((e) => e.toMap()).toList()));
+        await File('$workingDir/p_return.json').writeAsString(jsonEncode(ph.purchaseReturns.map((e) => e.toMap()).toList()));
+        await File('$workingDir/banks.json').writeAsString(jsonEncode(ph.bankTransactions.map((e) => e.toMap()).toList()));
+        await File('$workingDir/series.json').writeAsString(jsonEncode(ph.numberingSeries.map((e) => e.toMap()).toList()));
+      } catch (e) {
+        debugPrint("Error flushing core sync files to disk: $e");
+      }
 
       // STEP 5: PUSH TO CLOUD (The Rebirth)
       Map<String, String> filesPayload = {};
