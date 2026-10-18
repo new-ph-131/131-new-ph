@@ -475,7 +475,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
         padding: const EdgeInsets.only(bottom: 40),
         child: LayoutBuilder(
           builder: (context, constraints) {
-        bool isWideScreen = constraints.maxWidth > 1100;
+        bool isWideScreen = constraints.maxWidth > 850;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
