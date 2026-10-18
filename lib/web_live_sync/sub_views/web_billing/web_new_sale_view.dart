@@ -480,7 +480,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeaderBar(webPh, isWideScreen: isWideScreen),
+                _buildHeaderBar(webPh),
                 const SizedBox(height: 12),
                 if (isWideScreen)
                   Row(
@@ -497,8 +497,14 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                       ),
                       const SizedBox(width: 14),
                       SizedBox(
-                        width: constraints.maxWidth > 1150 ? 380 : 340,
-                        child: _buildGrandTotalCard(webPh),
+                        width: constraints.maxWidth > 1200 ? 360 : 320,
+                        child: Column(
+                          children: [
+                            _buildCustomerCard(webPh),
+                            const SizedBox(height: 12),
+                            _buildGrandTotalCard(webPh),
+                          ],
+                        ),
                       ),
                     ],
                   )
@@ -506,11 +512,11 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                   Column(
                     children: [
                       _buildCustomerCard(webPh),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                       if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-                      if (!widget.isReadOnly) const SizedBox(height: 14),
+                      if (!widget.isReadOnly) const SizedBox(height: 12),
                       _buildCartTable(webPh),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                       _buildGrandTotalCard(webPh),
                     ],
                   ),
@@ -522,104 +528,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     );
   }
 
-  Widget _buildHeaderCustomerWidget(PharoahWebManager webPh) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black26,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0x662563EB)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(5),
-            decoration: const BoxDecoration(
-              color: Color(0x332563EB),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.person_rounded, color: Color(0xFF38BDF8), size: 14),
-          ),
-          const SizedBox(width: 8),
-          InkWell(
-            onTap: widget.isReadOnly ? null : () => _openPartyPickerModal(webPh),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      (selectedParty?.name ?? "CASH").toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11.5),
-                    ),
-                    if (!widget.isReadOnly) ...[
-                      const SizedBox(width: 3),
-                      const Icon(Icons.arrow_drop_down, color: Color(0xFF38BDF8), size: 15),
-                    ],
-                  ],
-                ),
-                Text(
-                  selectedParty != null && selectedParty!.id != 'cash'
-                      ? "GST: ${selectedParty!.gst.isNotEmpty ? selectedParty!.gst : 'N/A'} • State: ${selectedParty!.state} • Bal: ₹${selectedParty!.opBal.toStringAsFixed(0)}"
-                      : "Cash / Counter Customer • No GST",
-                  style: const TextStyle(color: Colors.white54, fontSize: 9.5),
-                ),
-              ],
-            ),
-          ),
-          if (!widget.isReadOnly) ...[
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF38BDF8),
-                side: const BorderSide(color: Color(0xFF38BDF8), width: 0.8),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
-              onPressed: () => _openPartyPickerModal(webPh),
-              icon: const Icon(Icons.swap_horiz_rounded, size: 12),
-              label: const Text("PARTY", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(width: 4),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2563EB),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                elevation: 0,
-              ),
-              onPressed: () => _openQuickAddCustomer(webPh),
-              icon: const Icon(Icons.person_add_alt_1_rounded, size: 12),
-              label: const Text("+ NEW", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
-            ),
-            if (selectedParty != null && selectedParty!.id != 'cash') ...[
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.close_rounded, size: 15, color: Colors.redAccent),
-                tooltip: "Reset to Cash",
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () {
-                  setState(() => selectedParty = Party(id: 'cash', name: 'CASH', group: 'Cash in Hand'));
-                  _refreshBillNumber(webPh);
-                },
-              ),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeaderBar(PharoahWebManager webPh, {bool isWideScreen = true}) {
+  Widget _buildHeaderBar(PharoahWebManager webPh) {
     final activeSeriesList = webPh.numberingSeries.where((s) => s.type == "SALE" && s.isActive).toList();
 
     return Container(
@@ -642,34 +551,34 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white12,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   elevation: 0,
                 ),
                 onPressed: widget.onBack,
                 icon: const Icon(Icons.arrow_back_rounded, size: 15),
-                label: const Text("BACK", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                label: const Text("BACK", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(width: 10),
-              Icon(Icons.receipt_long_rounded, color: widget.isReadOnly ? Colors.purpleAccent : const Color(0xFF38BDF8), size: 18),
-              const SizedBox(width: 6),
+              const SizedBox(width: 12),
+              Icon(Icons.receipt_long_rounded, color: widget.isReadOnly ? Colors.purpleAccent : const Color(0xFF38BDF8), size: 19),
+              const SizedBox(width: 8),
               Text(
                 widget.isReadOnly ? "VIEW INVOICE" : (widget.modifySaleId != null ? "MODIFY INVOICE" : "TAX INVOICE"),
-                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
             ],
           ),
-          if (isWideScreen) _buildHeaderCustomerWidget(webPh),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (activeSeriesList.isNotEmpty && widget.existingItems == null) ...[
                 Container(
-                  height: 34,
+                  height: 36,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: Colors.black26,
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white12),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<NumberingSeries>(
@@ -687,19 +596,20 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 const SizedBox(width: 8),
               ],
               SizedBox(
-                width: 100,
-                height: 34,
+                width: 105,
+                height: 36,
                 child: TextField(
                   controller: billNoC,
                   readOnly: widget.initialBillNo != null || widget.isReadOnly,
-                  style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.w900, fontSize: 11.5),
+                  style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.w900, fontSize: 12),
                   decoration: InputDecoration(
                     labelText: "BILL NO",
-                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 8.5),
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
                     filled: true,
                     fillColor: Colors.black26,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.white12)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.white12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   ),
                 ),
               ),
@@ -717,32 +627,95 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                   }
                 },
                 child: Container(
-                  height: 34,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
                     color: Colors.black26,
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white12),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_month_rounded, color: Color(0xFF38BDF8), size: 13),
-                      const SizedBox(width: 5),
+                      const Icon(Icons.calendar_month_rounded, color: Color(0xFF38BDF8), size: 14),
+                      const SizedBox(width: 6),
                       Text(
                         DateFormat('dd/MM/yyyy').format(billDate),
-                        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'CASH', label: Text('CASH', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold))),
-                  ButtonSegment(value: 'CREDIT', label: Text('CREDIT', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold))),
-                ],
-                selected: {paymentMode},
-                onSelectionChanged: widget.isReadOnly ? null : (v) => setState(() => paymentMode = v.first),
+              // Prominent Cash / Credit Pill Toggle
+              Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CASH"),
+                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: paymentMode == "CASH" ? const Color(0xFF2563EB) : Colors.transparent,
+                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (paymentMode == "CASH") ...[
+                              const Icon(Icons.check, size: 12, color: Colors.white),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              "CASH",
+                              style: TextStyle(
+                                color: paymentMode == "CASH" ? Colors.white : Colors.white60,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CREDIT"),
+                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: paymentMode == "CREDIT" ? Colors.orangeAccent.shade700 : Colors.transparent,
+                          borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (paymentMode == "CREDIT") ...[
+                              const Icon(Icons.check, size: 12, color: Colors.white),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              "CREDIT",
+                              style: TextStyle(
+                                color: paymentMode == "CREDIT" ? Colors.white : Colors.white60,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1025,10 +998,10 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
   Widget _buildCustomerCard(PharoahWebManager webPh) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white10),
       ),
       child: Column(
@@ -1041,19 +1014,19 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(5),
                     decoration: const BoxDecoration(
                       color: Color(0x332563EB),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.person_rounded, color: Color(0xFF38BDF8), size: 16),
+                    child: const Icon(Icons.person_rounded, color: Color(0xFF38BDF8), size: 15),
                   ),
                   const SizedBox(width: 8),
                   const Text(
                     "CUSTOMER / CONSIGNEE",
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
                     ),
@@ -1068,40 +1041,44 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF38BDF8),
                         side: const BorderSide(color: Color(0xFF38BDF8), width: 1.0),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                       ),
                       onPressed: () => _openPartyPickerModal(webPh),
-                      icon: const Icon(Icons.swap_horiz_rounded, size: 14),
-                      label: const Text("CHANGE PARTY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.swap_horiz_rounded, size: 13),
+                      label: const Text("CHANGE", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 6),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                         elevation: 0,
                       ),
                       onPressed: () => _openQuickAddCustomer(webPh),
-                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 14),
-                      label: const Text("+ NEW", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 13),
+                      label: const Text("+ NEW", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
             ],
           ),
-          const Divider(color: Colors.white10, height: 20),
+          const Divider(color: Colors.white10, height: 14),
           if (selectedParty != null)
             InkWell(
               onTap: widget.isReadOnly ? null : () => _openPartyPickerModal(webPh),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               child: Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black26,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0x662563EB)),
                 ),
                 child: Row(
@@ -1112,24 +1089,26 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                         children: [
                           Text(
                             selectedParty!.name.toUpperCase(),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 2),
                           Text(
                             "GST: ${selectedParty!.gst.isNotEmpty ? selectedParty!.gst : 'N/A'} | State: ${selectedParty!.state} | Bal: ₹${selectedParty!.opBal.toStringAsFixed(0)}",
-                            style: const TextStyle(color: Colors.white54, fontSize: 10),
+                            style: const TextStyle(color: Colors.white54, fontSize: 9.5),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
                     if (!widget.isReadOnly) ...[
-                      const Icon(Icons.edit_note_rounded, size: 18, color: Color(0xFF38BDF8)),
+                      const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF38BDF8)),
                       const SizedBox(width: 4),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18, color: Colors.redAccent),
+                        icon: const Icon(Icons.close_rounded, size: 16, color: Colors.redAccent),
                         tooltip: "Reset to Cash",
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                         onPressed: () {
                           setState(() => selectedParty = Party(id: 'cash', name: 'CASH', group: 'Cash in Hand'));
                           _refreshBillNumber(webPh);
@@ -1143,14 +1122,14 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
           else ...[
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 44),
+                minimumSize: const Size(double.infinity, 38),
                 foregroundColor: const Color(0xFF38BDF8),
                 side: const BorderSide(color: Color(0xFF38BDF8)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: () => _openPartyPickerModal(webPh),
-              icon: const Icon(Icons.person_search_rounded, size: 18),
-              label: const Text("TAP TO SELECT CUSTOMER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              icon: const Icon(Icons.person_search_rounded, size: 16),
+              label: const Text("TAP TO SELECT CUSTOMER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
             ),
           ],
         ],
