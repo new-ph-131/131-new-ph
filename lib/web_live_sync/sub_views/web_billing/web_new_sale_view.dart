@@ -905,9 +905,6 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 ),
               ),
             ),
-          ),
-        ),
-      ),
         ],
       ),
     );
