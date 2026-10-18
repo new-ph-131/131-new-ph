@@ -6,6 +6,7 @@ import '../../../../pharoah_web_manager.dart';
 import '../../../../web_app_date_logic.dart';
 import '../../../../web_pdf_router_service.dart';
 import '../mechanism/credit_note_mechanism.dart';
+import '../../../web_billing/mechanism/web_billing_gst_engine.dart';
 
 class CreditNoteController extends ChangeNotifier {
   final TextEditingController noteNoC = TextEditingController();
@@ -21,6 +22,7 @@ class CreditNoteController extends ChangeNotifier {
   bool isSaving = false;
   bool isReadOnly = false;
   String? existingRecordId;
+  String shopState = "Rajasthan";
 
   void init({
     required PharoahWebManager webPh,
@@ -28,6 +30,7 @@ class CreditNoteController extends ChangeNotifier {
     bool readOnly = false,
   }) {
     isReadOnly = readOnly;
+    shopState = (webPh.companyProfile['state'] != null && webPh.companyProfile['state'].toString().trim().isNotEmpty) ? webPh.companyProfile['state'].toString().trim() : "Rajasthan";
     if (existingRecord != null) {
       existingRecordId = existingRecord.id;
       noteNoC.text = existingRecord.billNo;
@@ -107,15 +110,24 @@ class CreditNoteController extends ChangeNotifier {
   }
 
   // --- CALCULATIONS ---
-  double get subTotal => items.fold(0.0, (sum, it) => sum + it.total);
-  double get totalTaxable => items.fold(0.0, (sum, it) => sum + (it.qty * it.rate - it.discountRupees));
-  double get totalCGST => items.fold(0.0, (sum, it) => sum + it.cgst);
-  double get totalSGST => items.fold(0.0, (sum, it) => sum + it.sgst);
-  double get totalIGST => items.fold(0.0, (sum, it) => sum + it.igst);
+  bool get isLocal => selectedCustomer == null || (selectedCustomer!.state.trim().toLowerCase() == shopState.trim().toLowerCase());
+
+  BillGstSummary get gstSummary => WebBillingGstEngine.calculate(
+    items: items,
+    extraDiscount: extraDiscount,
+    isLocal: isLocal,
+  );
+
+  double get subTotal => gstSummary.grossTaxable;
+  double get totalTaxable => gstSummary.netTaxable;
+  double get totalCGST => gstSummary.totalCGST;
+  double get totalSGST => gstSummary.totalSGST;
+  double get totalIGST => gstSummary.totalIGST;
+  double get totalTax => gstSummary.totalTax;
   double get extraDiscount => double.tryParse(extraDiscC.text) ?? 0.0;
-  double get rawGrandTotal => (subTotal - extraDiscount);
-  double get grandTotal => rawGrandTotal.roundToDouble();
-  double get roundOff => double.parse((grandTotal - rawGrandTotal).toStringAsFixed(2));
+  double get rawGrandTotal => gstSummary.rawGrandTotal;
+  double get grandTotal => gstSummary.finalGrandTotal;
+  double get roundOff => gstSummary.roundOff;
 
   Future<bool> saveCreditNote(BuildContext context, PharoahWebManager webPh, {bool andPrint = false}) async {
     if (selectedCustomer == null) {

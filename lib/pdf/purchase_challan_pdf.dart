@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../models.dart';
+import '../logic/app_billing_gst_engine.dart';
 import '../gateway/company_registry_model.dart';
 import 'pdf_master_service.dart';
 
@@ -29,6 +30,13 @@ class PurchaseChallanPdf {
 
     int totalPages = (challan.items.length / itemsPerPage).ceil();
     if (totalPages == 0) totalPages = 1;
+
+    bool isLocal = shop.state.trim().toLowerCase() == supplier.state.trim().toLowerCase();
+    final summary = AppBillingGstEngine.calculateForPurchase(
+      items: challan.items,
+      extraDiscount: 0.0,
+      isLocal: isLocal,
+    );
 
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
@@ -77,7 +85,7 @@ class PurchaseChallanPdf {
                       _cell(i.purchaseRate.toStringAsFixed(2), 100), _cell(i.total.toStringAsFixed(2), 100),
                     ]),
                   )).toList())),
-                  if (isLastPage) _buildFooter(shop.name, challan.totalAmount, challan.remarks)
+                  if (isLastPage) _buildFooter(shop.name, summary, isLocal, challan.remarks)
                 ],
               ),
             ),
@@ -98,5 +106,28 @@ class PurchaseChallanPdf {
   static pw.Widget _hBox(double w, bool b, pw.Widget child) => pw.Container(width: w, height: 80, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: b ? 0.5 : 0), bottom: const pw.BorderSide(width: 0.5))), child: child);
   static pw.Widget _tCol(String t, double w, {bool isLast = false, bool isLeft = false}) => pw.Container(width: w, height: 20, alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, padding: pw.EdgeInsets.only(left: isLeft ? 8 : 0), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: isLast ? 0 : 0.5), bottom: const pw.BorderSide(width: 0.5))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
   static pw.Widget _cell(String t, double w, {bool isLeft = false}) => pw.Container(width: w, height: 18, padding: const pw.EdgeInsets.symmetric(horizontal: 5), alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, decoration: const pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: const pw.TextStyle(fontSize: 8)));
-  static pw.Widget _buildFooter(String n, double t, String r) => pw.Container(height: 100, decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [pw.Container(width: 480, padding: const pw.EdgeInsets.all(8), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [pw.Text("REMARKS: $r", style: const pw.TextStyle(fontSize: 8)), pw.Spacer(), pw.Text("System generated record.", style: const pw.TextStyle(fontSize: 7))])), pw.Container(width: 320, padding: const pw.EdgeInsets.all(8), child: pw.Column(children: [pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text("TOTAL VALUE", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)), pw.Text("Rs. ${t.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))])]))]));
+  static pw.Widget _buildFooter(String n, AppBillGstSummary summary, bool isLocal, String r) => pw.Container(height: 100, decoration: const pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
+    pw.Container(width: 460, padding: const pw.EdgeInsets.all(8), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+      pw.Text("REMARKS: ${r.isEmpty ? 'Inward verification under GST Rule 55.' : r}", style: const pw.TextStyle(fontSize: 7.5)),
+      pw.Spacer(),
+      pw.Text("INWARD DELIVERY CHALLAN - Subject to final billing & tax verification.", style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic))
+    ])),
+    pw.Container(width: 340, padding: const pw.EdgeInsets.all(6), child: pw.Column(children: [
+      _fRow("TAXABLE VALUE", summary.grossTaxable),
+      if (isLocal) ...[
+        if (summary.totalCGST > 0) _fRow("CGST (ITC)", summary.totalCGST),
+        if (summary.totalSGST > 0) _fRow("SGST (ITC)", summary.totalSGST),
+      ] else ...[
+        if (summary.totalIGST > 0) _fRow("IGST (ITC)", summary.totalIGST),
+      ],
+      if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
+      pw.Divider(thickness: 0.5),
+      pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+        pw.Text("TOTAL INWARD VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
+        pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold))
+      ])
+    ]))
+  ]));
+
+  static pw.Widget _fRow(String l, double v) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text(l, style: const pw.TextStyle(fontSize: 7)), pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold))]);
 }

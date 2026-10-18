@@ -10,6 +10,7 @@ import '../models.dart';
 import '../gateway/company_registry_model.dart';
 import '../logic/app_settings_model.dart';
 import 'pdf_master_service.dart';
+import '../logic/app_billing_gst_engine.dart';
 
 class DebitNotePdf {
   static Future<void> generate(PurchaseReturn ret, Party supplier, CompanyProfile shop, AppConfig config) async {
@@ -211,23 +212,32 @@ class DebitNotePdf {
   static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
 
   static pw.Widget _buildFixedSyncFooter(String n, PurchaseReturn ret, bool local) {
-    double taxable = ret.items.fold(0, (s, i) => s + (i.purchaseRate * i.qty));
-    double tax = ret.totalAmount - taxable;
+    final summary = AppBillingGstEngine.calculateForPurchase(
+      items: ret.items,
+      extraDiscount: ret.extraDiscount,
+      isLocal: local,
+    );
     return pw.Container(height: 110, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
       pw.Container(width: 330, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(ret.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+        pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
         pw.Spacer(),
-        pw.Text("Note: Outward Debit Settlement with Distributor.", style: pw.TextStyle(fontSize: 6)),
+        pw.Text("Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant).", style: const pw.TextStyle(fontSize: 6)),
       ])),
       pw.Container(width: 250, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
-        _fRow("PUR. TAXABLE", taxable),
-        if (ret.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", ret.extraDiscount),
-        if (ret.roundOff != 0) _fRow("ROUND OFF", ret.roundOff),
-        if (local) ...[_fRow("CGST REVERSE", tax / 2), _fRow("SGST REVERSE", tax / 2)] else _fRow("IGST REVERSE", tax),
+        _fRow("GROSS TAXABLE", summary.grossTaxable),
+        if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
+        if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
+        if (local) ...[
+          if (summary.totalCGST > 0) _fRow("CGST REVERSE", summary.totalCGST),
+          if (summary.totalSGST > 0) _fRow("SGST REVERSE", summary.totalSGST),
+        ] else ...[
+          if (summary.totalIGST > 0) _fRow("IGST REVERSE", summary.totalIGST),
+        ],
+        if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
         pw.Divider(thickness: 0.5),
         pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
           pw.Text("NET DEBIT", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
-          pw.Text("Rs. ${ret.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+          pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
         ]),
       ])),
       pw.Container(width: 220, padding: const pw.EdgeInsets.all(5), child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
@@ -237,5 +247,5 @@ class DebitNotePdf {
       ])),
     ]));
   }
-  static pw.Widget _fRow(String l, double v) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text(l, style: pw.TextStyle(fontSize: 7.5)), pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))]);
+    static pw.Widget _fRow(String l, double v) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text(l, style: pw.TextStyle(fontSize: 7.5)), pw.Text(v.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))]);
 }

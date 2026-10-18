@@ -282,7 +282,7 @@ class WebPdfRouterService {
                         }).toList(),
                       ),
                     ),
-                    if (isLastPage) _buildChallanFooter(shop.name, challan)
+                    if (isLastPage) _buildChallanFooter(shop.name, challan, isLocal)
                     else pw.Container(
                       height: 25, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
                       child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
@@ -298,17 +298,21 @@ class WebPdfRouterService {
     return pdf.save();
   }
 
-  static pw.Widget _buildChallanFooter(String shopName, SaleChallan challan) {
+  static pw.Widget _buildChallanFooter(String shopName, SaleChallan challan, bool isLocal) {
     String sealCode = challan.sigHistory.isNotEmpty ? challan.sigHistory.last.verificationCode : "N/A";
-    String remarks = challan.remarks.trim().isNotEmpty ? challan.remarks.trim() : "Verified.";
-
+    String remarks = challan.remarks.trim().isNotEmpty ? challan.remarks.trim() : "Verified delivery under GST Rule 55.";
+    final summary = WebBillingGstEngine.calculate(
+      items: challan.items,
+      extraDiscount: 0.0,
+      isLocal: isLocal,
+    );
     return pw.Container(
       height: 100,
       decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
       child: pw.Row(
         children: [
           pw.Container(
-            width: 480, padding: const pw.EdgeInsets.all(8),
+            width: 460, padding: const pw.EdgeInsets.all(8),
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -317,33 +321,49 @@ class WebPdfRouterService {
                 pw.Text("RECEIVER SIGNATURE & STAMP", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                 pw.Spacer(),
                 pw.Text(
-                  "SECURE NOTICE: Locked with code $sealCode.",
+                  "RULE 55 DELIVERY CHALLAN - Goods transported for delivery / approval | Code: $sealCode.",
                   style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
                 ),
               ],
             ),
           ),
           pw.Container(
-            width: 320, padding: const pw.EdgeInsets.all(8),
+            width: 340, padding: const pw.EdgeInsets.all(6),
             child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
+                _fRow("TAXABLE VALUE", summary.grossTaxable),
+                if (isLocal) ...[
+                  if (summary.totalCGST > 0) _fRow("CGST TOTAL", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow("SGST TOTAL", summary.totalSGST),
+                ] else ...[
+                  if (summary.totalIGST > 0) _fRow("IGST TOTAL", summary.totalIGST),
+                ],
+                if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
+                pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text("GRAND TOTAL VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${challan.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("TOTAL CHALLAN VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold)),
                   ],
                 ),
-                pw.SizedBox(height: 4),
+                pw.SizedBox(height: 2),
                 pw.Align(
                   alignment: pw.Alignment.centerLeft,
-                  child: pw.Text("REMARKS: $remarks", style: pw.TextStyle(fontSize: 7)),
+                  child: pw.Text("REMARKS: $remarks", style: const pw.TextStyle(fontSize: 6.5)),
                 ),
                 pw.Spacer(),
-                pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 25),
-                pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+                pw.Align(
+                  alignment: pw.Alignment.bottomRight,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                      pw.SizedBox(height: 18),
+                      pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -745,9 +765,11 @@ class WebPdfRouterService {
   }
 
   static pw.Widget _buildCreditNoteFooter(String shopName, SaleReturn returnObj, bool isLocal) {
-    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.qty * i.rate - i.discountRupees));
-    double totalTax = returnObj.totalAmount - taxable;
-
+    final summary = WebBillingGstEngine.calculate(
+      items: returnObj.items,
+      extraDiscount: returnObj.extraDiscount,
+      isLocal: isLocal,
+    );
     return pw.Container(
       height: 100,
       decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
@@ -759,9 +781,9 @@ class WebPdfRouterService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text("Amount: RUPEES ${PdfMasterService.numberToWords(returnObj.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                pw.Text("Amount: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
                 pw.Spacer(),
-                pw.Text("Verified return account settlement.", style: pw.TextStyle(fontSize: 7)),
+                pw.Text("Verified return account settlement (Section 34 CGST Compliant).", style: const pw.TextStyle(fontSize: 7)),
               ],
             ),
           ),
@@ -770,21 +792,22 @@ class WebPdfRouterService {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
-                _fRow("TAXABLE VAL", taxable),
-                if (returnObj.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", returnObj.extraDiscount),
-                if (returnObj.roundOff != 0) _fRow("ROUND OFF", returnObj.roundOff),
+                _fRow("GROSS TAXABLE", summary.grossTaxable),
+                if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
+                if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  _fRow("CGST TOTAL", totalTax / 2),
-                  _fRow("SGST TOTAL", totalTax / 2),
+                  if (summary.totalCGST > 0) _fRow("CGST REVERSE", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow("SGST REVERSE", summary.totalSGST),
                 ] else ...[
-                  _fRow("IGST TOTAL", totalTax),
+                  if (summary.totalIGST > 0) _fRow("IGST REVERSE", summary.totalIGST),
                 ],
+                if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text("NET CREDIT", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${returnObj.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
                   ],
                 ),
               ],
@@ -801,7 +824,7 @@ class WebPdfRouterService {
                 ),
                 pw.Align(
                   alignment: pw.Alignment.bottomRight,
-                  child: pw.Text("Authorised Signatory", style: pw.TextStyle(fontSize: 7)),
+                  child: pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
                 ),
               ],
             ),
@@ -1007,9 +1030,11 @@ class WebPdfRouterService {
 
   // Exact 3-Box Footer matching App Layout
   static pw.Widget _buildFixedSyncFooter(String shopName, PurchaseReturn returnObj, bool isLocal) {
-    double taxable = returnObj.items.fold(0.0, (sum, i) => sum + (i.purchaseRate * i.qty - i.discountRupees));
-    double tax = returnObj.totalAmount - taxable;
-
+    final summary = WebBillingGstEngine.calculateForPurchase(
+      items: returnObj.items,
+      extraDiscount: returnObj.extraDiscount,
+      isLocal: isLocal,
+    );
     return pw.Container(
       height: 100,
       decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
@@ -1022,9 +1047,9 @@ class WebPdfRouterService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(returnObj.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
                 pw.Spacer(),
-                pw.Text("Note: Outward Debit Settlement with Distributor.", style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+                pw.Text("Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant).", style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
               ],
             ),
           ),
@@ -1034,21 +1059,22 @@ class WebPdfRouterService {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
-                _fRow("PUR. TAXABLE", taxable),
-                if (returnObj.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", returnObj.extraDiscount),
-                if (returnObj.roundOff != 0) _fRow("ROUND OFF", returnObj.roundOff),
+                _fRow("GROSS TAXABLE", summary.grossTaxable),
+                if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
+                if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  _fRow("CGST REVERSE", tax / 2),
-                  _fRow("SGST REVERSE", tax / 2),
+                  if (summary.totalCGST > 0) _fRow("CGST REVERSE", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow("SGST REVERSE", summary.totalSGST),
                 ] else ...[
-                  _fRow("IGST REVERSE", tax),
+                  if (summary.totalIGST > 0) _fRow("IGST REVERSE", summary.totalIGST),
                 ],
+                if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text("NET DEBIT", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${returnObj.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
                   ],
                 ),
               ],

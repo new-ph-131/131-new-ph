@@ -44,13 +44,23 @@ class SaleChallanFooterWidget extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 25),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-              Text("₹${controller.grandTotal.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 22, fontWeight: FontWeight.w900)),
-            ],
-          ),
+          Builder(builder: (context) {
+            double taxable = controller.items.fold(0.0, (sum, it) => sum + (it.qty * it.rate - it.discountRupees));
+            double totalTax = controller.grandTotal - taxable;
+            if (totalTax < 0) totalTax = 0.0;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  "Taxable: ₹${taxable.toStringAsFixed(2)} | GST: ₹${totalTax.toStringAsFixed(2)}",
+                  style: const TextStyle(color: Colors.white38, fontSize: 9.5, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                Text("₹${controller.grandTotal.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 22, fontWeight: FontWeight.w900)),
+              ],
+            );
+          }),
           const SizedBox(width: 25),
           if (!controller.isReadOnly) ...[
             ElevatedButton.icon(

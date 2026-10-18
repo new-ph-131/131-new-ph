@@ -6,6 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:pharoah_erp/pdf/pdf_master_service.dart';
+import '../sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
 import '../web_models.dart';
 
 class WebPurchaseInvoicePdf {
@@ -29,8 +30,11 @@ class WebPurchaseInvoicePdf {
     if (totalPages == 0) totalPages = 1;
 
     bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
-    double totalTaxable = purchase.items.fold(0.0, (sum, i) => sum + (i.purchaseRate * i.qty - i.discountRupees));
-    double totalGst = purchase.totalAmount - totalTaxable;
+    final summary = WebBillingGstEngine.calculateForPurchase(
+      items: purchase.items,
+      extraDiscount: purchase.extraDiscount,
+      isLocal: isLocal,
+    );
 
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
@@ -148,7 +152,7 @@ class WebPurchaseInvoicePdf {
                     ),
 
                     // Footer
-                    if (isLastPage) _buildFooter(shop.name, purchase, totalTaxable, totalGst, isLocal)
+                    if (isLastPage) _buildFooter(shop.name, purchase, summary, isLocal)
                     else pw.Container(
                       height: 25, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
                       child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
@@ -172,7 +176,7 @@ class WebPurchaseInvoicePdf {
     return pdf.save();
   }
 
-  static pw.Widget _buildFooter(String shopName, Purchase pur, double taxable, double gst, bool isLocal) {
+  static pw.Widget _buildFooter(String shopName, Purchase pur, BillGstSummary summary, bool isLocal) {
     return pw.Container(
       height: 100,
       decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
@@ -185,9 +189,9 @@ class WebPurchaseInvoicePdf {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text("Amount in Words:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                pw.Text("RUPEES ${PdfMasterService.numberToWords(pur.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                pw.Text("RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
                 pw.Spacer(),
-                pw.Text("Note: Inward stock verified and received in good condition.", style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+                pw.Text("Note: Inward stock verified and received in good condition (Section 15 GST Compliant).", style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
               ],
             ),
           ),
@@ -196,27 +200,22 @@ class WebPurchaseInvoicePdf {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
-                _fRow("TAXABLE VALUE", taxable),
+                _fRow("GROSS TAXABLE", summary.grossTaxable),
+                if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
+                if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  _fRow("CGST (ITC)", gst / 2),
-                  _fRow("SGST (ITC)", gst / 2),
+                  if (summary.totalCGST > 0) _fRow("CGST (ITC)", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow("SGST (ITC)", summary.totalSGST),
                 ] else ...[
-                  _fRow("IGST (ITC)", gst),
+                  if (summary.totalIGST > 0) _fRow("IGST (ITC)", summary.totalIGST),
                 ],
-                if (pur.extraDiscount > 0) ...[
-                  pw.Builder(builder: (context) {
-                    double discPer = taxable > 0 ? ((pur.extraDiscount / taxable) * 100) : 0.0;
-                    String label = discPer > 0 ? "BILL DISCOUNT (${discPer.toStringAsFixed(1)}%) (-)" : "EXTRA DISCOUNT (-)";
-                    return _fRow(label, pur.extraDiscount);
-                  }),
-                ],
-                if (pur.roundOff != 0) _fRow("ROUND OFF", pur.roundOff),
+                if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text("NET INWARD VALUE", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${pur.totalAmount.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
                   ],
                 ),
               ],

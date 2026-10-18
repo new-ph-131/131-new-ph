@@ -80,6 +80,11 @@ class DebitNoteFooterWidget extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  Text(
+                    "Taxable: ₹${controller.totalTaxable.toStringAsFixed(2)} | GST: ₹${controller.totalGst.toStringAsFixed(2)}",
+                    style: const TextStyle(color: Colors.white38, fontSize: 9.5, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
                   const Text("NET DEBIT VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                   Text(
                     "₹${controller.grandTotal.toStringAsFixed(2)}",
