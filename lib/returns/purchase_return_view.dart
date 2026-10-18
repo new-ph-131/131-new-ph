@@ -29,6 +29,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   
   DateTime selectedDate = DateTime.now();
   Party? selectedSupplier;
+  String partySearch = "";
   
   List<PurchaseItem> items = []; 
   bool isBreakageMode = false; 
@@ -77,11 +78,47 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     }
   }
 
-  // --- CALCULATIONS ---
-  double get subTotal => items.fold(0, (sum, it) => sum + it.total);
+  // --- GST COMPLIANT CALCULATIONS (Section 15 & 34) ---
+  bool get isLocal {
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    return (selectedSupplier?.state.trim().toLowerCase() ?? "") == (ph.companyState.trim().toLowerCase());
+  }
+
+  double get grossTaxable => items.fold(0.0, (sum, it) {
+    double itemTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
+    return sum + (itemTaxable > 0 ? itemTaxable : 0.0);
+  });
+
   double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
-  double get grandTotal => (subTotal - extraDiscount).roundToDouble();
-  double get roundOff => double.parse((grandTotal - (subTotal - extraDiscount)).toStringAsFixed(2));
+
+  double get validExtraDiscount {
+    double d = extraDiscount;
+    if (d < 0) return 0.0;
+    if (d > grossTaxable) return grossTaxable;
+    return d;
+  }
+
+  double get netTaxable => (grossTaxable - validExtraDiscount) > 0 ? (grossTaxable - validExtraDiscount) : 0.0;
+
+  double get totalTax {
+    double ratio = grossTaxable > 0 ? (validExtraDiscount / grossTaxable) : 0.0;
+    double tax = 0.0;
+    for (var it in items) {
+      double itemTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
+      if (itemTaxable < 0) itemTaxable = 0.0;
+      double itNetTaxable = itemTaxable * (1.0 - ratio);
+      tax += itNetTaxable * (it.gstRate / 100.0);
+    }
+    return tax;
+  }
+
+  double get calcCGST => isLocal ? (totalTax / 2.0) : 0.0;
+  double get calcSGST => isLocal ? (totalTax / 2.0) : 0.0;
+  double get calcIGST => !isLocal ? totalTax : 0.0;
+
+  double get rawGrandTotal => netTaxable + totalTax;
+  double get grandTotal => rawGrandTotal.roundToDouble();
+  double get roundOff => double.parse((grandTotal - rawGrandTotal).toStringAsFixed(2));
 
   // ===========================================================================
   // 🪄 THE PURCHASE MAGIC BOX (QTY+FREE & ALWAYS-ON MANUAL ENTRY)
@@ -265,25 +302,84 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   Widget _buildHeader(PharoahManager ph) => Container(
     padding: const EdgeInsets.all(15), color: Colors.white,
     child: Column(children: [
+        // 🗓️ DATE SELECTOR & DEBIT NOTE NO BAR
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(children: [
+              const Icon(Icons.receipt_long_rounded, color: Color(0xFFB45309), size: 18),
+              const SizedBox(width: 6),
+              Text("DEBIT NOTE #${returnNoC.text}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFFB45309))),
+            ]),
+            InkWell(
+              onTap: widget.isReadOnly ? null : () async {
+                DateTime? p = await PharoahDateController.pickDate(
+                  context: context,
+                  currentFY: ph.currentFY,
+                  initialDate: selectedDate,
+                );
+                if (p != null) setState(() => selectedDate = p);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.brown.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.brown.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_month_rounded, size: 14, color: Color(0xFFB45309)),
+                    const SizedBox(width: 6),
+                    Text(
+                      DateFormat('dd/MM/yyyy').format(selectedDate),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFFB45309)),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_drop_down, size: 16, color: Color(0xFFB45309)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
         if (selectedSupplier == null) ...[
           TextField(
-            decoration: const InputDecoration(hintText: "Search Supplier for Debit Note...", prefixIcon: Icon(Icons.business_rounded), border: OutlineInputBorder()),
-            onChanged: (v) => setState(() => medSearch = v), // Temp reuse
+            decoration: const InputDecoration(
+              hintText: "Search Supplier / Party by Name, City or GST...",
+              prefixIcon: Icon(Icons.business_rounded),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (v) => setState(() => partySearch = v),
           ),
           Container(
-            height: 150, margin: const EdgeInsets.only(top: 5),
+            height: 160, margin: const EdgeInsets.only(top: 5),
             decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(10)),
-            child: ListView(children: ph.parties.where((p) => p.group == "Sundry Creditors" && p.name.toLowerCase().contains(medSearch.toLowerCase())).map((p) => ListTile(
-              title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              onTap: () { setState(() { selectedSupplier = p; medSearch = ""; }); }
-            )).toList()),
+            child: ListView(
+              children: ph.parties.where((p) {
+                final q = partySearch.trim().toLowerCase();
+                if (q.isEmpty) return true;
+                return p.name.toLowerCase().contains(q) ||
+                       p.city.toLowerCase().contains(q) ||
+                       p.gst.toLowerCase().contains(q) ||
+                       p.phone.toLowerCase().contains(q);
+              }).map((p) => ListTile(
+                dense: true,
+                title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                subtitle: Text("${p.city.isNotEmpty ? p.city : 'General'} | GST: ${p.gst.isNotEmpty ? p.gst : 'URP'} | Group: ${p.group.isNotEmpty ? p.group : 'Party'}", style: const TextStyle(fontSize: 11)),
+                onTap: () { setState(() { selectedSupplier = p; partySearch = ""; }); },
+              )).toList(),
+            ),
           )
         ] else
           ListTile(
             tileColor: Colors.brown.shade50,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             title: Text(selectedSupplier!.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("Debit Note ID: ${returnNoC.text}"),
+            subtitle: Text("City: ${selectedSupplier!.city.isNotEmpty ? selectedSupplier!.city : 'N/A'} | GST: ${selectedSupplier!.gst.isNotEmpty ? selectedSupplier!.gst : 'URP'}"),
             trailing: widget.isReadOnly ? null : IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => setState(() => selectedSupplier = null)),
           ),
     ]),
@@ -332,15 +428,46 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     child: Column(children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           const Text("Extra Discount (-)", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-          SizedBox(width: 100, child: TextField(controller: discountC, keyboardType: TextInputType.number, textAlign: TextAlign.right, onChanged: (v) => setState(() {}), decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()))),
+          SizedBox(
+            width: 100,
+            child: TextField(
+              controller: discountC,
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.right,
+              onChanged: (v) => setState(() {}),
+              decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+            ),
+          ),
         ]),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: Colors.brown.shade50, borderRadius: BorderRadius.circular(8)),
+          child: Column(children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+              Text("₹${netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 4),
+            if (isLocal)
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text("CGST + SGST", style: TextStyle(fontSize: 11, color: Colors.brown.shade800)),
+                Text("₹${calcCGST.toStringAsFixed(2)} + ₹${calcSGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800)),
+              ])
+            else
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text("IGST", style: TextStyle(fontSize: 11, color: Colors.brown.shade800)),
+                Text("₹${calcIGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800)),
+              ]),
+          ]),
+        ),
         const Divider(),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text("NET DEBIT TOTAL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
             Text("₹${grandTotal.toStringAsFixed(2)}", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.brown.shade900)),
           ]),
-          Text("R/O: ${roundOff.toStringAsFixed(2)}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          Text("R/O: ${roundOff.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
         ]),
     ]),
   );
