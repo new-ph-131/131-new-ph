@@ -486,7 +486,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
+                  Flexible(
                     flex: 13,
                     child: Column(
                       children: [
