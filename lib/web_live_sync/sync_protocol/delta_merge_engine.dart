@@ -77,7 +77,6 @@ class DeltaMergeEngine {
         tombstoneRegistry[k.toString()] = nowEpoch;
       }
     }
-
     dynamic decodeJson(String fileName) {
       if (cloudFiles.containsKey(fileName) && cloudFiles[fileName] != null) {
         try { return jsonDecode(cloudFiles[fileName]); } catch (_) {}
@@ -86,6 +85,139 @@ class DeltaMergeEngine {
     }
 
     // 🛡️ 0. MASTER RECORDS (PARTIES & MEDICINES) MERGE FIRST TO ENSURE FOREIGN KEY INTEGRITY
+    var rawParts = decodeJson('parts.json') as List?;
+    if (rawParts != null) {
+      for (var rawPart in rawParts) {
+        final partMap = rawPart as Map<String, dynamic>;
+        final String partId = (partMap['id'] ?? '').toString().trim();
+        if (partId.isNotEmpty && (tombstoneRegistry.containsKey(partId) || tombstoneRegistry.containsKey(partId.toUpperCase()))) {
+          continue;
+        }
+        String cleanName = (partMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+        if (cleanName.isEmpty) continue;
+        int existingIdx = ph.parties.indexWhere((p) =>
+          (partId.isNotEmpty && p.id == partId) ||
+          p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanName
+        );
+        if (existingIdx != -1) {
+          String lJson = jsonEncode(ph.parties[existingIdx].toMap());
+          String cJson = jsonEncode(partMap);
+          if (lJson != cJson) {
+            int cUpdated = int.tryParse((partMap['updated_at'] ?? partMap['updatedAt'] ?? 0).toString()) ?? 0;
+            int lUpdated = ph.parties[existingIdx].updatedAt;
+            if (cUpdated >= lUpdated || lUpdated == 0) {
+              ph.parties[existingIdx] = Party.fromMap(partMap);
+              hasChanges = true;
+            }
+          }
+        } else {
+          ph.parties.add(Party.fromMap(partMap));
+          hasChanges = true;
+        }
+      }
+    }
+    var rawMeds = decodeJson('meds.json') as List?;
+    if (rawMeds != null) {
+      for (var rawMed in rawMeds) {
+        final medMap = rawMed as Map<String, dynamic>;
+        String cleanName = (medMap['name'] ?? '').toString().replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+        if (cleanName.isEmpty) continue;
+        int existingIdx = ph.medicines.indexWhere((m) => m.id == medMap['id']);
+        if (existingIdx != -1) {
+          String lJson = jsonEncode(ph.medicines[existingIdx].toMap());
+          String cJson = jsonEncode(medMap);
+          if (lJson != cJson) {
+            int cUpdated = int.tryParse((medMap['updated_at'] ?? medMap['updatedAt'] ?? 0).toString()) ?? 0;
+            int lUpdated = ph.medicines[existingIdx].updatedAt;
+            if (cUpdated >= lUpdated || lUpdated == 0) {
+              ph.medicines[existingIdx] = Medicine.fromMap(medMap);
+              hasChanges = true;
+            }
+          }
+        } else {
+          ph.medicines.add(Medicine.fromMap(medMap));
+          hasChanges = true;
+        }
+      }
+    }
+
+    // 🛡️ Advanced Deep-Compare & Deduplicating Merge Function with Multi-Key Anti-Zombie Shields
+    bool mergeList<T>(
+      List<dynamic>? cloudList,
+      List<T> localList,
+      String Function(T) getId,
+      String Function(T) getBillNo,
+      T Function(Map<String, dynamic>) fromMap,
+      Map<String, dynamic> Function(T) toMap,
+      [String Function(Map<String, dynamic>)? getCloudCompositeKey]
+    ) {
+      if (cloudList == null) return false;
+      bool changed = false;
+      for (var rawMap in cloudList) {
+        if (rawMap is! Map<String, dynamic>) continue;
+        final cloudMap = rawMap;
+        String id = (cloudMap['id'] ?? cloudMap['sync_id'] ?? '').toString().trim();
+        String billNo = (cloudMap['billNo'] ?? cloudMap['voucherNo'] ?? '').toString().trim();
+        String internalNo = (cloudMap['internalNo'] ?? '').toString().trim();
+        int cloudVersion = int.tryParse(cloudMap['version']?.toString() ?? '1') ?? 1;
+        int cloudTimestamp = int.tryParse(cloudMap['updated_at']?.toString() ?? cloudMap['updatedAt']?.toString() ?? '0') ?? 0;
+        int cloudIsDeleted = int.tryParse(cloudMap['is_deleted']?.toString() ?? cloudMap['isDeleted']?.toString() ?? (cloudMap['status'] == 'Deleted' || cloudMap['status'] == 'Cancelled' ? '1' : '0')) ?? 0;
+        if (id.isEmpty) continue;
+        String bNoKey = billNo.toUpperCase();
+        String intNoKey = internalNo.toUpperCase();
+        String partyIdKey = (cloudMap['partyId'] ?? '').toString().trim().toUpperCase();
+        String compKey2 = (partyIdKey.isNotEmpty && bNoKey.isNotEmpty) ? "${partyIdKey}_$bNoKey" : "";
+        final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? "";
+        
+        if (tombstoneRegistry.containsKey(id) || tombstoneRegistry.containsKey(id.toUpperCase())) continue;
+        if (bNoKey.isNotEmpty && (tombstoneRegistry.containsKey(bNoKey) || tombstoneRegistry.containsKey("INT:$bNoKey"))) continue;
+        if (intNoKey.isNotEmpty && tombstoneRegistry.containsKey("INT:$intNoKey")) continue;
+        if (compKey2.isNotEmpty && tombstoneRegistry.containsKey(compKey2)) continue;
+        if (compositeKey.isNotEmpty && tombstoneRegistry.containsKey(compositeKey)) continue;
+
+        int idx = localList.indexWhere((e) {
+          if (getId(e) == id) return true;
+          final localBNo = getBillNo(e).trim().toUpperCase();
+          if (compositeKey.isNotEmpty && localBNo == compositeKey) return true;
+          if (intNoKey.isNotEmpty && (localBNo == intNoKey || localBNo == "INT:$intNoKey" || localBNo.endsWith("_$intNoKey"))) return true;
+          if (getCloudCompositeKey == null && bNoKey.isNotEmpty && localBNo == bNoKey) return true;
+          return false;
+        });
+
+        if (cloudIsDeleted == 1) {
+          if (idx != -1) {
+            localList.removeAt(idx);
+            changed = true;
+          }
+          tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
+          tombstoneRegistry[id.toUpperCase()] = tombstoneRegistry[id]!;
+          continue;
+        }
+
+        if (idx != -1) {
+          var localItem = localList[idx];
+          var localMap = toMap(localItem);
+          int localTimestamp = (localMap['updated_at'] ?? localMap['updatedAt'] ?? 0).toInt();
+          int localVer = (localMap['version'] ?? 1).toInt();
+          if (cloudVersion > localVer || (cloudVersion == localVer && cloudTimestamp >= localTimestamp) || localTimestamp == 0) {
+            localList[idx] = fromMap(cloudMap);
+            changed = true;
+          }
+        } else {
+          localList.insert(0, fromMap(cloudMap));
+          changed = true;
+        }
+      }
+      return changed;
+    }
+
+    bool cSales = mergeList<Sale>(decodeJson('sales.json'), ph.sales, (e) => e.id, (e) => e.billNo, (m) => Sale.fromMap(m), (e) => e.toMap());
+    bool cPurc = mergeList<Purchase>(decodeJson('purc.json'), ph.purchases, (e) => e.id, (e) => e.billNo, (m) => Purchase.fromMap(m), (e) => e.toMap());
+    bool cVouc = mergeList<Voucher>(decodeJson('vouc.json'), ph.vouchers, (e) => e.id, (e) => e.voucherNo, (m) => Voucher.fromMap(m), (e) => e.toMap());
+    bool cSCh = mergeList<SaleChallan>(decodeJson('s_challan.json'), ph.saleChallans, (e) => e.id, (e) => e.billNo, (m) => SaleChallan.fromMap(m), (e) => e.toMap());
+    bool cPCh = mergeList<PurchaseChallan>(decodeJson('p_challan.json'), ph.purchaseChallans, (e) => e.id, (e) => e.billNo, (m) => PurchaseChallan.fromMap(m), (e) => e.toMap());
+    bool cSRet = mergeList<SaleReturn>(decodeJson('s_return.json'), ph.saleReturns, (e) => e.id, (e) => e.billNo, (m) => SaleReturn.fromMap(m), (e) => e.toMap());
+    bool cPRet = mergeList<PurchaseReturn>(decodeJson('p_return.json'), ph.purchaseReturns, (e) => e.id, (e) => e.billNo, (m) => PurchaseReturn.fromMap(m), (e) => e.toMap());
+
     return hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet;
   }
-}
