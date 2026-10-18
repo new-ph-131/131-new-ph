@@ -80,12 +80,39 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
 
-    // 🆕 CENTRAL CALCULATIONS (Common for footer & print)
-    double itemTotal = items.fold(0.0, (sum, it) => sum + it.total);
+    // 🆕 GST SECTION 15 CALCULATIONS (Taxable base reduction & tax bifurcation)
+    bool isLocal = widget.distributor.state.trim().toLowerCase() == ph.companyState.trim().toLowerCase();
+    double grossTaxable = items.fold(0.0, (sum, it) {
+      double itTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
+      return sum + (itTaxable > 0 ? itTaxable : 0.0);
+    });
     double extraDisc = double.tryParse(discountC.text) ?? 0.0;
-    double rawTotal = itemTotal - extraDisc;
+    double validExtraDisc = extraDisc;
+    if (validExtraDisc < 0) validExtraDisc = 0.0;
+    if (validExtraDisc > grossTaxable) validExtraDisc = grossTaxable;
+    double netTaxable = grossTaxable - validExtraDisc;
+    double ratio = grossTaxable > 0 ? (validExtraDisc / grossTaxable) : 0.0;
+
+    double calcCGST = 0.0;
+    double calcSGST = 0.0;
+    double calcIGST = 0.0;
+    for (var it in items) {
+      double itTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
+      if (itTaxable < 0) itTaxable = 0.0;
+      double itNetTaxable = itTaxable * (1.0 - ratio);
+      double itTax = itNetTaxable * (it.gstRate / 100.0);
+      if (isLocal) {
+        calcCGST += itTax / 2.0;
+        calcSGST += itTax / 2.0;
+      } else {
+        calcIGST += itTax;
+      }
+    }
+    double totalTax = calcCGST + calcSGST + calcIGST;
+    double rawTotal = netTaxable + totalTax;
     double finalGrandTotal = rawTotal.roundToDouble();
-    double roundOffVal = finalGrandTotal - rawTotal;
+    double roundOffVal = double.parse((finalGrandTotal - rawTotal).toStringAsFixed(2));
+    double itemTotal = grossTaxable;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6F9),
@@ -128,7 +155,7 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
         _buildHeader(),
         _buildSearchBarTrigger(ph),
         Expanded(child: items.isEmpty ? const Center(child: Text("Cart is empty")) : ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 10), itemCount: items.length, itemBuilder: (c, i) => _buildItemCard(items[i], i, ph))),
-        _buildFooter(itemTotal, extraDisc, roundOffVal, finalGrandTotal),
+        _buildFooter(grossTaxable, netTaxable, calcCGST, calcSGST, calcIGST, totalTax, extraDisc, roundOffVal, finalGrandTotal, isLocal),
       ]),
     );
   }
@@ -205,13 +232,33 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
     );
   }
 
-  // 🆕 UPGRADED FOOTER: Mapped with extra discount and live round-off
-  Widget _buildFooter(double itemTotal, double extraDisc, double roundOffVal, double finalGrandTotal) => Container(
+  // 🆕 GST COMPLIANT FOOTER: Section 15 Taxable, CGST/SGST/IGST, Extra Discount and Round-off
+  Widget _buildFooter(double grossTaxable, double netTaxable, double calcCGST, double calcSGST, double calcIGST, double totalTax, double extraDisc, double roundOffVal, double finalGrandTotal, bool isLocal) => Container(
     padding: const EdgeInsets.all(15), 
     decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)]),
     child: Column(children: [
-      _row("Items Total", "₹${itemTotal.toStringAsFixed(2)}"),
-      const SizedBox(height: 5),
+      Container(
+        padding: const EdgeInsets.all(8),
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(color: Colors.brown.shade50, borderRadius: BorderRadius.circular(8)),
+        child: Column(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+            Text("₹${netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ]),
+          const SizedBox(height: 4),
+          if (isLocal)
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text("CGST + SGST", style: TextStyle(fontSize: 11, color: Colors.brown.shade800)),
+              Text("₹${calcCGST.toStringAsFixed(2)} + ₹${calcSGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800)),
+            ])
+          else
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text("IGST", style: TextStyle(fontSize: 11, color: Colors.brown.shade800)),
+              Text("₹${calcIGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800)),
+            ]),
+        ]),
+      ),
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         const Text("Extra Discount (-)", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
         SizedBox(
