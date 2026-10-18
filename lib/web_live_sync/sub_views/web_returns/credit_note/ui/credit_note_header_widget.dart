@@ -34,17 +34,18 @@ class CreditNoteHeaderWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final custQuery = controller.customerSearchC.text.trim().toLowerCase();
     
-    // 🔍 ROBUST PARTY SEARCH: Removed strict group restriction (matches Sale Challan & Invoice view)
-    final matchingParties = custQuery.isEmpty
-        ? <Party>[]
-        : webPh.parties
-            .where((p) =>
-                p.name.toLowerCase().contains(custQuery) ||
-                p.city.toLowerCase().contains(custQuery) ||
-                p.gst.toLowerCase().contains(custQuery) ||
-                p.phone.toLowerCase().contains(custQuery))
-            .take(5)
-            .toList();
+    // 🔍 ROBUST PARTY SEARCH: Instant display of all party master customers without cut-off
+    final matchingParties = webPh.parties
+        .where((p) {
+          if (custQuery.isEmpty) return true;
+          return p.name.toLowerCase().contains(custQuery) ||
+                 p.city.toLowerCase().contains(custQuery) ||
+                 p.gst.toLowerCase().contains(custQuery) ||
+                 p.phone.toLowerCase().contains(custQuery) ||
+                 p.group.toLowerCase().contains(custQuery);
+        })
+        .take(30)
+        .toList();
 
     return Container(
       padding: const EdgeInsets.all(18),
