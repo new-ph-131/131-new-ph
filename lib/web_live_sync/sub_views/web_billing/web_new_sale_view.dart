@@ -472,67 +472,158 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: LayoutBuilder(
           builder: (context, constraints) {
-        bool isWideScreen = constraints.maxWidth >= 850;
+            bool isWideScreen = constraints.maxWidth >= 850;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeaderBar(webPh),
-            const SizedBox(height: 16),
-            if (isWideScreen)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-                        if (!widget.isReadOnly) const SizedBox(height: 16),
-                        _buildCartTable(webPh),
-                      ],
-                    ),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeaderBar(webPh, isWideScreen: isWideScreen),
+                const SizedBox(height: 12),
+                if (isWideScreen)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            if (!widget.isReadOnly) _buildProductSearchCard(webPh),
+                            if (!widget.isReadOnly) const SizedBox(height: 12),
+                            _buildCartTable(webPh),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      SizedBox(
+                        width: constraints.maxWidth > 1150 ? 380 : 340,
+                        child: _buildGrandTotalCard(webPh),
+                      ),
+                    ],
+                  )
+                else
+                  Column(
+                    children: [
+                      _buildCustomerCard(webPh),
+                      const SizedBox(height: 14),
+                      if (!widget.isReadOnly) _buildProductSearchCard(webPh),
+                      if (!widget.isReadOnly) const SizedBox(height: 14),
+                      _buildCartTable(webPh),
+                      const SizedBox(height: 14),
+                      _buildGrandTotalCard(webPh),
+                    ],
                   ),
-                  const SizedBox(width: 18),
-                  SizedBox(
-                    width: 380,
-                    child: Column(
-                      children: [
-                        _buildCustomerCard(webPh),
-                        const SizedBox(height: 16),
-                        _buildGrandTotalCard(webPh),
-                      ],
-                    ),
-                  ),
-                ],
-              )
-            else
-              Column(
-                children: [
-                  _buildCustomerCard(webPh),
-                  const SizedBox(height: 16),
-                  if (!widget.isReadOnly) _buildProductSearchCard(webPh),
-                  if (!widget.isReadOnly) const SizedBox(height: 16),
-                  _buildCartTable(webPh),
-                  const SizedBox(height: 16),
-                  _buildGrandTotalCard(webPh),
-                ],
-              ),
-          ],
-        );
-      },
-    ),
-    ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 
-  Widget _buildHeaderBar(PharoahWebManager webPh) {
+  Widget _buildHeaderCustomerWidget(PharoahWebManager webPh) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black26,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0x662563EB)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(5),
+            decoration: const BoxDecoration(
+              color: Color(0x332563EB),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.person_rounded, color: Color(0xFF38BDF8), size: 14),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: widget.isReadOnly ? null : () => _openPartyPickerModal(webPh),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      (selectedParty?.name ?? "CASH").toUpperCase(),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11.5),
+                    ),
+                    if (!widget.isReadOnly) ...[
+                      const SizedBox(width: 3),
+                      const Icon(Icons.arrow_drop_down, color: Color(0xFF38BDF8), size: 15),
+                    ],
+                  ],
+                ),
+                Text(
+                  selectedParty != null && selectedParty!.id != 'cash'
+                      ? "GST: ${selectedParty!.gst.isNotEmpty ? selectedParty!.gst : 'N/A'} • State: ${selectedParty!.state} • Bal: ₹${selectedParty!.opBal.toStringAsFixed(0)}"
+                      : "Cash / Counter Customer • No GST",
+                  style: const TextStyle(color: Colors.white54, fontSize: 9.5),
+                ),
+              ],
+            ),
+          ),
+          if (!widget.isReadOnly) ...[
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF38BDF8),
+                side: const BorderSide(color: Color(0xFF38BDF8), width: 0.8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+              onPressed: () => _openPartyPickerModal(webPh),
+              icon: const Icon(Icons.swap_horiz_rounded, size: 12),
+              label: const Text("PARTY", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 4),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                elevation: 0,
+              ),
+              onPressed: () => _openQuickAddCustomer(webPh),
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 12),
+              label: const Text("+ NEW", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+            ),
+            if (selectedParty != null && selectedParty!.id != 'cash') ...[
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 15, color: Colors.redAccent),
+                tooltip: "Reset to Cash",
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  setState(() => selectedParty = Party(id: 'cash', name: 'CASH', group: 'Cash in Hand'));
+                  _refreshBillNumber(webPh);
+                },
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderBar(PharoahWebManager webPh, {bool isWideScreen = true}) {
     final activeSeriesList = webPh.numberingSeries.where((s) => s.type == "SALE" && s.isActive).toList();
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(14),
@@ -551,30 +642,30 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white12,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   elevation: 0,
                 ),
                 onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text("BACK", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.arrow_back_rounded, size: 15),
+                label: const Text("BACK", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(width: 12),
-              Icon(Icons.receipt_long_rounded, color: widget.isReadOnly ? Colors.purpleAccent : const Color(0xFF38BDF8), size: 20),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
+              Icon(Icons.receipt_long_rounded, color: widget.isReadOnly ? Colors.purpleAccent : const Color(0xFF38BDF8), size: 18),
+              const SizedBox(width: 6),
               Text(
-                widget.isReadOnly ? "VIEW INVOICE" : "TAX INVOICE",
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                widget.isReadOnly ? "VIEW INVOICE" : (widget.modifySaleId != null ? "MODIFY INVOICE" : "TAX INVOICE"),
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5),
               ),
             ],
           ),
-
+          if (isWideScreen) _buildHeaderCustomerWidget(webPh),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (activeSeriesList.isNotEmpty && widget.existingItems == null) ...[
                 Container(
-                  height: 36,
+                  height: 34,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: Colors.black26,
@@ -595,26 +686,24 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 ),
                 const SizedBox(width: 8),
               ],
-
               SizedBox(
-                width: 110,
-                height: 36,
+                width: 100,
+                height: 34,
                 child: TextField(
                   controller: billNoC,
                   readOnly: widget.initialBillNo != null || widget.isReadOnly,
-                  style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.w900, fontSize: 12),
+                  style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.w900, fontSize: 11.5),
                   decoration: InputDecoration(
                     labelText: "BILL NO",
-                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 8.5),
                     filled: true,
                     fillColor: Colors.black26,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-
               InkWell(
                 onTap: widget.isReadOnly ? null : () async {
                   final picked = await showDatePicker(
@@ -628,30 +717,29 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                   }
                 },
                 child: Container(
-                  height: 36,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: Colors.black26,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.calendar_month_rounded, color: Color(0xFF38BDF8), size: 14),
-                      const SizedBox(width: 6),
+                      const Icon(Icons.calendar_month_rounded, color: Color(0xFF38BDF8), size: 13),
+                      const SizedBox(width: 5),
                       Text(
                         DateFormat('dd/MM/yyyy').format(billDate),
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(value: 'CASH', label: Text('CASH', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-                  ButtonSegment(value: 'CREDIT', label: Text('CREDIT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                  ButtonSegment(value: 'CASH', label: Text('CASH', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold))),
+                  ButtonSegment(value: 'CREDIT', label: Text('CREDIT', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold))),
                 ],
                 selected: {paymentMode},
                 onSelectionChanged: widget.isReadOnly ? null : (v) => setState(() => paymentMode = v.first),
@@ -1073,7 +1161,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
   Widget _buildGrandTotalCard(PharoahWebManager webPh) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF19243B), Color(0xFF0F172A)],
@@ -1088,12 +1176,12 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text("BILL CALCULATION SUMMARY", style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-          const Divider(color: Colors.white10, height: 20),
+          const Divider(color: Colors.white10, height: 16),
           _sumRow("Items Taxable Value", "₹${totalTaxable.toStringAsFixed(2)}"),
           if (totalCGST > 0) _sumRow("Total CGST (+)", "₹${totalCGST.toStringAsFixed(2)}"),
           if (totalSGST > 0) _sumRow("Total SGST (+)", "₹${totalSGST.toStringAsFixed(2)}"),
           if (totalIGST > 0) _sumRow("Total IGST (+)", "₹${totalIGST.toStringAsFixed(2)}"),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1102,42 +1190,42 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(
-                    width: 65,
-                    height: 30,
+                    width: 60,
+                    height: 28,
                     child: TextField(
                       controller: extraDiscPercentC,
                       readOnly: widget.isReadOnly,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       textAlign: TextAlign.right,
                       onChanged: _onExtraDiscPercentChanged,
-                      style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                      style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 10.5),
                       decoration: InputDecoration(
                         suffixText: "%",
-                        suffixStyle: const TextStyle(color: Colors.orangeAccent, fontSize: 10),
+                        suffixStyle: const TextStyle(color: Colors.orangeAccent, fontSize: 9.5),
                         filled: true,
                         fillColor: Colors.black38,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   SizedBox(
-                    width: 75,
-                    height: 30,
+                    width: 70,
+                    height: 28,
                     child: TextField(
                       controller: extraDiscC,
                       readOnly: widget.isReadOnly,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       textAlign: TextAlign.right,
                       onChanged: _onExtraDiscAmountChanged,
-                      style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                      style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10.5),
                       decoration: InputDecoration(
                         prefixText: "₹",
-                        prefixStyle: const TextStyle(color: Colors.redAccent, fontSize: 10),
+                        prefixStyle: const TextStyle(color: Colors.redAccent, fontSize: 9.5),
                         filled: true,
                         fillColor: Colors.black38,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
                       ),
                     ),
@@ -1147,63 +1235,63 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
             ],
           ),
           _sumRow("Auto Round Off", "₹${roundOff.toStringAsFixed(2)}"),
-          const Divider(color: Colors.white24, height: 25),
+          const Divider(color: Colors.white24, height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("NET PAYABLE", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
+              const Text("NET PAYABLE", style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w900)),
               Text(
                 "₹${finalGrandTotal.toStringAsFixed(0)}.00",
-                style: const TextStyle(color: Colors.greenAccent, fontSize: 24, fontWeight: FontWeight.w900),
+                style: const TextStyle(color: Colors.greenAccent, fontSize: 22, fontWeight: FontWeight.w900),
               ),
             ],
           ),
-          const SizedBox(height: 25),
+          const SizedBox(height: 16),
           if (!widget.isReadOnly) ...[
             SizedBox(
               width: double.infinity,
-              height: 46,
+              height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2563EB),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
                 onPressed: isSaving ? null : () => _saveInvoice(webPh, andPrint: false),
                 icon: isSaving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.check_circle_rounded, size: 18),
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.check_circle_rounded, size: 16),
                 label: Text(
                   isSaving ? "SAVING..." : "SAVE & SYNC INVOICE",
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5, letterSpacing: 0.5),
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 0.5),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              height: 42,
+              height: 38,
               child: OutlinedButton.icon(
                 style: ElevatedButton.styleFrom(
                   foregroundColor: const Color(0xFF38BDF8),
-                  side: const BorderSide(color: Color(0xFF38BDF8), width: 1.2),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  side: const BorderSide(color: Color(0xFF38BDF8), width: 1.1),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: isSaving ? null : () => _saveInvoice(webPh, andPrint: true),
-                icon: const Icon(Icons.print_rounded, size: 16),
-                label: const Text("SAVE & PRINT INVOICE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                icon: const Icon(Icons.print_rounded, size: 15),
+                label: const Text("SAVE & PRINT INVOICE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.5)),
               ),
             ),
           ] else ...[
             SizedBox(
               width: double.infinity,
-              height: 46,
+              height: 42,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF38BDF8),
                   foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
                 onPressed: () async {
@@ -1217,8 +1305,8 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                   final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
                   await WebPdfRouterService.printSaleInvoice(sale: tempSale, party: activeParty, shop: shopProfile, config: webPh.appConfig);
                 },
-                icon: const Icon(Icons.print_rounded, size: 18),
-                label: const Text("PRINT THIS INVOICE", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5, letterSpacing: 0.5)),
+                icon: const Icon(Icons.print_rounded, size: 16),
+                label: const Text("PRINT THIS INVOICE", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 0.5)),
               ),
             ),
           ]
