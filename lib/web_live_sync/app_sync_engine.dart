@@ -167,7 +167,7 @@ class AppSyncEngine {
         await File('$workingDir/p_challan.json').writeAsString(jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()));
         await File('$workingDir/s_return.json').writeAsString(jsonEncode(ph.saleReturns.map((e) => e.toMap()).toList()));
         await File('$workingDir/p_return.json').writeAsString(jsonEncode(ph.purchaseReturns.map((e) => e.toMap()).toList()));
-        await File('$workingDir/banks.json').writeAsString(jsonEncode(ph.bankTransactions.map((e) => e.toMap()).toList()));
+        await File('$workingDir/banks.json').writeAsString(jsonEncode(ph.banks.map((e) => e.toMap()).toList()));
         await File('$workingDir/series.json').writeAsString(jsonEncode(ph.numberingSeries.map((e) => e.toMap()).toList()));
       } catch (e) {
         debugPrint("Error flushing core sync files to disk: $e");
