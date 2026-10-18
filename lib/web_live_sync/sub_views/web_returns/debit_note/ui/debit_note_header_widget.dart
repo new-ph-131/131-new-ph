@@ -35,17 +35,18 @@ class DebitNoteHeaderWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final suppQuery = controller.supplierSearchC.text.trim().toLowerCase();
-    final matchingSuppliers = suppQuery.isEmpty
-        ? <Party>[]
-        : webPh.parties
-            .where((p) =>
-                (p.group == "Sundry Creditors" || p.group.isEmpty) &&
-                (p.name.toLowerCase().contains(suppQuery) ||
+    // 🔍 ROBUST PARTY SEARCH: Accessible to all party master suppliers with instant preview
+    final matchingSuppliers = webPh.parties
+        .where((p) {
+          if (suppQuery.isEmpty) return true;
+          return p.name.toLowerCase().contains(suppQuery) ||
                  p.city.toLowerCase().contains(suppQuery) ||
                  p.gst.toLowerCase().contains(suppQuery) ||
-                 p.phone.toLowerCase().contains(suppQuery)))
-            .take(5)
-            .toList();
+                 p.phone.toLowerCase().contains(suppQuery) ||
+                 p.group.toLowerCase().contains(suppQuery);
+        })
+        .take(30)
+        .toList();
 
     return Container(
       padding: const EdgeInsets.all(18),
