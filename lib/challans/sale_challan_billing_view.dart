@@ -8,6 +8,7 @@ import '../models.dart';
 import '../item_entry_card.dart';
 import '../product_master.dart';
 import '../pdf/pdf_router_service.dart';
+import '../logic/app_billing_gst_engine.dart';
 
 class SaleChallanBillingView extends StatefulWidget {
   final Party party;
@@ -222,7 +223,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
                     itemBuilder: (c, i) => _buildItemCard(items[i], i, ph),
                   ),
           ),
-          _buildFooter(),
+          _buildFooter(ph),
         ],
       ),
     );
@@ -301,42 +302,80 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
     );
   }
 
-  Widget _buildFooter() => Container(
-        padding: const EdgeInsets.all(15),
-        color: Colors.white,
-        child: Column(
-          children: [
-            TextField(
-              controller: remarksC,
-              readOnly: widget.isReadOnly,
-              decoration: InputDecoration(
-                labelText: "Remarks / Notes (Optional)",
-                hintText: "Enter dispatch details or vehicle info...",
-                prefixIcon: const Icon(Icons.notes, size: 20),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                isDense: true,
-              ),
+  // 🆕 RULE 55 GST COMPLIANT CHALLAN FOOTER
+  Widget _buildFooter(PharoahManager ph) {
+    bool isLocal = widget.party.state.trim().toLowerCase() == ph.companyState.trim().toLowerCase();
+    AppBillGstSummary summary = AppBillingGstEngine.calculate(
+      items: items,
+      extraDiscount: 0.0,
+      isLocal: isLocal,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(15),
+      color: Colors.white,
+      child: Column(
+        children: [
+          TextField(
+            controller: remarksC,
+            readOnly: widget.isReadOnly,
+            decoration: InputDecoration(
+              labelText: "Remarks / Notes (Optional)",
+              hintText: "Enter dispatch details or vehicle info...",
+              prefixIcon: const Icon(Icons.notes, size: 20),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              isDense: true,
             ),
-            const SizedBox(height: 15),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("NET CHALLAN VALUE", style: TextStyle(fontWeight: FontWeight.bold)),
-                Text("₹${totalAmt.toStringAsFixed(2)}", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: widget.isReadOnly ? Colors.purple.shade900 : Colors.blueGrey.shade900)),
-              ],
-            ),
-          ],
-        ),
-      );
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: BorderRadius.circular(8)),
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black86)),
+                Text("₹${summary.netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ]),
+              const SizedBox(height: 4),
+              if (isLocal)
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text("CGST + SGST", style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade800)),
+                  Text("₹${summary.totalCGST.toStringAsFixed(2)} + ₹${summary.totalSGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800)),
+                ])
+              else
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text("IGST", style: TextStyle(fontSize: 11, color: Colors.blueGrey.shade800)),
+                  Text("₹${summary.totalIGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade800)),
+                ]),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("NET CHALLAN VALUE", style: TextStyle(fontWeight: FontWeight.bold)),
+              Text("₹${summary.finalGrandTotal.toStringAsFixed(2)}", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: widget.isReadOnly ? Colors.purple.shade900 : Colors.blueGrey.shade900)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
 void _handleSave(PharoahManager ph) async {
+    bool isLocal = widget.party.state.trim().toLowerCase() == ph.companyState.trim().toLowerCase();
+    AppBillGstSummary summary = AppBillingGstEngine.calculate(
+      items: items,
+      extraDiscount: 0.0,
+      isLocal: isLocal,
+    );
     // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
     ph.finalizeSaleChallan(
       billNo: widget.challanNo,
       date: widget.challanDate,
       party: widget.party,
       items: items,
-      total: totalAmt,
+      total: summary.finalGrandTotal,
       remarks: remarksC.text.trim(),
       partyId: widget.party.id,
       existingId: widget.existingRecord?.id,
