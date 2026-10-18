@@ -475,7 +475,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
         padding: const EdgeInsets.only(bottom: 40),
         child: LayoutBuilder(
           builder: (context, constraints) {
-        bool isWideScreen = constraints.maxWidth > 850;
+        bool isWideScreen = constraints.maxWidth > 900;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -824,19 +824,12 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
               ),
             )
           else
-            Container(
-              constraints: const BoxConstraints(minHeight: 220, maxHeight: 520),
-              child: Scrollbar(
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.vertical,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 700),
-                      child: Table(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 700),
+                child: Table(
                   columnWidths: const {
                     0: FixedColumnWidth(40),
                     1: FlexColumnWidth(3),
