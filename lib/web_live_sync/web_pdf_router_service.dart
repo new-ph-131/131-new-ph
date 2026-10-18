@@ -184,6 +184,8 @@ class WebPdfRouterService {
     int totalPages = (challan.items.length / itemsPerPage).ceil();
     if (totalPages == 0) totalPages = 1;
 
+    bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
+
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
       int end = (start + itemsPerPage < challan.items.length) ? start + itemsPerPage : challan.items.length;
