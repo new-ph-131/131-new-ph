@@ -48,7 +48,7 @@ class DebitNoteController extends ChangeNotifier {
         selectedSupplier = Party(id: 'temp', name: existingRecord.distributorName, group: "Sundry Creditors");
       }
     } else {
-      noteNoC.text = webPh.getNextBillNumber("RETURN", "DN-", 101);
+      noteNoC.text = webPh.getNextBillNumber("DEBIT_NOTE", "DN-", 101);
       selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
     }
     notifyListeners();

@@ -44,10 +44,10 @@ class WebKpiStrip extends StatelessWidget {
       }
     }
 
-    String salesDisplay = todaySales > 0 ? "₹${todaySales.toStringAsFixed(0)}" : (webPh.sales.isNotEmpty ? "₹${_totalSales(webPh).toStringAsFixed(0)}" : "₹0");
+    String salesDisplay = "₹${todaySales.toStringAsFixed(0)}";
     String salesSub = todaySalesCount > 0 ? "$todaySalesCount Bills Today" : "${webPh.sales.length} Total Bills";
 
-    String purDisplay = todayPurchases > 0 ? "₹${todayPurchases.toStringAsFixed(0)}" : (webPh.purchases.isNotEmpty ? "₹${_totalPur(webPh).toStringAsFixed(0)}" : "₹0");
+    String purDisplay = "₹${todayPurchases.toStringAsFixed(0)}";
     String purSub = todayPurCount > 0 ? "$todayPurCount Inwards Today" : "${webPh.purchases.length} Total Inwards";
 
     String stockDisplay = totalStockVal > 0 ? "₹${totalStockVal.toStringAsFixed(0)}" : "${webPh.medicines.length} Items";

@@ -39,11 +39,23 @@ class WebPharoahNumberingEngine {
       }
 
       String upperId = idToParse.trim().toUpperCase();
-      if (upperId.startsWith(cleanPrefix)) {
-        String numPart = upperId.replaceFirst(cleanPrefix, "").trim();
-        int? n = int.tryParse(numPart);
-        if (n != null) existingNumbers.add(n);
-      }
+      String numPart = upperId;
+      if (numPart.startsWith("WDN-")) numPart = numPart.substring(4);
+      else if (numPart.startsWith("DN-")) numPart = numPart.substring(3);
+      else if (numPart.startsWith("WCN-")) numPart = numPart.substring(4);
+      else if (numPart.startsWith("CN-")) numPart = numPart.substring(3);
+      else if (numPart.startsWith("WPUR-")) numPart = numPart.substring(5);
+      else if (numPart.startsWith("PUR-")) numPart = numPart.substring(4);
+      else if (numPart.startsWith("WSCH-")) numPart = numPart.substring(5);
+      else if (numPart.startsWith("SCH-")) numPart = numPart.substring(4);
+      else if (numPart.startsWith("WPCH-")) numPart = numPart.substring(5);
+      else if (numPart.startsWith("PCH-")) numPart = numPart.substring(4);
+      else if (numPart.startsWith("W-")) numPart = numPart.substring(2);
+      else if (numPart.startsWith("INV-")) numPart = numPart.substring(4);
+      else if (cleanPrefix.isNotEmpty && numPart.startsWith(cleanPrefix)) numPart = numPart.replaceFirst(cleanPrefix, "");
+
+      int? n = int.tryParse(numPart.trim());
+      if (n != null) existingNumbers.add(n);
     }
 
     if (existingNumbers.isNotEmpty) {
