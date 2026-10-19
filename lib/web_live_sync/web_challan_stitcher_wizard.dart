@@ -14,6 +14,9 @@ import 'web_pharoah_numbering_engine.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_billing/web_new_sale_view.dart';
 import 'web_purchase_entry_view.dart';
+import '../sync_core/modules/sale_challan_sync_module.dart';
+import '../sync_core/modules/purchase_challan_sync_module.dart';
+import '../sync_core/d1_sales_ledger_service.dart';
 
 class WebChallanStitcherWizard extends StatefulWidget {
   final VoidCallback onBack;
@@ -190,6 +193,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       finalNo = WebPharoahNumberingEngine.getNextNumber(prefix: prefix, startFrom: start, currentList: webPh.sales);
       final Party pRef = b['party'] as Party;
 
+      webPh.unmarkDeletedId(finalNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(finalNo);
       final newSale = Sale(
         id: "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalNo",
         billNo: finalNo,
@@ -211,10 +216,15 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         sourceTag: "WEB-PORTAL STITCHED",
       );
 
-      webPh.sales.add(newSale);
+      webPh.addSaleAndSync(newSale);
       for (var cId in b['challanIds']) {
-        int idx = webPh.saleChallans.indexWhere((c) => c.id == cId);
-        if (idx != -1) webPh.saleChallans[idx].status = "Billed";
+        int idx = webPh.saleChallans.indexWhere((c) => c.id == cId || c.billNo == cId);
+        if (idx != -1) {
+          webPh.saleChallans[idx].status = "Billed";
+          webPh.saleChallans[idx].version += 1;
+          webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+          SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
+        }
       }
 
       for (var item in newSale.items) {
@@ -237,6 +247,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       finalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "WPUR-", startFrom: 1, currentList: webPh.purchases);
       final Party pRef = b['party'] as Party;
 
+      webPh.unmarkDeletedId(finalNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(finalNo);
       final newPurchase = Purchase(
         id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalNo",
         internalNo: finalNo,
@@ -252,10 +264,15 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         sourceTag: "WEB-PORTAL STITCHED",
       );
 
-      webPh.purchases.add(newPurchase);
+      webPh.addPurchaseAndSync(newPurchase);
       for (var cId in b['challanIds']) {
-        int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId);
-        if (idx != -1) webPh.purchaseChallans[idx].status = "Billed";
+        int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId || c.internalNo == cId || c.billNo == cId);
+        if (idx != -1) {
+          webPh.purchaseChallans[idx].status = "Billed";
+          webPh.purchaseChallans[idx].version += 1;
+          webPh.purchaseChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+          PurchaseChallanSyncModule.onPurchaseChallanSaved(webPh.purchaseChallans[idx], webPh.activeStoreToken);
+        }
       }
 
       for (var item in newPurchase.items) {
@@ -331,6 +348,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         String finalBillNo = WebPharoahNumberingEngine.getNextNumber(prefix: prefix, startFrom: start, currentList: webPh.sales);
         final Party pRef = b['party'] as Party;
 
+        webPh.unmarkDeletedId(finalBillNo);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(finalBillNo);
         final newSale = Sale(
           id: "SALE-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalBillNo",
           billNo: finalBillNo,
@@ -352,10 +371,15 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
           sourceTag: "WEB-PORTAL STITCHED",
         );
 
-        webPh.sales.add(newSale);
+        webPh.addSaleAndSync(newSale);
         for (var cId in b['challanIds']) {
-          int idx = webPh.saleChallans.indexWhere((c) => c.id == cId);
-          if (idx != -1) webPh.saleChallans[idx].status = "Billed";
+          int idx = webPh.saleChallans.indexWhere((c) => c.id == cId || c.billNo == cId);
+          if (idx != -1) {
+            webPh.saleChallans[idx].status = "Billed";
+            webPh.saleChallans[idx].version += 1;
+            webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
+          }
         }
 
         for (var item in newSale.items) {
@@ -392,6 +416,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         String finalInternalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "WPUR-", startFrom: 1, currentList: webPh.purchases);
         final Party pRef = b['party'] as Party;
 
+        webPh.unmarkDeletedId(finalInternalNo);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(finalInternalNo);
         final newPurchase = Purchase(
           id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalInternalNo",
           internalNo: finalInternalNo,
@@ -407,10 +433,15 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
           sourceTag: "WEB-PORTAL STITCHED",
         );
 
-        webPh.purchases.add(newPurchase);
+        webPh.addPurchaseAndSync(newPurchase);
         for (var cId in b['challanIds']) {
-          int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId);
-          if (idx != -1) webPh.purchaseChallans[idx].status = "Billed";
+          int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId || c.internalNo == cId || c.billNo == cId);
+          if (idx != -1) {
+            webPh.purchaseChallans[idx].status = "Billed";
+            webPh.purchaseChallans[idx].version += 1;
+            webPh.purchaseChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            PurchaseChallanSyncModule.onPurchaseChallanSaved(webPh.purchaseChallans[idx], webPh.activeStoreToken);
+          }
         }
 
         for (var item in newPurchase.items) {
@@ -1234,16 +1265,40 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
                         _cardAction(isSaved ? Icons.verified_rounded : Icons.save_rounded, "SAVE", isSaved ? Colors.greenAccent : Colors.white70, () => _saveSingle(webPh, i)),
                         _cardAction(Icons.print_outlined, "PDF", const Color(0xFF38BDF8), () => _printSingle(webPh, i)),
                         _cardAction(Icons.delete_outline_rounded, "DEL", Colors.redAccent, () {
-                          // Revert linked challans back to Pending when draft is discarded
                           bool isSale = _tabController.index == 0;
-                          List<String> challanIds = List<String>.from(b['challanIds'] ?? []);
-                          for (var cid in challanIds) {
+                          final billNo = b['billNo']?.toString() ?? '';
+                          if (isSaved && billNo.isNotEmpty && billNo != 'DRAFT') {
                             if (isSale) {
-                              int idx = webPh.saleChallans.indexWhere((c) => c.id == cid);
-                              if (idx != -1) webPh.saleChallans[idx].status = "Pending";
+                              try {
+                                final s = webPh.sales.firstWhere((x) => x.billNo == billNo);
+                                webPh.deleteSale(s.id);
+                              } catch (_) {}
                             } else {
-                              int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cid);
-                              if (idx != -1) webPh.purchaseChallans[idx].status = "Pending";
+                              try {
+                                final p = webPh.purchases.firstWhere((x) => x.internalNo == billNo || x.billNo == billNo);
+                                webPh.deletePurchase(p.id);
+                              } catch (_) {}
+                            }
+                          } else {
+                            List<String> challanIds = List<String>.from(b['challanIds'] ?? []);
+                            for (var cid in challanIds) {
+                              if (isSale) {
+                                int idx = webPh.saleChallans.indexWhere((c) => c.id == cid || c.billNo == cid);
+                                if (idx != -1) {
+                                  webPh.saleChallans[idx].status = "Pending";
+                                  webPh.saleChallans[idx].version += 1;
+                                  webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+                                  SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
+                                }
+                              } else {
+                                int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cid || c.internalNo == cid || c.billNo == cid);
+                                if (idx != -1) {
+                                  webPh.purchaseChallans[idx].status = "Pending";
+                                  webPh.purchaseChallans[idx].version += 1;
+                                  webPh.purchaseChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+                                  PurchaseChallanSyncModule.onPurchaseChallanSaved(webPh.purchaseChallans[idx], webPh.activeStoreToken);
+                                }
+                              }
                             }
                           }
                           setState(() => draftBills.removeAt(i));

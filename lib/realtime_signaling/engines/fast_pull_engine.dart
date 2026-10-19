@@ -56,16 +56,23 @@ class FastPullEngine {
                   newUnmarkKeys.remove(bId.toUpperCase());
                 }
                 if (bNo.isNotEmpty) {
-                  newTombKeys.add(bNo);
-                  newUnmarkKeys.remove(bNo);
+                  final cleanBNo = bNo.trim().toUpperCase();
+                  final bool hasActiveSale = ph.sales.any((s) => s.id != bId && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
+                  if (!hasActiveSale) {
+                    newTombKeys.add(bNo);
+                    newUnmarkKeys.remove(bNo);
+                  }
                 }
                 if (rawPayload is Map) {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                   final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
                   if (iNo.isNotEmpty) {
-                    newTombKeys.add(iNo);
-                    newUnmarkKeys.remove(iNo);
+                    final bool hasActivePur = ph.purchases.any((p) => p.id != bId && p.internalNo.trim().toUpperCase() == iNo && p.isDeleted != 1);
+                    if (!hasActivePur) {
+                      newTombKeys.add(iNo);
+                      newUnmarkKeys.remove(iNo);
+                    }
                   }
                   if (pId.isNotEmpty && pBill.isNotEmpty) {
                     final c2 = "${pId}_$pBill";

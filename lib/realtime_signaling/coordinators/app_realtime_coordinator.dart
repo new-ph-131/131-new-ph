@@ -55,11 +55,18 @@ class AppRealtimeCoordinator {
             await File('$workingDir/vouc.json').writeAsString(
               jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()),
             );
+            await File('$workingDir/s_challan.json').writeAsString(
+              jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/p_challan.json').writeAsString(
+              jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()),
+            );
             await File('$workingDir/bats.json').writeAsString(
               jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
             );
           }
         } catch (_) {}
+        ph.notifyListeners();
       },
       onSignal: (event) async {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");

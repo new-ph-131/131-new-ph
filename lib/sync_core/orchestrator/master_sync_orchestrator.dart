@@ -36,6 +36,48 @@ class MasterSyncOrchestrator {
     if (phApp != null) {
       switch (docType) {
         case 'SALE':
+          final sBill = envelope.billData;
+          final String sBNo = (sBill['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sBNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (sBNo.isNotEmpty) sBNo]);
+            }
+            // 🔄 Cross-Platform Revert: linked challans back to Pending
+            final Set<String> targetCids = {};
+            final rawLinks = sBill['linkedChallanIds'];
+            if (rawLinks is List) {
+              for (var l in rawLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            try {
+              final loc = phApp.sales.firstWhere((s) => s.id == envelope.syncId || (sBNo.isNotEmpty && s.billNo.trim().toUpperCase() == sBNo));
+              for (var l in loc.linkedChallanIds) {
+                if (l.trim().isNotEmpty) targetCids.add(l.trim().toUpperCase());
+              }
+              for (var it in loc.items) {
+                if (it.sourceChallanNo.trim().isNotEmpty) targetCids.add(it.sourceChallanNo.trim().toUpperCase());
+                if (it.sourceChallanId.trim().isNotEmpty) targetCids.add(it.sourceChallanId.trim().toUpperCase());
+              }
+            } catch (_) {}
+            if (targetCids.isNotEmpty) {
+              for (var c in phApp.saleChallans) {
+                if (targetCids.contains(c.id.trim().toUpperCase()) || targetCids.contains(c.billNo.trim().toUpperCase())) {
+                  c.status = 'Pending';
+                  c.version += 1;
+                  c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                }
+              }
+              phApp.save();
+              phApp.notifyListeners();
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, sBNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: sBNo);
+            }
+          }
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phApp.sales, envelope);
           break;
         case 'PURCHASE':
@@ -55,6 +97,35 @@ class MasterSyncOrchestrator {
                 if (comp3.isNotEmpty) comp3,
               ];
               TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, delKeys);
+            }
+            // 🔄 Cross-Platform Revert: linked purchase challans back to Pending
+            final Set<String> targetPurCids = {};
+            final rawPurLinks = billData['linkedChallanIds'];
+            if (rawPurLinks is List) {
+              for (var l in rawPurLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetPurCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            try {
+              final loc = phApp.purchases.firstWhere((p) => p.id == envelope.syncId || (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo));
+              for (var l in loc.linkedChallanIds) {
+                if (l.trim().isNotEmpty) targetPurCids.add(l.trim().toUpperCase());
+              }
+              for (var it in loc.items) {
+                if (it.sourceChallanNo.trim().isNotEmpty) targetPurCids.add(it.sourceChallanNo.trim().toUpperCase());
+                if (it.sourceChallanId.trim().isNotEmpty) targetPurCids.add(it.sourceChallanId.trim().toUpperCase());
+              }
+            } catch (_) {}
+            if (targetPurCids.isNotEmpty) {
+              for (var c in phApp.purchaseChallans) {
+                if (targetPurCids.contains(c.id.trim().toUpperCase()) || targetPurCids.contains(c.internalNo.trim().toUpperCase()) || targetPurCids.contains(c.billNo.trim().toUpperCase())) {
+                  c.status = 'Pending';
+                  c.version += 1;
+                  c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                }
+              }
+              phApp.save();
+              phApp.notifyListeners();
             }
           } else {
             D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
@@ -157,6 +228,43 @@ class MasterSyncOrchestrator {
     if (phWeb != null) {
       switch (docType) {
         case 'SALE':
+          final sBill = envelope.billData;
+          final String sBNo = (sBill['billNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sBNo);
+            phWeb.purgeDeletedIds([envelope.syncId, if (sBNo.isNotEmpty) sBNo]);
+            // 🔄 Cross-Platform Revert: linked challans back to Pending
+            final Set<String> targetCids = {};
+            final rawLinks = sBill['linkedChallanIds'];
+            if (rawLinks is List) {
+              for (var l in rawLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            try {
+              final loc = phWeb.sales.firstWhere((s) => s.id == envelope.syncId || (sBNo.isNotEmpty && s.billNo.trim().toUpperCase() == sBNo));
+              for (var l in loc.linkedChallanIds) {
+                if (l.trim().isNotEmpty) targetCids.add(l.trim().toUpperCase());
+              }
+              for (var it in loc.items) {
+                if (it.sourceChallanNo.trim().isNotEmpty) targetCids.add(it.sourceChallanNo.trim().toUpperCase());
+                if (it.sourceChallanId.trim().isNotEmpty) targetCids.add(it.sourceChallanId.trim().toUpperCase());
+              }
+            } catch (_) {}
+            if (targetCids.isNotEmpty) {
+              for (var c in phWeb.saleChallans) {
+                if (targetCids.contains(c.id.trim().toUpperCase()) || targetCids.contains(c.billNo.trim().toUpperCase())) {
+                  c.status = 'Pending';
+                  c.version += 1;
+                  c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                }
+              }
+              phWeb.notifyListeners();
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, sBNo);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: sBNo);
+          }
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phWeb.sales, envelope);
           break;
         case 'PURCHASE':
@@ -175,6 +283,34 @@ class MasterSyncOrchestrator {
               if (comp3.isNotEmpty) comp3,
             ];
             phWeb.purgeDeletedIds(delList);
+            // 🔄 Cross-Platform Revert: linked purchase challans back to Pending
+            final Set<String> targetPurCids = {};
+            final rawPurLinks = billData['linkedChallanIds'];
+            if (rawPurLinks is List) {
+              for (var l in rawPurLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetPurCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            try {
+              final loc = phWeb.purchases.firstWhere((p) => p.id == envelope.syncId || (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo));
+              for (var l in loc.linkedChallanIds) {
+                if (l.trim().isNotEmpty) targetPurCids.add(l.trim().toUpperCase());
+              }
+              for (var it in loc.items) {
+                if (it.sourceChallanNo.trim().isNotEmpty) targetPurCids.add(it.sourceChallanNo.trim().toUpperCase());
+                if (it.sourceChallanId.trim().isNotEmpty) targetPurCids.add(it.sourceChallanId.trim().toUpperCase());
+              }
+            } catch (_) {}
+            if (targetPurCids.isNotEmpty) {
+              for (var c in phWeb.purchaseChallans) {
+                if (targetPurCids.contains(c.id.trim().toUpperCase()) || targetPurCids.contains(c.internalNo.trim().toUpperCase()) || targetPurCids.contains(c.billNo.trim().toUpperCase())) {
+                  c.status = 'Pending';
+                  c.version += 1;
+                  c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                }
+              }
+              phWeb.notifyListeners();
+            }
           } else {
             D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo);
             final List<String> unmList = [

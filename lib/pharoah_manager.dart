@@ -452,8 +452,17 @@ Future<void> finalizeSale({
     
     if (linkedIds != null) { 
       for (var id in linkedIds) { 
-        int i = saleChallans.indexWhere((c) => c.id == id); 
-        if (i != -1) saleChallans[i].status = "Billed"; 
+        int i = saleChallans.indexWhere((c) => c.id == id || c.billNo == id); 
+        if (i != -1) {
+          saleChallans[i].status = "Billed";
+          saleChallans[i].version += 1;
+          saleChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+          if (activeCompany != null) {
+            WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+              if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(saleChallans[i], t);
+            });
+          }
+        }
       } 
     }
     
@@ -572,11 +581,20 @@ Future<void> finalizePurchase({
     } 
     
     if (linkedChallanIds != null) { 
-      for (var id in linkedChallanIds) { 
-        int i = purchaseChallans.indexWhere((c) => c.id == id); 
-        if (i != -1) purchaseChallans[i].status = "Billed"; 
-      } 
-    }
+       for (var id in linkedChallanIds) { 
+         int i = purchaseChallans.indexWhere((c) => c.id == id || c.internalNo == id || c.billNo == id); 
+         if (i != -1) {
+           purchaseChallans[i].status = "Billed";
+           purchaseChallans[i].version += 1;
+           purchaseChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+           if (activeCompany != null) {
+             WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+               if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(purchaseChallans[i], t);
+             });
+           }
+         }
+       } 
+     }
     
     if (sourceTag.isEmpty && activeCompany != null) { 
       await PharoahNumberingEngine.updateSeriesCounter(type: "PURCHASE", companyID: activeCompany!.id, usedNumber: internalNo, prefix: "PUR-"); 
@@ -729,8 +747,36 @@ Future<void> finalizePurchase({
 
   Future<void> finalizeBatchSales(List<Sale> batch) async { 
     sales.addAll(batch); 
-    for (var s in batch) { if (s.linkedChallanIds.isNotEmpty) { for (var id in s.linkedChallanIds) { int i = saleChallans.indexWhere((c) => c.id == id); if (i != -1) saleChallans[i].status = "Billed"; } } } 
-    if (batch.isNotEmpty && activeCompany != null) { String l = batch.last.billNo; String p = l.split(RegExp(r'\d')).first; await PharoahNumberingEngine.updateSeriesCounter(type: "SALE", companyID: activeCompany!.id, usedNumber: l, prefix: p); } 
+    for (var s in batch) { 
+      if (s.linkedChallanIds.isNotEmpty) { 
+        for (var id in s.linkedChallanIds) { 
+          int i = saleChallans.indexWhere((c) => c.id == id || c.billNo == id); 
+          if (i != -1) {
+            saleChallans[i].status = "Billed";
+            saleChallans[i].version += 1;
+            saleChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            if (activeCompany != null) {
+              WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+                if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(saleChallans[i], t);
+              });
+            }
+          }
+        } 
+      }
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) {
+            SalesSyncModule.onSaleSaved(s, t);
+            D1SalesLedgerService.onSaleSaved(s, t, clientSource: "APP_MOBILE");
+          }
+        });
+      }
+    } 
+    if (batch.isNotEmpty && activeCompany != null) { 
+      String l = batch.last.billNo; 
+      String p = l.split(RegExp(r'\d')).first; 
+      await PharoahNumberingEngine.updateSeriesCounter(type: "SALE", companyID: activeCompany!.id, usedNumber: l, prefix: p); 
+    } 
     await save(); 
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     notifyListeners(); 
@@ -738,6 +784,31 @@ Future<void> finalizePurchase({
 
   Future<void> finalizeBatchPurchases(List<Purchase> batch) async { 
     purchases.addAll(batch); 
+    for (var p in batch) { 
+      if (p.linkedChallanIds.isNotEmpty) { 
+        for (var id in p.linkedChallanIds) { 
+          int i = purchaseChallans.indexWhere((c) => c.id == id || c.internalNo == id || c.billNo == id); 
+          if (i != -1) {
+            purchaseChallans[i].status = "Billed";
+            purchaseChallans[i].version += 1;
+            purchaseChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            if (activeCompany != null) {
+              WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+                if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(purchaseChallans[i], t);
+              });
+            }
+          }
+        } 
+      }
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) {
+            PurchaseSyncModule.onPurchaseSaved(p, t);
+            D1SalesLedgerService.onPurchaseSaved(p, t, clientSource: "APP_MOBILE");
+          }
+        });
+      }
+    } 
     await save(); 
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     notifyListeners(); 
@@ -1389,8 +1460,17 @@ void registerBatchActivity({
       final s = sales.firstWhere((x) => x.id == id || x.billNo == id);
       if (s.linkedChallanIds.isNotEmpty) {
         for (var cid in s.linkedChallanIds) {
-          int i = saleChallans.indexWhere((c) => c.id == cid);
-          if (i != -1) saleChallans[i].status = "Pending";
+          int i = saleChallans.indexWhere((c) => c.id == cid || c.billNo == cid);
+          if (i != -1) {
+            saleChallans[i].status = "Pending";
+            saleChallans[i].version += 1;
+            saleChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            if (activeCompany != null) {
+              WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+                if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(saleChallans[i], t);
+              });
+            }
+          }
         }
       }
       final String realId = s.id;
@@ -1407,7 +1487,7 @@ void registerBatchActivity({
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
             SalesSyncModule.onSaleDeleted(s, t);
-            D1SalesLedgerService.onSaleDeleted(realId, s.billNo, t, clientSource: "APP_MOBILE");
+            D1SalesLedgerService.onSaleDeleted(realId, s.billNo, t, clientSource: "APP_MOBILE", linkedChallanIds: s.linkedChallanIds);
           }
         });
       }
@@ -1429,8 +1509,17 @@ void registerBatchActivity({
       final p = purchases.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
       if (p.linkedChallanIds.isNotEmpty) {
         for (var cid in p.linkedChallanIds) {
-          int i = purchaseChallans.indexWhere((c) => c.id == cid);
-          if (i != -1) purchaseChallans[i].status = "Pending";
+          int i = purchaseChallans.indexWhere((c) => c.id == cid || c.internalNo == cid || c.billNo == cid);
+          if (i != -1) {
+            purchaseChallans[i].status = "Pending";
+            purchaseChallans[i].version += 1;
+            purchaseChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            if (activeCompany != null) {
+              WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+                if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(purchaseChallans[i], t);
+              });
+            }
+          }
         }
       }
       final String pId = p.id;
@@ -1468,7 +1557,7 @@ void registerBatchActivity({
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
             PurchaseSyncModule.onPurchaseDeleted(p, t);
-            D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE");
+            D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE", linkedChallanIds: p.linkedChallanIds);
           }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys).then((_) {

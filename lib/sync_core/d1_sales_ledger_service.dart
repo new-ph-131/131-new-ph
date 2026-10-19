@@ -75,9 +75,20 @@ class D1SalesLedgerService {
     final cleanId = id.trim();
     final cleanSec = secondaryKey.trim().toUpperCase();
     final cleanTer = tertiaryKey.trim().toUpperCase();
-    if (cleanId.isNotEmpty) _permanentDeletedKeys.remove(cleanId);
-    if (cleanSec.isNotEmpty) _permanentDeletedKeys.remove(cleanSec);
-    if (cleanTer.isNotEmpty) _permanentDeletedKeys.remove(cleanTer);
+    if (cleanId.isNotEmpty) {
+      _permanentDeletedKeys.remove(cleanId);
+      _permanentDeletedKeys.remove(cleanId.toUpperCase());
+      _knownBillVersions.remove(cleanId);
+      _knownBillVersions.remove(cleanId.toUpperCase());
+    }
+    if (cleanSec.isNotEmpty) {
+      _permanentDeletedKeys.remove(cleanSec);
+      _knownBillVersions.remove(cleanSec);
+    }
+    if (cleanTer.isNotEmpty) {
+      _permanentDeletedKeys.remove(cleanTer);
+      _knownBillVersions.remove(cleanTer);
+    }
     try {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
@@ -262,6 +273,7 @@ class D1SalesLedgerService {
     String internalNo,
     String storeToken, {
     String clientSource = "APP_MOBILE",
+    List<String> linkedChallanIds = const [],
   }) async {
     markPurchasePermanentlyDeleted(purchaseId, partyId, billNo, internalNo);
     if (storeToken.trim().isEmpty) return false;
@@ -298,6 +310,7 @@ class D1SalesLedgerService {
             "billNo": billNo,
             "internalNo": internalNo,
             "is_deleted": 1,
+            "linkedChallanIds": linkedChallanIds,
           },
         },
       };
@@ -481,6 +494,7 @@ class D1SalesLedgerService {
     String billNo, 
     String storeToken, {
     String clientSource = "APP_MOBILE",
+    List<String> linkedChallanIds = const [],
   }) async {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
@@ -502,6 +516,7 @@ class D1SalesLedgerService {
             "billNo": billNo,
             "is_deleted": 1,
             "status": "Deleted",
+            "linkedChallanIds": linkedChallanIds,
           },
         },
       };
@@ -589,9 +604,14 @@ class D1SalesLedgerService {
       recordKnownVersion(billId, billNo, version);
 
       if (action == "DELETE") {
-        markPermanentlyDeleted(billId, billNo);
+        if (billId.isNotEmpty) markPermanentlyDeleted(billId);
+        final cleanBNo = billNo.trim().toUpperCase();
+        final bool hasActiveNewSale = localSales.any((s) => s.id != billId && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
+        if (!hasActiveNewSale && cleanBNo.isNotEmpty) {
+          markPermanentlyDeleted(cleanBNo);
+        }
         final initialLen = localSales.length;
-        localSales.removeWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
+        localSales.removeWhere((s) => s.id == billId || (!hasActiveNewSale && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo));
         if (localSales.length != initialLen) mutated = true;
       } else if (action == "CANCEL") {
         int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
@@ -649,16 +669,20 @@ class D1SalesLedgerService {
         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
         final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
-        if (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty) {
+        final bool hasActiveNewPur = localPurchases.any((p) => p.id != billId && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo && p.isDeleted != 1);
+        if (billId.isNotEmpty) {
+          markPermanentlyDeleted(billId);
+        }
+        if (!hasActiveNewPur && (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty)) {
           markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo);
         }
         final initialLen = localPurchases.length;
         localPurchases.removeWhere((p) =>
           (billId.isNotEmpty && p.id == billId) ||
-          (intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo) ||
-          (billNo.isNotEmpty && p.internalNo.trim().toUpperCase() == billNo.toUpperCase()) ||
-          (partyId.isNotEmpty && pBillNo.isNotEmpty &&
-           p.partyId.trim().toUpperCase() == partyId && p.billNo.trim().toUpperCase() == pBillNo)
+          (!hasActiveNewPur && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo) ||
+          (!hasActiveNewPur && partyId.isNotEmpty && pBillNo.isNotEmpty &&
+           p.partyId.trim().toUpperCase() == partyId &&
+           p.billNo.trim().toUpperCase() == pBillNo)
         );
         if (localPurchases.length != initialLen) mutated = true;
       } else if (isPurchasePayload && rawData is Map<String, dynamic>) {
