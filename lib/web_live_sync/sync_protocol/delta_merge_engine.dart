@@ -1,3 +1,4 @@
+import "../../../sync_core/modules/party_sync_module.dart";
 import "../../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/sync_protocol/delta_merge_engine.dart
 
@@ -94,34 +95,12 @@ class DeltaMergeEngine {
     // 🛡️ 0. MASTER RECORDS (PARTIES & MEDICINES) MERGE FIRST TO ENSURE FOREIGN KEY INTEGRITY
     var rawParts = decodeJson("parts.json") as List?;
     if (rawParts != null) {
-      for (var rawPart in rawParts) {
-        final partMap = rawPart as Map<String, dynamic>;
-        final String partId = (partMap["id"] ?? "").toString().trim();
-        if (partId.isNotEmpty && (tombstoneRegistry.containsKey(partId) || tombstoneRegistry.containsKey(partId.toUpperCase()))) {
-          continue;
-        }
-        String cleanName = (partMap["name"] ?? "").toString().replaceAll(RegExp(r"[^A-Z0-9]"), "").toUpperCase();
-        if (cleanName.isEmpty) continue;
-        int existingIdx = ph.parties.indexWhere((p) =>
-          (partId.isNotEmpty && p.id == partId) ||
-          p.name.replaceAll(RegExp(r"[^A-Z0-9]"), "").toUpperCase() == cleanName
-        );
-        if (existingIdx != -1) {
-          String lJson = jsonEncode(ph.parties[existingIdx].toMap());
-          String cJson = jsonEncode(partMap);
-          if (lJson != cJson) {
-            int cUpdated = int.tryParse((partMap["updated_at"] ?? partMap["updatedAt"] ?? 0).toString()) ?? 0;
-            int lUpdated = ph.parties[existingIdx].updatedAt;
-            if (cUpdated >= lUpdated || lUpdated == 0) {
-              ph.parties[existingIdx] = Party.fromMap(partMap);
-              hasChanges = true;
-            }
-          }
-        } else {
-          ph.parties.add(Party.fromMap(partMap));
-          hasChanges = true;
-        }
-      }
+      bool cParts = PartySyncModule.mergePartyList(
+        cloudPartyList: rawParts,
+        localPartyList: ph.parties,
+        tombstoneRegistry: tombstoneRegistry,
+      );
+      if (cParts) hasChanges = true;
     }
 
     var rawMeds = decodeJson("meds.json") as List?;

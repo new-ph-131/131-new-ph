@@ -479,6 +479,26 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
   }
 
   void _confirmDelete(PharoahWebManager webPh, Party p) {
+    final check = webPh.canDeleteParty(p);
+    if (!check.canDelete) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          title: Text("🚫 Deletion Blocked: ${check.reason}", style: const TextStyle(color: Colors.redAccent, fontSize: 14, fontWeight: FontWeight.bold)),
+          content: Text(check.details, style: const TextStyle(color: Colors.white70, fontSize: 11.5)),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("I UNDERSTAND", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -493,6 +513,12 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
               webPh.deleteParty(p.id);
               Navigator.pop(ctx);
             },
+            child: const Text("DELETE"),
+          ),
+        ],
+      ),
+    );
+  },
             child: const Text("DELETE"),
           ),
         ],

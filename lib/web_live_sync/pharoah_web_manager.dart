@@ -1,3 +1,4 @@
+import "../logic/party_integrity_service.dart";
 import '../sync_core/modules/returns_sync_module.dart';
 import '../sync_core/modules/credit_note_sync_module.dart';
 import '../sync_core/modules/debit_note_sync_module.dart';
@@ -1867,12 +1868,32 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
-  void deleteParty(String partyId) {
+  PartyDeleteCheckResult canDeleteParty(Party party) {
+    return PartyIntegrityService.checkPartyDeletionEligibilityForLists(
+      sales: sales,
+      purchases: purchases,
+      vouchers: vouchers,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      party: party,
+    );
+  }
+
+  bool deleteParty(String partyId) {
+    try {
+      final p = parties.firstWhere((pt) => pt.id == partyId);
+      final check = canDeleteParty(p);
+      if (!check.canDelete) return false;
+    } catch (_) {}
+
     deletedRecordIds.add(partyId);
     _saveLocalTombstones();
     parties.removeWhere((p) => p.id == partyId);
     notifyListeners();
     _autoSyncService.triggerAutoSync(action: 'PARTY_DELETED', entityId: partyId, deletedIds: [partyId]);
+    return true;
   }
 
   void addParty(Party newParty) {

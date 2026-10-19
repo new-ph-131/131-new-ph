@@ -1,3 +1,5 @@
+import 'logic/party_integrity_service.dart';
+import 'sync_core/modules/party_sync_module.dart';
 import "sync_core/d1_sales_ledger_service.dart";
 import "sync_core/outbox/sync_queue_manager.dart";
 import 'sync_core/modules/sales_sync_module.dart';
@@ -1794,14 +1796,31 @@ void registerBatchActivity({
     }
   }
 
-  void deleteParty(String id) {
+  PartyDeleteCheckResult canDeleteParty(Party party) {
+    return PartyIntegrityService.checkPartyDeletionEligibility(
+      ph: this,
+      party: party,
+    );
+  }
+
+  bool deleteParty(String id) {
     try {
       final p = parties.firstWhere((pt) => pt.id == id);
-      if (!isPartyInUse(p.id, p.name)) {
+      final check = canDeleteParty(p);
+      if (check.canDelete) {
         parties.removeWhere((pt) => pt.id == id);
+        tombstoneRegistry[id] = DateTime.now().millisecondsSinceEpoch;
+        if (p.phone.isNotEmpty) tombstoneRegistry[p.phone.trim()] = DateTime.now().millisecondsSinceEpoch;
         save();
+        notifyListeners();
+        return true;
       }
-    } catch (e) {}
+    } catch (_) {}
+    return false;
+  }
+
+  void saveOrUpdateParty(Party party) {
+    PartySyncModule.registerPartyActivity(ph: this, updatedParty: party);
   }
   void deleteRoute(String id) { routes.removeWhere((r) => r.id == id); save(); }
   void deleteSystemUser(String id) { systemUsers.removeWhere((x) => x.id == id); save(); }

@@ -292,17 +292,20 @@ class _PartyMasterViewState extends State<PartyMasterView> {
   void _confirmDelete(PharoahManager ph, Party p) {
     if (p.name == "CASH") return;
 
-    // 1. CHECK USAGE FIRST (NAYA LOGIC)
-    bool inUse = ph.isPartyInUse(p.id, p.name);
-
-    if (inUse) {
+    // 1. 3-LEVEL INTEGRITY CHECK (MARG/TALLY STYLE)
+    final check = ph.canDeleteParty(p);
+    if (!check.canDelete) {
       showDialog(
         context: context,
         builder: (c) => AlertDialog(
-          title: const Text("Action Restricted", style: TextStyle(color: Colors.red)),
-          content: Text("You cannot delete '${p.name}' because it has active transactions (Sales/Purchases/Vouchers) linked to it."),
+          title: Text("🚫 Deletion Blocked: ${check.reason}", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 14)),
+          content: Text(check.details, style: const TextStyle(fontSize: 12.5)),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text("I UNDERSTAND")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+              onPressed: () => Navigator.pop(c),
+              child: const Text("I UNDERSTAND", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
       );
