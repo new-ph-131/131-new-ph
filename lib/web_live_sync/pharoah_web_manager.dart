@@ -1036,7 +1036,6 @@ class PharoahWebManager with ChangeNotifier {
     for (var pr in purchaseReturns) processPurchaseItems(pr.items);
 
     if (hasUpdates) {
-      save();
       notifyListeners();
     }
   }
