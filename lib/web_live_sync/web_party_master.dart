@@ -518,11 +518,5 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
         ],
       ),
     );
-  },
-            child: const Text("DELETE"),
-          ),
-        ],
-      ),
-    );
   }
 }
