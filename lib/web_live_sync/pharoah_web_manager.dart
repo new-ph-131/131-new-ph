@@ -975,7 +975,8 @@ class PharoahWebManager with ChangeNotifier {
 
   void autoHydrateBatchHistoryFromTransactions() {
     bool hasUpdates = false;
-    void processItemList(List<BillItem> items) {
+
+    void processBillItems(List<BillItem> items) {
       for (var item in items) {
         if (item.batch.trim().isEmpty) continue;
         String resolvedKey = item.medicineID;
@@ -999,13 +1000,40 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    for (var v in vouchers) processItemList(v.items);
-    for (var s in sales) processItemList(s.items);
-    for (var p in purchases) processItemList(p.items);
-    for (var sc in saleChallans) processItemList(sc.items);
-    for (var pc in purchaseChallans) processItemList(pc.items);
-    for (var sr in saleReturns) processItemList(sr.items);
-    for (var pr in purchaseReturns) processItemList(pr.items);
+    void processPurchaseItems(List<PurchaseItem> items) {
+      for (var item in items) {
+        if (item.batch.trim().isEmpty) continue;
+        String resolvedKey = item.medicineID;
+        try {
+          final med = medicines.firstWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
+          resolvedKey = med.identityKey;
+        } catch (_) {}
+        if (resolvedKey.isEmpty) resolvedKey = item.name.trim().toUpperCase();
+
+        registerBatchActivity(
+          productKey: resolvedKey,
+          batchNo: item.batch,
+          exp: item.exp,
+          packing: item.packing,
+          mrp: item.mrp,
+          rate: item.purchaseRate,
+          rateA: item.rateA,
+          rateB: item.rateB,
+          rateC: item.rateC,
+          appliedRateType: item.appliedRateType,
+          rateCFormula: item.rateCFormula,
+        );
+        hasUpdates = true;
+      }
+    }
+
+    for (var s in sales) processBillItems(s.items);
+    for (var sc in saleChallans) processBillItems(sc.items);
+    for (var sr in saleReturns) processBillItems(sr.items);
+
+    for (var p in purchases) processPurchaseItems(p.items);
+    for (var pc in purchaseChallans) processPurchaseItems(pc.items);
+    for (var pr in purchaseReturns) processPurchaseItems(pr.items);
 
     if (hasUpdates) {
       save();
