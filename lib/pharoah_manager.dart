@@ -1809,8 +1809,8 @@ void registerBatchActivity({
       final check = canDeleteParty(p);
       if (check.canDelete) {
         parties.removeWhere((pt) => pt.id == id);
-        tombstoneRegistry[id] = DateTime.now().millisecondsSinceEpoch;
-        if (p.phone.isNotEmpty) tombstoneRegistry[p.phone.trim()] = DateTime.now().millisecondsSinceEpoch;
+        deletedRecordIds.add(id);
+        if (p.phone.isNotEmpty) deletedRecordIds.add(p.phone.trim());
         save();
         notifyListeners();
         return true;

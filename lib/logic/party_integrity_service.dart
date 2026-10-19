@@ -110,7 +110,7 @@ class PartyIntegrityService {
 
     // 6. Check Sale Returns (Credit Notes)
     int sReturnCount = saleReturns.where((r) =>
-      r.billNo.isNotEmpty && r.distributorName.trim().toUpperCase() == pName
+      r.billNo.isNotEmpty && r.partyName.trim().toUpperCase() == pName
     ).length;
     if (sReturnCount > 0) {
       return PartyDeleteCheckResult(
