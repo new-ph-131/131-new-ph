@@ -358,6 +358,12 @@ class DeltaMergeEngine {
       (e) => e.toMap()
     );
 
-    return hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet;
+    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet;
+    if (anyChanged) {
+      try {
+        ph.autoHydrateBatchHistoryFromTransactions();
+      } catch (_) {}
+    }
+    return anyChanged;
   }
 }

@@ -1169,6 +1169,46 @@ void registerBatchActivity({
     );
   }
 
+  void autoHydrateBatchHistoryFromTransactions() {
+    bool hasUpdates = false;
+    void processItemList(List<BillItem> items) {
+      for (var item in items) {
+        if (item.batch.trim().isEmpty) continue;
+        String resolvedKey = item.medicineID;
+        try {
+          final med = medicines.firstWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
+          resolvedKey = med.identityKey;
+        } catch (_) {}
+        if (resolvedKey.isEmpty) resolvedKey = item.name.trim().toUpperCase();
+
+        registerBatchActivity(
+          productKey: resolvedKey,
+          batchNo: item.batch,
+          exp: item.exp,
+          packing: item.packing,
+          mrp: item.mrp,
+          rate: item.rate,
+          appliedRateType: item.appliedRateType,
+          rateCFormula: item.rateCFormula,
+        );
+        hasUpdates = true;
+      }
+    }
+
+    for (var v in vouchers) processItemList(v.items);
+    for (var s in sales) processItemList(s.items);
+    for (var p in purchases) processItemList(p.items);
+    for (var sc in saleChallans) processItemList(sc.items);
+    for (var pc in purchaseChallans) processItemList(pc.items);
+    for (var sr in saleReturns) processItemList(sr.items);
+    for (var pr in purchaseReturns) processItemList(pr.items);
+
+    if (hasUpdates) {
+      save();
+      notifyListeners();
+    }
+  }
+
   void runAutoShortageScan() { shortages.removeWhere((s) => s.source == "Auto"); for (var m in medicines) { double a = calculateAvgMonthlySale(m.id); double r = a * 1.5; if (m.stock < r && r > 0) { shortages.add(ShortageItem(id: "auto_${m.id}", medicineId: m.id, medicineName: m.name, companyName: m.companyId, qtyRequired: r - m.stock, currentStock: m.stock, date: DateTime.now(), source: "Auto")); } } save(); }
  // ===========================================================================
   // 📈 INTELLIGENT SHORTAGE ENGINE (NET-SALE FORMULA)
