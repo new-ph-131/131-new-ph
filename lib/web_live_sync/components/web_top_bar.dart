@@ -74,7 +74,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-727 (CHALLAN-STITCHER-TWO-WAY-SYNC-AND-REUSE-FIX)",
+                      "#PH-REV-728 (CHALLAN-STITCHER-DELETE-REVERT-WEB-RESTORE-FIX)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),

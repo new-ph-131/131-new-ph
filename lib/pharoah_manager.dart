@@ -1458,6 +1458,9 @@ void registerBatchActivity({
   void deleteBill(String id) {
     try {
       final s = sales.firstWhere((x) => x.id == id || x.billNo == id);
+      final List<String> revertedChallanIds = [];
+      final List<String> revertedChallanBillNos = [];
+
       if (s.linkedChallanIds.isNotEmpty) {
         for (var cid in s.linkedChallanIds) {
           int i = saleChallans.indexWhere((c) => c.id == cid || c.billNo == cid);
@@ -1465,6 +1468,14 @@ void registerBatchActivity({
             saleChallans[i].status = "Pending";
             saleChallans[i].version += 1;
             saleChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            revertedChallanIds.add(saleChallans[i].id);
+            if (saleChallans[i].billNo.isNotEmpty) {
+              revertedChallanBillNos.add(saleChallans[i].billNo);
+            }
+            D1SalesLedgerService.unmarkPermanentlyDeleted(saleChallans[i].id, saleChallans[i].billNo);
+            if (activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: saleChallans[i].id, secondaryKey: saleChallans[i].billNo);
+            }
             if (activeCompany != null) {
               WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
                 if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(saleChallans[i], t);
@@ -1480,6 +1491,9 @@ void registerBatchActivity({
         getWorkingPath().then((dir) {
           if (dir.isNotEmpty) {
             File('$dir/sales.json').writeAsStringSync(jsonEncode(sales.map((e) => e.toMap()).toList()));
+            if (revertedChallanIds.isNotEmpty) {
+              File('$dir/s_challan.json').writeAsStringSync(jsonEncode(saleChallans.map((e) => e.toMap()).toList()));
+            }
           }
         });
       } catch (_) {}
@@ -1488,18 +1502,21 @@ void registerBatchActivity({
           if (t.isNotEmpty) {
             SalesSyncModule.onSaleDeleted(s, t);
             D1SalesLedgerService.onSaleDeleted(realId, s.billNo, t, clientSource: "APP_MOBILE", linkedChallanIds: s.linkedChallanIds);
+            SyncQueueManager.flushOutboxAsJSONBatch();
           }
         });
       }
       if (activeCompany != null) {
         TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: realId, secondaryKey: s.billNo);
+        final List<String> allUnmarked = [...revertedChallanIds, ...revertedChallanBillNos];
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_SALE',
           entityId: realId,
           deletedIds: [realId, if (s.billNo.isNotEmpty) s.billNo],
+          unmarkedIds: allUnmarked,
         );
-        }
+      }
       save();
       notifyListeners();
     } catch (e) {}
@@ -1507,6 +1524,9 @@ void registerBatchActivity({
   void deletePurchase(String id) {
     try {
       final p = purchases.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
+      final List<String> revertedPChallanIds = [];
+      final List<String> revertedPChallanNos = [];
+
       if (p.linkedChallanIds.isNotEmpty) {
         for (var cid in p.linkedChallanIds) {
           int i = purchaseChallans.indexWhere((c) => c.id == cid || c.internalNo == cid || c.billNo == cid);
@@ -1514,6 +1534,13 @@ void registerBatchActivity({
             purchaseChallans[i].status = "Pending";
             purchaseChallans[i].version += 1;
             purchaseChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+            revertedPChallanIds.add(purchaseChallans[i].id);
+            if (purchaseChallans[i].internalNo.isNotEmpty) revertedPChallanNos.add(purchaseChallans[i].internalNo);
+            if (purchaseChallans[i].billNo.isNotEmpty) revertedPChallanNos.add(purchaseChallans[i].billNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(purchaseChallans[i].id, purchaseChallans[i].billNo, purchaseChallans[i].internalNo);
+            if (activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: purchaseChallans[i].id, secondaryKey: purchaseChallans[i].internalNo);
+            }
             if (activeCompany != null) {
               WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
                 if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(purchaseChallans[i], t);
@@ -1528,36 +1555,36 @@ void registerBatchActivity({
       final String partyId = p.partyId.trim().toUpperCase();
       final String compKey2 = (partyId.isNotEmpty && bNo.isNotEmpty) ? "${partyId}_$bNo" : "";
       final String compKey3 = PurchaseSyncModule.makeCompositeKey(partyId, bNo, intNo);
-
-      // Deduplicate remove across composite identity (never naked bNo alone!)
       purchases.removeWhere((x) => 
         x.id == pId || 
         (intNo.isNotEmpty && x.internalNo.trim().toUpperCase() == intNo) ||
-        (bNo.isNotEmpty && partyId.isNotEmpty &&
+        (bNo.isNotEmpty && partyId.isNotEmpty && 
          x.billNo.trim().toUpperCase() == bNo && x.partyId.trim().toUpperCase() == partyId)
       );
-
       D1SalesLedgerService.markPurchasePermanentlyDeleted(pId, partyId, bNo, intNo);
       try {
         getWorkingPath().then((dir) {
           if (dir.isNotEmpty) {
             File('$dir/purc.json').writeAsStringSync(jsonEncode(purchases.map((e) => e.toMap()).toList()));
+            if (revertedPChallanIds.isNotEmpty) {
+              File('$dir/p_challan.json').writeAsStringSync(jsonEncode(purchaseChallans.map((e) => e.toMap()).toList()));
+            }
           }
         });
       } catch (_) {}
-
       final List<String> delKeys = [
         pId,
         if (intNo.isNotEmpty) intNo,
         if (compKey2.isNotEmpty) compKey2,
         if (compKey3.isNotEmpty) compKey3,
       ];
-
+      final List<String> allUnmarked = [...revertedPChallanIds, ...revertedPChallanNos];
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
             PurchaseSyncModule.onPurchaseDeleted(p, t);
             D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE", linkedChallanIds: p.linkedChallanIds);
+            SyncQueueManager.flushOutboxAsJSONBatch();
           }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys).then((_) {
@@ -1566,6 +1593,7 @@ void registerBatchActivity({
             action: 'DELETE_PURCHASE',
             entityId: pId,
             deletedIds: delKeys,
+            unmarkedIds: allUnmarked,
           );
         });
       }
@@ -1941,7 +1969,26 @@ void registerBatchActivity({
       try {
         return numberingSeries.firstWhere((s) => s.type == searchType && s.isActive);
       } catch (e) {
-        String prefix = searchType == "RECEIPT" ? "RCT-" : (searchType == "PAYMENT" ? "PAY-" : "TXN-");
+        String prefix;
+        if (searchType == "RECEIPT") {
+          prefix = "RCT-";
+        } else if (searchType == "PAYMENT") {
+          prefix = "PAY-";
+        } else if (searchType == "CHALLAN" || searchType == "SALE_CHALLAN") {
+          prefix = "SCH-";
+        } else if (searchType == "PURCHASE_CHALLAN" || searchType == "CHALLAN_PUR") {
+          prefix = "PCH-";
+        } else if (searchType == "PURCHASE") {
+          prefix = "PUR-";
+        } else if (searchType == "SALE") {
+          prefix = "SALE-";
+        } else if (searchType == "RETURN" || searchType == "SALE_RETURN") {
+          prefix = "SR-";
+        } else if (searchType == "PURCHASE_RETURN") {
+          prefix = "PR-";
+        } else {
+          prefix = "TXN-";
+        }
         return NumberingSeries(id: 'sys_$searchType', name: 'System Default', type: searchType, prefix: prefix, isDefault: true);
       }
     }

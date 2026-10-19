@@ -276,6 +276,11 @@ class D1SalesLedgerService {
     List<String> linkedChallanIds = const [],
   }) async {
     markPurchasePermanentlyDeleted(purchaseId, partyId, billNo, internalNo);
+    if (linkedChallanIds.isNotEmpty) {
+      for (var cid in linkedChallanIds) {
+        if (cid.trim().isNotEmpty) unmarkPermanentlyDeleted(cid.trim());
+      }
+    }
     if (storeToken.trim().isEmpty) return false;
     try {
       final cleanParty = partyId.trim().toUpperCase();
@@ -500,6 +505,11 @@ class D1SalesLedgerService {
 
     try {
       markPermanentlyDeleted(saleId, billNo);
+      if (linkedChallanIds.isNotEmpty) {
+        for (var cid in linkedChallanIds) {
+          if (cid.trim().isNotEmpty) unmarkPermanentlyDeleted(cid.trim());
+        }
+      }
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,

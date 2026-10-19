@@ -67,6 +67,10 @@ class MasterSyncOrchestrator {
                   c.status = 'Pending';
                   c.version += 1;
                   c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                  D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo);
+                  if (phApp.activeCompany != null) {
+                    TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: c.id, secondaryKey: c.billNo);
+                  }
                 }
               }
               phApp.save();
@@ -231,9 +235,7 @@ class MasterSyncOrchestrator {
           final sBill = envelope.billData;
           final String sBNo = (sBill['billNo'] ?? '').toString().trim().toUpperCase();
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sBNo);
-            phWeb.purgeDeletedIds([envelope.syncId, if (sBNo.isNotEmpty) sBNo]);
-            // 🔄 Cross-Platform Revert: linked challans back to Pending
+            // 🔄 Cross-Platform Revert: Find linked challan IDs BEFORE deleting sale from memory
             final Set<String> targetCids = {};
             final rawLinks = sBill['linkedChallanIds'];
             if (rawLinks is List) {
@@ -251,12 +253,18 @@ class MasterSyncOrchestrator {
                 if (it.sourceChallanId.trim().isNotEmpty) targetCids.add(it.sourceChallanId.trim().toUpperCase());
               }
             } catch (_) {}
+
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sBNo);
+            phWeb.purgeDeletedIds([envelope.syncId, if (sBNo.isNotEmpty) sBNo]);
+
             if (targetCids.isNotEmpty) {
               for (var c in phWeb.saleChallans) {
                 if (targetCids.contains(c.id.trim().toUpperCase()) || targetCids.contains(c.billNo.trim().toUpperCase())) {
                   c.status = 'Pending';
                   c.version += 1;
                   c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                  phWeb.unmarkDeletedId(c.id, referenceNo: c.billNo);
+                  D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo);
                 }
               }
               phWeb.notifyListeners();
@@ -338,6 +346,7 @@ class MasterSyncOrchestrator {
             phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
           } else {
             phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo);
           }
           mutated = SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(phWeb.saleChallans, envelope);
           break;

@@ -136,7 +136,11 @@ class PharoahWebManager with ChangeNotifier {
 
     saleChallans.removeWhere((c) {
       final bNo = c.billNo.trim().toUpperCase();
-      return set.contains(c.id) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+      final bool idMatches = set.contains(c.id) || upperSet.contains(c.id.toUpperCase());
+      final bool numMatches = bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo));
+      if (idMatches) return true;
+      if (numMatches && c.status != "Pending" && c.status != "Active" && c.status != "Billed") return true;
+      return false;
     });
 
     purchaseChallans.removeWhere((c) {
@@ -145,10 +149,13 @@ class PharoahWebManager with ChangeNotifier {
       final party = c.partyId.trim().toUpperCase();
       final comp2 = (party.isNotEmpty && bNo.isNotEmpty) ? "${party}_$bNo" : "";
       final comp3 = PurchaseChallanSyncModule.makeCompositeKey(party, bNo, iNo);
-      return set.contains(c.id) || upperSet.contains(c.id.toUpperCase()) ||
-          (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
+      final bool idMatches = set.contains(c.id) || upperSet.contains(c.id.toUpperCase());
+      final bool compMatches = (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
           (comp2.isNotEmpty && (set.contains(comp2) || upperSet.contains(comp2))) ||
           (comp3.isNotEmpty && (set.contains(comp3) || upperSet.contains(comp3)));
+      if (idMatches) return true;
+      if (compMatches && c.status != "Pending" && c.status != "Active" && c.status != "Billed") return true;
+      return false;
     });
 
     saleReturns.removeWhere((r) {
@@ -636,14 +643,18 @@ class PharoahWebManager with ChangeNotifier {
       }
       saleChallans = masterSChMap.values.where((c) {
         final bNo = c.billNo.trim().toUpperCase();
-        if (D1SalesLedgerService.isBillDeleted(c.id, c.billNo)) return false;
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
+        if (c.status != "Pending" && c.status != "Active" && c.status != "Billed") {
+          if (D1SalesLedgerService.isBillDeleted(c.id, c.billNo)) return false;
+        } else {
+          if (D1SalesLedgerService.isBillDeleted(c.id)) return false;
+        }
         int secDelTs = 0;
         if (bNo.isNotEmpty) {
           final t = localTombstoneRegistry[bNo] ?? localTombstoneRegistry[bNo.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
-        if (secDelTs > 0 && secDelTs >= c.updatedAt) return false;
+        if (secDelTs > 0 && secDelTs >= c.updatedAt && c.status != "Pending" && c.status != "Active") return false;
         return true;
       }).toList();
     }
@@ -727,8 +738,12 @@ class PharoahWebManager with ChangeNotifier {
         final pId = c.partyId.trim().toUpperCase();
         final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
         final comp = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
-        if (D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo)) return false;
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
+        if (c.status != "Pending" && c.status != "Active" && c.status != "Billed") {
+          if (D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo)) return false;
+        } else {
+          if (D1SalesLedgerService.isBillDeleted(c.id)) return false;
+        }
         int secDelTs = 0;
         if (iNo.isNotEmpty) {
           final t = localTombstoneRegistry[iNo] ?? localTombstoneRegistry[iNo.toUpperCase()] ?? 0;
@@ -742,7 +757,7 @@ class PharoahWebManager with ChangeNotifier {
           final t = localTombstoneRegistry[comp] ?? localTombstoneRegistry[comp.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
-        if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt) return false;
+        if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt && c.status != "Pending" && c.status != "Active") return false;
         return true;
       }).toList();
     }
@@ -1132,6 +1147,8 @@ class PharoahWebManager with ChangeNotifier {
             ch.status = "Pending";
             ch.version += 1;
             ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            unmarkDeletedId(ch.id, referenceNo: ch.billNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(ch.id, ch.billNo);
             SaleChallanSyncModule.onSaleChallanSaved(ch, activeStoreToken);
           }
         }
@@ -1313,6 +1330,9 @@ class PharoahWebManager with ChangeNotifier {
             ch.status = "Pending";
             ch.version += 1;
             ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            unmarkDeletedId(ch.id, referenceNo: ch.internalNo);
+            if (ch.billNo.isNotEmpty) unmarkDeletedId(ch.billNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(ch.id, ch.billNo, ch.internalNo);
             PurchaseChallanSyncModule.onPurchaseChallanSaved(ch, activeStoreToken);
           }
         }
