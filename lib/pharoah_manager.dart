@@ -1809,8 +1809,7 @@ void registerBatchActivity({
       final check = canDeleteParty(p);
       if (check.canDelete) {
         parties.removeWhere((pt) => pt.id == id);
-        deletedRecordIds.add(id);
-        if (p.phone.isNotEmpty) deletedRecordIds.add(p.phone.trim());
+        D1SalesLedgerService.markPermanentlyDeleted(id, p.phone);
         save();
         notifyListeners();
         return true;
