@@ -1,4 +1,5 @@
 import "sync_core/d1_sales_ledger_service.dart";
+import "sync_core/outbox/sync_queue_manager.dart";
 import 'sync_core/modules/sales_sync_module.dart';
 import 'sync_core/modules/purchase_sync_module.dart';
 import 'sync_core/modules/sale_challan_sync_module.dart';
