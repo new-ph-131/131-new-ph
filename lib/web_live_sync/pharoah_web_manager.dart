@@ -1858,13 +1858,22 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void updateParty(Party updatedParty) {
-    int idx = parties.indexWhere((p) => p.id == updatedParty.id);
+    String cleanUpdName = updatedParty.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+    int idx = parties.indexWhere((p) =>
+      p.id == updatedParty.id ||
+      (updatedParty.phone.isNotEmpty && p.phone.trim() == updatedParty.phone.trim()) ||
+      (p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanUpdName && cleanUpdName.isNotEmpty)
+    );
     if (idx != -1) {
+      updatedParty.id = parties[idx].id;
       updatedParty.updatedAt = DateTime.now().millisecondsSinceEpoch;
       updatedParty.version = parties[idx].version + 1;
       parties[idx] = updatedParty;
       notifyListeners();
       _autoSyncService.triggerAutoSync(action: 'PARTY_UPDATED', entityId: updatedParty.id);
+      pushUpdatedDataToCloud();
+    } else {
+      addParty(updatedParty);
     }
   }
 
@@ -1939,6 +1948,7 @@ class PharoahWebManager with ChangeNotifier {
     }
     notifyListeners();
     _autoSyncService.triggerAutoSync(action: 'PARTY_SAVED', entityId: newParty.id);
+    pushUpdatedDataToCloud();
   }
 
   void addMedicine(Medicine newMed) {

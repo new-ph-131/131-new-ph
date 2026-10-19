@@ -5,35 +5,43 @@ import "../../pharoah_manager.dart";
 
 /// 🛡️ PARTY MASTER SYNC MODULE
 /// Handles 360-degree all-field mirroring, LWW monotonic versioning,
-/// and Tombstone deletion shielding for Party / Ledger Master across App & Web.
+/// name/phone/gst deduplication, and Tombstone deletion shielding across App & Web.
 class PartySyncModule {
-  /// Resolves Party System ID or ID
-  static String getCompositeKey(Party party) {
-    return party.id.trim();
+  static String cleanString(String input) {
+    return input.replaceAll(RegExp(r"[^A-Z0-9]"), "").toUpperCase();
   }
 
-  /// Registers or Updates Party Activity with full 18-box field synchronization
+  /// Registers or Updates Party Activity with full deduplication & 18-box field synchronization
   static void registerPartyActivity({
     required PharoahManager ph,
     required Party updatedParty,
   }) {
-    int existingIdx = ph.parties.indexWhere((p) =>
-      p.id == updatedParty.id ||
-      (updatedParty.phone.isNotEmpty && p.phone.trim() == updatedParty.phone.trim()) ||
-      (updatedParty.gst.isNotEmpty && p.gst.trim().toUpperCase() == updatedParty.gst.trim().toUpperCase())
-    );
+    String cleanNewName = cleanString(updatedParty.name);
+    String cleanPhone = updatedParty.phone.trim();
+    String cleanGst = updatedParty.gst.trim().toUpperCase();
+
+    int existingIdx = ph.parties.indexWhere((p) {
+      if (updatedParty.id.isNotEmpty && p.id == updatedParty.id) return true;
+      if (cleanGst.isNotEmpty && cleanGst != "N/A" && p.gst.trim().toUpperCase() == cleanGst) return true;
+      if (cleanPhone.isNotEmpty && p.phone.trim() == cleanPhone) return true;
+      return cleanString(p.name) == cleanNewName && cleanNewName.isNotEmpty;
+    });
+
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
 
     if (existingIdx != -1) {
       final localParty = ph.parties[existingIdx];
-      // Increment version if updating locally
-      if (updatedParty.version <= localParty.version) {
-        updatedParty.version = localParty.version + 1;
-      }
-      updatedParty.updatedAt = DateTime.now().millisecondsSinceEpoch;
+      // Preserve original ID & update in-place with incremented version
+      updatedParty.id = localParty.id;
+      updatedParty.version = localParty.version + 1;
+      updatedParty.updatedAt = nowTs;
       ph.parties[existingIdx] = updatedParty;
     } else {
+      if (updatedParty.id.isEmpty || updatedParty.id.contains(" ")) {
+        updatedParty.id = "PARTY-$nowTs";
+      }
       updatedParty.version = updatedParty.version > 0 ? updatedParty.version : 1;
-      updatedParty.updatedAt = DateTime.now().millisecondsSinceEpoch;
+      updatedParty.updatedAt = nowTs;
       ph.parties.add(updatedParty);
     }
 
@@ -58,17 +66,19 @@ class PartySyncModule {
       String name = (cloudMap["name"] ?? "").toString().trim();
       String phone = (cloudMap["phone"] ?? "").toString().trim();
       String gst = (cloudMap["gst"] ?? "").toString().trim().toUpperCase();
+      String cleanNameKey = cleanString(name);
+
       int cloudVersion = int.tryParse(cloudMap["version"]?.toString() ?? "1") ?? 1;
       int cloudTimestamp = int.tryParse(cloudMap["updatedAt"]?.toString() ?? cloudMap["updated_at"]?.toString() ?? "0") ?? 0;
       int isDeleted = int.tryParse(cloudMap["isDeleted"]?.toString() ?? cloudMap["is_deleted"]?.toString() ?? "0") ?? 0;
 
-      if (id.isEmpty) continue;
+      if (id.isEmpty && cleanNameKey.isEmpty) continue;
 
       // 🛡️ Tombstone Check
       if (tombstoneRegistry.containsKey(id) || (phone.isNotEmpty && tombstoneRegistry.containsKey(phone))) {
         int delTs = tombstoneRegistry[id] ?? tombstoneRegistry[phone] ?? 0;
         if (delTs == 0 || cloudTimestamp <= delTs) {
-          int localIdx = localPartyList.indexWhere((p) => p.id == id);
+          int localIdx = localPartyList.indexWhere((p) => p.id == id || (cleanNameKey.isNotEmpty && cleanString(p.name) == cleanNameKey));
           if (localIdx != -1) {
             localPartyList.removeAt(localIdx);
             hasChanged = true;
@@ -77,17 +87,19 @@ class PartySyncModule {
         }
       }
 
-      int existingIdx = localPartyList.indexWhere((p) =>
-        p.id == id ||
-        (gst.isNotEmpty && p.gst.trim().toUpperCase() == gst)
-      );
+      int existingIdx = localPartyList.indexWhere((p) {
+        if (id.isNotEmpty && p.id == id) return true;
+        if (gst.isNotEmpty && gst != "N/A" && p.gst.trim().toUpperCase() == gst) return true;
+        if (phone.isNotEmpty && p.phone.trim() == phone) return true;
+        return cleanString(p.name) == cleanNameKey && cleanNameKey.isNotEmpty;
+      });
 
       if (isDeleted == 1) {
         if (existingIdx != -1) {
           localPartyList.removeAt(existingIdx);
           hasChanged = true;
         }
-        tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : DateTime.now().millisecondsSinceEpoch;
+        if (id.isNotEmpty) tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : DateTime.now().millisecondsSinceEpoch;
         continue;
       }
 

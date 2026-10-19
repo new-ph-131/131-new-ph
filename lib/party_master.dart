@@ -193,7 +193,7 @@ class _PartyMasterViewState extends State<PartyMasterView> {
               onPressed: () {
                 if (nameC.text.trim().isEmpty) return;
                 final newParty = Party(
-                  id: party?.id ?? DateTime.now().toString(),
+                  id: party?.id ?? "PARTY-${DateTime.now().millisecondsSinceEpoch}",
                   name: nameC.text.trim().toUpperCase(),
                   group: selectedGroup,
                   phone: phoneC.text.trim(),
@@ -210,9 +210,7 @@ class _PartyMasterViewState extends State<PartyMasterView> {
                   updatedAt: DateTime.now().millisecondsSinceEpoch,
                   version: (party?.version ?? 0) + 1,
                 );
-                if (party == null) ph.parties.add(newParty);
-                else { int i = ph.parties.indexWhere((p) => p.id == party.id); if (i != -1) ph.parties[i] = newParty; }
-                ph.save();
+                ph.saveOrUpdateParty(newParty);
                 Navigator.pop(c);
                 if (widget.isSelectionMode) Navigator.pop(context, newParty);
               },
