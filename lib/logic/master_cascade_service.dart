@@ -309,21 +309,18 @@ class MasterCascadeService {
 
     // E. Sale Returns (Credit Notes)
     for (var sr in saleReturns) {
-      if (matchesParty(sr.partyId, sr.partyName)) {
+      if (cleanPartyName.isNotEmpty && PartySyncModule.cleanString(sr.partyName) == cleanPartyName) {
         sr.partyName = updatedParty.name;
-        sr.partyAddress = updatedParty.address;
-        sr.partyGstin = updatedParty.gst;
-        sr.partyPhone = updatedParty.phone;
-        sr.partyId = updatedParty.id;
+        sr.updatedAt = DateTime.now().millisecondsSinceEpoch;
         mutatedRecords++;
       }
     }
 
     // F. Purchase Returns (Debit Notes)
     for (var pr in purchaseReturns) {
-      if (matchesParty(pr.partyId, pr.distributorName)) {
+      if (cleanPartyName.isNotEmpty && PartySyncModule.cleanString(pr.distributorName) == cleanPartyName) {
         pr.distributorName = updatedParty.name;
-        pr.partyId = updatedParty.id;
+        pr.updatedAt = DateTime.now().millisecondsSinceEpoch;
         mutatedRecords++;
       }
     }
