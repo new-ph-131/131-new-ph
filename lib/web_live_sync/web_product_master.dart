@@ -487,8 +487,45 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                                       icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
                                       tooltip: "Delete Product",
                                       onPressed: () {
-                                        webPh.deleteMedicine(m.id);
-                                        setState(() {});
+                                        bool inUse = webPh.isProductInUse(m.id);
+                                        if (inUse) {
+                                          showDialog(
+                                            context: context,
+                                            builder: (c) => AlertDialog(
+                                              backgroundColor: const Color(0xFF1E293B),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                              title: const Row(children: [Icon(Icons.lock, color: Colors.redAccent), SizedBox(width: 10), Text("Delete Restricted", style: TextStyle(color: Colors.white))]),
+                                              content: Text("Cannot delete '${m.name}' because it is linked to existing Sale or Purchase records in this financial year.", style: TextStyle(color: Colors.white70)),
+                                              actions: [
+                                                TextButton(onPressed: () => Navigator.pop(c), child: const Text("CLOSE", style: TextStyle(color: Color(0xFF38BDF8)))),
+                                              ],
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        showDialog(
+                                          context: context,
+                                          builder: (c) => AlertDialog(
+                                            backgroundColor: const Color(0xFF1E293B),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                            title: const Text("Delete Product?", style: TextStyle(color: Colors.white)),
+                                            content: Text("Are you sure you want to remove '${m.name}' permanently?", style: TextStyle(color: Colors.white70)),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(c), child: const Text("CANCEL", style: TextStyle(color: Colors.white54))),
+                                              ElevatedButton(
+                                                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                                                onPressed: () {
+                                                  webPh.deleteMedicine(m.id);
+                                                  Navigator.pop(c);
+                                                  setState(() {});
+                                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Item Deleted!")));
+                                                },
+                                                child: const Text("YES, DELETE"),
+                                              ),
+                                            ],
+                                          ),
+                                        );
                                       },
                                     ),
                                   ],
