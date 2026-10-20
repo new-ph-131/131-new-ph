@@ -1,3 +1,4 @@
+import "sub_views/web_stock/product_batch_traceability_screen.dart";
 // FILE: lib/web_live_sync/web_batch_master.dart
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ class WebBatchMasterView extends StatefulWidget {
 }
 
 class _WebBatchMasterViewState extends State<WebBatchMasterView> {
+  Medicine? _viewingTraceabilityMed;
   final TextEditingController searchController = TextEditingController();
   Medicine? selectedMed;
   String searchQuery = "";
@@ -298,6 +300,12 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
+    if (_viewingTraceabilityMed != null) {
+      return ProductBatchTraceabilityScreen(
+        medicine: _viewingTraceabilityMed!,
+        onBack: () => setState(() => _viewingTraceabilityMed = null),
+      );
+    }
 
     // Instant Search Results (no 2nd click needed)
     final query = searchQuery.trim().toLowerCase();
@@ -477,6 +485,18 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                             ),
                           ],
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () => setState(() => _viewingTraceabilityMed = selectedMed),
+                        icon: const Icon(Icons.timeline_rounded, size: 14),
+                        label: const Text("ADVANCED TRACEABILITY & LEDGER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
                       ),
                       IconButton(
                         icon: const Icon(Icons.close_rounded, color: Colors.redAccent, size: 20),
