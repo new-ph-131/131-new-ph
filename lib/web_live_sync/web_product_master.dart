@@ -16,6 +16,7 @@ class WebProductMasterView extends StatefulWidget {
 }
 
 class _WebProductMasterViewState extends State<WebProductMasterView> {
+  bool isSubmitting = false;
   String searchQuery = "";
   final List<String> drugForms = ["TAB", "CAP", "SYP", "INJ", "IV", "PCS", "EXT", "OINT", "DROP"];
   final List<String> storageOptions = ["Room Temp", "Refrigerated (2-8°C)", "Cool Place"];
@@ -73,6 +74,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
   }
 
   void _showProductForm(PharoahWebManager webPh, {Medicine? med}) async {
+    isSubmitting = false;
     const pf = null;
 
     final nameC = TextEditingController(text: med?.name ?? pf?['name']?.toString().toUpperCase());
@@ -278,7 +280,9 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: () {
+                  if (isSubmitting) return;
                   if (nameC.text.trim().isEmpty || packC.text.trim().isEmpty || gstC.text.trim().isEmpty) return;
+                  isSubmitting = true;
 
                   double mrp = double.tryParse(mrpC.text) ?? 0.0;
                   double pur = double.tryParse(purRateC.text) ?? 0.0;

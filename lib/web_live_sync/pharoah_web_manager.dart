@@ -1,4 +1,5 @@
 import '../sync_core/modules/party_sync_module.dart';
+import '../sync_core/modules/medicine_sync_module.dart';
 import "../logic/party_integrity_service.dart";
 import '../sync_core/modules/returns_sync_module.dart';
 import '../sync_core/modules/credit_note_sync_module.dart';
@@ -311,19 +312,16 @@ class PharoahWebManager with ChangeNotifier {
       _saveLocalTombstones();
     }
 
-    var rawMeds = (decodeJson('meds.json') as List?)
-        ?.map((e) => Medicine.fromMap(e))
-        .where((m) => !deletedRecordIds.contains(m.id))
-        .toList() ?? [];
-
-    Map<String, Medicine> uniqueMeds = {};
-    for (var m in rawMeds) {
-      String cleanKey = m.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
-      if (!uniqueMeds.containsKey(cleanKey)) {
-        uniqueMeds[cleanKey] = m;
-      }
+    // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-736): Never wipe in-flight local medicine edits!
+    var rawMeds = decodeJson('meds.json') as List?;
+    if (rawMeds != null) {
+      MedicineSyncModule.mergeMedicineList(
+        cloudMedicineList: rawMeds,
+        localMedicineList: medicines,
+        tombstoneRegistry: localTombstoneRegistry,
+        deletedRecordIds: deletedRecordIds,
+      );
     }
-    medicines = uniqueMeds.values.toList();
 
     // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-734): Never wipe in-flight local party edits!
     var rawParts = decodeJson('parts.json') as List?;
@@ -2013,12 +2011,16 @@ class PharoahWebManager with ChangeNotifier {
   }
 
     void addMedicine(Medicine newMed) {
-    String cleanNewName = newMed.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+    final String cleanKey = MedicineSyncModule.getCompositeKey(name: newMed.name, packing: newMed.packing, company: newMed.companyId);
+    final int nowTs = DateTime.now().millisecondsSinceEpoch;
 
     int existingIdx = medicines.indexWhere((m) {
       if (newMed.id.isNotEmpty && m.id == newMed.id) return true;
-      if (newMed.systemId.isNotEmpty && m.systemId == newMed.systemId) return true;
-      return m.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanNewName;
+      if (newMed.systemId.isNotEmpty && m.systemId.trim().toUpperCase() == newMed.systemId.trim().toUpperCase()) return true;
+      if (cleanKey.isNotEmpty && MedicineSyncModule.getCompositeKey(name: m.name, packing: m.packing, company: m.companyId) == cleanKey) {
+        return true;
+      }
+      return false;
     });
 
     if (existingIdx != -1) {
@@ -2046,34 +2048,65 @@ class PharoahWebManager with ChangeNotifier {
         drugForm: newMed.drugForm,
         isNarcotic: newMed.isNarcotic,
         isScheduleH1: newMed.isScheduleH1,
+        updatedAt: nowTs,
+        version: old.version + 1,
       );
       medicines[existingIdx] = newMed;
     } else {
+      if (newMed.id.isEmpty || newMed.id == '0' || newMed.id == 'temp') {
+        newMed.id = "MED-$nowTs";
+      }
+      newMed.updatedAt = nowTs;
+      if (newMed.version < 1) newMed.version = 1;
       medicines.add(newMed);
     }
+
     if (!batchHistory.containsKey(newMed.identityKey)) {
       batchHistory[newMed.identityKey] = [];
     }
+
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+    if (activeStoreToken.isNotEmpty) {
+      MedicineSyncModule.onMedicineSaved(newMed, activeStoreToken);
+    }
+    _autoSyncService.triggerAutoSync(action: 'MEDICINE_SAVED', entityId: newMed.id);
+    pushUpdatedDataToCloud();
   }
 
   void updateMedicine(Medicine updatedMed) {
     int idx = medicines.indexWhere((m) => m.id == updatedMed.id);
     if (idx != -1) {
+      updatedMed.version = medicines[idx].version + 1;
+      updatedMed.updatedAt = DateTime.now().millisecondsSinceEpoch;
       medicines[idx] = updatedMed;
       notifyListeners();
-      _autoSyncService.triggerAutoSync();
+      if (activeStoreToken.isNotEmpty) {
+        MedicineSyncModule.onMedicineSaved(updatedMed, activeStoreToken);
+      }
+      _autoSyncService.triggerAutoSync(action: 'MEDICINE_UPDATED', entityId: updatedMed.id);
+      pushUpdatedDataToCloud();
     }
   }
 
   void deleteMedicine(String medId) {
-    deletedRecordIds.add(medId);
-    _saveLocalTombstones();
+    Medicine? target;
+    try {
+      target = medicines.firstWhere((item) => item.id == medId);
+    } catch (_) {}
 
+    deletedRecordIds.add(medId);
+    if (target != null && target.systemId.isNotEmpty) {
+      deletedRecordIds.add(target.systemId);
+    }
+    _saveLocalTombstones();
     medicines.removeWhere((item) => item.id == medId);
     notifyListeners();
-    _autoSyncService.triggerAutoSync();
+
+    if (activeStoreToken.isNotEmpty && target != null) {
+      MedicineSyncModule.onMedicineSaved(target, activeStoreToken, isDelete: true);
+    }
+    _autoSyncService.triggerAutoSync(action: 'MEDICINE_DELETED', entityId: medId, deletedIds: [medId]);
+    pushUpdatedDataToCloud();
   }
 
   String getNextBillNumber(String type, String defaultPrefix, int defaultStart) {

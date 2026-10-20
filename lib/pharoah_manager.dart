@@ -1,5 +1,6 @@
 import 'logic/party_integrity_service.dart';
 import 'sync_core/modules/party_sync_module.dart';
+import 'sync_core/modules/medicine_sync_module.dart';
 import "sync_core/d1_sales_ledger_service.dart";
 import "sync_core/outbox/sync_queue_manager.dart";
 import 'sync_core/modules/sales_sync_module.dart';
@@ -1384,7 +1385,93 @@ void registerBatchActivity({
   void addSalesman(Salesman s) { salesmen.add(s); save(); notifyListeners(); }
   void deleteSalesman(String id) { salesmen.removeWhere((s) => s.id == id); save(); notifyListeners(); }
 
-  void addMedicine(Medicine m, {bool doSave = true}) { medicines.add(m); if (!batchHistory.containsKey(m.identityKey)) batchHistory[m.identityKey] = []; if (doSave) save(); notifyListeners(); }
+  void addMedicine(Medicine m, {bool doSave = true}) {
+    saveOrUpdateMedicine(m);
+  }
+
+  void saveOrUpdateMedicine(Medicine med) {
+    final String cleanKey = MedicineSyncModule.getCompositeKey(name: med.name, packing: med.packing, company: med.companyId);
+    final int nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    int existingIdx = medicines.indexWhere((m) {
+      if (med.id.isNotEmpty && m.id == med.id) return true;
+      if (med.systemId.isNotEmpty && m.systemId.trim().toUpperCase() == med.systemId.trim().toUpperCase()) return true;
+      if (cleanKey.isNotEmpty && MedicineSyncModule.getCompositeKey(name: m.name, packing: m.packing, company: m.companyId) == cleanKey) {
+        return true;
+      }
+      return false;
+    });
+
+    if (existingIdx != -1) {
+      final old = medicines[existingIdx];
+      med.id = old.id;
+      if (med.systemId.isEmpty) med.systemId = old.systemId;
+      med.version = old.version + 1;
+      med.updatedAt = nowTs;
+      medicines[existingIdx] = med;
+    } else {
+      if (med.id.isEmpty || med.id == '0' || med.id == 'temp') {
+        med.id = "MED-$nowTs";
+      }
+      med.updatedAt = nowTs;
+      if (med.version < 1) med.version = 1;
+      medicines.add(med);
+    }
+
+    if (!batchHistory.containsKey(med.identityKey)) {
+      batchHistory[med.identityKey] = [];
+    }
+
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          MedicineSyncModule.onMedicineSaved(med, t);
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'MEDICINE_SAVED',
+        entityId: med.id,
+      );
+    }
+  }
+
+  bool deleteMedicine(String medId) {
+    Medicine? target;
+    try {
+      target = medicines.firstWhere((m) => m.id == medId);
+    } catch (_) {}
+
+    if (target != null) {
+      final compKey = MedicineSyncModule.getCompositeKey(name: target.name, packing: target.packing, company: target.companyId);
+      D1SalesLedgerService.markPermanentlyDeleted(medId, target.systemId, compKey);
+      if (activeCompany != null) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, [medId, if (target.systemId.isNotEmpty) target.systemId]);
+      }
+      medicines.removeWhere((m) => m.id == medId);
+      save();
+      notifyListeners();
+
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) {
+            MedicineSyncModule.onMedicineSaved(target!, t, isDelete: true);
+          }
+        });
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'MEDICINE_DELETED',
+          entityId: medId,
+          deletedIds: [medId],
+        );
+      }
+      return true;
+    }
+    return false;
+  }
   void addRoute(RouteArea r) { routes.add(r); save(); }
   void addCompany(Company c) { companies.add(c); save(); }
   void addSalt(Salt s) { salts.add(s); save(); }

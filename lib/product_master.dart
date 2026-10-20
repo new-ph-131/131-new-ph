@@ -20,6 +20,7 @@ class ProductMasterView extends StatefulWidget {
 }
 
 class _ProductMasterViewState extends State<ProductMasterView> {
+  bool isSubmitting = false;
   String searchQuery = "";
   final List<String> drugForms = ["TAB", "CAP", "SYP", "INJ", "IV", "PCS", "EXT", "OINT", "DROP"];
   final List<String> storageOptions = ["Room Temp", "Refrigerated (2-8°C)", "Cool Place"];
@@ -66,8 +67,7 @@ class _ProductMasterViewState extends State<ProductMasterView> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              ph.medicines.removeWhere((m) => m.id == med.id);
-              ph.save();
+              ph.deleteMedicine(med.id);
               Navigator.pop(c);
               setState(() {});
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Item Deleted!")));
@@ -83,6 +83,7 @@ class _ProductMasterViewState extends State<ProductMasterView> {
   // 🛠️ THE CORE FORM: AUTO-FILL & MAPPING LOGIC
   // ===========================================================================
   void _showProductForm({Medicine? med}) async {
+    isSubmitting = false;
     final ph = Provider.of<PharoahManager>(context, listen: false);
     if (ph.activeCompany == null) return;
 
@@ -199,7 +200,9 @@ class _ProductMasterViewState extends State<ProductMasterView> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
               onPressed: () {
+                if (isSubmitting) return;
                 if(nameC.text.isEmpty || packC.text.isEmpty) return;
+                isSubmitting = true;
 
                 if (companyId == null && companyName != "Tap to Select Company") {
                   companyId = ph.getOrCreateCompany(companyName);
@@ -209,7 +212,7 @@ class _ProductMasterViewState extends State<ProductMasterView> {
                 }
 
                 final newItem = Medicine(
-                  id: med?.id ?? DateTime.now().toString(),
+                  id: med?.id ?? "MED-${DateTime.now().millisecondsSinceEpoch}",
                   systemId: sysIdDisplay, 
                   name: nameC.text.trim().toUpperCase(),
                   packing: packC.text.trim().toUpperCase(),
@@ -225,10 +228,11 @@ class _ProductMasterViewState extends State<ProductMasterView> {
                   isScheduleH1: schH1,
                   stock: med?.stock ?? 0.0,
                   rackNo: rackC.text.toUpperCase(),
+                  updatedAt: DateTime.now().millisecondsSinceEpoch,
+                  version: (med?.version ?? 0) + 1,
                 );
 
-                if(med == null) ph.addMedicine(newItem);
-                else { int i = ph.medicines.indexWhere((x)=>x.id==med.id); ph.medicines[i] = newItem; ph.save(); }
+                ph.saveOrUpdateMedicine(newItem);
                 
                 Navigator.pop(c);
                 if (widget.isSelectionMode) Navigator.pop(context, newItem);

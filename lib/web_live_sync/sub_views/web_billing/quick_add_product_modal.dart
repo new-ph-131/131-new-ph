@@ -22,6 +22,7 @@ class QuickAddProductModal extends StatefulWidget {
 }
 
 class _QuickAddProductModalState extends State<QuickAddProductModal> {
+  bool _isSaving = false;
   final nameC = TextEditingController();
   final packC = TextEditingController(text: "1*10");
   final hsnC = TextEditingController(text: "3004");
@@ -79,6 +80,7 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
   }
 
   void _saveProduct() {
+    if (_isSaving) return;
     if (nameC.text.trim().isEmpty || packC.text.trim().isEmpty || gstC.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Product Name, Packing and GST% are required!"), backgroundColor: Colors.orange),
@@ -118,6 +120,7 @@ class _QuickAddProductModalState extends State<QuickAddProductModal> {
       saltId: selectedSaltId ?? '',
     );
 
+    _isSaving = true;
     widget.webPh.addMedicine(newMed);
     Navigator.pop(context);
     widget.onProductCreated(newMed.toMap());
