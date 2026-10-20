@@ -2089,8 +2089,8 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   bool isProductInUse(String medId) {
-    bool inSales = sales.any((s) => s.items.any((it) => it.medicineID == medId || it.itemName.toUpperCase() == medId.toUpperCase()));
-    bool inPurchases = purchases.any((p) => p.items.any((it) => it.medicineID == medId || it.itemName.toUpperCase() == medId.toUpperCase()));
+    bool inSales = sales.any((s) => s.items.any((it) => it.medicineID == medId || it.name.toUpperCase() == medId.toUpperCase()));
+    bool inPurchases = purchases.any((p) => p.items.any((it) => it.medicineID == medId || it.name.toUpperCase() == medId.toUpperCase()));
     return inSales || inPurchases;
   }
 
@@ -2103,8 +2103,8 @@ class PharoahWebManager with ChangeNotifier {
     if (target != null) {
       final compKey = MedicineSyncModule.getCompositeKey(name: target.name, packing: target.packing, company: target.companyId);
       D1SalesLedgerService.markPermanentlyDeleted(medId, target.systemId, compKey);
-      if (activeCompany != null || activeStoreToken.isNotEmpty) {
-        TombstoneEngine.recordBatchTombstones(activeCompany != null ? activeCompany!.id : activeStoreToken, [medId, if (target.systemId.isNotEmpty) target.systemId]);
+      if (activeStoreToken.isNotEmpty) {
+        TombstoneEngine.recordBatchTombstones(activeStoreToken, [medId, if (target.systemId.isNotEmpty) target.systemId]);
       }
     }
 
