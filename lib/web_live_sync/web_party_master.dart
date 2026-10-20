@@ -210,7 +210,9 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: () {
+                  if (isSubmitting) return;
                   if (nameC.text.trim().isEmpty) return;
+                  isSubmitting = true;
 
                   final newParty = Party(
                     id: party?.id ?? "PARTY-${DateTime.now().millisecondsSinceEpoch}",

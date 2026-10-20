@@ -191,7 +191,9 @@ class _PartyMasterViewState extends State<PartyMasterView> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo, foregroundColor: Colors.white),
               onPressed: () {
+                if (isSubmitting) return;
                 if (nameC.text.trim().isEmpty) return;
+                isSubmitting = true;
                 final newParty = Party(
                   id: party?.id ?? "PARTY-${DateTime.now().millisecondsSinceEpoch}",
                   name: nameC.text.trim().toUpperCase(),

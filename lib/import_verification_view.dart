@@ -155,8 +155,15 @@ class _ImportVerificationViewState extends State<ImportVerificationView> {
     final ph = Provider.of<PharoahManager>(context, listen: false);
     Party targetParty;
     if (isNewParty) {
-      targetParty = Party(id: DateTime.now().toString(), name: pNameC.text.toUpperCase(), gst: pGstC.text.toUpperCase(), state: pStateC.text);
-      ph.parties.add(targetParty);
+      targetParty = Party(
+        id: "PARTY-${DateTime.now().millisecondsSinceEpoch}",
+        name: pNameC.text.trim().toUpperCase(),
+        gst: pGstC.text.trim().toUpperCase().isEmpty ? "N/A" : pGstC.text.trim().toUpperCase(),
+        state: pStateC.text.trim().isEmpty ? "Rajasthan" : pStateC.text.trim(),
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        version: 1,
+      );
+      ph.saveOrUpdateParty(targetParty);
     } else {
       targetParty = ph.parties.firstWhere((p) => p.name.toUpperCase() == pNameC.text.toUpperCase());
     }

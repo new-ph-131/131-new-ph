@@ -11,6 +11,7 @@ import '../modules/returns_sync_module.dart';
 import '../modules/credit_note_sync_module.dart';
 import '../modules/debit_note_sync_module.dart';
 import '../modules/voucher_sync_module.dart';
+import '../modules/party_sync_module.dart';
 import '../../inventory_logic_center.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
@@ -221,6 +222,14 @@ class MasterSyncOrchestrator {
           }
           mutated = DebitNoteSyncModule.mergeIncomingDebitNoteEnvelope(phApp.purchaseReturns, envelope);
           break;
+        case 'PARTY':
+        case 'PARTY_MASTER':
+          mutated = PartySyncModule.mergeIncomingPartyEnvelope(phApp.parties, envelope);
+          if (mutated) {
+            phApp.save();
+            phApp.notifyListeners();
+          }
+          break;
         case 'VOUCHER':
           mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phApp.vouchers, envelope);
           break;
@@ -394,6 +403,13 @@ class MasterSyncOrchestrator {
             phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
           }
           mutated = DebitNoteSyncModule.mergeIncomingDebitNoteEnvelope(phWeb.purchaseReturns, envelope);
+          break;
+        case 'PARTY':
+        case 'PARTY_MASTER':
+          mutated = PartySyncModule.mergeIncomingPartyEnvelope(phWeb.parties, envelope);
+          if (mutated) {
+            phWeb.notifyListeners();
+          }
           break;
         case 'VOUCHER':
           mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phWeb.vouchers, envelope);

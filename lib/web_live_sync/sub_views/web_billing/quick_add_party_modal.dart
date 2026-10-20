@@ -21,6 +21,7 @@ class QuickAddPartyModal extends StatefulWidget {
 }
 
 class _QuickAddPartyModalState extends State<QuickAddPartyModal> {
+  bool _isSaving = false;
   final nameC = TextEditingController();
   final phoneC = TextEditingController();
   final emailC = TextEditingController();
@@ -100,15 +101,17 @@ class _QuickAddPartyModalState extends State<QuickAddPartyModal> {
   }
 
   void _saveParty() {
+    if (_isSaving) return;
     if (nameC.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Firm / Customer Name is required!"), backgroundColor: Colors.orange),
       );
       return;
     }
+    setState(() => _isSaving = true);
 
     final newParty = Party(
-      id: 'PARTY-WEB-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'PARTY-${DateTime.now().millisecondsSinceEpoch}',
       name: nameC.text.trim().toUpperCase(),
       group: selectedGroup,
       phone: phoneC.text.trim(),

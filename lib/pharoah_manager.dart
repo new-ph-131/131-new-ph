@@ -408,6 +408,9 @@ Future<void> finalizeSale({
     String? existingId
   }) async { 
     final p = parties.firstWhere((pt) => pt.id == party.id, orElse: () => party);
+    if (!parties.any((pt) => pt.id == p.id)) {
+      saveOrUpdateParty(p);
+    }
     final String sId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final int existingIdx = sales.indexWhere((s) => s.id == sId || s.billNo == billNo);
@@ -528,6 +531,9 @@ Future<void> finalizePurchase({
     int currentVer = 1;
     final cleanIntNo = internalNo.trim().toUpperCase();
     final cleanBillNo = billNo.trim().toUpperCase();
+    if (!parties.any((pt) => pt.id == party.id)) {
+      saveOrUpdateParty(party);
+    }
     final cleanPartyId = party.id.trim().toUpperCase();
     final compKey2 = (cleanPartyId.isNotEmpty && cleanBillNo.isNotEmpty) ? "${cleanPartyId}_$cleanBillNo" : "";
     final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
@@ -1812,6 +1818,19 @@ void registerBatchActivity({
         D1SalesLedgerService.markPermanentlyDeleted(id, p.phone);
         save();
         notifyListeners();
+        if (activeCompany != null) {
+          WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+            if (t.isNotEmpty) {
+              PartySyncModule.onPartySaved(p, t, isDelete: true);
+            }
+          });
+          AppRealtimeCoordinator.instance.notifyAppMutation(
+            this,
+            action: 'PARTY_DELETED',
+            entityId: id,
+            deletedIds: [id],
+          );
+        }
         return true;
       }
     } catch (_) {}
@@ -1820,6 +1839,18 @@ void registerBatchActivity({
 
   void saveOrUpdateParty(Party party) {
     PartySyncModule.registerPartyActivity(ph: this, updatedParty: party);
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          PartySyncModule.onPartySaved(party, t);
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'PARTY_SAVED',
+        entityId: party.id,
+      );
+    }
   }
   void deleteRoute(String id) { routes.removeWhere((r) => r.id == id); save(); }
   void deleteSystemUser(String id) { systemUsers.removeWhere((x) => x.id == id); save(); }

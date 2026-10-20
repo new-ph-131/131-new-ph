@@ -1,3 +1,4 @@
+import '../sync_core/modules/party_sync_module.dart';
 import "../logic/party_integrity_service.dart";
 import '../sync_core/modules/returns_sync_module.dart';
 import '../sync_core/modules/credit_note_sync_module.dart';
@@ -324,24 +325,17 @@ class PharoahWebManager with ChangeNotifier {
     }
     medicines = uniqueMeds.values.toList();
 
-    var rawParts = (decodeJson('parts.json') as List?)
-        ?.map((e) => Party.fromMap(e))
-        .where((p) => !deletedRecordIds.contains(p.id))
-        .toList() ?? [Party(id: 'cash', name: "CASH", group: "Cash in Hand")];
-
-    Map<String, Party> uniqueParties = {};
-    for (var p in rawParts) {
-      String cleanName = p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
-      String cleanKey = p.id.trim().isNotEmpty ? p.id.trim() : cleanName;
-      if (cleanKey.isEmpty) continue;
-      if (!uniqueParties.containsKey(cleanKey)) {
-        uniqueParties[cleanKey] = p;
-      } else if (p.updatedAt >= uniqueParties[cleanKey]!.updatedAt) {
-        uniqueParties[cleanKey] = p;
-      }
+    // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-734): Never wipe in-flight local party edits!
+    var rawParts = decodeJson('parts.json') as List?;
+    if (rawParts != null) {
+      PartySyncModule.mergePartyList(
+        cloudPartyList: rawParts,
+        localPartyList: parties,
+        tombstoneRegistry: localTombstoneRegistry,
+      );
+    } else if (parties.isEmpty) {
+      parties = [Party(id: 'cash', name: "CASH", group: "Cash in Hand")];
     }
-    parties = uniqueParties.values.toList();
-
     // 1. Sales Sync with Anti-Zombie Shield & Strict LWW Guard (MANDATE 1 & 2)
     var allParsedSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
@@ -1858,18 +1852,28 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void updateParty(Party updatedParty) {
-    String cleanUpdName = updatedParty.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
-    int idx = parties.indexWhere((p) =>
-      p.id == updatedParty.id ||
-      (updatedParty.phone.isNotEmpty && p.phone.trim() == updatedParty.phone.trim()) ||
-      (p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanUpdName && cleanUpdName.isNotEmpty)
-    );
+    String cleanUpdName = PartySyncModule.cleanString(updatedParty.name);
+    String cleanPhone = PartySyncModule.cleanPhone(updatedParty.phone);
+    String cleanGst = PartySyncModule.cleanGst(updatedParty.gst);
+
+    int idx = parties.indexWhere((p) {
+      if (updatedParty.id.isNotEmpty && p.id == updatedParty.id) return true;
+      String pGst = PartySyncModule.cleanGst(p.gst);
+      if (cleanGst.isNotEmpty && pGst.isNotEmpty && pGst == cleanGst) return true;
+      String pPhone = PartySyncModule.cleanPhone(p.phone);
+      if (cleanPhone.isNotEmpty && pPhone.isNotEmpty && pPhone == cleanPhone) return true;
+      return cleanUpdName.isNotEmpty && PartySyncModule.cleanString(p.name) == cleanUpdName;
+    });
+
     if (idx != -1) {
       updatedParty.id = parties[idx].id;
       updatedParty.updatedAt = DateTime.now().millisecondsSinceEpoch;
       updatedParty.version = parties[idx].version + 1;
       parties[idx] = updatedParty;
       notifyListeners();
+      if (activeStoreToken.isNotEmpty) {
+        PartySyncModule.onPartySaved(updatedParty, activeStoreToken);
+      }
       _autoSyncService.triggerAutoSync(action: 'PARTY_UPDATED', entityId: updatedParty.id);
       pushUpdatedDataToCloud();
     } else {
@@ -1891,27 +1895,36 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   bool deleteParty(String partyId) {
+    Party? targetP;
     try {
-      final p = parties.firstWhere((pt) => pt.id == partyId);
-      final check = canDeleteParty(p);
+      targetP = parties.firstWhere((pt) => pt.id == partyId);
+      final check = canDeleteParty(targetP);
       if (!check.canDelete) return false;
     } catch (_) {}
-
     deletedRecordIds.add(partyId);
     _saveLocalTombstones();
     parties.removeWhere((p) => p.id == partyId);
     notifyListeners();
+    if (activeStoreToken.isNotEmpty && targetP != null) {
+      PartySyncModule.onPartySaved(targetP, activeStoreToken, isDelete: true);
+    }
     _autoSyncService.triggerAutoSync(action: 'PARTY_DELETED', entityId: partyId, deletedIds: [partyId]);
     return true;
   }
 
   void addParty(Party newParty) {
-    String cleanNewName = newParty.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+    String cleanNewName = PartySyncModule.cleanString(newParty.name);
+    String cleanPhone = PartySyncModule.cleanPhone(newParty.phone);
+    String cleanGst = PartySyncModule.cleanGst(newParty.gst);
     final int nowTs = DateTime.now().millisecondsSinceEpoch;
 
     int existingIdx = parties.indexWhere((p) {
       if (newParty.id.isNotEmpty && p.id == newParty.id) return true;
-      return p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanNewName;
+      String pGst = PartySyncModule.cleanGst(p.gst);
+      if (cleanGst.isNotEmpty && pGst.isNotEmpty && pGst == cleanGst) return true;
+      String pPhone = PartySyncModule.cleanPhone(p.phone);
+      if (cleanPhone.isNotEmpty && pPhone.isNotEmpty && pPhone == cleanPhone) return true;
+      return cleanNewName.isNotEmpty && PartySyncModule.cleanString(p.name) == cleanNewName;
     });
 
     if (existingIdx != -1) {
@@ -1942,16 +1955,64 @@ class PharoahWebManager with ChangeNotifier {
       );
       parties[existingIdx] = newParty;
     } else {
+      if (newParty.id.isEmpty || newParty.id == '0' || newParty.id == 'temp') {
+        newParty.id = "PARTY-$nowTs";
+      }
       newParty.updatedAt = nowTs;
       if (newParty.version < 1) newParty.version = 1;
       parties.add(newParty);
     }
     notifyListeners();
+    if (activeStoreToken.isNotEmpty) {
+      PartySyncModule.onPartySaved(newParty, activeStoreToken);
+    }
     _autoSyncService.triggerAutoSync(action: 'PARTY_SAVED', entityId: newParty.id);
     pushUpdatedDataToCloud();
   }
 
-  void addMedicine(Medicine newMed) {
+  /// 🔄 Auto-hydrates party into Master when receiving transactions with unregistered parties (#PH-REV-734)
+  void autoHydrateParty({
+    required String id,
+    required String name,
+    String gst = "",
+    String phone = "",
+    String address = "",
+    String city = "",
+    String state = "Rajasthan",
+    String group = "Sundry Debtors",
+  }) {
+    if (name.trim().isEmpty) return;
+    String cleanNewName = PartySyncModule.cleanString(name);
+    String cleanPPhone = PartySyncModule.cleanPhone(phone);
+    String cleanPGst = PartySyncModule.cleanGst(gst);
+
+    bool exists = parties.any((p) {
+      if (id.isNotEmpty && p.id == id) return true;
+      String pGst = PartySyncModule.cleanGst(p.gst);
+      if (cleanPGst.isNotEmpty && pGst.isNotEmpty && pGst == cleanPGst) return true;
+      String pPhone = PartySyncModule.cleanPhone(p.phone);
+      if (cleanPPhone.isNotEmpty && pPhone.isNotEmpty && pPhone == cleanPPhone) return true;
+      return cleanNewName.isNotEmpty && PartySyncModule.cleanString(p.name) == cleanNewName;
+    });
+
+    if (!exists) {
+      final p = Party(
+        id: (id.isNotEmpty && id != '0' && id != 'temp') ? id : "PARTY-${DateTime.now().millisecondsSinceEpoch}",
+        name: name.trim().toUpperCase(),
+        group: group,
+        phone: phone.trim(),
+        gst: gst.trim().toUpperCase().isEmpty ? "N/A" : gst.trim().toUpperCase(),
+        address: address.trim(),
+        city: city.trim().toUpperCase(),
+        state: state,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        version: 1,
+      );
+      addParty(p);
+    }
+  }
+
+    void addMedicine(Medicine newMed) {
     String cleanNewName = newMed.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
 
     int existingIdx = medicines.indexWhere((m) {
