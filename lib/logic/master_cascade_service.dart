@@ -284,12 +284,7 @@ class MasterCascadeService {
     for (var sc in saleChallans) {
       if (matchesParty(sc.partyId, sc.partyName)) {
         sc.partyName = updatedParty.name;
-        sc.partyAddress = updatedParty.address;
-        sc.partyCity = updatedParty.city;
         sc.partyGstin = updatedParty.gst;
-        sc.partyDl = updatedParty.dl;
-        sc.partyPhone = updatedParty.phone;
-        sc.partyEmail = updatedParty.email;
         sc.partyState = updatedParty.state;
         sc.partyId = updatedParty.id;
         sc.updatedAt = DateTime.now().millisecondsSinceEpoch;
