@@ -15,6 +15,7 @@ class WebPartyMasterView extends StatefulWidget {
 }
 
 class _WebPartyMasterViewState extends State<WebPartyMasterView> {
+  bool isSubmitting = false;
   String searchQuery = "";
   final List<String> accountGroups = [
     "Sundry Debtors",
@@ -33,6 +34,7 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
   ];
 
   void _showPartyForm(PharoahWebManager webPh, {Party? party}) {
+    isSubmitting = false;
     final nameC = TextEditingController(text: party?.name);
     final phoneC = TextEditingController(text: party?.phone);
     final emailC = TextEditingController(text: party?.email);

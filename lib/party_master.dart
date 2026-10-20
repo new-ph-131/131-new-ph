@@ -20,6 +20,7 @@ class PartyMasterView extends StatefulWidget {
 }
 
 class _PartyMasterViewState extends State<PartyMasterView> {
+  bool isSubmitting = false;
   String searchQuery = "";
 
   // NAYA: Account Groups with Professional variants
@@ -92,6 +93,7 @@ class _PartyMasterViewState extends State<PartyMasterView> {
   // 📝 UPDATED PARTY FORM (WITH BANK/CASH & ARCHITECT SERIES)
   // ===========================================================================
   void _showPartyForm({Party? party}) {
+    isSubmitting = false;
     final ph = Provider.of<PharoahManager>(context, listen: false);
     final pf = widget.preFillData;
 
