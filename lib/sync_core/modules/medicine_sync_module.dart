@@ -65,7 +65,7 @@ class MedicineSyncModule {
     if (id.isEmpty && cleanNameKey.isEmpty) return false;
 
     // Check Permanent Tombstones
-    if (D1SalesLedgerService.isPermanentlyDeleted(id, systemId, compKey)) {
+    if (D1SalesLedgerService.isBillDeleted(id, systemId, compKey)) {
       localMedList.removeWhere((m) => m.id == id || (systemId.isNotEmpty && m.systemId == systemId));
       return true;
     }
@@ -142,7 +142,7 @@ class MedicineSyncModule {
       if (deletedRecordIds.contains(id) ||
           (systemId.isNotEmpty && deletedRecordIds.contains(systemId)) ||
           tombstoneRegistry.containsKey(id) ||
-          D1SalesLedgerService.isPermanentlyDeleted(id, systemId, compKey)) {
+          D1SalesLedgerService.isBillDeleted(id, systemId, compKey)) {
         localMedicineList.removeWhere((m) => m.id == id || (systemId.isNotEmpty && m.systemId == systemId));
         continue;
       }
