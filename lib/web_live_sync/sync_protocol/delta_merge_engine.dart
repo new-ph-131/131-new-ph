@@ -110,7 +110,7 @@ class DeltaMergeEngine {
         cloudMedicineList: rawMeds,
         localMedicineList: ph.medicines,
         tombstoneRegistry: tombstoneRegistry,
-        deletedRecordIds: localTombstones,
+        deletedRecordIds: tombstoneRegistry.keys.toSet(),
       );
       hasChanges = true;
     }

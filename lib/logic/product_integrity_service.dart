@@ -116,7 +116,7 @@ class ProductIntegrityService {
 
     // 2. Check Purchase Inwards (Active & non-deleted)
     final matchedPurchases = purchases.where((p) {
-      if (p.isDeleted == 1 || p.status == "Deleted") return false;
+      if (p.isDeleted == 1) return false;
       return p.items.any((it) => doesPurchaseItemMatchMedicine(it, med));
     }).toList();
     if (matchedPurchases.isNotEmpty) {
@@ -161,7 +161,7 @@ class ProductIntegrityService {
     // 6. Check Purchase Returns / Debit Notes
     final matchedPurchaseReturns = purchaseReturns.where((r) {
       if (r.isDeleted == 1) return false;
-      return r.items.any((it) => doesItemMatchMedicine(it, med));
+      return r.items.any((it) => doesPurchaseItemMatchMedicine(it, med));
     }).toList();
     if (matchedPurchaseReturns.isNotEmpty) {
       totalCount += matchedPurchaseReturns.length;
