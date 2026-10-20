@@ -297,7 +297,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
     );
   }
 
-  void _showBatchMovementModal(BuildContext context, PharoahWebManager webPh, Medicine med, MedicineBatch batch) {
+  void _showBatchMovementModal(BuildContext context, PharoahWebManager webPh, Medicine med, BatchInfo batch) {
     final matchingPurchases = webPh.purchases.where((p) => p.items.any((it) => it.name.trim().toUpperCase() == med.name.trim().toUpperCase() && it.batch.trim().toUpperCase() == batch.batch.trim().toUpperCase())).toList();
     final matchingSales = webPh.sales.where((s) => s.items.any((it) => it.name.trim().toUpperCase() == med.name.trim().toUpperCase() && it.batch.trim().toUpperCase() == batch.batch.trim().toUpperCase())).toList();
 
