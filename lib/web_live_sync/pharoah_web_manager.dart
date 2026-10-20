@@ -1,3 +1,4 @@
+import "../logic/product_integrity_service.dart";
 import '../sync_core/modules/party_sync_module.dart';
 import '../sync_core/modules/medicine_sync_module.dart';
 import "../logic/party_integrity_service.dart";
@@ -313,7 +314,7 @@ class PharoahWebManager with ChangeNotifier {
       _saveLocalTombstones();
     }
 
-    // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-736): Never wipe in-flight local medicine edits!
+    // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-737): Never wipe in-flight local medicine edits!
     var rawMeds = decodeJson('meds.json') as List?;
     if (rawMeds != null) {
       MedicineSyncModule.mergeMedicineList(
@@ -1124,6 +1125,15 @@ class PharoahWebManager with ChangeNotifier {
         }
       }
     }
+        ProductIntegrityService.ensureLineItemsInProductMaster(
+      items: sale.items,
+      medicines: medicines,
+      storeToken: activeStoreToken,
+      onMedicineSaved: (med) {
+        MedicineSyncModule.onMedicineSaved(med, activeStoreToken);
+      },
+      sourceTag: "SALE",
+    );
     final int existingIdx = sales.indexWhere((s) => s.id == sale.id || (sale.billNo.trim().isNotEmpty && s.billNo.trim().toUpperCase() == sale.billNo.trim().toUpperCase()));
     final bool isUpdate = existingIdx != -1;
 
@@ -1279,6 +1289,15 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
+        ProductIntegrityService.ensurePurchaseItemsInProductMaster(
+      items: purchase.items,
+      medicines: medicines,
+      storeToken: activeStoreToken,
+      onMedicineSaved: (med) {
+        MedicineSyncModule.onMedicineSaved(med, activeStoreToken);
+      },
+      sourceTag: "PURCHASE",
+    );
     final cleanIntNo = purchase.internalNo.trim().toUpperCase();
     final cleanBillNo = purchase.billNo.trim().toUpperCase();
     final cleanPartyId = purchase.partyId.trim().toUpperCase();
@@ -1463,6 +1482,15 @@ class PharoahWebManager with ChangeNotifier {
     D1SalesLedgerService.unmarkPermanentlyDeleted(challan.id, challan.billNo);
 
     final cleanBNo = challan.billNo.trim().toUpperCase();
+        ProductIntegrityService.ensureLineItemsInProductMaster(
+      items: challan.items,
+      medicines: medicines,
+      storeToken: activeStoreToken,
+      onMedicineSaved: (med) {
+        MedicineSyncModule.onMedicineSaved(med, activeStoreToken);
+      },
+      sourceTag: "CHALLAN",
+    );
     final int existingIdx = saleChallans.indexWhere((c) =>
       c.id == challan.id ||
       (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo)
@@ -1525,6 +1553,15 @@ class PharoahWebManager with ChangeNotifier {
     final cleanBNo = challan.billNo.trim().toUpperCase();
     final cleanParty = challan.partyId.trim().toUpperCase();
 
+        ProductIntegrityService.ensurePurchaseItemsInProductMaster(
+      items: challan.items,
+      medicines: medicines,
+      storeToken: activeStoreToken,
+      onMedicineSaved: (med) {
+        MedicineSyncModule.onMedicineSaved(med, activeStoreToken);
+      },
+      sourceTag: "PURCHASE_CHALLAN",
+    );
     final int existingIdx = purchaseChallans.indexWhere((c) =>
       c.id == challan.id ||
       (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo) ||
@@ -2089,34 +2126,54 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
+    ProductDeleteCheckResult canDeleteMedicine(Medicine med) {
+    return ProductIntegrityService.checkProductDeletionEligibility(
+      med: med,
+      sales: sales,
+      purchases: purchases,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      batchHistory: batchHistory,
+    );
+  }
+
   bool isProductInUse(String medId) {
-    bool inSales = sales.any((s) => s.items.any((it) => it.medicineID == medId || it.name.toUpperCase() == medId.toUpperCase()));
-    bool inPurchases = purchases.any((p) => p.items.any((it) => it.medicineID == medId || it.name.toUpperCase() == medId.toUpperCase()));
-    return inSales || inPurchases;
+    Medicine? target;
+    try {
+      target = medicines.firstWhere((m) => m.id == medId || (m.systemId.isNotEmpty && m.systemId == medId));
+    } catch (_) {}
+    if (target == null) return false;
+    final res = canDeleteMedicine(target);
+    return !res.canDelete;
   }
 
   void deleteMedicine(String medId) {
     Medicine? target;
     try {
-      target = medicines.firstWhere((item) => item.id == medId);
+      target = medicines.firstWhere((item) => item.id == medId || (item.systemId.isNotEmpty && item.systemId == medId));
     } catch (_) {}
-
     if (target != null) {
+      final check = canDeleteMedicine(target);
+      if (!check.canDelete) {
+        errorMessage = check.details;
+        notifyListeners();
+        return;
+      }
       final compKey = MedicineSyncModule.getCompositeKey(name: target.name, packing: target.packing, company: target.companyId);
       D1SalesLedgerService.markPermanentlyDeleted(medId, target.systemId, compKey);
       if (activeStoreToken.isNotEmpty) {
         TombstoneEngine.recordBatchTombstones(activeStoreToken, [medId, if (target.systemId.isNotEmpty) target.systemId]);
       }
     }
-
     deletedRecordIds.add(medId);
     if (target != null && target.systemId.isNotEmpty) {
       deletedRecordIds.add(target.systemId);
     }
     _saveLocalTombstones();
-    medicines.removeWhere((item) => item.id == medId);
+    medicines.removeWhere((item) => item.id == medId || (target != null && target.systemId.isNotEmpty && item.systemId == target.systemId));
     notifyListeners();
-
     if (activeStoreToken.isNotEmpty && target != null) {
       MedicineSyncModule.onMedicineSaved(target, activeStoreToken, isDelete: true);
     }

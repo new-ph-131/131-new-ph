@@ -37,17 +37,19 @@ class _ProductMasterViewState extends State<ProductMasterView> {
 
   // --- 🛡️ NAYA: DELETION PROTECTION LOGIC ---
   void _confirmDelete(PharoahManager ph, Medicine med) {
-    // 1. Check Usage from Manager
-    bool inUse = ph.isProductInUse(med.id);
-
-    if (inUse) {
-      // Restricted Alert
+    // 1. Check 360° Usage Guard from Manager (#PH-REV-737)
+    final check = ph.canDeleteMedicine(med);
+    if (!check.canDelete) {
       showDialog(
         context: context,
         builder: (c) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-          title: const Row(children: [Icon(Icons.lock, color: Colors.red), SizedBox(width: 10), Text("Delete Restricted")]),
-          content: Text("Cannot delete '${med.name}' because it is linked to existing Sale or Purchase records in this year."),
+          title: Row(children: [
+            const Icon(Icons.lock, color: Colors.red),
+            const SizedBox(width: 10),
+            Expanded(child: Text(check.reason, style: const TextStyle(fontWeight: FontWeight.bold))),
+          ]),
+          content: Text(check.details, style: const TextStyle(fontSize: 13, height: 1.4)),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c), child: const Text("CLOSE")),
           ],

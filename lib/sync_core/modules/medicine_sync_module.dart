@@ -7,7 +7,7 @@ import "../models/sync_envelope.dart";
 import "../outbox/sync_queue_manager.dart";
 import "../d1_sales_ledger_service.dart";
 
-/// 🛡️ ITEM / PRODUCT MASTER SYNC MODULE (#PH-REV-736)
+/// 🛡️ ITEM / PRODUCT MASTER SYNC MODULE (#PH-REV-737)
 /// Handles 360-degree all-field mirroring, LWW monotonic versioning,
 /// 4-tier deduplication (ID -> SystemId -> UniqueCode/Barcode -> Composite Name+Pack+Mfg),
 /// D1 Outbox integration, and Tombstone deletion shielding across App & Web.

@@ -1,3 +1,4 @@
+import "../../sync_core/modules/medicine_sync_module.dart";
 import "../../../sync_core/modules/party_sync_module.dart";
 import "../../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/sync_protocol/delta_merge_engine.dart
@@ -105,27 +106,13 @@ class DeltaMergeEngine {
 
     var rawMeds = decodeJson("meds.json") as List?;
     if (rawMeds != null) {
-      for (var rawMed in rawMeds) {
-        final medMap = rawMed as Map<String, dynamic>;
-        String cleanName = (medMap["name"] ?? "").toString().replaceAll(RegExp(r"[^A-Z0-9]"), "").toUpperCase();
-        if (cleanName.isEmpty) continue;
-        int existingIdx = ph.medicines.indexWhere((m) => m.id == medMap["id"]);
-        if (existingIdx != -1) {
-          String lJson = jsonEncode(ph.medicines[existingIdx].toMap());
-          String cJson = jsonEncode(medMap);
-          if (lJson != cJson) {
-            int cUpdated = int.tryParse((medMap["updated_at"] ?? medMap["updatedAt"] ?? 0).toString()) ?? 0;
-            int lUpdated = ph.medicines[existingIdx].updatedAt;
-            if (cUpdated >= lUpdated || lUpdated == 0) {
-              ph.medicines[existingIdx] = Medicine.fromMap(medMap);
-              hasChanges = true;
-            }
-          }
-        } else {
-          ph.medicines.add(Medicine.fromMap(medMap));
-          hasChanges = true;
-        }
-      }
+      MedicineSyncModule.mergeMedicineList(
+        cloudMedicineList: rawMeds,
+        localMedicineList: ph.medicines,
+        tombstoneRegistry: tombstoneRegistry,
+        deletedRecordIds: localTombstones,
+      );
+      hasChanges = true;
     }
 
     // 🛡️ Advanced Deep-Compare & Deduplicating Merge Function with Multi-Key Anti-Zombie Shields

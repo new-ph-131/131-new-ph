@@ -487,15 +487,19 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                                       icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
                                       tooltip: "Delete Product",
                                       onPressed: () {
-                                        bool inUse = webPh.isProductInUse(m.id);
-                                        if (inUse) {
+                                        final check = webPh.canDeleteMedicine(m);
+                                        if (!check.canDelete) {
                                           showDialog(
                                             context: context,
                                             builder: (c) => AlertDialog(
                                               backgroundColor: const Color(0xFF1E293B),
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                                              title: const Row(children: [Icon(Icons.lock, color: Colors.redAccent), SizedBox(width: 10), Text("Delete Restricted", style: TextStyle(color: Colors.white))]),
-                                              content: Text("Cannot delete '${m.name}' because it is linked to existing Sale or Purchase records in this financial year.", style: TextStyle(color: Colors.white70)),
+                                              title: Row(children: [
+                                                const Icon(Icons.lock, color: Colors.redAccent),
+                                                const SizedBox(width: 10),
+                                                Expanded(child: Text(check.reason, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+                                              ]),
+                                              content: Text(check.details, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
                                               actions: [
                                                 TextButton(onPressed: () => Navigator.pop(c), child: const Text("CLOSE", style: TextStyle(color: Color(0xFF38BDF8)))),
                                               ],

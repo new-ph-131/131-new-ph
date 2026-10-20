@@ -1,3 +1,4 @@
+import 'logic/product_integrity_service.dart';
 import 'logic/party_integrity_service.dart';
 import 'sync_core/modules/party_sync_module.dart';
 import 'sync_core/modules/medicine_sync_module.dart';
@@ -423,6 +424,13 @@ Future<void> finalizeSale({
     }
     D1SalesLedgerService.unmarkPermanentlyDeleted(sId, billNo);
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
+    ProductIntegrityService.ensureLineItemsInProductMaster(
+      items: items,
+      medicines: medicines,
+      storeToken: activeCompany != null ? activeCompany!.id : "",
+      onMedicineSaved: (m) => saveOrUpdateMedicine(m),
+      sourceTag: "SALE",
+    );
     final newFinalSale = Sale(
       id: sId, 
       billNo: billNo, 
@@ -560,6 +568,13 @@ Future<void> finalizePurchase({
     purchases.removeWhere((p) => 
       p.id == pId || 
       (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
+    );
+    ProductIntegrityService.ensurePurchaseItemsInProductMaster(
+      items: items,
+      medicines: medicines,
+      storeToken: activeCompany != null ? activeCompany!.id : "",
+      onMedicineSaved: (m) => saveOrUpdateMedicine(m),
+      sourceTag: "PURCHASE",
     );
     final newFinalPurchase = Purchase(
       id: pId, 
@@ -1442,10 +1457,14 @@ void registerBatchActivity({
   bool deleteMedicine(String medId) {
     Medicine? target;
     try {
-      target = medicines.firstWhere((m) => m.id == medId);
+      target = medicines.firstWhere((m) => m.id == medId || (m.systemId.isNotEmpty && m.systemId == medId));
     } catch (_) {}
 
     if (target != null) {
+      final check = canDeleteMedicine(target);
+      if (!check.canDelete) {
+        return false;
+      }
       final compKey = MedicineSyncModule.getCompositeKey(name: target.name, packing: target.packing, company: target.companyId);
       D1SalesLedgerService.markPermanentlyDeleted(medId, target.systemId, compKey);
       if (activeCompany != null) {
@@ -2156,11 +2175,29 @@ void registerBatchActivity({
     return inSales || inPurchases || inVouchers || inChallans;
   }
 
-  bool isProductInUse(String medId) {
-    bool inSales = sales.any((s) => s.items.any((it) => it.medicineID == medId));
-    bool inPurchases = purchases.any((p) => p.items.any((it) => it.medicineID == medId));
-    return inSales || inPurchases;
+  ProductDeleteCheckResult canDeleteMedicine(Medicine med) {
+    return ProductIntegrityService.checkProductDeletionEligibility(
+      med: med,
+      sales: sales,
+      purchases: purchases,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      batchHistory: batchHistory,
+    );
   }
+
+  bool isProductInUse(String medId) {
+    Medicine? target;
+    try {
+      target = medicines.firstWhere((m) => m.id == medId || (m.systemId.isNotEmpty && m.systemId == medId));
+    } catch (_) {}
+    if (target == null) return false;
+    final res = canDeleteMedicine(target);
+    return !res.canDelete;
+  }
+
 
   // ===========================================================================
   // 10. GETTERS & RECOVERY

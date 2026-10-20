@@ -1,3 +1,4 @@
+import "../../logic/product_integrity_service.dart";
 import "../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/realtime_signaling/engines/fast_pull_engine.dart
 import 'dart:convert';
@@ -332,6 +333,16 @@ class FastPullEngine {
       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
 
       if (hasChanges) {
+        // Harvest any missing products from transactions (#PH-REV-737)
+        ProductIntegrityService.harvestProductsFromAllTransactions(
+          medicines: ph.medicines,
+          sales: ph.sales,
+          purchases: ph.purchases,
+          saleChallans: ph.saleChallans,
+          purchaseChallans: ph.purchaseChallans,
+          storeToken: storeToken,
+          onMedicineSaved: (m) => ph.saveOrUpdateMedicine(m),
+        );
         // Rebuild stock & batches
         InventoryLogicCenter.rebuildAllInventory(
           medicines: ph.medicines,
