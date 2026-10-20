@@ -113,13 +113,13 @@ class PdfRouterService {
   }
 
   static Future<void> printCreditNote({required SaleReturn returnObj, required Party party, required PharoahManager ph}) async {
-    final latestParty = _getLatestParty(ph, returnObj.partyId.isNotEmpty ? returnObj.partyId : party.id, returnObj.partyName.isNotEmpty ? returnObj.partyName : party.name);
+    final latestParty = _getLatestParty(ph, party.id, returnObj.partyName.isNotEmpty ? returnObj.partyName : party.name);
     if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: latestParty, ph: ph, type: "RETURN");
     else await CreditNotePdf.generate(returnObj, latestParty, ph.activeCompany!, ph.config);
   }
 
   static Future<void> printDebitNote({required PurchaseReturn returnObj, required Party supplier, required PharoahManager ph}) async {
-    final latestParty = _getLatestParty(ph, returnObj.partyId.isNotEmpty ? returnObj.partyId : supplier.id, returnObj.distributorName.isNotEmpty ? returnObj.distributorName : supplier.name);
+    final latestParty = _getLatestParty(ph, supplier.id, returnObj.distributorName.isNotEmpty ? returnObj.distributorName : supplier.name);
     if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: latestParty, ph: ph, type: "RETURN");
     else await DebitNotePdf.generate(returnObj, latestParty, ph.activeCompany!, ph.config);
   }
