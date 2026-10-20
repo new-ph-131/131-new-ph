@@ -1,3 +1,4 @@
+import "../../logic/product_integrity_service.dart";
 // FILE: lib/sync_core/modules/medicine_sync_module.dart
 import "dart:convert";
 import "package:flutter/foundation.dart";
@@ -7,7 +8,7 @@ import "../models/sync_envelope.dart";
 import "../outbox/sync_queue_manager.dart";
 import "../d1_sales_ledger_service.dart";
 
-/// 🛡️ ITEM / PRODUCT MASTER SYNC MODULE (#PH-REV-737)
+/// 🛡️ ITEM / PRODUCT MASTER SYNC MODULE (#PH-REV-738)
 /// Handles 360-degree all-field mirroring, LWW monotonic versioning,
 /// 4-tier deduplication (ID -> SystemId -> UniqueCode/Barcode -> Composite Name+Pack+Mfg),
 /// D1 Outbox integration, and Tombstone deletion shielding across App & Web.
@@ -119,6 +120,7 @@ class MedicineSyncModule {
     required Map<String, dynamic> tombstoneRegistry,
     required Set<String> deletedRecordIds,
   }) {
+    ProductIntegrityService.deduplicateMedicineList(localMedicineList);
     final Map<String, int> localIndexMap = {};
     for (int i = 0; i < localMedicineList.length; i++) {
       final m = localMedicineList[i];
@@ -175,5 +177,6 @@ class MedicineSyncModule {
         if (compKey.isNotEmpty) localIndexMap["COMP_$compKey"] = newIdx;
       }
     }
+    ProductIntegrityService.deduplicateMedicineList(localMedicineList);
   }
 }

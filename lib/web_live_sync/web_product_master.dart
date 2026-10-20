@@ -1,3 +1,4 @@
+import "../logic/product_integrity_service.dart";
 // FILE: lib/web_live_sync/web_product_master.dart
 
 import 'package:flutter/material.dart';
@@ -331,6 +332,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
+    ProductIntegrityService.deduplicateMedicineList(webPh.medicines);
     final filteredList = webPh.medicines.where((m) =>
         m.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
         m.systemId.toLowerCase().contains(searchQuery.toLowerCase()) ||

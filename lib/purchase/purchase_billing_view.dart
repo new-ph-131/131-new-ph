@@ -1,3 +1,4 @@
+import '../logic/product_integrity_service.dart';
 // FILE: lib/purchase/purchase_billing_view.dart
 
 import '../pharoah_date_controller.dart';
@@ -207,7 +208,17 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
     String localSearch = "";
     Medicine? selectedMed;
     if (itemToEdit != null) {
-      try { selectedMed = ph.medicines.firstWhere((m) => m.id == itemToEdit.medicineID); } catch(e) {}
+      selectedMed = ProductIntegrityService.resolveMedicineForPurchaseItem(
+        medicines: ph.medicines,
+        medicineID: itemToEdit.medicineID,
+        name: itemToEdit.name,
+        packing: itemToEdit.packing,
+        hsn: itemToEdit.hsn,
+        gst: itemToEdit.gstRate,
+        mrp: itemToEdit.mrp,
+        rateA: itemToEdit.rateA,
+        purchaseRate: itemToEdit.purchaseRate,
+      );
     }
 
     showModalBottomSheet(

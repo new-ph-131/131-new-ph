@@ -1,3 +1,4 @@
+import 'logic/product_integrity_service.dart';
 import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
 // FILE: lib/billing_view.dart
 
@@ -75,9 +76,16 @@ class _BillingViewState extends State<BillingView> {
     String localSearch = "";
     Medicine? selectedMed;
     if (itemToEdit != null) {
-      try {
-        selectedMed = ph.medicines.firstWhere((m) => m.id == itemToEdit.medicineID);
-      } catch (e) { selectedMed = null; }
+      selectedMed = ProductIntegrityService.resolveMedicineForBillItem(
+        medicines: ph.medicines,
+        medicineID: itemToEdit.medicineID,
+        name: itemToEdit.name,
+        packing: itemToEdit.packing,
+        hsn: itemToEdit.hsn,
+        gst: itemToEdit.gstRate,
+        mrp: itemToEdit.mrp,
+        rate: itemToEdit.rate,
+      );
     }
 
     showModalBottomSheet(

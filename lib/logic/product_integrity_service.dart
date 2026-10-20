@@ -1,9 +1,10 @@
 // FILE: lib/logic/product_integrity_service.dart
-// Live Revision: #PH-REV-737 (UNIVERSAL-PRODUCT-INTEGRITY-AND-USAGE-GUARD-FIX)
+// Live Revision: #PH-REV-738 (ENTERPRISE-CANONICAL-DEDUPLICATION-AND-TAP-RESOLUTION-FIX)
 
 import 'package:flutter/foundation.dart';
 import '../models.dart';
 import '../sync_core/modules/medicine_sync_module.dart';
+import '../sync_core/d1_sales_ledger_service.dart';
 
 /// Result object for Product Deletion Integrity Check
 class ProductDeleteCheckResult {
@@ -22,27 +23,216 @@ class ProductDeleteCheckResult {
   });
 }
 
-/// 🛡️ UNIVERSAL PRODUCT INTEGRITY & HARVESTING SERVICE (#PH-REV-737)
+/// 🛡️ UNIVERSAL PRODUCT INTEGRITY, CANONICAL DEDUPLICATION & HARVESTING SERVICE (#PH-REV-738)
 /// 1. 360-Degree Deletion Usage Guard across Sales, Purchases, Challans, Returns & Batches.
-/// 2. Universal Auto-Harvesting & Auto-Upsert to ensure line items in any bill,
-///    challan, CSV import, or sync packet automatically link and update Product Master.
+/// 2. Canonical Deduplication to prevent multiple same-name products.
+/// 3. Fault-Tolerant Tap Resolution for Bill Items (Guaranteed Batch/MRP Screen Open).
+/// 4. Auto-Harvesting with Tombstone Revival (Transaction Authority over Deleted State).
 class ProductIntegrityService {
   static String cleanString(String input) {
     return input.replaceAll(RegExp(r"[^A-Z0-9]"), "").toUpperCase();
+  }
+
+  /// Generates the next unique, strictly-incrementing system ID (e.g. PH-10018)
+  static String generateNextSystemId(List<Medicine> medicines) {
+    int maxNum = 10000;
+    for (var m in medicines) {
+      final sys = m.systemId.trim().toUpperCase();
+      if (sys.startsWith("PH-")) {
+        final numPart = int.tryParse(sys.replaceFirst("PH-", ""));
+        if (numPart != null && numPart > maxNum) {
+          maxNum = numPart;
+        }
+      }
+    }
+    return "PH-${maxNum + 1}";
+  }
+
+  /// 🛡️ CANONICAL DEDUPLICATION ENGINE:
+  /// Collapses any duplicated product master rows with same clean (name+packing) or systemId
+  /// into a single canonical master record, eliminating screenshot duplicate rows.
+  static int deduplicateMedicineList(List<Medicine> medicines) {
+    if (medicines.length <= 1) return 0;
+    int mergedCount = 0;
+
+    final Map<String, int> compMap = {};
+    final Map<String, int> sysMap = {};
+    final List<Medicine> canonicalList = [];
+
+    for (var med in medicines) {
+      final String cName = cleanString(med.name);
+      if (cName.isEmpty) continue;
+      final String cPack = cleanString(med.packing);
+      final String compKey = "${cName}_$cPack";
+      final String sysKey = med.systemId.trim().toUpperCase();
+
+      int matchIdx = -1;
+      if (compKey.isNotEmpty && compMap.containsKey(compKey)) {
+        matchIdx = compMap[compKey]!;
+      } else if (sysKey.isNotEmpty && sysKey != "PH-0" && sysMap.containsKey(sysKey)) {
+        matchIdx = sysMap[sysKey]!;
+      }
+
+      if (matchIdx != -1) {
+        // Merge into existing canonical record
+        final canon = canonicalList[matchIdx];
+        if (canon.systemId.isEmpty && med.systemId.isNotEmpty) {
+          canon.systemId = med.systemId;
+        }
+        if (med.version > canon.version) {
+          canon.version = med.version;
+        }
+        if (med.updatedAt > canon.updatedAt) {
+          canon.updatedAt = med.updatedAt;
+        }
+        if ((canon.hsnCode == "N/A" || canon.hsnCode.isEmpty) && med.hsnCode.isNotEmpty && med.hsnCode != "N/A") {
+          canon.hsnCode = med.hsnCode;
+        }
+        if (canon.mrp <= 0 && med.mrp > 0) canon.mrp = med.mrp;
+        if (canon.rateA <= 0 && med.rateA > 0) canon.rateA = med.rateA;
+        if (canon.purRate <= 0 && med.purRate > 0) canon.purRate = med.purRate;
+        if (canon.gst <= 0 && med.gst > 0) canon.gst = med.gst;
+        mergedCount++;
+      } else {
+        final idx = canonicalList.length;
+        canonicalList.add(med);
+        if (compKey.isNotEmpty) compMap[compKey] = idx;
+        if (sysKey.isNotEmpty && sysKey != "PH-0") sysMap[sysKey] = idx;
+      }
+    }
+
+    if (mergedCount > 0) {
+      medicines.clear();
+      medicines.addAll(canonicalList);
+    }
+    return mergedCount;
+  }
+
+  /// 🛡️ FAULT-TOLERANT RESOLUTION FOR BILL ITEM (Fixes Problem 4):
+  /// Guarantees that tapping on any item in bill creation ALWAYS resolves a valid Medicine
+  /// so the Batch/MRP/Rate screen (ItemEntryCard) opens 100% of the time.
+  static Medicine resolveMedicineForBillItem({
+    required List<Medicine> medicines,
+    required String medicineID,
+    required String name,
+    required String packing,
+    String hsn = "3004",
+    double gst = 12.0,
+    double mrp = 0.0,
+    double rate = 0.0,
+  }) {
+    final cleanId = medicineID.trim();
+    final cleanName = cleanString(name);
+    final cleanPack = cleanString(packing);
+
+    // Tier 1: ID Match
+    if (cleanId.isNotEmpty) {
+      for (var m in medicines) {
+        if (m.id.trim() == cleanId) return m;
+      }
+      // Tier 2: System ID Match
+      for (var m in medicines) {
+        if (m.systemId.trim().toUpperCase() == cleanId.toUpperCase()) return m;
+      }
+    }
+
+    // Tier 3: Composite Name + Packing Match
+    if (cleanName.isNotEmpty) {
+      for (var m in medicines) {
+        if (cleanString(m.name) == cleanName && (cleanPack.isEmpty || cleanString(m.packing) == cleanPack)) {
+          return m;
+        }
+      }
+      // Tier 4: Clean Name Match
+      for (var m in medicines) {
+        if (cleanString(m.name) == cleanName) return m;
+      }
+    }
+
+    // Tier 5: Safe In-Memory Rehydration (Never leave null)
+    final newId = cleanId.isNotEmpty ? cleanId : "MED-${DateTime.now().millisecondsSinceEpoch}";
+    final fallbackMed = Medicine(
+      id: newId,
+      systemId: generateNextSystemId(medicines),
+      name: name.trim().toUpperCase(),
+      packing: packing.trim().isNotEmpty ? packing.trim().toUpperCase() : "1*1",
+      hsnCode: hsn.trim().isNotEmpty ? hsn.trim().toUpperCase() : "3004",
+      gst: gst > 0 ? gst : 12.0,
+      mrp: mrp > 0 ? mrp : 0.0,
+      rateA: rate > 0 ? rate : 0.0,
+      drugForm: "TAB",
+      stock: 0.0,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: 1,
+    );
+    medicines.add(fallbackMed);
+    return fallbackMed;
+  }
+
+  /// 🛡️ FAULT-TOLERANT RESOLUTION FOR PURCHASE ITEM:
+  static Medicine resolveMedicineForPurchaseItem({
+    required List<Medicine> medicines,
+    required String medicineID,
+    required String name,
+    required String packing,
+    String hsn = "3004",
+    double gst = 12.0,
+    double mrp = 0.0,
+    double rateA = 0.0,
+    double purchaseRate = 0.0,
+  }) {
+    final cleanId = medicineID.trim();
+    final cleanName = cleanString(name);
+    final cleanPack = cleanString(packing);
+
+    if (cleanId.isNotEmpty) {
+      for (var m in medicines) {
+        if (m.id.trim() == cleanId) return m;
+      }
+      for (var m in medicines) {
+        if (m.systemId.trim().toUpperCase() == cleanId.toUpperCase()) return m;
+      }
+    }
+
+    if (cleanName.isNotEmpty) {
+      for (var m in medicines) {
+        if (cleanString(m.name) == cleanName && (cleanPack.isEmpty || cleanString(m.packing) == cleanPack)) {
+          return m;
+        }
+      }
+      for (var m in medicines) {
+        if (cleanString(m.name) == cleanName) return m;
+      }
+    }
+
+    final newId = cleanId.isNotEmpty ? cleanId : "MED-${DateTime.now().millisecondsSinceEpoch}";
+    final fallbackMed = Medicine(
+      id: newId,
+      systemId: generateNextSystemId(medicines),
+      name: name.trim().toUpperCase(),
+      packing: packing.trim().isNotEmpty ? packing.trim().toUpperCase() : "1*1",
+      hsnCode: hsn.trim().isNotEmpty ? hsn.trim().toUpperCase() : "3004",
+      gst: gst > 0 ? gst : 12.0,
+      mrp: mrp > 0 ? mrp : 0.0,
+      rateA: rateA > 0 ? rateA : 0.0,
+      purRate: purchaseRate > 0 ? purchaseRate : 0.0,
+      drugForm: "TAB",
+      stock: 0.0,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: 1,
+    );
+    medicines.add(fallbackMed);
+    return fallbackMed;
   }
 
   /// Checks if a BillItem matches a Medicine using 4-tier identification
   static bool doesItemMatchMedicine(BillItem it, Medicine med) {
     final String itMedId = it.medicineID.trim();
     final String medId = med.id.trim();
-    if (itMedId.isNotEmpty && medId.isNotEmpty && itMedId == medId) {
-      return true;
-    }
+    if (itMedId.isNotEmpty && medId.isNotEmpty && itMedId == medId) return true;
 
     final String medSysId = med.systemId.trim().toUpperCase();
-    if (itMedId.isNotEmpty && medSysId.isNotEmpty && itMedId.toUpperCase() == medSysId) {
-      return true;
-    }
+    if (itMedId.isNotEmpty && medSysId.isNotEmpty && itMedId.toUpperCase() == medSysId) return true;
 
     final String itCleanName = cleanString(it.name);
     final String medCleanName = cleanString(med.name);
@@ -56,7 +246,6 @@ class ProductIntegrityService {
     } else {
       if (itCleanName == medCleanName) return true;
     }
-
     return false;
   }
 
@@ -64,14 +253,10 @@ class ProductIntegrityService {
   static bool doesPurchaseItemMatchMedicine(PurchaseItem it, Medicine med) {
     final String itMedId = it.medicineID.trim();
     final String medId = med.id.trim();
-    if (itMedId.isNotEmpty && medId.isNotEmpty && itMedId == medId) {
-      return true;
-    }
+    if (itMedId.isNotEmpty && medId.isNotEmpty && itMedId == medId) return true;
 
     final String medSysId = med.systemId.trim().toUpperCase();
-    if (itMedId.isNotEmpty && medSysId.isNotEmpty && itMedId.toUpperCase() == medSysId) {
-      return true;
-    }
+    if (itMedId.isNotEmpty && medSysId.isNotEmpty && itMedId.toUpperCase() == medSysId) return true;
 
     final String itCleanName = cleanString(it.name);
     final String medCleanName = cleanString(med.name);
@@ -85,11 +270,10 @@ class ProductIntegrityService {
     } else {
       if (itCleanName == medCleanName) return true;
     }
-
     return false;
   }
 
-  /// 🛡️ 1. 360-DEGREE USAGE GUARD: Checks all transactions across both App & Web
+  /// 🛡️ 1. 360-DEGREE USAGE GUARD
   static ProductDeleteCheckResult checkProductDeletionEligibility({
     required Medicine med,
     required List<Sale> sales,
@@ -103,7 +287,7 @@ class ProductIntegrityService {
     final List<String> sampleRefs = [];
     int totalCount = 0;
 
-    // 1. Check Sales Invoices (Active & non-deleted)
+    // 1. Check Sales Invoices
     final matchedSales = sales.where((s) {
       if (s.isDeleted == 1 || s.status == "Deleted") return false;
       return s.items.any((it) => doesItemMatchMedicine(it, med));
@@ -114,7 +298,7 @@ class ProductIntegrityService {
       sampleRefs.add("Sales Invoices ($samples)");
     }
 
-    // 2. Check Purchase Inwards (Active & non-deleted)
+    // 2. Check Purchase Inwards
     final matchedPurchases = purchases.where((p) {
       if (p.isDeleted == 1) return false;
       return p.items.any((it) => doesPurchaseItemMatchMedicine(it, med));
@@ -147,7 +331,7 @@ class ProductIntegrityService {
       sampleRefs.add("Purchase Challans ($samples)");
     }
 
-    // 5. Check Sales Returns / Credit Notes
+    // 5. Check Sales Returns
     final matchedSaleReturns = saleReturns.where((r) {
       if (r.isDeleted == 1) return false;
       return r.items.any((it) => doesItemMatchMedicine(it, med));
@@ -158,7 +342,7 @@ class ProductIntegrityService {
       sampleRefs.add("Sale Returns ($samples)");
     }
 
-    // 6. Check Purchase Returns / Debit Notes
+    // 6. Check Purchase Returns
     final matchedPurchaseReturns = purchaseReturns.where((r) {
       if (r.isDeleted == 1) return false;
       return r.items.any((it) => doesPurchaseItemMatchMedicine(it, med));
@@ -169,7 +353,7 @@ class ProductIntegrityService {
       sampleRefs.add("Purchase Returns ($samples)");
     }
 
-    // 7. Check Active Stock in Master
+    // 7. Check Active Stock
     if (med.stock > 0) {
       return ProductDeleteCheckResult(
         canDelete: false,
@@ -201,6 +385,8 @@ class ProductIntegrityService {
   }
 
   /// 🔄 2A. ENSURE BILL ITEMS (Sales, Sale Challans, Returns)
+  /// - Automatically revives tombstones if this item was previously deleted
+  /// - Deduplicates and unifies line item with Product Master
   static int ensureLineItemsInProductMaster({
     required List<BillItem> items,
     required List<Medicine> medicines,
@@ -208,6 +394,7 @@ class ProductIntegrityService {
     required void Function(Medicine newOrUpdatedMed) onMedicineSaved,
     String sourceTag = "TRANSACTION",
   }) {
+    deduplicateMedicineList(medicines);
     int mutatedCount = 0;
     final int nowTs = DateTime.now().millisecondsSinceEpoch;
 
@@ -222,12 +409,8 @@ class ProductIntegrityService {
       if (m.systemId.isNotEmpty) sysMap[m.systemId.trim().toUpperCase()] = i;
       final cName = cleanString(m.name);
       final cPack = cleanString(m.packing);
-      if (cName.isNotEmpty && cPack.isNotEmpty) {
-        compMap["${cName}_$cPack"] = i;
-      }
-      if (cName.isNotEmpty && !nameMap.containsKey(cName)) {
-        nameMap[cName] = i;
-      }
+      if (cName.isNotEmpty && cPack.isNotEmpty) compMap["${cName}_$cPack"] = i;
+      if (cName.isNotEmpty && !nameMap.containsKey(cName)) nameMap[cName] = i;
     }
 
     for (var it in items) {
@@ -253,6 +436,10 @@ class ProductIntegrityService {
         if (it.medicineID != existingMed.id) {
           it.medicineID = existingMed.id;
         }
+
+        // 🛡️ UNMARK TOMBSTONE (Transaction Authority): Revive product if previously deleted!
+        final compKey = MedicineSyncModule.getCompositeKey(name: existingMed.name, packing: existingMed.packing, company: existingMed.companyId);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(existingMed.id, existingMed.systemId, compKey);
 
         bool enriched = false;
         if ((existingMed.hsnCode == "N/A" || existingMed.hsnCode.isEmpty) && it.hsn.isNotEmpty && it.hsn != "N/A") {
@@ -279,17 +466,18 @@ class ProductIntegrityService {
           mutatedCount++;
         }
       } else {
+        // 🆕 Create new permanent Medicine record with strictly unique next System ID
         final String newId = (itMedId.isNotEmpty && itMedId != "0" && itMedId != "temp")
             ? itMedId
             : "MED-$nowTs-${medicines.length + 1}";
-        final String newSysId = "PH-${10000 + medicines.length + 1}";
+        final String newSysId = generateNextSystemId(medicines);
 
         final newMed = Medicine(
           id: newId,
           systemId: newSysId,
-          name: it.name.trim(),
-          packing: it.packing.trim().isNotEmpty ? it.packing.trim() : "1*1",
-          hsnCode: it.hsn.trim().isNotEmpty ? it.hsn.trim() : "N/A",
+          name: it.name.trim().toUpperCase(),
+          packing: it.packing.trim().isNotEmpty ? it.packing.trim().toUpperCase() : "1*1",
+          hsnCode: it.hsn.trim().isNotEmpty ? it.hsn.trim().toUpperCase() : "3004",
           gst: it.gstRate > 0 ? it.gstRate : 12.0,
           mrp: it.mrp > 0 ? it.mrp : 0.0,
           rateA: it.rate > 0 ? it.rate : 0.0,
@@ -310,6 +498,10 @@ class ProductIntegrityService {
         if (cleanPack.isNotEmpty) compMap["${cleanName}_$cleanPack"] = newIdx;
         if (!nameMap.containsKey(cleanName)) nameMap[cleanName] = newIdx;
 
+        // Unmark tombstones for this revived/new item
+        final compKey = MedicineSyncModule.getCompositeKey(name: newMed.name, packing: newMed.packing, company: newMed.companyId);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(newMed.id, newMed.systemId, compKey);
+
         onMedicineSaved(newMed);
         mutatedCount++;
       }
@@ -326,6 +518,7 @@ class ProductIntegrityService {
     required void Function(Medicine newOrUpdatedMed) onMedicineSaved,
     String sourceTag = "PURCHASE",
   }) {
+    deduplicateMedicineList(medicines);
     int mutatedCount = 0;
     final int nowTs = DateTime.now().millisecondsSinceEpoch;
 
@@ -340,12 +533,8 @@ class ProductIntegrityService {
       if (m.systemId.isNotEmpty) sysMap[m.systemId.trim().toUpperCase()] = i;
       final cName = cleanString(m.name);
       final cPack = cleanString(m.packing);
-      if (cName.isNotEmpty && cPack.isNotEmpty) {
-        compMap["${cName}_$cPack"] = i;
-      }
-      if (cName.isNotEmpty && !nameMap.containsKey(cName)) {
-        nameMap[cName] = i;
-      }
+      if (cName.isNotEmpty && cPack.isNotEmpty) compMap["${cName}_$cPack"] = i;
+      if (cName.isNotEmpty && !nameMap.containsKey(cName)) nameMap[cName] = i;
     }
 
     for (var it in items) {
@@ -371,6 +560,9 @@ class ProductIntegrityService {
         if (it.medicineID != existingMed.id) {
           it.medicineID = existingMed.id;
         }
+
+        final compKey = MedicineSyncModule.getCompositeKey(name: existingMed.name, packing: existingMed.packing, company: existingMed.companyId);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(existingMed.id, existingMed.systemId, compKey);
 
         bool enriched = false;
         if ((existingMed.hsnCode == "N/A" || existingMed.hsnCode.isEmpty) && it.hsn.isNotEmpty && it.hsn != "N/A") {
@@ -404,14 +596,14 @@ class ProductIntegrityService {
         final String newId = (itMedId.isNotEmpty && itMedId != "0" && itMedId != "temp")
             ? itMedId
             : "MED-$nowTs-${medicines.length + 1}";
-        final String newSysId = "PH-${10000 + medicines.length + 1}";
+        final String newSysId = generateNextSystemId(medicines);
 
         final newMed = Medicine(
           id: newId,
           systemId: newSysId,
-          name: it.name.trim(),
-          packing: it.packing.trim().isNotEmpty ? it.packing.trim() : "1*1",
-          hsnCode: it.hsn.trim().isNotEmpty ? it.hsn.trim() : "N/A",
+          name: it.name.trim().toUpperCase(),
+          packing: it.packing.trim().isNotEmpty ? it.packing.trim().toUpperCase() : "1*1",
+          hsnCode: it.hsn.trim().isNotEmpty ? it.hsn.trim().toUpperCase() : "3004",
           gst: it.gstRate > 0 ? it.gstRate : 12.0,
           mrp: it.mrp > 0 ? it.mrp : 0.0,
           rateA: it.rateA > 0 ? it.rateA : (it.mrp > 0 ? it.mrp : 0.0),
@@ -432,6 +624,9 @@ class ProductIntegrityService {
         if (cleanPack.isNotEmpty) compMap["${cleanName}_$cleanPack"] = newIdx;
         if (!nameMap.containsKey(cleanName)) nameMap[cleanName] = newIdx;
 
+        final compKey = MedicineSyncModule.getCompositeKey(name: newMed.name, packing: newMed.packing, company: newMed.companyId);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(newMed.id, newMed.systemId, compKey);
+
         onMedicineSaved(newMed);
         mutatedCount++;
       }
@@ -450,6 +645,7 @@ class ProductIntegrityService {
     required String storeToken,
     required void Function(Medicine) onMedicineSaved,
   }) {
+    deduplicateMedicineList(medicines);
     int harvested = 0;
     for (var s in sales) {
       if (s.isDeleted == 1) continue;
@@ -491,6 +687,7 @@ class ProductIntegrityService {
         sourceTag: "PURCHASE_CHALLAN",
       );
     }
+    deduplicateMedicineList(medicines);
     return harvested;
   }
 }

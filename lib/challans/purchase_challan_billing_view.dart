@@ -1,3 +1,4 @@
+import '../logic/product_integrity_service.dart';
 // FILE: lib/challans/purchase_challan_billing_view.dart
 
 import 'package:flutter/material.dart';
@@ -61,7 +62,17 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
     Medicine? selectedMed;
     if (itemToEdit != null) {
       try {
-        selectedMed = ph.medicines.firstWhere((m) => m.id == itemToEdit.medicineID);
+        selectedMed = ProductIntegrityService.resolveMedicineForPurchaseItem(
+          medicines: ph.medicines,
+          medicineID: itemToEdit.medicineID,
+          name: itemToEdit.name,
+          packing: itemToEdit.packing,
+          hsn: itemToEdit.hsn,
+          gst: itemToEdit.gstRate,
+          mrp: itemToEdit.mrp,
+          rateA: itemToEdit.rateA,
+          purchaseRate: itemToEdit.purchaseRate,
+        );
       } catch (e) { selectedMed = null; }
     }
 

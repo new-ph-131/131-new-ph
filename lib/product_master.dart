@@ -1,3 +1,4 @@
+import 'logic/product_integrity_service.dart';
 // FILE: lib/product_master.dart (UPDATED VERSION)
 
 import 'package:flutter/material.dart';
