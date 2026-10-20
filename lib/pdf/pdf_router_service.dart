@@ -36,35 +36,50 @@ import '../gst_report_service.dart';
 class PdfRouterService {
   
   // ===========================================================================
-  // 1. HELPER: PARTY FINDER
+  // 1. HELPER: PARTY FINDER (MASTER-FIRST PRIORITY #PH-REV-735)
   // ===========================================================================
   static Party _getLatestParty(PharoahManager ph, String partyId, String partyName, {String gst = "", String state = "Rajasthan"}) {
+    String cleanPId = partyId.trim();
+    String cleanN = partyName.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase();
+    String cleanG = gst.trim().toUpperCase();
+
+    // 1. Match by Immutable ID
     try {
-      return ph.parties.firstWhere((p) => p.id == partyId || p.name == partyName);
-    } catch (e) {
-      try {
-        return ph.parties.firstWhere((p) => p.name.toUpperCase() == partyName.toUpperCase());
-      } catch (e) {
-        return Party(id: 'temp', name: partyName, gst: gst, state: state);
+      if (cleanPId.isNotEmpty && cleanPId != '0' && cleanPId != 'temp') {
+        return ph.parties.firstWhere((p) => p.id.trim() == cleanPId);
       }
-    }
+    } catch (_) {}
+
+    // 2. Match by Clean GSTIN
+    try {
+      if (cleanG.isNotEmpty && cleanG != 'N/A') {
+        return ph.parties.firstWhere((p) => p.gst.trim().toUpperCase() == cleanG);
+      }
+    } catch (_) {}
+
+    // 3. Match by Normalized Name
+    try {
+      return ph.parties.firstWhere((p) => p.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase() == cleanN && cleanN.isNotEmpty);
+    } catch (_) {}
+
+    return Party(id: cleanPId.isNotEmpty ? cleanPId : 'temp', name: partyName, gst: gst, state: state);
   }
 
   // ===========================================================================
-  // 2. PUBLIC PRINT METHODS (FIXED: Added Back)
-  // ===========================================================================
-  
+  // 2. PUBLIC PRINT METHODS (MASTER-FIRST LIVE LOOKUP GUARANTEE)
+  // ===========================================================================  
   static Future<void> printVoucher({required Voucher voucher, required Party party, required PharoahManager ph}) async {
     if (ph.activeCompany == null) return;
+    final latestParty = _getLatestParty(ph, voucher.partyId.isNotEmpty ? voucher.partyId : party.id, voucher.partyName.isNotEmpty ? voucher.partyName : party.name);
     if (ph.config.printFormat == "Thermal") {
-      await UniversalThermalEngine.generate(doc: voucher, party: party, ph: ph, type: "VOUCHER");
+      await UniversalThermalEngine.generate(doc: voucher, party: latestParty, ph: ph, type: "VOUCHER");
     } else {
-      await VoucherPdf.generate(voucher, party, ph.activeCompany!, ph);
+      await VoucherPdf.generate(voucher, latestParty, ph.activeCompany!, ph);
     }
   }
 
   static Future<void> printSale({required Sale sale, required Party party, required PharoahManager ph}) async {
-    final latestParty = _getLatestParty(ph, sale.partyId, sale.partyName, gst: sale.partyGstin, state: sale.partyState);
+    final latestParty = _getLatestParty(ph, sale.partyId.isNotEmpty ? sale.partyId : party.id, sale.partyName.isNotEmpty ? sale.partyName : party.name, gst: sale.partyGstin, state: sale.partyState);
     if (ph.config.printFormat == "Thermal") {
       await UniversalThermalEngine.generate(doc: sale, party: latestParty, ph: ph, type: "SALE");
     } else {
@@ -77,33 +92,37 @@ class PdfRouterService {
   }
 
   static Future<void> printPurchase({required Purchase purchase, required Party supplier, required PharoahManager ph}) async {
+    final latestParty = _getLatestParty(ph, purchase.partyId.isNotEmpty ? purchase.partyId : supplier.id, purchase.distributorName.isNotEmpty ? purchase.distributorName : supplier.name);
     if (ph.config.printFormat == "Thermal") {
-      await UniversalThermalEngine.generate(doc: purchase, party: supplier, ph: ph, type: "PURCHASE");
+      await UniversalThermalEngine.generate(doc: purchase, party: latestParty, ph: ph, type: "PURCHASE");
     } else {
-      await PurchasePdf.generate(purchase, supplier, ph.activeCompany!);
+      await PurchasePdf.generate(purchase, latestParty, ph.activeCompany!);
     }
   }
 
   static Future<void> printChallan({required dynamic challan, required Party party, required PharoahManager ph, required bool isSaleChallan}) async {
+    final String pId = (challan.partyId ?? party.id).toString();
+    final String pName = isSaleChallan ? (challan.partyName ?? party.name).toString() : (challan.distributorName ?? party.name).toString();
+    final latestParty = _getLatestParty(ph, pId, pName);
     if (ph.config.printFormat == "Thermal") {
-      await UniversalThermalEngine.generate(doc: challan, party: party, ph: ph, type: "CHALLAN");
+      await UniversalThermalEngine.generate(doc: challan, party: latestParty, ph: ph, type: "CHALLAN");
     } else {
-      if (isSaleChallan) await SaleChallanPdf.generate(challan, party, ph.activeCompany!);
-      else await PurchaseChallanPdf.generate(challan, party, ph.activeCompany!);
+      if (isSaleChallan) await SaleChallanPdf.generate(challan, latestParty, ph.activeCompany!);
+      else await PurchaseChallanPdf.generate(challan, latestParty, ph.activeCompany!);
     }
   }
 
   static Future<void> printCreditNote({required SaleReturn returnObj, required Party party, required PharoahManager ph}) async {
-    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: party, ph: ph, type: "RETURN");
-    else await CreditNotePdf.generate(returnObj, party, ph.activeCompany!, ph.config);
+    final latestParty = _getLatestParty(ph, returnObj.partyId.isNotEmpty ? returnObj.partyId : party.id, returnObj.partyName.isNotEmpty ? returnObj.partyName : party.name);
+    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: latestParty, ph: ph, type: "RETURN");
+    else await CreditNotePdf.generate(returnObj, latestParty, ph.activeCompany!, ph.config);
   }
 
   static Future<void> printDebitNote({required PurchaseReturn returnObj, required Party supplier, required PharoahManager ph}) async {
-    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: supplier, ph: ph, type: "RETURN");
-    else await DebitNotePdf.generate(returnObj, supplier, ph.activeCompany!, ph.config);
+    final latestParty = _getLatestParty(ph, returnObj.partyId.isNotEmpty ? returnObj.partyId : supplier.id, returnObj.distributorName.isNotEmpty ? returnObj.distributorName : supplier.name);
+    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: latestParty, ph: ph, type: "RETURN");
+    else await DebitNotePdf.generate(returnObj, latestParty, ph.activeCompany!, ph.config);
   }
-
- // FILE: lib/pdf/pdf_router_service.dart
 
   // ===========================================================================
   // 📧 MASTER EMAIL DISPATCHER (FINAL UPDATED LOGIC)

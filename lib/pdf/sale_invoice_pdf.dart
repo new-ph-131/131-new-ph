@@ -25,7 +25,7 @@ class SaleInvoicePdf {
     const double masterWidth = 800; // Perfect 800pt width
     const int itemsPerPage = 20; 
     int totalPages = (sale.items.length / itemsPerPage).ceil();
-    bool isLocal = shop.state.trim().toLowerCase() == sale.partyState.trim().toLowerCase();
+    bool isLocal = shop.state.trim().toLowerCase() == (party.state.isNotEmpty ? party.state : sale.partyState).trim().toLowerCase();
 
     String fmt(double val) => val == val.toInt() ? val.toInt().toString() : val.toStringAsFixed(2);
 
@@ -64,10 +64,10 @@ class SaleInvoicePdf {
                 // Box 3: Party Details (Width: 345)
                 _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text("CONSIGNEE:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                  pw.Text(sale.partyName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                  pw.Text("${sale.partyAddress}, ${sale.partyCity}", style: pw.TextStyle(fontSize: 7.5), maxLines: 2),
-                  pw.Text("GST: ${sale.partyGstin} | DL: ${sale.partyDl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  pw.Text("Mob: ${sale.partyPhone} | Email: ${sale.partyEmail}", style: pw.TextStyle(fontSize: 7)),
+                  pw.Text(party.name.isNotEmpty ? party.name : sale.partyName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                  pw.Text("${(party.address.isNotEmpty && party.address != 'N/A') ? party.address : sale.partyAddress}, ${party.city.isNotEmpty ? party.city : sale.partyCity}", style: pw.TextStyle(fontSize: 7.5), maxLines: 2),
+                  pw.Text("GST: ${(party.gst.isNotEmpty && party.gst != 'N/A') ? party.gst : sale.partyGstin} | DL: ${(party.dl.isNotEmpty && party.dl != 'N/A') ? party.dl : sale.partyDl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                  pw.Text("Mob: ${party.phone.isNotEmpty ? party.phone : sale.partyPhone}${party.email.isNotEmpty ? ' | Email: ${party.email.toLowerCase()}' : (sale.partyEmail.isNotEmpty ? ' | Email: ${sale.partyEmail.toLowerCase()}' : '')}", style: pw.TextStyle(fontSize: 7)),
                 ])),
               ]),
 

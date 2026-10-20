@@ -34,7 +34,7 @@ class WebPdfRouterService {
     
     int totalPages = (sale.items.length / itemsPerPage).ceil(); 
     if (totalPages == 0) totalPages = 1;
-    bool isLocal = shop.state.trim().toLowerCase() == sale.partyState.trim().toLowerCase();
+    bool isLocal = shop.state.trim().toLowerCase() == (party.state.isNotEmpty ? party.state : sale.partyState).trim().toLowerCase();
 
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
@@ -86,10 +86,10 @@ class WebPdfRouterService {
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
                               pw.Text("CONSIGNEE:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
-                              pw.Text(sale.partyName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                              pw.Text("${sale.partyAddress.isNotEmpty ? sale.partyAddress : party.address}, ${sale.partyCity.isNotEmpty ? sale.partyCity : party.city}", style: pw.TextStyle(fontSize: 7.5), maxLines: 2),
-                              pw.Text("GST: ${sale.partyGstin} | DL: ${sale.partyDl.isNotEmpty ? sale.partyDl : party.dl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${sale.partyPhone.isNotEmpty ? sale.partyPhone : party.phone}", style: pw.TextStyle(fontSize: 7)),
+                              pw.Text(party.name.isNotEmpty ? party.name : sale.partyName, style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text("${(party.address.isNotEmpty && party.address != 'N/A') ? party.address : sale.partyAddress}, ${party.city.isNotEmpty ? party.city : sale.partyCity}", style: pw.TextStyle(fontSize: 7.5), maxLines: 2),
+                              pw.Text("GST: ${(party.gst.isNotEmpty && party.gst != 'N/A') ? party.gst : sale.partyGstin} | DL: ${(party.dl.isNotEmpty && party.dl != 'N/A') ? party.dl : sale.partyDl}", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("Mob: ${party.phone.isNotEmpty ? party.phone : sale.partyPhone}${party.email.isNotEmpty ? ' | Email: ${party.email.toLowerCase()}' : (sale.partyEmail.isNotEmpty ? ' | Email: ${sale.partyEmail.toLowerCase()}' : '')}", style: pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),

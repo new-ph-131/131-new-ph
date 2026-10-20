@@ -86,8 +86,10 @@ class UniversalThermalEngine {
     return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
       pw.Text(label, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
       pw.Text(p.name.toUpperCase(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-      pw.Text("${p.city} | GST: ${p.gst}", style: pw.TextStyle(fontSize: 7.5)),
+      if (p.address.isNotEmpty && p.address != "N/A") pw.Text(p.address.toUpperCase(), style: pw.TextStyle(fontSize: 7)),
+      pw.Text("${p.city.isNotEmpty ? '${p.city} | ' : ''}GST: ${p.gst}", style: pw.TextStyle(fontSize: 7.5)),
       if (p.dl.isNotEmpty && p.dl != "N/A") pw.Text("DL No: ${p.dl}", style: pw.TextStyle(fontSize: 7)),
+      if (p.phone.isNotEmpty) pw.Text("Mob: ${p.phone}", style: pw.TextStyle(fontSize: 7)),
     ]);
   }
 
