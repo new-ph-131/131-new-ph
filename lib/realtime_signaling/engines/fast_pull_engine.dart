@@ -1,3 +1,4 @@
+import "../../logic/master_cascade_service.dart";
 import "../../logic/product_integrity_service.dart";
 import "../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/realtime_signaling/engines/fast_pull_engine.dart
@@ -343,6 +344,29 @@ class FastPullEngine {
           storeToken: storeToken,
           onMedicineSaved: (m) => ph.saveOrUpdateMedicine(m),
         );
+        for (final m in ph.medicines) {
+          MasterCascadeService.cascadeProductUpdate(
+            updatedMed: m,
+            sales: ph.sales,
+            purchases: ph.purchases,
+            saleChallans: ph.saleChallans,
+            purchaseChallans: ph.purchaseChallans,
+            saleReturns: ph.saleReturns,
+            purchaseReturns: ph.purchaseReturns,
+          );
+        }
+        for (final p in ph.parties) {
+          MasterCascadeService.cascadePartyUpdate(
+            updatedParty: p,
+            sales: ph.sales,
+            purchases: ph.purchases,
+            saleChallans: ph.saleChallans,
+            purchaseChallans: ph.purchaseChallans,
+            saleReturns: ph.saleReturns,
+            purchaseReturns: ph.purchaseReturns,
+            vouchers: ph.vouchers,
+          );
+        }
         // Rebuild stock & batches
         InventoryLogicCenter.rebuildAllInventory(
           medicines: ph.medicines,

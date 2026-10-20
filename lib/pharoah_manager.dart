@@ -1,3 +1,4 @@
+import 'logic/master_cascade_service.dart';
 import 'logic/product_integrity_service.dart';
 import 'logic/party_integrity_service.dart';
 import 'sync_core/modules/party_sync_module.dart';
@@ -1945,6 +1946,16 @@ void registerBatchActivity({
 
   void saveOrUpdateParty(Party party) {
     PartySyncModule.registerPartyActivity(ph: this, updatedParty: party);
+    MasterCascadeService.cascadePartyUpdate(
+      updatedParty: party,
+      sales: sales,
+      purchases: purchases,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      vouchers: vouchers,
+    );
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
         if (t.isNotEmpty) {

@@ -8,7 +8,7 @@ import "../models/sync_envelope.dart";
 import "../outbox/sync_queue_manager.dart";
 import "../d1_sales_ledger_service.dart";
 
-/// 🛡️ ITEM / PRODUCT MASTER SYNC MODULE (#PH-REV-738)
+/// 🛡️ ITEM / PRODUCT MASTER SYNC MODULE (#PH-REV-739)
 /// Handles 360-degree all-field mirroring, LWW monotonic versioning,
 /// 4-tier deduplication (ID -> SystemId -> UniqueCode/Barcode -> Composite Name+Pack+Mfg),
 /// D1 Outbox integration, and Tombstone deletion shielding across App & Web.
@@ -67,8 +67,12 @@ class MedicineSyncModule {
 
     // Check Permanent Tombstones
     if (D1SalesLedgerService.isBillDeleted(id, systemId, compKey)) {
-      localMedList.removeWhere((m) => m.id == id || (systemId.isNotEmpty && m.systemId == systemId));
-      return true;
+      if (!isDel) {
+        D1SalesLedgerService.unmarkPermanentlyDeleted(id, systemId, compKey);
+      } else {
+        localMedList.removeWhere((m) => m.id == id || (systemId.isNotEmpty && m.systemId == systemId));
+        return true;
+      }
     }
 
     // 4-Tier Matching in local memory

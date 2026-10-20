@@ -1,3 +1,4 @@
+import "../logic/master_cascade_service.dart";
 import "../logic/product_integrity_service.dart";
 import '../sync_core/modules/party_sync_module.dart';
 import '../sync_core/modules/medicine_sync_module.dart';
@@ -1906,11 +1907,31 @@ class PharoahWebManager with ChangeNotifier {
       updatedParty.updatedAt = DateTime.now().millisecondsSinceEpoch;
       updatedParty.version = parties[idx].version + 1;
       parties[idx] = updatedParty;
+
+      D1SalesLedgerService.unmarkPermanentlyDeleted(updatedParty.id);
+      deletedRecordIds.remove(updatedParty.id);
+      _saveLocalTombstones();
+
+      MasterCascadeService.cascadePartyUpdate(
+        updatedParty: updatedParty,
+        sales: sales,
+        purchases: purchases,
+        saleChallans: saleChallans,
+        purchaseChallans: purchaseChallans,
+        saleReturns: saleReturns,
+        purchaseReturns: purchaseReturns,
+        vouchers: vouchers,
+      );
+
       notifyListeners();
       if (activeStoreToken.isNotEmpty) {
         PartySyncModule.onPartySaved(updatedParty, activeStoreToken);
       }
-      _autoSyncService.triggerAutoSync(action: 'PARTY_UPDATED', entityId: updatedParty.id);
+      _autoSyncService.triggerAutoSync(
+        action: 'PARTY_UPDATED',
+        entityId: updatedParty.id,
+        unmarkedIds: [updatedParty.id],
+      );
       pushUpdatedDataToCloud();
     } else {
       addParty(updatedParty);
@@ -2112,16 +2133,40 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void updateMedicine(Medicine updatedMed) {
-    int idx = medicines.indexWhere((m) => m.id == updatedMed.id);
+    int idx = medicines.indexWhere((m) => m.id == updatedMed.id || (updatedMed.systemId.isNotEmpty && m.systemId == updatedMed.systemId));
     if (idx != -1) {
+      updatedMed.id = medicines[idx].id;
+      if (updatedMed.systemId.isEmpty) updatedMed.systemId = medicines[idx].systemId;
       updatedMed.version = medicines[idx].version + 1;
       updatedMed.updatedAt = DateTime.now().millisecondsSinceEpoch;
       medicines[idx] = updatedMed;
+
+      final compKey = MedicineSyncModule.getCompositeKey(name: updatedMed.name, packing: updatedMed.packing, company: updatedMed.companyId);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(updatedMed.id, updatedMed.systemId, compKey);
+      deletedRecordIds.remove(updatedMed.id);
+      if (updatedMed.systemId.isNotEmpty) deletedRecordIds.remove(updatedMed.systemId);
+      deletedRecordIds.remove(compKey);
+      _saveLocalTombstones();
+
+      MasterCascadeService.cascadeProductUpdate(
+        updatedMed: updatedMed,
+        sales: sales,
+        purchases: purchases,
+        saleChallans: saleChallans,
+        purchaseChallans: purchaseChallans,
+        saleReturns: saleReturns,
+        purchaseReturns: purchaseReturns,
+      );
+
       notifyListeners();
       if (activeStoreToken.isNotEmpty) {
         MedicineSyncModule.onMedicineSaved(updatedMed, activeStoreToken);
       }
-      _autoSyncService.triggerAutoSync(action: 'MEDICINE_UPDATED', entityId: updatedMed.id);
+      _autoSyncService.triggerAutoSync(
+        action: 'MEDICINE_UPDATED',
+        entityId: updatedMed.id,
+        unmarkedIds: [updatedMed.id, if (updatedMed.systemId.isNotEmpty) updatedMed.systemId, compKey],
+      );
       pushUpdatedDataToCloud();
     }
   }
