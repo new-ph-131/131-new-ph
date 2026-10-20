@@ -25,6 +25,7 @@ import 'web_sync_engine.dart';
 import 'web_pharoah_numbering_engine.dart';
 import 'web_app_date_logic.dart';
 import 'web_cloud_config.dart';
+import 'sync_protocol/tombstone_engine.dart';
 import 'pharoah_auto_sync_service.dart';
 
 class PharoahWebManager with ChangeNotifier {
