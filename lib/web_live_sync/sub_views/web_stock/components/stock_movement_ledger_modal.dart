@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
-import '../../pharoah_web_manager.dart';
-import '../../web_models.dart';
+import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
+import 'package:pharoah_erp/web_live_sync/web_models.dart';
 import '../pdf/web_stock_analysis_pdf.dart';
 
 class StockMovementLedgerModal extends StatefulWidget {

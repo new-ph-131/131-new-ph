@@ -2,8 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../pharoah_web_manager.dart';
-import '../../web_models.dart';
+import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
+import 'package:pharoah_erp/web_live_sync/web_models.dart';
 
 class StockVendorRateComparatorModal extends StatelessWidget {
   final Medicine medicine;

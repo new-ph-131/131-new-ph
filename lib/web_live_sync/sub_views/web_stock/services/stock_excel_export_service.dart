@@ -5,8 +5,8 @@ import 'dart:typed_data';
 import 'package:csv/csv.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:intl/intl.dart';
-import '../../../web_models.dart';
-import '../../pharoah_web_manager.dart';
+import 'package:pharoah_erp/web_live_sync/web_models.dart';
+import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 
 class StockExcelExportService {
   static Future<void> exportStockCsv({

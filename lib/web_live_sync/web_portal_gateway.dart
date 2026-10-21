@@ -1,4 +1,4 @@
-import "sub_views/web_stock/web_stock_analysis_master_view.dart";
+import 'package:pharoah_erp/web_live_sync/sub_views/web_stock/web_stock_analysis_master_view.dart';
 import 'sub_views/web_data_exchange/ui/web_data_exchange_hub.dart';
 import 'sub_views/web_gst/web_gst_hub.dart';
 // FILE: lib/web_live_sync/web_portal_gateway.dart

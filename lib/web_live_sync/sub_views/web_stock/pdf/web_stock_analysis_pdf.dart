@@ -4,8 +4,8 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
-import '../../../web_models.dart';
-import '../../pharoah_web_manager.dart';
+import 'package:pharoah_erp/web_live_sync/web_models.dart';
+import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 
 class WebStockAnalysisPdf {
   // ===========================================================================
