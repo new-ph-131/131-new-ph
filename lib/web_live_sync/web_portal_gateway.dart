@@ -1,3 +1,4 @@
+import "sub_views/web_stock/web_stock_analysis_master_view.dart";
 import 'sub_views/web_data_exchange/ui/web_data_exchange_hub.dart';
 import 'sub_views/web_gst/web_gst_hub.dart';
 // FILE: lib/web_live_sync/web_portal_gateway.dart
@@ -236,7 +237,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebShortageRegisterView(onBack: () => _navigateToHub("INVENTORY", "STOCK & ANALYTICS"));
     }
     if (currentView == "GO_STOCK" || currentView == "GO_ITEM_LEDGER" || currentView == "GO_DUMP") {
-      return WebProductMasterView(onBack: () => _navigateToHub("INVENTORY", "STOCK & ANALYTICS"));
+      return WebStockAnalysisMasterView(onBack: () => _navigateToHub("INVENTORY", "STOCK & ANALYTICS"), initialViewKey: currentView);
     }
 
     // --- MASTERS ---
