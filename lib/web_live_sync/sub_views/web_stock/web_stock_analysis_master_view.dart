@@ -1,3 +1,4 @@
+// Responsive layout updated
 // FILE: lib/web_live_sync/sub_views/web_stock/web_stock_analysis_master_view.dart
 
 import 'package:flutter/material.dart';
