@@ -1,3 +1,4 @@
+import 'package:provider/provider.dart';
 // FILE: lib/web_live_sync/sub_views/web_stock/components/stock_vendor_rate_comparator_modal.dart
 
 import 'package:flutter/material.dart';
@@ -17,7 +18,7 @@ class StockVendorRateComparatorModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final webPh = context.read<PharoahWebManager>();
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
     final cleanMedName = medicine.name.trim().toUpperCase();
 
     // 1. Gather all purchases matching this medicine

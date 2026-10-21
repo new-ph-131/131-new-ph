@@ -1,3 +1,4 @@
+import 'package:provider/provider.dart';
 // FILE: lib/web_live_sync/sub_views/web_stock/components/stock_movement_ledger_modal.dart
 
 import 'package:flutter/material.dart';
@@ -28,7 +29,7 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
 
   @override
   Widget build(BuildContext context) {
-    final webPh = context.read<PharoahWebManager>();
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
     final cleanMedName = widget.medicine.name.trim().toUpperCase();
     final medId = widget.medicine.id;
     final sysId = widget.medicine.systemId;

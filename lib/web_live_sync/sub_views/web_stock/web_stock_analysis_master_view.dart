@@ -145,7 +145,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
 
   @override
   Widget build(BuildContext context) {
-    final webPh = context.watch<PharoahWebManager>();
+    final webPh = Provider.of<PharoahWebManager>(context);
 
     // If user clicked into batch traceability view
     if (_batchTraceabilityMed != null) {
