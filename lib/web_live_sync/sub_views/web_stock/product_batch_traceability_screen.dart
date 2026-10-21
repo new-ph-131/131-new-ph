@@ -1,3 +1,4 @@
+import 'dart:ui' show PointerDeviceKind;
 // FILE: lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
 // Live Revision: #PH-REV-740 (ADVANCED-STOCK-TRACEABILITY-AND-BATCH-LEDGER)
 
@@ -181,8 +182,22 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: SingleChildScrollView(
-                          child: DataTable(
+                        child: ScrollConfiguration(
+                          behavior: const MaterialScrollBehavior().copyWith(
+                            dragDevices: {
+                              PointerDeviceKind.mouse,
+                              PointerDeviceKind.touch,
+                              PointerDeviceKind.stylus,
+                              PointerDeviceKind.trackpad,
+                            },
+                          ),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.vertical,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: DataTable(
                             headingRowColor: WidgetStateProperty.all(const Color(0xFF0F172A)),
                             dataRowMaxHeight: 55,
                             columns: const [

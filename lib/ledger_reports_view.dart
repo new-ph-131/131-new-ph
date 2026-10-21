@@ -92,27 +92,9 @@ class _LedgerReportsViewState extends State<LedgerReportsView> {
     );
   }
 
-  // --- BALANCE CALCULATION LOGIC ---
+  // --- BALANCE CALCULATION LOGIC (DOUBLE-ENTRY CASH VS CREDIT DECOUPLED #PH-REV-744) ---
   double _calculateBalance(PharoahManager ph, Party p) {
-    double total = p.opBal; // Starting with Opening Balance
-
-    // 1. Sales Add (Debit)
-    for (var s in ph.sales.where((s) => s.partyName == p.name && s.status == "Active")) {
-      total += s.totalAmount;
-    }
-    // 2. Purchases Subtract (Credit)
-    for (var pur in ph.purchases.where((pur) => pur.distributorName == p.name)) {
-      total -= pur.totalAmount;
-    }
-    // 3. Vouchers (Receipt/Payment)
-    // lib/ledger_reports_view.dart mein calculation line update karein:
-
-    // 3. Vouchers (Receipt/Payment)
-    for (var v in ph.vouchers.where((v) => v.partyName == p.name && v.status == "Active")) { // 👈 ADDED: && v.status == "Active"
-      if (v.type == "Receipt") total -= v.amount;
-      if (v.type == "Payment") total += v.amount;
-    }
-    return total;
+    return ph.calculatePartyBalance(p);
   }
 }
 

@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 // FILE: lib/web_live_sync/sub_views/web_stock/components/stock_movement_ledger_modal.dart
 
@@ -426,19 +428,49 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                           ],
                         ),
                       )
-                    : Scrollbar(
-                        controller: _ledgerVerticalScroll,
-                        thumbVisibility: true,
-                        child: SingleChildScrollView(
-                          controller: _ledgerVerticalScroll,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          child: SingleChildScrollView(
-                            controller: _ledgerHorizontalScroll,
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            child: SizedBox(
-                              width: 1000,
-                              child: Table(
+                    : ScrollConfiguration(
+                        behavior: const MaterialScrollBehavior().copyWith(
+                          dragDevices: {
+                            PointerDeviceKind.mouse,
+                            PointerDeviceKind.touch,
+                            PointerDeviceKind.stylus,
+                            PointerDeviceKind.trackpad,
+                          },
+                        ),
+                        child: Listener(
+                          onPointerSignal: (pointerSignal) {
+                            if (pointerSignal is PointerScrollEvent) {
+                              if (pointerSignal.scrollDelta.dy != 0 && _ledgerVerticalScroll.hasClients) {
+                                final double target = (_ledgerVerticalScroll.offset + pointerSignal.scrollDelta.dy)
+                                    .clamp(0.0, _ledgerVerticalScroll.position.maxScrollExtent);
+                                _ledgerVerticalScroll.jumpTo(target);
+                              } else if (pointerSignal.scrollDelta.dx != 0 && _ledgerHorizontalScroll.hasClients) {
+                                final double target = (_ledgerHorizontalScroll.offset + pointerSignal.scrollDelta.dx)
+                                    .clamp(0.0, _ledgerHorizontalScroll.position.maxScrollExtent);
+                                _ledgerHorizontalScroll.jumpTo(target);
+                              }
+                            }
+                          },
+                          child: Scrollbar(
+                            controller: _ledgerVerticalScroll,
+                            thumbVisibility: true,
+                            interactive: true,
+                            child: Scrollbar(
+                              controller: _ledgerHorizontalScroll,
+                              thumbVisibility: true,
+                              interactive: true,
+                              notificationPredicate: (notif) => notif.depth == 1,
+                              child: SingleChildScrollView(
+                                controller: _ledgerHorizontalScroll,
+                                scrollDirection: Axis.horizontal,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                child: SizedBox(
+                                  width: 1000,
+                                  child: SingleChildScrollView(
+                                    controller: _ledgerVerticalScroll,
+                                    scrollDirection: Axis.vertical,
+                                    physics: const AlwaysScrollableScrollPhysics(),
+                                    child: Table(
                           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                           columnWidths: const {
                             0: FlexColumnWidth(1.2), // Date
@@ -517,7 +549,10 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                                 ],
                               ),
                           ],
-                        ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),

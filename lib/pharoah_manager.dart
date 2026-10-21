@@ -1,3 +1,4 @@
+import 'logic/app_accounts_calculator.dart';
 import 'logic/master_cascade_service.dart';
 import 'logic/product_integrity_service.dart';
 import 'logic/party_integrity_service.dart';
@@ -1320,24 +1321,14 @@ void registerBatchActivity({
 
   
   List<BankTransaction> getBankStatement(String bankName, DateTime from, DateTime to) {
-    List<BankTransaction> list = [];
-    String bName = bankName.trim().toUpperCase();
-    for (var v in vouchers.where((v) => v.status == "Active" && v.depositedIn.trim().toUpperCase() == bName)) {
-      if (v.date.isAfter(from.subtract(const Duration(seconds: 1))) && v.date.isBefore(to.add(const Duration(days: 1)))) {
-        bool isRec = v.type.toUpperCase() == "RECEIPT";
-        list.add(BankTransaction(
-          id: v.id,
-          date: v.date,
-          particulars: v.partyName,
-          reference: v.voucherNo,
-          amountIn: isRec ? v.amount : 0.0,
-          amountOut: isRec ? 0.0 : v.amount,
-          type: v.type,
-        ));
-      }
-    }
-    list.sort((a, b) => a.date.compareTo(b.date));
-    return list;
+    return AppAccountsCalculator.getBankBookStatement(
+      bankName: bankName,
+      fromDate: from,
+      toDate: to,
+      sales: sales,
+      purchases: purchases,
+      vouchers: vouchers,
+    );
   }
 
   List<Party> getInternalAccounts() {
@@ -2264,78 +2255,63 @@ void registerBatchActivity({
   // 📊 ADVANCED STATEMENT ENGINE (FOR PARTY LEDGER & AUDIT)
   // ===========================================================================
 
+  
+  // ===========================================================================
+  // 🏛️ ENTERPRISE DOUBLE-ENTRY ACCOUNTS & DUAL-LEG ENGINE (#PH-REV-744)
+  // ===========================================================================
+  double calculatePartyBalance(Party p) {
+    return AppAccountsCalculator.calculatePartyBalance(
+      party: p,
+      sales: sales,
+      purchases: purchases,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      vouchers: vouchers,
+    );
+  }
+
+  double calculateCashInHandBalance() {
+    return AppAccountsCalculator.calculateCashInHandBalance(
+      sales: sales,
+      purchases: purchases,
+      vouchers: vouchers,
+      openingCash: 0.0,
+    );
+  }
+
+  List<Map<String, dynamic>> getCashBookStatement(DateTime from, DateTime to) {
+    return AppAccountsCalculator.getCashBookStatement(
+      fromDate: from,
+      toDate: to,
+      sales: sales,
+      purchases: purchases,
+      vouchers: vouchers,
+      openingCash: 0.0,
+    );
+  }
+
   List<Map<String, dynamic>> getPartyStatementData({
     required String partyId,
     required DateTime fromDate,
     required DateTime toDate,
   }) {
-    double runningBal = 0.0;
-    String pName = "";
-
     try {
-      final p = parties.firstWhere((element) => element.id == partyId);
-      runningBal = p.opBal;
-      pName = p.name;
-    } catch (e) { return []; }
-
-    List<Map<String, dynamic>> allTxns = [];
-
-    for (var s in sales.where((s) => s.partyId == partyId && s.status == "Active")) {
-      allTxns.add({'date': s.date, 'ref': s.billNo, 'type': 'SALE', 'dr': s.totalAmount, 'cr': 0.0, 'obj': s});
+      final p = parties.firstWhere(
+        (element) => element.id == partyId || element.name.trim().toUpperCase() == partyId.trim().toUpperCase(),
+      );
+      return AppAccountsCalculator.getPartyStatementData(
+        party: p,
+        fromDate: fromDate,
+        toDate: toDate,
+        sales: sales,
+        purchases: purchases,
+        saleReturns: saleReturns,
+        purchaseReturns: purchaseReturns,
+        vouchers: vouchers,
+      );
+    } catch (_) {
+      return [];
     }
-    for (var p in purchases.where((p) => p.partyId == partyId)) {
-      allTxns.add({'date': p.date, 'ref': p.billNo, 'type': 'PURCHASE', 'dr': 0.0, 'cr': p.totalAmount, 'obj': p});
-    }
-    for (var sr in saleReturns.where((r) => r.partyName == pName && r.status == "Active")) {
-      allTxns.add({'date': sr.date, 'ref': sr.billNo, 'type': 'CN', 'dr': 0.0, 'cr': sr.totalAmount, 'obj': sr});
-    }
-    for (var pr in purchaseReturns.where((r) => r.distributorName == pName && r.status == "Active")) {
-      allTxns.add({'date': pr.date, 'ref': pr.billNo, 'type': 'DN', 'dr': pr.totalAmount, 'cr': 0.0, 'obj': pr});
-    }
-    for (var v in vouchers.where((v) => v.partyId == partyId && v.status == "Active")) {
-      bool isPay = v.type.toUpperCase() == "PAYMENT";
-      allTxns.add({
-        'date': v.date, 'ref': v.voucherNo, 'type': v.type.toUpperCase(),
-        'dr': isPay ? v.amount : 0.0, 
-        'cr': isPay ? 0.0 : v.amount, 
-        'obj': v
-      });
-    }
-
-    allTxns.sort((a, b) => a['date'].compareTo(b['date']));
-
-    List<Map<String, dynamic>> filteredLedger = [];
-    double periodOpBal = runningBal;
-
-    for (var txn in allTxns) {
-      if (txn['date'].isBefore(fromDate)) {
-        periodOpBal += (txn['dr'] - txn['cr']);
-      } else if (txn['date'].isAfter(fromDate.subtract(const Duration(seconds: 1))) && 
-                 txn['date'].isBefore(toDate.add(const Duration(days: 1)))) {
-        filteredLedger.add(txn);
-      }
-    }
-
-    double currentRunning = periodOpBal;
-    List<Map<String, dynamic>> finalResult = [];
-    
-    finalResult.add({
-      'date': fromDate, 
-      'ref': 'B/F', 
-      'type': 'OPENING', 
-      'dr': 0.0,
-      'cr': 0.0,
-      'bal': periodOpBal, 
-      'particulars': 'Opening Balance B/F'
-    });
-
-    for (var txn in filteredLedger) {
-      currentRunning += (txn['dr'] - txn['cr']);
-      txn['bal'] = currentRunning;
-      finalResult.add(txn);
-    }
-
-    return finalResult;
   }
   // --- 🛡️ SILENT MAINTENANCE LOADERS (NEW) ---
   // Yeh system ko bina notify kiye (bina screen flash kiye) memory reload karne ki permission dete hain.

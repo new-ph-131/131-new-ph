@@ -1,3 +1,4 @@
+import 'dart:ui' show PointerDeviceKind;
 // FILE: lib/web_live_sync/web_ledger_view.dart
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,13 @@ class WebLedgerView extends StatefulWidget {
 }
 
 class _WebLedgerViewState extends State<WebLedgerView> {
+  final ScrollController _pageScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _pageScrollController.dispose();
+    super.dispose();
+  }
   Party? selectedParty;
   String searchQuery = "";
   String groupFilter = "ALL"; // ALL, DEBTORS, CREDITORS, DUE_ONLY
@@ -56,17 +64,36 @@ class _WebLedgerViewState extends State<WebLedgerView> {
     final webPh = Provider.of<PharoahWebManager>(context);
     final activeShop = CompanyProfile.fromMap(webPh.companyProfile);
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
+    return ScrollConfiguration(
+      behavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+        },
       ),
-      child: selectedParty == null
-          ? _buildPartyOverviewList(webPh)
-          : _buildSinglePartyStatement(webPh, activeShop),
+      child: Scrollbar(
+        controller: _pageScrollController,
+        thumbVisibility: true,
+        interactive: true,
+        child: SingleChildScrollView(
+          controller: _pageScrollController,
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: selectedParty == null
+                ? _buildPartyOverviewList(webPh)
+                : _buildSinglePartyStatement(webPh, activeShop),
+          ),
+        ),
+      ),
     );
   }
 

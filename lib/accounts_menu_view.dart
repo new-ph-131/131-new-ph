@@ -1,3 +1,4 @@
+import 'finance/cash_bank_book_view.dart';
 // FILE: lib/accounts_menu_view.dart
 
 import 'package:flutter/material.dart';
@@ -147,6 +148,15 @@ class AccountsMenuView extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            _reportCard(
+              context,
+              "Cash & Bank Books",
+              "Cash in Hand & Bank Registers",
+              Icons.account_balance_wallet_rounded,
+              Colors.teal.shade800,
+              const CashBankBookView(),
             ),
 
             const SizedBox(height: 25),

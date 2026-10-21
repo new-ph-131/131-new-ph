@@ -1,3 +1,4 @@
+import 'cash_bank_book_view.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../pharoah_manager.dart';
@@ -43,7 +44,8 @@ class StatementHubView extends StatelessWidget {
               mainAxisSpacing: 15,
               childAspectRatio: 1.1,
               children: [
-                _hubCard(context, "Party Ledger\nStatement", "Dr/Cr Audit", Icons.account_balance_wallet_rounded, Colors.indigo, const PartyLedgerStatementView()),
+                _hubCard(context, "Party Ledger\nStatement", "Dr/Cr Audit", Icons.people_alt_rounded, Colors.indigo, const PartyLedgerStatementView()),
+                _hubCard(context, "Cash & Bank\nBooks", "Cash/Bank Flow", Icons.account_balance_wallet_rounded, Colors.teal, const CashBankBookView()),
                 _hubCard(context, "Company Wise\nStock", "In-Out Flow", Icons.business_rounded, Colors.purple, const CompanyStockView()),
                 _hubCard(context, "Party Wise\nStock", "Sales Analysis", Icons.person_search_rounded, Colors.teal, const PartyWiseStockView()),
                 _hubCard(context, "Near Expiry\nStock", "Loss Prevention", Icons.event_busy_rounded, Colors.red, const CompanyExpiryAuditView()),

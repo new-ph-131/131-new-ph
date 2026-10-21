@@ -33,22 +33,43 @@ class _DaybookViewState extends State<DaybookView> {
     // --- TRANSACTION AGGREGATION LOGIC (Purana Logic preserved 100%) ---
     List<Map<String, dynamic>> allEntries = [];
 
-    // 1. Sales
+    // 1. Sales (Cash vs Credit Tagged #PH-REV-744)
     for (var s in ph.sales.where((s) => _isSameDay(s.date, selectedDate) && s.status == "Active")) {
-      allEntries.add({'time': s.date, 'type': 'SALE', 'party': s.partyName, 'ref': 'Bill #${s.billNo}', 'amount': s.totalAmount, 'isIn': true});
+      final isCash = s.paymentMode.trim().toUpperCase() == "CASH";
+      allEntries.add({
+        'time': s.date,
+        'type': isCash ? 'SALE (CASH)' : 'SALE (CREDIT)',
+        'party': s.partyName,
+        'ref': 'Bill #${s.billNo}',
+        'amount': s.totalAmount,
+        'isIn': true,
+        'isCash': isCash,
+      });
     }
-
     // 2. Purchases
     for (var p in ph.purchases.where((p) => _isSameDay(p.date, selectedDate))) {
-      allEntries.add({'time': p.date, 'type': 'PURCHASE', 'party': p.distributorName, 'ref': 'Bill #${p.billNo}', 'amount': p.totalAmount, 'isIn': false});
-    }
-
-    // 3. Vouchers (Receipt, Payment, Contra, Expense)
-    for (var v in ph.vouchers.where((v) => _isSameDay(v.date, selectedDate))) {
+      final isCash = p.paymentMode.trim().toUpperCase() == "CASH";
       allEntries.add({
-        'time': v.date, 'type': v.type.toUpperCase(), 'party': v.partyName, 
-        'ref': v.paymentMode, 'amount': v.amount, 
-        'isIn': v.type == 'Receipt' || v.type == 'Contra'
+        'time': p.date,
+        'type': isCash ? 'PURCHASE (CASH)' : 'PURCHASE (CREDIT)',
+        'party': p.distributorName,
+        'ref': 'Bill #${p.billNo}',
+        'amount': p.totalAmount,
+        'isIn': false,
+        'isCash': isCash,
+      });
+    }
+    // 3. Vouchers (Receipt, Payment, Contra, Expense - Case-Insensitive #PH-REV-744)
+    for (var v in ph.vouchers.where((v) => _isSameDay(v.date, selectedDate) && v.status == "Active")) {
+      final vType = v.type.trim().toUpperCase();
+      final isRec = vType == "RECEIPT" || vType == "CONTRA";
+      allEntries.add({
+        'time': v.date,
+        'type': vType,
+        'party': v.partyName,
+        'ref': "${v.paymentMode}${v.voucherNo.isNotEmpty ? ' #' + v.voucherNo : ''}",
+        'amount': v.amount,
+        'isIn': isRec,
       });
     }
 
