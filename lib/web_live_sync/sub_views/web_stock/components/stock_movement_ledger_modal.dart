@@ -455,21 +455,21 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                             controller: _ledgerVerticalScroll,
                             thumbVisibility: true,
                             interactive: true,
-                            child: Scrollbar(
-                              controller: _ledgerHorizontalScroll,
-                              thumbVisibility: true,
-                              interactive: true,
-                              notificationPredicate: (notif) => notif.depth == 1,
-                              child: SingleChildScrollView(
+                            child: SingleChildScrollView(
+                              controller: _ledgerVerticalScroll,
+                              scrollDirection: Axis.vertical,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: Scrollbar(
                                 controller: _ledgerHorizontalScroll,
-                                scrollDirection: Axis.horizontal,
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                child: SizedBox(
-                                  width: 1000,
-                                  child: SingleChildScrollView(
-                                    controller: _ledgerVerticalScroll,
-                                    scrollDirection: Axis.vertical,
-                                    physics: const AlwaysScrollableScrollPhysics(),
+                                thumbVisibility: true,
+                                interactive: true,
+                                notificationPredicate: (notif) => notif.depth == 0,
+                                child: SingleChildScrollView(
+                                  controller: _ledgerHorizontalScroll,
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  child: SizedBox(
+                                    width: 1000,
                                     child: Table(
                           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                           columnWidths: const {

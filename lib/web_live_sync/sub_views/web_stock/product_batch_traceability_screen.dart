@@ -1,6 +1,6 @@
 import 'dart:ui' show PointerDeviceKind;
 // FILE: lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
-// Live Revision: #PH-REV-740 (ADVANCED-STOCK-TRACEABILITY-AND-BATCH-LEDGER)
+// Live Revision: #PH-REV-745 (ADVANCED-STOCK-TRACEABILITY-AND-BATCH-LEDGER)
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -192,10 +192,10 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                             },
                           ),
                           child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
+                            scrollDirection: Axis.vertical,
                             physics: const AlwaysScrollableScrollPhysics(),
                             child: SingleChildScrollView(
-                              scrollDirection: Axis.vertical,
+                              scrollDirection: Axis.horizontal,
                               physics: const AlwaysScrollableScrollPhysics(),
                               child: DataTable(
                             headingRowColor: WidgetStateProperty.all(const Color(0xFF0F172A)),
@@ -261,6 +261,8 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                                 ],
                               );
                             }).toList(),
+                              ),
+                            ),
                           ),
                         ),
                       ),
