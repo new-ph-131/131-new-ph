@@ -139,9 +139,15 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
               onClearAll: _clearAllRecents,
             ),
 
+          // Full-screen workbenches (GO_SALE, GO_STOCK, GO_ITEM_LEDGER, GO_DUMP)
+          // bypass outer SingleChildScrollView to guarantee finite bounded viewport height
+          // and prevent RenderFlex infinite height exceptions (#PH-REV-742)
           Expanded(
-            child: currentView == "GO_SALE"
-                ? WebNewSaleView(onBack: () => _navigateToHub("BILLING", "BILLING & SALES"))
+            child: (currentView == "GO_SALE" ||
+                    currentView == "GO_STOCK" ||
+                    currentView == "GO_ITEM_LEDGER" ||
+                    currentView == "GO_DUMP")
+                ? _buildCurrentView(webPh)
                 : SingleChildScrollView(
                     padding: EdgeInsets.symmetric(
                       horizontal: screenWidth > 600 ? 18.0 : 10.0,

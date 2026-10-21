@@ -1,4 +1,4 @@
-// Responsive layout updated
+// Responsive layout updated for #PH-REV-742
 // FILE: lib/web_live_sync/sub_views/web_stock/web_stock_analysis_master_view.dart
 
 import 'package:flutter/material.dart';
@@ -38,12 +38,15 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
   String _searchQuery = "";
   String _selectedCompany = "ALL"; // "ALL" or specific company name/id
   String _activeFilter = "ALL"; // ALL, IN_STOCK, ZERO_STOCK, LOW_STOCK, HIKE_ALERT, EXPIRING
-  
+
   StockColumnId _sortColumn = StockColumnId.name;
   bool _isAscending = true;
   FreezePaneOption _freezeOption = FreezePaneOption.idAndName;
 
   Medicine? _batchTraceabilityMed;
+
+  // Sync scroll guard to prevent event loop
+  bool _isSyncing = false;
 
   // Column definitions with initial defaults
   late Map<StockColumnId, StockColumnDef> _columnDefs;
@@ -53,17 +56,24 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
     super.initState();
     _initColumns();
 
-    // Link vertical scrolling between frozen and non-frozen panes
+    // Link vertical scrolling between frozen and non-frozen panes without recursion loop
     _scrollableVerticalScroll.addListener(() {
-      if (_frozenVerticalScroll.hasClients &&
-          _frozenVerticalScroll.offset != _scrollableVerticalScroll.offset) {
-        _frozenVerticalScroll.jumpTo(_scrollableVerticalScroll.offset);
+      if (!_isSyncing && _frozenVerticalScroll.hasClients) {
+        if ((_frozenVerticalScroll.offset - _scrollableVerticalScroll.offset).abs() > 0.5) {
+          _isSyncing = true;
+          _frozenVerticalScroll.jumpTo(_scrollableVerticalScroll.offset);
+          _isSyncing = false;
+        }
       }
     });
+
     _frozenVerticalScroll.addListener(() {
-      if (_scrollableVerticalScroll.hasClients &&
-          _scrollableVerticalScroll.offset != _frozenVerticalScroll.offset) {
-        _scrollableVerticalScroll.jumpTo(_frozenVerticalScroll.offset);
+      if (!_isSyncing && _scrollableVerticalScroll.hasClients) {
+        if ((_scrollableVerticalScroll.offset - _frozenVerticalScroll.offset).abs() > 0.5) {
+          _isSyncing = true;
+          _scrollableVerticalScroll.jumpTo(_frozenVerticalScroll.offset);
+          _isSyncing = false;
+        }
       }
     });
   }
@@ -97,6 +107,16 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
     _scrollableVerticalScroll.dispose();
     _horizontalScroll.dispose();
     super.dispose();
+  }
+
+  double _effectiveColWidth(StockColumnId id, bool isPortrait) {
+    final baseWidth = _columnDefs[id]?.width ?? 80.0;
+    if (isPortrait) {
+      if (id == StockColumnId.srNo) return 40.0;
+      if (id == StockColumnId.systemId) return 80.0;
+      if (id == StockColumnId.name) return 160.0;
+    }
+    return baseWidth;
   }
 
   String _resolveCompanyName(PharoahWebManager webPh, String companyId) {
@@ -147,6 +167,8 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait || screenWidth < 900;
 
     // If user clicked into batch traceability view
     if (_batchTraceabilityMed != null) {
@@ -266,275 +288,41 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
         .where((k) => !frozenColKeys.contains(k) && (_columnDefs[k]?.isVisible ?? true))
         .toList();
 
-    double frozenPaneWidth = visibleFrozenCols.fold(0.0, (w, k) => w + (_columnDefs[k]?.width ?? 80.0));
-    double scrollablePaneWidth = visibleScrollableCols.fold(0.0, (w, k) => w + (_columnDefs[k]?.width ?? 80.0));
+    double frozenPaneWidth = visibleFrozenCols.fold(0.0, (w, k) => w + _effectiveColWidth(k, isPortrait));
+    double scrollablePaneWidth = visibleScrollableCols.fold(0.0, (w, k) => w + _effectiveColWidth(k, isPortrait));
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0F1D),
       body: Column(
         children: [
-          // 🏆 TOP BRAND BAR & AUDIT METRICS BANNER
+          // 🏆 TOP BRAND BAR & AUDIT METRICS BANNER (RESPONSIVE)
+          _buildTopBanner(filteredList, totalStockUnits, totalPurVal, totalMrpVal, marginPct, isPortrait),
+
+          // 🎛️ CONTROL TOOLBAR (COMPANY FILTER, SEARCH, FREEZE, COLUMNS, EXPORT) (RESPONSIVE)
+          _buildControlToolbar(companyDisplayMap, filteredList, webPh, isPortrait),
+
+          // 🏷️ FILTER CHIPS STRIP (HORIZONTALLY SCROLLABLE IN ALL ORIENTATIONS)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            decoration: const BoxDecoration(
-              color: Color(0xFF131C31),
-              border: Border(bottom: BorderSide(color: Colors.white10)),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: widget.onBack,
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                  tooltip: "Back to Inventory Hub",
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF7C3AED).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
-                  ),
-                  child: const Icon(Icons.table_chart_rounded, color: Color(0xFFA78BFA), size: 20),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "EXCEL STOCK WORKBENCH & INVENTORY INTEL",
-                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      "Live Stock Traceability • Multi-Vendor Variance • Movement Passbook",
-                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-
-                // 📊 METRICS TILES
-                _topMetricTile("ITEMS", "${filteredList.length}", const Color(0xFF38BDF8)),
-                _verticalDivider(),
-                _topMetricTile("TOTAL STOCK", "${totalStockUnits.toInt()}", Colors.greenAccent),
-                _verticalDivider(),
-                _topMetricTile("PUR. VALUATION", "₹${totalPurVal.toStringAsFixed(0)}", const Color(0xFFA78BFA)),
-                _verticalDivider(),
-                _topMetricTile("MRP VALUATION", "₹${totalMrpVal.toStringAsFixed(0)}", Colors.amberAccent),
-                _verticalDivider(),
-                _topMetricTile("MARGIN", "${marginPct.toStringAsFixed(1)}%", Colors.cyanAccent),
-              ],
-            ),
-          ),
-
-          // 🎛️ CONTROL TOOLBAR (COMPANY FILTER, SEARCH, FREEZE, COLUMNS, EXPORT)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
-              border: Border(bottom: BorderSide(color: Colors.white10)),
-            ),
-            child: Row(
-              children: [
-                // 🔍 LIVE SEARCH INPUT
-                SizedBox(
-                  width: 260,
-                  height: 38,
-                  child: TextField(
-                    controller: _searchCtrl,
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                    decoration: InputDecoration(
-                      hintText: "Search name, code, rack...",
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
-                      prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFFA78BFA), size: 18),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 16, color: Colors.white54),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() => _searchQuery = "");
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: const Color(0xFF1E293B),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                    ),
-                    onChanged: (v) => setState(() => _searchQuery = v.trim()),
-                  ),
-                ),
-                const SizedBox(width: 14),
-
-                // 🏢 COMPANY FILTER DROPDOWN (KEY USER REQUIREMENT!)
-                Container(
-                  height: 38,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _selectedCompany != "ALL" ? const Color(0xFF7C3AED) : Colors.white12),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedCompany,
-                      dropdownColor: const Color(0xFF1E293B),
-                      icon: const Icon(Icons.business_rounded, color: Color(0xFFA78BFA), size: 18),
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                      items: [
-                        const DropdownMenuItem(
-                          value: "ALL",
-                          child: Text("All Companies (Filter)", style: TextStyle(color: Colors.white)),
-                        ),
-                        ...companyDisplayMap.entries.map(
-                          (e) => DropdownMenuItem(
-                            value: e.value,
-                            child: Text(
-                              e.value,
-                              style: const TextStyle(color: Colors.white70),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setState(() => _selectedCompany = val);
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-
-                // 🧊 FREEZE PANE DROPDOWN SELECTOR
-                Container(
-                  height: 38,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<FreezePaneOption>(
-                      value: _freezeOption,
-                      dropdownColor: const Color(0xFF1E293B),
-                      icon: const Icon(Icons.ac_unit_rounded, color: Color(0xFF38BDF8), size: 16),
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                      items: const [
-                        DropdownMenuItem(value: FreezePaneOption.none, child: Text("No Freeze")),
-                        DropdownMenuItem(value: FreezePaneOption.idAndName, child: Text("Freeze ID + Name")),
-                        DropdownMenuItem(value: FreezePaneOption.idNameAndCompany, child: Text("Freeze ID + Name + Mfg")),
-                        DropdownMenuItem(value: FreezePaneOption.idNameAndPack, child: Text("Freeze ID + Name + Pack")),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setState(() => _freezeOption = val);
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-
-                // 👁️ COLUMNS CHOOSER BUTTON
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E293B),
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  icon: const Icon(Icons.view_column_rounded, size: 16, color: Color(0xFFA78BFA)),
-                  label: const Text("COLUMNS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (c) => StockColumnConfigDialog(
-                        columnDefs: _columnDefs,
-                        currentFreeze: _freezeOption,
-                        onApply: (newDefs, newFreeze) {
-                          setState(() {
-                            _columnDefs = newDefs;
-                            _freezeOption = newFreeze;
-                          });
-                        },
-                      ),
-                    );
-                  },
-                ),
-                const Spacer(),
-
-                // 🖨️ PRINT PDF BUTTON
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E293B),
-                    foregroundColor: const Color(0xFF38BDF8),
-                    side: const BorderSide(color: Color(0xFF0284C7)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  ),
-                  icon: const Icon(Icons.print_rounded, size: 16),
-                  label: const Text("PRINT REPORT", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  onPressed: () async {
-                    final bytes = await WebStockAnalysisPdf.generateStockValuationReportBytes(
-                      medicines: filteredList,
-                      webPh: webPh,
-                      selectedCompanyName: _selectedCompany == "ALL" ? "All Companies" : _selectedCompany,
-                      filterTag: _activeFilter,
-                    );
-                    await Printing.layoutPdf(
-                      onLayout: (_) async => bytes,
-                      name: "Stock_Report_${DateTime.now().millisecondsSinceEpoch}",
-                      format: PdfPageFormat.a4.landscape,
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-
-                // 📥 EXCEL / CSV EXPORT
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF059669),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  ),
-                  icon: const Icon(Icons.file_download_rounded, size: 16),
-                  label: const Text("EXPORT CSV", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  onPressed: () async {
-                    await StockExcelExportService.exportStockCsv(
-                      medicines: filteredList,
-                      webPh: webPh,
-                      selectedCompanyName: _selectedCompany == "ALL" ? "All Companies" : _selectedCompany,
-                      activeFilter: _activeFilter,
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("✅ Stock CSV Exported Successfully!"), backgroundColor: Color(0xFF059669)),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          // 🏷️ FILTER CHIPS STRIP
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             color: const Color(0xFF0A0F1D),
-            child: Row(
-              children: [
-                _filterChip("ALL", "All Products (${webPh.medicines.length})"),
-                const SizedBox(width: 6),
-                _filterChip("IN_STOCK", "In Stock (>0)"),
-                const SizedBox(width: 6),
-                _filterChip("ZERO_STOCK", "Zero Stock (=0)"),
-                const SizedBox(width: 6),
-                _filterChip("LOW_STOCK", "Low Stock (<= Reorder)"),
-                const SizedBox(width: 6),
-                _filterChip("HIKE_ALERT", "Price Hike Alert 🔺"),
-                const SizedBox(width: 6),
-                _filterChip("EXPIRING", "Expiring Soon (<90 Days)"),
-              ],
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _filterChip("ALL", "All Products (${webPh.medicines.length})"),
+                  const SizedBox(width: 6),
+                  _filterChip("IN_STOCK", "In Stock (>0)"),
+                  const SizedBox(width: 6),
+                  _filterChip("ZERO_STOCK", "Zero Stock (=0)"),
+                  const SizedBox(width: 6),
+                  _filterChip("LOW_STOCK", "Low Stock (<= Reorder)"),
+                  const SizedBox(width: 6),
+                  _filterChip("HIKE_ALERT", "Price Hike Alert 🔺"),
+                  const SizedBox(width: 6),
+                  _filterChip("EXPIRING", "Expiring Soon (<90 Days)"),
+                ],
+              ),
             ),
           ),
 
@@ -547,7 +335,10 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
                       children: [
                         const Icon(Icons.inventory_2_outlined, size: 52, color: Colors.white24),
                         const SizedBox(height: 12),
-                        const Text("No products match the selected filters or search query.", style: TextStyle(color: Colors.white54, fontSize: 13)),
+                        const Text(
+                          "No products match the selected filters or search query.",
+                          style: TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
                         if (_selectedCompany != "ALL" || _activeFilter != "ALL" || _searchQuery.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           TextButton(
@@ -559,77 +350,495 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
                                 _activeFilter = "ALL";
                               });
                             },
-                            child: const Text("RESET ALL FILTERS", style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold)),
+                            child: const Text(
+                              "RESET ALL FILTERS",
+                              style: TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.bold),
+                            ),
                           ),
                         ],
                       ],
                     ),
                   )
-                : Row(
-                    children: [
-                      // 1. FROZEN LEFT PANE (Locks on Horizontal Scroll)
-                      if (visibleFrozenCols.isNotEmpty)
-                        Container(
-                          width: frozenPaneWidth,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF131C31),
-                            border: Border(
-                              right: BorderSide(color: const Color(0xFF38BDF8).withOpacity(0.4), width: 2),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              // Frozen Header
-                              _buildFrozenHeader(visibleFrozenCols),
-                              // Frozen Rows (Vertical Scroll synced)
-                              Expanded(
-                                child: ListView.builder(
-                                  controller: _frozenVerticalScroll,
-                                  itemCount: filteredList.length,
-                                  itemExtent: 44,
-                                  itemBuilder: (context, index) {
-                                    final m = filteredList[index];
-                                    return _buildFrozenRow(m, index + 1, visibleFrozenCols, webPh);
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final tableHeight = constraints.hasBoundedHeight
+                          ? constraints.maxHeight
+                          : (MediaQuery.of(context).size.height - 220.0);
 
-                      // 2. SCROLLABLE RIGHT PANE
-                      Expanded(
-                        child: SingleChildScrollView(
-                          controller: _horizontalScroll,
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: scrollablePaneWidth,
-                            child: Column(
-                              children: [
-                                // Scrollable Header
-                                _buildScrollableHeader(visibleScrollableCols),
-                                // Scrollable Rows (Vertical Scroll synced)
-                                Expanded(
-                                  child: ListView.builder(
-                                    controller: _scrollableVerticalScroll,
-                                    itemCount: filteredList.length,
-                                    itemExtent: 44,
-                                    itemBuilder: (context, index) {
-                                      final m = filteredList[index];
-                                      return _buildScrollableRow(m, index + 1, visibleScrollableCols, webPh);
-                                    },
+                      return SizedBox(
+                        height: tableHeight,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 1. FROZEN LEFT PANE (Locks on Horizontal Scroll)
+                            if (visibleFrozenCols.isNotEmpty)
+                              SizedBox(
+                                width: frozenPaneWidth,
+                                height: tableHeight,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF131C31),
+                                    border: Border(
+                                      right: BorderSide(
+                                        color: const Color(0xFF38BDF8).withOpacity(0.4),
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      // Frozen Header
+                                      _buildFrozenHeader(visibleFrozenCols, isPortrait),
+                                      // Frozen Rows (Vertical Scroll synced)
+                                      Expanded(
+                                        child: ListView.builder(
+                                          controller: _frozenVerticalScroll,
+                                          physics: const ClampingScrollPhysics(),
+                                          itemCount: filteredList.length,
+                                          itemExtent: 44,
+                                          itemBuilder: (context, index) {
+                                            final m = filteredList[index];
+                                            return _buildFrozenRow(m, index + 1, visibleFrozenCols, webPh, isPortrait);
+                                          },
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
+                              ),
+
+                            // 2. SCROLLABLE RIGHT PANE
+                            Expanded(
+                              child: SingleChildScrollView(
+                                controller: _horizontalScroll,
+                                scrollDirection: Axis.horizontal,
+                                physics: const ClampingScrollPhysics(),
+                                child: SizedBox(
+                                  width: scrollablePaneWidth,
+                                  height: tableHeight,
+                                  child: Column(
+                                    children: [
+                                      // Scrollable Header
+                                      _buildScrollableHeader(visibleScrollableCols, isPortrait),
+                                      // Scrollable Rows (Vertical Scroll synced)
+                                      Expanded(
+                                        child: ListView.builder(
+                                          controller: _scrollableVerticalScroll,
+                                          physics: const ClampingScrollPhysics(),
+                                          itemCount: filteredList.length,
+                                          itemExtent: 44,
+                                          itemBuilder: (context, index) {
+                                            final m = filteredList[index];
+                                            return _buildScrollableRow(m, index + 1, visibleScrollableCols, webPh, isPortrait);
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
           ),
         ],
       ),
+    );
+  }
+
+  // --- TOP BANNER (RESPONSIVE PORTRAIT / LANDSCAPE) ---
+  Widget _buildTopBanner(
+    List<Medicine> filteredList,
+    double totalStockUnits,
+    double totalPurVal,
+    double totalMrpVal,
+    double marginPct,
+    bool isPortrait,
+  ) {
+    if (isPortrait) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: const BoxDecoration(
+          color: Color(0xFF131C31),
+          border: Border(bottom: BorderSide(color: Colors.white10)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+                  tooltip: "Back to Inventory Hub",
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C3AED).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
+                  ),
+                  child: const Icon(Icons.table_chart_rounded, color: Color(0xFFA78BFA), size: 16),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    "EXCEL STOCK WORKBENCH",
+                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _topMetricTile("ITEMS", "${filteredList.length}", const Color(0xFF38BDF8)),
+                  _verticalDivider(),
+                  _topMetricTile("TOTAL STOCK", "${totalStockUnits.toInt()}", Colors.greenAccent),
+                  _verticalDivider(),
+                  _topMetricTile("PUR. VALUATION", "₹${totalPurVal.toStringAsFixed(0)}", const Color(0xFFA78BFA)),
+                  _verticalDivider(),
+                  _topMetricTile("MRP VALUATION", "₹${totalMrpVal.toStringAsFixed(0)}", Colors.amberAccent),
+                  _verticalDivider(),
+                  _topMetricTile("MARGIN", "${marginPct.toStringAsFixed(1)}%", Colors.cyanAccent),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Landscape Mode
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: const BoxDecoration(
+        color: Color(0xFF131C31),
+        border: Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: widget.onBack,
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+            tooltip: "Back to Inventory Hub",
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C3AED).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
+            ),
+            child: const Icon(Icons.table_chart_rounded, color: Color(0xFFA78BFA), size: 20),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "EXCEL STOCK WORKBENCH & INVENTORY INTEL",
+                style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                "Live Stock Traceability • Multi-Vendor Variance • Movement Passbook",
+                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10),
+              ),
+            ],
+          ),
+          const Spacer(),
+          // 📊 METRICS TILES
+          _topMetricTile("ITEMS", "${filteredList.length}", const Color(0xFF38BDF8)),
+          _verticalDivider(),
+          _topMetricTile("TOTAL STOCK", "${totalStockUnits.toInt()}", Colors.greenAccent),
+          _verticalDivider(),
+          _topMetricTile("PUR. VALUATION", "₹${totalPurVal.toStringAsFixed(0)}", const Color(0xFFA78BFA)),
+          _verticalDivider(),
+          _topMetricTile("MRP VALUATION", "₹${totalMrpVal.toStringAsFixed(0)}", Colors.amberAccent),
+          _verticalDivider(),
+          _topMetricTile("MARGIN", "${marginPct.toStringAsFixed(1)}%", Colors.cyanAccent),
+        ],
+      ),
+    );
+  }
+
+  // --- CONTROL TOOLBAR (RESPONSIVE PORTRAIT / LANDSCAPE) ---
+  Widget _buildControlToolbar(
+    Map<String, String> companyDisplayMap,
+    List<Medicine> filteredList,
+    PharoahWebManager webPh,
+    bool isPortrait,
+  ) {
+    if (isPortrait) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0F172A),
+          border: Border(bottom: BorderSide(color: Colors.white10)),
+        ),
+        child: Column(
+          children: [
+            // Full Width Search
+            SizedBox(
+              height: 38,
+              child: TextField(
+                controller: _searchCtrl,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                decoration: InputDecoration(
+                  hintText: "Search name, code, rack...",
+                  hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+                  prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFFA78BFA), size: 18),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 16, color: Colors.white54),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchQuery = "");
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFF1E293B),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v.trim()),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Scrollable controls row in portrait
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _buildCompanyDropdown(companyDisplayMap),
+                  const SizedBox(width: 8),
+                  _buildFreezeDropdown(),
+                  const SizedBox(width: 8),
+                  _buildColumnsButton(context),
+                  const SizedBox(width: 8),
+                  _buildPrintButton(filteredList, webPh),
+                  const SizedBox(width: 8),
+                  _buildExportButton(filteredList, webPh),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Landscape Mode
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F172A),
+        border: Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          // 🔍 LIVE SEARCH INPUT
+          SizedBox(
+            width: 260,
+            height: 38,
+            child: TextField(
+              controller: _searchCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                hintText: "Search name, code, rack...",
+                hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+                prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFFA78BFA), size: 18),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 16, color: Colors.white54),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchQuery = "");
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: const Color(0xFF1E293B),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+              ),
+              onChanged: (v) => setState(() => _searchQuery = v.trim()),
+            ),
+          ),
+          const SizedBox(width: 14),
+          _buildCompanyDropdown(companyDisplayMap),
+          const SizedBox(width: 14),
+          _buildFreezeDropdown(),
+          const SizedBox(width: 12),
+          _buildColumnsButton(context),
+          const Spacer(),
+          _buildPrintButton(filteredList, webPh),
+          const SizedBox(width: 8),
+          _buildExportButton(filteredList, webPh),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompanyDropdown(Map<String, String> companyDisplayMap) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _selectedCompany != "ALL" ? const Color(0xFF7C3AED) : Colors.white12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedCompany,
+          dropdownColor: const Color(0xFF1E293B),
+          icon: const Icon(Icons.business_rounded, color: Color(0xFFA78BFA), size: 18),
+          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+          items: [
+            const DropdownMenuItem(
+              value: "ALL",
+              child: Text("All Companies (Filter)", style: TextStyle(color: Colors.white)),
+            ),
+            ...companyDisplayMap.entries.map(
+              (e) => DropdownMenuItem(
+                value: e.value,
+                child: Text(
+                  e.value,
+                  style: const TextStyle(color: Colors.white70),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ],
+          onChanged: (val) {
+            if (val != null) setState(() => _selectedCompany = val);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFreezeDropdown() {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<FreezePaneOption>(
+          value: _freezeOption,
+          dropdownColor: const Color(0xFF1E293B),
+          icon: const Icon(Icons.ac_unit_rounded, color: Color(0xFF38BDF8), size: 16),
+          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+          items: const [
+            DropdownMenuItem(value: FreezePaneOption.none, child: Text("No Freeze")),
+            DropdownMenuItem(value: FreezePaneOption.idAndName, child: Text("Freeze ID + Name")),
+            DropdownMenuItem(value: FreezePaneOption.idNameAndCompany, child: Text("Freeze ID + Name + Mfg")),
+            DropdownMenuItem(value: FreezePaneOption.idNameAndPack, child: Text("Freeze ID + Name + Pack")),
+          ],
+          onChanged: (val) {
+            if (val != null) setState(() => _freezeOption = val);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColumnsButton(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF1E293B),
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: Colors.white12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      ),
+      icon: const Icon(Icons.view_column_rounded, size: 16, color: Color(0xFFA78BFA)),
+      label: const Text("COLUMNS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (c) => StockColumnConfigDialog(
+            columnDefs: _columnDefs,
+            currentFreeze: _freezeOption,
+            onApply: (newDefs, newFreeze) {
+              setState(() {
+                _columnDefs = newDefs;
+                _freezeOption = newFreeze;
+              });
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPrintButton(List<Medicine> filteredList, PharoahWebManager webPh) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF1E293B),
+        foregroundColor: const Color(0xFF38BDF8),
+        side: const BorderSide(color: Color(0xFF0284C7)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+      icon: const Icon(Icons.print_rounded, size: 16),
+      label: const Text("PRINT REPORT", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+      onPressed: () async {
+        final bytes = await WebStockAnalysisPdf.generateStockValuationReportBytes(
+          medicines: filteredList,
+          webPh: webPh,
+          selectedCompanyName: _selectedCompany == "ALL" ? "All Companies" : _selectedCompany,
+          filterTag: _activeFilter,
+        );
+        await Printing.layoutPdf(
+          onLayout: (_) async => bytes,
+          name: "Stock_Report_${DateTime.now().millisecondsSinceEpoch}",
+          format: PdfPageFormat.a4.landscape,
+        );
+      },
+    );
+  }
+
+  Widget _buildExportButton(List<Medicine> filteredList, PharoahWebManager webPh) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF059669),
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+      icon: const Icon(Icons.file_download_rounded, size: 16),
+      label: const Text("EXPORT CSV", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+      onPressed: () async {
+        await StockExcelExportService.exportStockCsv(
+          medicines: filteredList,
+          webPh: webPh,
+          selectedCompanyName: _selectedCompany == "ALL" ? "All Companies" : _selectedCompany,
+          activeFilter: _activeFilter,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Stock CSV Exported Successfully!"), backgroundColor: Color(0xFF059669)),
+        );
+      },
     );
   }
 
@@ -676,7 +885,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
   }
 
   // --- FROZEN HEADER & ROWS ---
-  Widget _buildFrozenHeader(List<StockColumnId> cols) {
+  Widget _buildFrozenHeader(List<StockColumnId> cols, bool isPortrait) {
     return Container(
       height: 40,
       decoration: const BoxDecoration(
@@ -686,13 +895,13 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
       child: Row(
         children: cols.map((colKey) {
           final def = _columnDefs[colKey]!;
-          return _headerCell(def);
+          return _headerCell(def, _effectiveColWidth(colKey, isPortrait));
         }).toList(),
       ),
     );
   }
 
-  Widget _buildFrozenRow(Medicine m, int sr, List<StockColumnId> cols, PharoahWebManager webPh) {
+  Widget _buildFrozenRow(Medicine m, int sr, List<StockColumnId> cols, PharoahWebManager webPh, bool isPortrait) {
     return Container(
       height: 44,
       decoration: BoxDecoration(
@@ -701,15 +910,15 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
       ),
       child: Row(
         children: cols.map((colKey) {
-          final def = _columnDefs[colKey]!;
-          return _renderCell(colKey, m, sr, def.width, webPh);
+          final w = _effectiveColWidth(colKey, isPortrait);
+          return _renderCell(colKey, m, sr, w, webPh);
         }).toList(),
       ),
     );
   }
 
   // --- SCROLLABLE HEADER & ROWS ---
-  Widget _buildScrollableHeader(List<StockColumnId> cols) {
+  Widget _buildScrollableHeader(List<StockColumnId> cols, bool isPortrait) {
     return Container(
       height: 40,
       decoration: const BoxDecoration(
@@ -719,13 +928,13 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
       child: Row(
         children: cols.map((colKey) {
           final def = _columnDefs[colKey]!;
-          return _headerCell(def);
+          return _headerCell(def, _effectiveColWidth(colKey, isPortrait));
         }).toList(),
       ),
     );
   }
 
-  Widget _buildScrollableRow(Medicine m, int sr, List<StockColumnId> cols, PharoahWebManager webPh) {
+  Widget _buildScrollableRow(Medicine m, int sr, List<StockColumnId> cols, PharoahWebManager webPh, bool isPortrait) {
     return Container(
       height: 44,
       decoration: BoxDecoration(
@@ -734,19 +943,19 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
       ),
       child: Row(
         children: cols.map((colKey) {
-          final def = _columnDefs[colKey]!;
-          return _renderCell(colKey, m, sr, def.width, webPh);
+          final w = _effectiveColWidth(colKey, isPortrait);
+          return _renderCell(colKey, m, sr, w, webPh);
         }).toList(),
       ),
     );
   }
 
-  Widget _headerCell(StockColumnDef def) {
+  Widget _headerCell(StockColumnDef def, double width) {
     bool isSorted = _sortColumn == def.id;
     return InkWell(
       onTap: () => _onSort(def.id),
       child: Container(
-        width: def.width,
+        width: width,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         alignment: def.isNumeric ? Alignment.centerRight : Alignment.centerLeft,
         child: Row(
