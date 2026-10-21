@@ -47,11 +47,33 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
 
   List<Map<String, dynamic>> recentShortcuts = [];
 
+  // 📌 Scroll position persistence for Home Dashboard (#PH-REV-743)
+  final ScrollController _homeScrollController = ScrollController();
+  double _homeScrollOffset = 0.0;
+
+  @override
+  void dispose() {
+    _homeScrollController.dispose();
+    super.dispose();
+  }
+
   void _navigateToHub(String hubId, String hubTitle) {
+    if (currentView == "HOME" && _homeScrollController.hasClients) {
+      _homeScrollOffset = _homeScrollController.offset;
+    }
+
     setState(() {
       currentView = hubId;
       currentViewTitle = hubTitle;
     });
+
+    if (hubId == "HOME" && _homeScrollOffset > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_homeScrollController.hasClients) {
+          _homeScrollController.jumpTo(_homeScrollOffset);
+        }
+      });
+    }
   }
 
   void _handleActionTap(String actionTitle, IconData icon, String navKey) {
@@ -149,6 +171,8 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
                     currentView == "GO_DUMP")
                 ? _buildCurrentView(webPh)
                 : SingleChildScrollView(
+                    key: const PageStorageKey("web_portal_home_scroll"),
+                    controller: _homeScrollController,
                     padding: EdgeInsets.symmetric(
                       horizontal: screenWidth > 600 ? 18.0 : 10.0,
                       vertical: 14.0,

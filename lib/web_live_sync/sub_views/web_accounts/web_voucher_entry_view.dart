@@ -8,6 +8,7 @@ import '../../pharoah_web_manager.dart';
 import '../../web_app_date_logic.dart';
 import '../../web_pdf_router_service.dart';
 import '../web_billing/quick_add_party_modal.dart';
+import 'services/web_voucher_d1_sync_service.dart';
 
 class WebVoucherEntryView extends StatefulWidget {
   final VoidCallback onBack;
@@ -257,6 +258,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       webPh.vouchers.removeWhere((old) => old.id == v.id);
     }
     webPh.vouchers.add(v);
+    WebVoucherD1SyncService.onVoucherSaved(v, webPh.activeStoreToken);
 
     await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);

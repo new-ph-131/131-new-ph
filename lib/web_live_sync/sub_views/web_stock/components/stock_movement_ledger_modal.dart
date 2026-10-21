@@ -27,6 +27,17 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
   String _activeTab = "ALL"; // ALL, IN, OUT, RETURNS
   String _selectedBatch = "ALL_BATCHES";
 
+  // 📜 Dedicated scroll controllers for smooth web up/down scrolling (#PH-REV-743)
+  final ScrollController _ledgerVerticalScroll = ScrollController();
+  final ScrollController _ledgerHorizontalScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _ledgerVerticalScroll.dispose();
+    _ledgerHorizontalScroll.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context, listen: false);
@@ -216,16 +227,24 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
     double totalIn = filteredTxns.fold(0.0, (s, t) => s + (t['inQty'] as double));
     double totalOut = filteredTxns.fold(0.0, (s, t) => s + (t['outQty'] as double));
 
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final modalHeight = screenHeight > 800 ? 740.0 : (screenHeight * 0.92);
+    final modalWidth = screenWidth > 1150 ? 1100.0 : (screenWidth * 0.95);
+
     return Dialog(
       backgroundColor: const Color(0xFF0F172A),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 25),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: screenWidth > 600 ? 30 : 10,
+        vertical: screenHeight > 700 ? 20 : 10,
+      ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: const BorderSide(color: Colors.white12),
       ),
       child: Container(
-        width: 1100,
-        height: 720,
+        width: modalWidth,
+        height: modalHeight,
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,8 +426,19 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                           ],
                         ),
                       )
-                    : SingleChildScrollView(
-                        child: Table(
+                    : Scrollbar(
+                        controller: _ledgerVerticalScroll,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _ledgerVerticalScroll,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: SingleChildScrollView(
+                            controller: _ledgerHorizontalScroll,
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            child: SizedBox(
+                              width: 1000,
+                              child: Table(
                           defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                           columnWidths: const {
                             0: FlexColumnWidth(1.2), // Date
@@ -487,6 +517,9 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                                 ],
                               ),
                           ],
+                        ),
+                            ),
+                          ),
                         ),
                       ),
               ),
