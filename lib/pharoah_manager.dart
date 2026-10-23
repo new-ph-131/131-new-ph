@@ -100,6 +100,19 @@ class PharoahManager with ChangeNotifier {
   // 2. NAVIGATION & DYNAMIC MENU GETTERS
   // ===========================================================================
 
+  
+  void rebuildInventory() {
+    InventoryLogicCenter.rebuildAllInventory(
+      medicines: medicines,
+      batchHistory: batchHistory,
+      purchases: purchases,
+      sales: sales,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+    );
+    notifyListeners();
+  }
+
   void updateModule(String newModule) {
     activeModule = newModule;
     notifyListeners();

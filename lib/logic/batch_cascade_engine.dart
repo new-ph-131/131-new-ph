@@ -75,7 +75,7 @@ class BatchCascadeEngine {
     }
 
     // B. Purchases
-    for (var p in purchases.where((p) => p.status == "Active")) {
+    for (var p in purchases.where((p) => p.isDeleted == 0)) {
       if (!AppDateLogic.isValidInFY(p.date, currentFY)) continue;
       for (var it in p.items) {
         if (_matchesMedicine(it.medicineID, it.name, medicine) &&
