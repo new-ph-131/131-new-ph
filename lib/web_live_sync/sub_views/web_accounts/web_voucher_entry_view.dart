@@ -48,7 +48,12 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
 
   List<Map<String, dynamic>> pendingBills = [];
   List<String> selectedBillNumbers = [];
+  Map<String, double> billAllocations = {};
+  Map<String, String> billPaymentModes = {}; // 'Cash' or 'Bank'
+  final Map<String, TextEditingController> billAmtControllers = {};
   double runningTotal = 0.0;
+  double cashAllocatedTotal = 0.0;
+  double bankAllocatedTotal = 0.0;
 
   @override
   void initState() {
@@ -78,23 +83,36 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       } catch (_) {
         selectedParty = Party(id: v.partyId, name: v.partyName);
       }
-
       try {
         selectedInternalAccount = webPh.parties.firstWhere((p) => p.name == v.depositedIn);
       } catch (_) {}
 
       if (selectedParty != null) {
-        pendingBills = webPh.getPendingBills(selectedParty!.id, typeKey == "RECEIPT");
+        pendingBills = webPh.getPendingBills(selectedParty!.id, typeKey == "RECEIPT", excludeVoucherId: v.id);
       }
+
+      billAllocations = Map.from(v.billAllocations);
+      if (billAllocations.isEmpty && selectedBillNumbers.isNotEmpty) {
+        for (var bNo in selectedBillNumbers) {
+          billAllocations[bNo] = v.getAllocatedAmount(bNo);
+        }
+      }
+
+      for (var b in pendingBills) {
+        String bNo = b['billNo'].toString();
+        double due = (b['amount'] as num).toDouble();
+        double initialAlloc = billAllocations[bNo] ?? (selectedBillNumbers.contains(bNo) ? due : 0.0);
+        billAmtControllers[bNo] = TextEditingController(text: initialAlloc > 0 ? initialAlloc.toStringAsFixed(2) : due.toStringAsFixed(2));
+        billPaymentModes[bNo] = v.paymentMode;
+      }
+      _recalculateRunningTotal();
     } else {
       selectedEntryDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
       selectedChequeDate = selectedEntryDate;
-
       String prefix = "RCT-";
       if (typeKey == "PAYMENT") prefix = "PAY-";
       if (typeKey == "CONTRA") prefix = "CNT-";
       if (typeKey == "EXPENSE") prefix = "EXP-";
-
       voucherNo = webPh.getNextBillNumber(typeKey, prefix, 101);
     }
 
@@ -105,7 +123,6 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
     if (internalAccs.length > 1 && selectedContraTargetAccount == null) {
       selectedContraTargetAccount = internalAccs.firstWhere((p) => p.group == "Bank Accounts", orElse: () => internalAccs.last);
     }
-
     setState(() {});
   }
 
@@ -115,6 +132,10 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
     narrationC.dispose();
     chequeNoC.dispose();
     partySearchC.dispose();
+    for (var c in billAmtControllers.values) {
+      c.dispose();
+    }
+    billAmtControllers.clear();
     super.dispose();
   }
 
@@ -123,41 +144,144 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       selectedParty = party;
       partySearchC.clear();
       selectedBillNumbers.clear();
+      billAllocations.clear();
+      billPaymentModes.clear();
+      for (var c in billAmtControllers.values) {
+        c.dispose();
+      }
+      billAmtControllers.clear();
       runningTotal = 0.0;
       amountC.clear();
       pendingBills = webPh.getPendingBills(party.id, widget.type.toUpperCase() == "RECEIPT");
+      for (var b in pendingBills) {
+        String bNo = b['billNo'].toString();
+        double due = (b['amount'] as num).toDouble();
+        billAmtControllers[bNo] = TextEditingController(text: due.toStringAsFixed(2));
+        billPaymentModes[bNo] = payMode;
+      }
     });
   }
 
-  void _toggleBill(String bNo, double bAmt, bool isChecked) {
+  void _recalculateRunningTotal() {
+    runningTotal = 0.0;
+    cashAllocatedTotal = 0.0;
+    bankAllocatedTotal = 0.0;
+
+    for (var bNo in selectedBillNumbers) {
+      double alloc = billAllocations[bNo] ?? 0.0;
+      runningTotal += alloc;
+      String mode = billPaymentModes[bNo] ?? payMode;
+      if (mode.toLowerCase() == "bank") {
+        bankAllocatedTotal += alloc;
+      } else {
+        cashAllocatedTotal += alloc;
+      }
+    }
+    if (runningTotal < 0) runningTotal = 0.0;
+    amountC.text = runningTotal > 0 ? runningTotal.toStringAsFixed(2) : "";
+  }
+
+  void _toggleBill(String bNo, double dueAmt, bool isChecked) {
     setState(() {
       if (isChecked) {
         if (!selectedBillNumbers.contains(bNo)) {
           selectedBillNumbers.add(bNo);
-          runningTotal += bAmt;
         }
+        billAllocations[bNo] = dueAmt;
+        billPaymentModes.putIfAbsent(bNo, () => payMode);
+        billAmtControllers.putIfAbsent(bNo, () => TextEditingController()).text = dueAmt.toStringAsFixed(2);
       } else {
         selectedBillNumbers.remove(bNo);
-        runningTotal -= bAmt;
+        billAllocations.remove(bNo);
+        billPaymentModes.remove(bNo);
       }
-      if (runningTotal < 0) runningTotal = 0.0;
-      amountC.text = runningTotal > 0 ? runningTotal.toStringAsFixed(2) : "";
+      _recalculateRunningTotal();
+    });
+  }
+
+  void _onBillAmountChanged(String bNo, double dueAmt, String val) {
+    double parsed = double.tryParse(val) ?? 0.0;
+    if (parsed > dueAmt) {
+      parsed = dueAmt;
+      billAmtControllers[bNo]?.text = dueAmt.toStringAsFixed(2);
+      billAmtControllers[bNo]?.selection = TextSelection.fromPosition(TextPosition(offset: billAmtControllers[bNo]!.text.length));
+    }
+    setState(() {
+      if (parsed > 0) {
+        if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
+        billAllocations[bNo] = parsed;
+        billPaymentModes.putIfAbsent(bNo, () => payMode);
+      } else {
+        selectedBillNumbers.remove(bNo);
+        billAllocations.remove(bNo);
+      }
+      _recalculateRunningTotal();
+    });
+  }
+
+  void _onBillModeChanged(String bNo, String newMode) {
+    setState(() {
+      billPaymentModes[bNo] = newMode;
+      _recalculateRunningTotal();
     });
   }
 
   void _selectAllBills() {
     setState(() {
-      selectedBillNumbers = pendingBills.map((b) => b['billNo'].toString()).toList();
-      runningTotal = pendingBills.fold(0.0, (s, b) => s + (b['amount'] as double));
-      amountC.text = runningTotal > 0 ? runningTotal.toStringAsFixed(2) : "";
+      selectedBillNumbers.clear();
+      billAllocations.clear();
+      for (var b in pendingBills) {
+        String bNo = b['billNo'].toString();
+        double due = (b['amount'] as num).toDouble();
+        selectedBillNumbers.add(bNo);
+        billAllocations[bNo] = due;
+        billPaymentModes.putIfAbsent(bNo, () => payMode);
+        billAmtControllers.putIfAbsent(bNo, () => TextEditingController()).text = due.toStringAsFixed(2);
+      }
+      _recalculateRunningTotal();
     });
   }
 
   void _clearBillSelection() {
     setState(() {
       selectedBillNumbers.clear();
+      billAllocations.clear();
+      billPaymentModes.clear();
       runningTotal = 0.0;
       amountC.clear();
+      for (var b in pendingBills) {
+        String bNo = b['billNo'].toString();
+        double due = (b['amount'] as num).toDouble();
+        billAmtControllers[bNo]?.text = due.toStringAsFixed(2);
+      }
+    });
+  }
+
+  void _autoAllocateFifo() {
+    double target = double.tryParse(amountC.text) ?? 0.0;
+    if (target <= 0) {
+      target = pendingBills.fold(0.0, (s, b) => s + (b['amount'] as num).toDouble());
+    }
+    double remaining = target;
+    setState(() {
+      selectedBillNumbers.clear();
+      billAllocations.clear();
+      for (var b in pendingBills) {
+        String bNo = b['billNo'].toString();
+        double due = (b['amount'] as num).toDouble();
+        if (remaining <= 0) {
+          billAmtControllers[bNo]?.text = due.toStringAsFixed(2);
+          continue;
+        }
+        double alloc = remaining >= due ? due : remaining;
+        alloc = double.parse(alloc.toStringAsFixed(2));
+        selectedBillNumbers.add(bNo);
+        billAllocations[bNo] = alloc;
+        billPaymentModes.putIfAbsent(bNo, () => payMode);
+        billAmtControllers.putIfAbsent(bNo, () => TextEditingController()).text = alloc.toStringAsFixed(2);
+        remaining -= alloc;
+      }
+      _recalculateRunningTotal();
     });
   }
 
@@ -179,9 +303,9 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
     double amt = double.tryParse(amountC.text) ?? 0.0;
     String typeUp = widget.type.toUpperCase();
 
-    if (amt <= 0) {
+    if (amt <= 0 && selectedBillNumbers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Enter a valid voucher amount!"), backgroundColor: Colors.orange),
+        const SnackBar(content: Text("Enter a valid voucher amount or select bills to adjust!"), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -202,7 +326,18 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       }
     }
 
-    if (payMode == "Cash" && selectedParty != null && webPh.isCashLimitExceeded(selectedParty!.id, amt)) {
+    // Split bills check: Cash bills vs Bank bills
+    final cashBills = selectedBillNumbers.where((b) => (billPaymentModes[b] ?? payMode).toLowerCase() == "cash").toList();
+    final bankBills = selectedBillNumbers.where((b) => (billPaymentModes[b] ?? payMode).toLowerCase() == "bank").toList();
+
+    bool isSplitMode = !isUpdateMode && cashBills.isNotEmpty && bankBills.isNotEmpty;
+
+    // Cash limit check (269ST)
+    double totalCashInThisSave = isSplitMode 
+        ? cashBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0))
+        : (payMode == "Cash" ? amt : 0.0);
+
+    if (totalCashInThisSave > 0 && selectedParty != null && webPh.isCashLimitExceeded(selectedParty!.id, totalCashInThisSave)) {
       bool? proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -238,10 +373,112 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
     String pName = typeUp == "CONTRA" ? selectedContraTargetAccount!.name : selectedParty!.name;
     String depIn = selectedInternalAccount!.name;
 
+    Party? defaultCashAcc;
+    Party? defaultBankAcc;
+    try {
+      defaultCashAcc = webPh.parties.firstWhere((p) => p.group == "Cash in Hand");
+    } catch (_) {}
+    try {
+      defaultBankAcc = webPh.parties.firstWhere((p) => p.group == "Bank Accounts");
+    } catch (_) {}
+
+    if (isSplitMode) {
+      // 1. CREATE CASH VOUCHER
+      double cashAmt = cashBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0));
+      Map<String, double> cashAlloc = { for (var b in cashBills) b: billAllocations[b] ?? 0.0 };
+      String prefix = typeUp == "RECEIPT" ? "RCT-" : (typeUp == "PAYMENT" ? "PAY-" : "VCT-");
+      String cashVNo = webPh.getNextBillNumber(typeKey, prefix, 101);
+      String cashDepIn = defaultCashAcc?.name ?? "CASH";
+
+      final vCash = Voucher(
+        id: "VCT-WEB-${DateTime.now().millisecondsSinceEpoch}-1",
+        type: typeUp,
+        voucherNo: cashVNo,
+        date: selectedEntryDate,
+        partyId: pId,
+        partyName: pName,
+        amount: cashAmt,
+        paymentMode: "Cash",
+        bankName: "",
+        depositedIn: cashDepIn,
+        chequeNo: "",
+        chequeDate: null,
+        narration: "${narrationC.text.trim()} [Cash Agst ${cashBills.join(', ')}]".trim(),
+        status: "Active",
+        linkedBillNumbers: cashBills,
+        billAllocations: cashAlloc,
+        version: 1,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        isDeleted: 0,
+      );
+
+      // 2. CREATE BANK VOUCHER
+      double bankAmt = bankBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0));
+      Map<String, double> bankAlloc = { for (var b in bankBills) b: billAllocations[b] ?? 0.0 };
+      String bankVNo = webPh.getNextBillNumber(typeKey, prefix, 102);
+      String bankDepIn = (selectedInternalAccount?.group == "Bank Accounts" ? selectedInternalAccount!.name : defaultBankAcc?.name) ?? depIn;
+
+      final vBank = Voucher(
+        id: "VCT-WEB-${DateTime.now().millisecondsSinceEpoch + 1}-2",
+        type: typeUp,
+        voucherNo: bankVNo,
+        date: selectedEntryDate,
+        partyId: pId,
+        partyName: pName,
+        amount: bankAmt,
+        paymentMode: "Bank",
+        bankName: bankDepIn,
+        depositedIn: bankDepIn,
+        chequeNo: chequeNoC.text.trim(),
+        chequeDate: selectedChequeDate,
+        narration: "${narrationC.text.trim()} [Bank Agst ${bankBills.join(', ')}]".trim(),
+        status: "Active",
+        linkedBillNumbers: bankBills,
+        billAllocations: bankAlloc,
+        version: 1,
+        updatedAt: DateTime.now().millisecondsSinceEpoch + 1,
+        isDeleted: 0,
+      );
+
+      webPh.unmarkDeletedId(vCash.id, referenceNo: vCash.voucherNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(vCash.id, vCash.voucherNo);
+      webPh.vouchers.add(vCash);
+      WebVoucherD1SyncService.onVoucherSaved(vCash, webPh.activeStoreToken);
+
+      webPh.unmarkDeletedId(vBank.id, referenceNo: vBank.voucherNo);
+      D1SalesLedgerService.unmarkPermanentlyDeleted(vBank.id, vBank.voucherNo);
+      webPh.vouchers.add(vBank);
+      WebVoucherD1SyncService.onVoucherSaved(vBank, webPh.activeStoreToken);
+
+      await webPh.pushUpdatedDataToCloud();
+      webPh.notifyListeners();
+      setState(() => isSaving = false);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("✅ Created 2 Smart Vouchers: Cash ($cashVNo ₹${cashAmt.toStringAsFixed(2)}) & Bank ($bankVNo ₹${bankAmt.toStringAsFixed(2)})!"),
+            backgroundColor: Colors.green,
+          ),
+        );
+        widget.onBack();
+      }
+      return;
+    }
+
+    // Standard Single Voucher Save (or Update)
     int newVersion = 1;
     if (isUpdateMode && widget.existingVoucher != null) {
       newVersion = widget.existingVoucher!.version + 1;
     }
+
+    Map<String, double> finalAllocations = {};
+    if (selectedBillNumbers.isNotEmpty) {
+      for (var b in selectedBillNumbers) {
+        finalAllocations[b] = billAllocations[b] ?? 0.0;
+      }
+    }
+
     final v = Voucher(
       id: isUpdateMode ? widget.existingVoucher!.id : "VCT-WEB-${DateTime.now().millisecondsSinceEpoch}",
       type: typeUp,
@@ -258,10 +495,12 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       narration: narrationC.text.trim(),
       status: "Active",
       linkedBillNumbers: selectedBillNumbers,
+      billAllocations: finalAllocations,
       version: newVersion,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       isDeleted: 0,
     );
+
     webPh.unmarkDeletedId(v.id, referenceNo: v.voucherNo);
     D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, v.voucherNo);
     if (isUpdateMode) {
@@ -898,10 +1137,19 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
                 const Spacer(),
                 if (pendingBills.isNotEmpty) ...[
                   InkWell(
-                    onTap: _selectAllBills,
-                    child: const Text("SELECT ALL", style: TextStyle(color: Color(0xFF38BDF8), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                    onTap: _autoAllocateFifo,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: const Color(0xFF2563EB).withValues(alpha: 0.3), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFF38BDF8), width: 0.5)),
+                      child: const Text("AUTO FIFO", style: TextStyle(color: Color(0xFF38BDF8), fontSize: 9, fontWeight: FontWeight.w900)),
+                    ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: _selectAllBills,
+                    child: const Text("ALL", style: TextStyle(color: Color(0xFF38BDF8), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 6),
                   InkWell(
                     onTap: _clearBillSelection,
                     child: const Text("CLEAR", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
@@ -924,7 +1172,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
               )
             else
               Container(
-                constraints: const BoxConstraints(maxHeight: 250),
+                constraints: const BoxConstraints(maxHeight: 330),
                 decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(10)),
                 child: ListView.builder(
                   shrinkWrap: true,
@@ -933,30 +1181,153 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
                   itemBuilder: (ctx, i) {
                     final b = pendingBills[i];
                     String bNo = b['billNo'].toString();
-                    double bAmt = (b['amount'] as num).toDouble();
+                    double dueAmt = (b['amount'] as num).toDouble();
+                    double totalAmt = ((b['totalAmount'] ?? dueAmt) as num).toDouble();
+                    double paidAmt = ((b['paidAmount'] ?? 0.0) as num).toDouble();
                     bool isChecked = selectedBillNumbers.contains(bNo);
+                    String itemMode = billPaymentModes[bNo] ?? payMode;
+                    TextEditingController ctrl = billAmtControllers.putIfAbsent(
+                      bNo,
+                      () => TextEditingController(text: dueAmt.toStringAsFixed(2)),
+                    );
 
                     return Container(
-                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10, width: 0.5))),
-                      child: CheckboxListTile(
-                        dense: true,
-                        activeColor: const Color(0xFF2563EB),
-                        value: isChecked,
-                        title: Row(
-                          children: [
-                            Text("Bill #$bNo", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                              decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(3)),
-                              child: Text("${b['dueDays']}d due", style: const TextStyle(color: Colors.orangeAccent, fontSize: 8, fontWeight: FontWeight.bold)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      decoration: const BoxDecoration(
+                        border: Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: Checkbox(
+                                  activeColor: const Color(0xFF2563EB),
+                                  value: isChecked,
+                                  onChanged: (v) => _toggleBill(bNo, dueAmt, v == true),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          "Bill #$bNo",
+                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(3),
+                                          ),
+                                          child: Text(
+                                            "${b['dueDays']}d due",
+                                            style: const TextStyle(color: Colors.orangeAccent, fontSize: 8, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        if (paidAmt > 0.01) ...[
+                                          const SizedBox(width: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: Colors.amber.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(3),
+                                            ),
+                                            child: const Text(
+                                              "PARTIAL",
+                                              style: TextStyle(color: Colors.amberAccent, fontSize: 7.5, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "Date: ${DateFormat('dd/MM/yyyy').format(b['date'] as DateTime)} | Total: ₹${totalAmt.toStringAsFixed(2)} | Paid: ₹${paidAmt.toStringAsFixed(2)}",
+                                      style: const TextStyle(color: Colors.white38, fontSize: 9),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                "Due: ₹${dueAmt.toStringAsFixed(2)}",
+                                style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w900, fontSize: 11.5),
+                              ),
+                            ],
+                          ),
+                          if (isChecked) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const SizedBox(width: 30),
+                                const Text("Adjust ₹:", style: TextStyle(color: Colors.white70, fontSize: 9.5, fontWeight: FontWeight.w600)),
+                                const SizedBox(width: 6),
+                                SizedBox(
+                                  width: 90,
+                                  height: 28,
+                                  child: TextField(
+                                    controller: ctrl,
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                                      filled: true,
+                                      fillColor: const Color(0xFF0F172A),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF38BDF8), width: 0.8)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Colors.white24, width: 0.8)),
+                                    ),
+                                    onChanged: (val) => _onBillAmountChanged(bNo, dueAmt, val),
+                                  ),
+                                ),
+                                const Spacer(),
+                                // Mode Toggle for this bill: Cash vs Bank
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.white12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      InkWell(
+                                        onTap: () => _onBillModeChanged(bNo, "Cash"),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: itemMode.toLowerCase() == "cash" ? const Color(0xFF10B981) : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                          child: Text("Cash", style: TextStyle(color: itemMode.toLowerCase() == "cash" ? Colors.white : Colors.white38, fontSize: 8.5, fontWeight: FontWeight.bold)),
+                                        ),
+                                      ),
+                                      InkWell(
+                                        onTap: () => _onBillModeChanged(bNo, "Bank"),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: itemMode.toLowerCase() == "bank" ? const Color(0xFF2563EB) : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(5),
+                                          ),
+                                          child: Text("Bank", style: TextStyle(color: itemMode.toLowerCase() == "bank" ? Colors.white : Colors.white38, fontSize: 8.5, fontWeight: FontWeight.bold)),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const Spacer(),
-                            Text("₹${bAmt.toStringAsFixed(2)}", style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.w900, fontSize: 12)),
                           ],
-                        ),
-                        subtitle: Text("Date: ${DateFormat('dd/MM/yyyy').format(b['date'] as DateTime)}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
-                        onChanged: (v) => _toggleBill(bNo, bAmt, v == true),
+                        ],
                       ),
                     );
                   },
@@ -966,13 +1337,32 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
             if (selectedBillNumbers.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(color: const Color(0x3310B981), borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0x3310B981), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0x5510B981))),
+                child: Column(
                   children: [
-                    Text("${selectedBillNumbers.length} Bills Selected", style: const TextStyle(color: Color(0xFF34D399), fontSize: 10.5, fontWeight: FontWeight.bold)),
-                    Text("Total: ₹${runningTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.greenAccent, fontSize: 12.5, fontWeight: FontWeight.w900)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("${selectedBillNumbers.length} Bills Selected", style: const TextStyle(color: Color(0xFF34D399), fontSize: 10.5, fontWeight: FontWeight.bold)),
+                        Text("Total: ₹${runningTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    if (cashAllocatedTotal > 0 && bankAllocatedTotal > 0) ...[
+                      const Divider(color: Colors.white24, height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("💵 Cash: ₹${cashAllocatedTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white70, fontSize: 9.5)),
+                          Text("🏦 Bank: ₹${bankAllocatedTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white70, fontSize: 9.5)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        "⚡ Multi-Mode Split: Will automatically create 1 Cash & 1 Bank voucher on save!",
+                        style: TextStyle(color: Color(0xFF38BDF8), fontSize: 8.5, fontStyle: FontStyle.italic),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -981,7 +1371,6 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
         ),
       );
     }
-
     // Fallback sidecar when no party is selected
     return _buildAccountLiveRadarSidecar(webPh);
   }

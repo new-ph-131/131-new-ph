@@ -706,11 +706,12 @@ class Voucher {
   DateTime date;
   String partyId, partyName, paymentMode, narration;
   double amount;
-  List<String> linkedBillNumbers; 
-  String chequeNo;                 
-  String bankName;                 
-  String depositedIn;              
-  DateTime? chequeDate;            
+  List<String> linkedBillNumbers;
+  Map<String, double> billAllocations; // Bill-by-Bill partial allocation: { 'INV-101': 500.0, 'INV-102': 250.0 }
+  String chequeNo;
+  String bankName;
+  String depositedIn;
+  DateTime? chequeDate;
   double roundOff;
   int updatedAt, version, isDeleted;
 
@@ -726,6 +727,7 @@ class Voucher {
     this.status = "Active", // Default Active
     this.narration = "",
     this.linkedBillNumbers = const [],
+    this.billAllocations = const {},
     this.chequeNo = "",
     this.bankName = "",
     this.depositedIn = "",
@@ -736,11 +738,23 @@ class Voucher {
     this.isDeleted = 0,
   });
 
+  double getAllocatedAmount(String billNo) {
+    if (billAllocations.containsKey(billNo)) {
+      return billAllocations[billNo] ?? 0.0;
+    }
+    if (linkedBillNumbers.contains(billNo)) {
+      if (linkedBillNumbers.length == 1) return amount;
+      return linkedBillNumbers.isNotEmpty ? amount / linkedBillNumbers.length : 0.0;
+    }
+    return 0.0;
+  }
+
   Map<String, dynamic> toMap() => {
     'id': id, 'type': type, 'voucherNo': voucherNo, 'date': date.toIso8601String(),
     'partyId': partyId, 'partyName': partyName, 'amount': amount,
     'paymentMode': paymentMode, 'narration': narration, 'status': status,
-    'linkedBillNumbers': linkedBillNumbers,
+    'linkedBillNumbers': linkedBillNumbers.isNotEmpty ? linkedBillNumbers : billAllocations.keys.toList(),
+    'billAllocations': billAllocations,
     'chequeNo': chequeNo, 'bankName': bankName, 'depositedIn': depositedIn,
     'chequeDate': chequeDate?.toIso8601String(), 'roundOff': roundOff,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
@@ -750,24 +764,48 @@ class Voucher {
     'sync_id': id,
   };
 
-  factory Voucher.fromMap(Map<String, dynamic> map) => Voucher(
-    id: map['id'] ?? "", type: map['type'] ?? "",
-    voucherNo: map['voucherNo'] ?? "LEGACY",
-    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
-    partyId: map['partyId'] ?? "", partyName: map['partyName'] ?? "",
-    amount: (map['amount'] ?? 0.0).toDouble(),
-    paymentMode: map['paymentMode'] ?? "Cash", 
-    narration: map['narration'] ?? "",
-    status: map['status'] ?? "Active",
-    linkedBillNumbers: List<String>.from(map['linkedBillNumbers'] ?? []),
-    chequeNo: map['chequeNo'] ?? "", bankName: map['bankName'] ?? "",
-    depositedIn: map['depositedIn'] ?? "",
-    chequeDate: map['chequeDate'] != null ? DateTime.parse(map['chequeDate']) : null,
-    roundOff: (map['roundOff'] ?? 0.0).toDouble(),
-    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
-    version: (map['version'] ?? 1).toInt(),
-    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  );
+  factory Voucher.fromMap(Map<String, dynamic> map) {
+    Map<String, double> parsedAllocations = {};
+    if (map['billAllocations'] != null && map['billAllocations'] is Map) {
+      (map['billAllocations'] as Map).forEach((k, v) {
+        parsedAllocations[k.toString()] = (v as num).toDouble();
+      });
+    }
+    List<String> parsedLinkedBills = List<String>.from(map['linkedBillNumbers'] ?? []);
+    if (parsedAllocations.isEmpty && parsedLinkedBills.isNotEmpty) {
+      double totalAmt = (map['amount'] ?? 0.0).toDouble();
+      if (parsedLinkedBills.length == 1) {
+        parsedAllocations[parsedLinkedBills.first] = totalAmt;
+      } else {
+        double split = totalAmt / parsedLinkedBills.length;
+        for (var b in parsedLinkedBills) {
+          parsedAllocations[b] = split;
+        }
+      }
+    } else if (parsedLinkedBills.isEmpty && parsedAllocations.isNotEmpty) {
+      parsedLinkedBills = parsedAllocations.keys.toList();
+    }
+
+    return Voucher(
+      id: map['id'] ?? "", type: map['type'] ?? "",
+      voucherNo: map['voucherNo'] ?? "LEGACY",
+      date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
+      partyId: map['partyId'] ?? "", partyName: map['partyName'] ?? "",
+      amount: (map['amount'] ?? 0.0).toDouble(),
+      paymentMode: map['paymentMode'] ?? "Cash", 
+      narration: map['narration'] ?? "",
+      status: map['status'] ?? "Active",
+      linkedBillNumbers: parsedLinkedBills,
+      billAllocations: parsedAllocations,
+      chequeNo: map['chequeNo'] ?? "", bankName: map['bankName'] ?? "",
+      depositedIn: map['depositedIn'] ?? "",
+      chequeDate: map['chequeDate'] != null ? DateTime.parse(map['chequeDate']) : null,
+      roundOff: (map['roundOff'] ?? 0.0).toDouble(),
+      updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
+      version: (map['version'] ?? 1).toInt(),
+      isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
+    );
+  }
 
   String get syncId => id;
 
@@ -788,7 +826,7 @@ class Voucher {
     return Voucher.fromMap(map);
   }
 }
-  
+
 class ChequeEntry { String id, partyName, billNo, chequeNo, partyBank, depositBank, status, remark; DateTime date, chequeDate; double amount; ChequeEntry({required this.id, required this.partyName, this.billNo = "", required this.amount, required this.chequeNo, required this.date, required this.chequeDate, this.partyBank = "", this.depositBank = "", this.status = "Received", this.remark = ""}); Map<String, dynamic> toMap() => {'id': id, 'partyName': partyName, 'billNo': billNo, 'amount': amount, 'chequeNo': chequeNo, 'date': date.toIso8601String(), 'chequeDate': chequeDate.toIso8601String(), 'partyBank': partyBank, 'depositBank': depositBank, 'status': status, 'remark': remark}; factory ChequeEntry.fromMap(Map<String, dynamic> map) => ChequeEntry(id: map['id'] ?? "", partyName: map['partyName'] ?? "", billNo: map['billNo'] ?? "", amount: (map['amount'] ?? 0.0).toDouble(), chequeNo: map['chequeNo'] ?? "", date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), chequeDate: DateTime.parse(map['chequeDate'] ?? DateTime.now().toIso8601String()), partyBank: map['partyBank'] ?? "", depositBank: map['depositBank'] ?? "", status: map['status'] ?? "Received", remark: map['remark'] ?? ""); }
 class ShortageItem { String id, medicineId, medicineName, companyName, distributorName, customerName, source; double qtyRequired, currentStock; DateTime date; Map<String, dynamic> toMap() => {'id': id, 'medicineId': medicineId, 'medicineName': medicineName, 'companyName': companyName, 'distributorName': distributorName, 'customerName': customerName, 'source': source, 'qtyRequired': qtyRequired, 'currentStock': currentStock, 'date': date.toIso8601String()}; ShortageItem({required this.id, required this.medicineId, required this.medicineName, required this.companyName, this.distributorName = "", this.customerName = "", this.source = "Manual", required this.qtyRequired, required this.currentStock, required this.date}); factory ShortageItem.fromMap(Map<String, dynamic> map) => ShortageItem(id: map['id'] ?? "", medicineId: map['medicineId'] ?? "", medicineName: map['medicineName'] ?? "", companyName: map['companyId'] ?? "N/A", distributorName: map['distributorName'] ?? "", customerName: map['customerName'] ?? "", source: map['source'] ?? "Manual", qtyRequired: (map['qtyRequired'] ?? 0.0).toDouble(), currentStock: (map['currentStock'] ?? 0.0).toDouble(), date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String())); }
 class ModuleAction { final String title; final IconData icon; final Color color; final Widget? targetScreen; final String? navModule; ModuleAction({required this.title, required this.icon, required this.color, this.targetScreen, this.navModule}); }

@@ -290,6 +290,24 @@ class _WebVoucherHistoryWidgetState extends State<WebVoucherHistoryWidget> {
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
+              if (v.billAllocations.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    "Agst: " + v.billAllocations.entries.map((e) => "${e.key} (₹${e.value.toStringAsFixed(2)})").join(", "),
+                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 9, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              else if (v.linkedBillNumbers.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    "Agst: " + v.linkedBillNumbers.join(", "),
+                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 9),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               if (v.narration.isNotEmpty)
                 Text(
                   v.narration,

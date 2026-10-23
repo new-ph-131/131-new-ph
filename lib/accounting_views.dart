@@ -40,6 +40,7 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
 
   List<Map<String, dynamic>> pendingBills = [];
   List<String> selectedBillNumbers = [];
+  Map<String, double> billAllocations = {};
   double runningTotal = 0.0;
   String partyQuery = "";
 
@@ -64,12 +65,18 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       chequeNoC.text = v.chequeNo;
       partyBankC.text = v.bankName;
       selectedBillNumbers = List.from(v.linkedBillNumbers);
+      billAllocations = Map.from(v.billAllocations);
+      if (billAllocations.isEmpty && selectedBillNumbers.isNotEmpty) {
+        for (var bNo in selectedBillNumbers) {
+          billAllocations[bNo] = v.getAllocatedAmount(bNo);
+        }
+      }
       runningTotal = v.amount;
 
       try {
         selectedParty = ph.parties.firstWhere((p) => p.id == v.partyId);
         selectedInternalAccount = ph.parties.firstWhere((p) => p.name == v.depositedIn);
-        pendingBills = ph.getPendingBills(selectedParty!.id, widget.type.toUpperCase() == "RECEIPT");
+        pendingBills = ph.getPendingBills(selectedParty!.id, widget.type.toUpperCase() == "RECEIPT", excludeVoucherId: v.id);
       } catch (e) { debugPrint("Sync Error: $e"); }
 
     } else {
@@ -264,45 +271,270 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
 
   void _openReferenceWizard(PharoahManager ph) {
     if (selectedParty == null || widget.isReadOnly) return;
-    pendingBills = ph.getPendingBills(selectedParty!.id, widget.type.toUpperCase() == "RECEIPT");
+    pendingBills = ph.getPendingBills(
+      selectedParty!.id,
+      widget.type.toUpperCase() == "RECEIPT",
+      excludeVoucherId: widget.existingVoucher?.id,
+    );
+
+    // Map of text controllers for each bill
+    final Map<String, TextEditingController> wizardControllers = {};
+    for (var b in pendingBills) {
+      String bNo = b['billNo'].toString();
+      double due = (b['amount'] as num).toDouble();
+      double curAlloc = billAllocations[bNo] ?? (selectedBillNumbers.contains(bNo) ? due : due);
+      wizardControllers[bNo] = TextEditingController(text: curAlloc.toStringAsFixed(2));
+    }
 
     showModalBottomSheet(
-      context: context, isScrollControlled: true,
+      context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (c) => StatefulBuilder(builder: (context, setWizardState) {
+        void recalculateRunning() {
+          double total = 0.0;
+          for (var bNo in selectedBillNumbers) {
+            total += (billAllocations[bNo] ?? 0.0);
+          }
+          runningTotal = total;
+        }
+
+        void autoFifo() {
+          double target = double.tryParse(amountC.text) ?? 0.0;
+          if (target <= 0) {
+            target = pendingBills.fold(0.0, (s, b) => s + (b['amount'] as num).toDouble());
+          }
+          double remaining = target;
+          selectedBillNumbers.clear();
+          billAllocations.clear();
+          for (var b in pendingBills) {
+            String bNo = b['billNo'].toString();
+            double due = (b['amount'] as num).toDouble();
+            if (remaining <= 0) {
+              wizardControllers[bNo]?.text = "0.00";
+              continue;
+            }
+            double alloc = remaining >= due ? due : remaining;
+            alloc = double.parse(alloc.toStringAsFixed(2));
+            selectedBillNumbers.add(bNo);
+            billAllocations[bNo] = alloc;
+            wizardControllers[bNo]?.text = alloc.toStringAsFixed(2);
+            remaining -= alloc;
+          }
+          recalculateRunning();
+          setWizardState(() {});
+        }
+
         return Container(
           height: MediaQuery.of(context).size.height * 0.85,
           padding: const EdgeInsets.all(20),
-          child: Column(children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text("BILL SETTLEMENT: ${selectedParty!.name}", style: const TextStyle(fontWeight: FontWeight.bold)),
-              IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(c)),
-            ]),
-            const Divider(),
-            Expanded(child: ListView.builder(
-              itemCount: pendingBills.length,
-              itemBuilder: (context, i) {
-                final b = pendingBills[i];
-                bool isSel = selectedBillNumbers.contains(b['billNo']);
-                return CheckboxListTile(
-                  title: Text(b['billNo'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text("Date: ${DateFormat('dd/MM/yy').format(b['date'])} | Due: ${b['dueDays']} Days"),
-                  value: isSel,
-                  onChanged: (v) {
-                    setWizardState(() {
-                      if(v!) { selectedBillNumbers.add(b['billNo']); runningTotal += b['amount']; }
-                      else { selectedBillNumbers.remove(b['billNo']); runningTotal -= b['amount']; }
-                    });
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("BILL SETTLEMENT: ${selectedParty!.name}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text("Marg ERP Agst Ref Partial Allocation", style: TextStyle(color: Colors.grey.shade600, fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(c)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                    icon: const Icon(Icons.auto_awesome, size: 14),
+                    label: const Text("AUTO (FIFO)", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    onPressed: autoFifo,
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      setWizardState(() {
+                        selectedBillNumbers.clear();
+                        billAllocations.clear();
+                        for (var b in pendingBills) {
+                          String bNo = b['billNo'].toString();
+                          double due = (b['amount'] as num).toDouble();
+                          selectedBillNumbers.add(bNo);
+                          billAllocations[bNo] = due;
+                          wizardControllers[bNo]?.text = due.toStringAsFixed(2);
+                        }
+                        recalculateRunning();
+                      });
+                    },
+                    child: const Text("SELECT ALL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () {
+                      setWizardState(() {
+                        selectedBillNumbers.clear();
+                        billAllocations.clear();
+                        recalculateRunning();
+                      });
+                    },
+                    child: const Text("CLEAR", style: TextStyle(fontSize: 10, color: Colors.red)),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: pendingBills.length,
+                  itemBuilder: (context, i) {
+                    final b = pendingBills[i];
+                    String bNo = b['billNo'].toString();
+                    double due = (b['amount'] as num).toDouble();
+                    double totalAmt = ((b['totalAmount'] ?? due) as num).toDouble();
+                    double paidAmt = ((b['paidAmount'] ?? 0.0) as num).toDouble();
+                    bool isSel = selectedBillNumbers.contains(bNo);
+                    TextEditingController ctrl = wizardControllers[bNo]!;
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      elevation: 0.5,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(color: isSel ? Colors.indigo.shade300 : Colors.grey.shade200, width: isSel ? 1.5 : 1),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Checkbox(
+                                  value: isSel,
+                                  activeColor: Colors.indigo,
+                                  onChanged: (v) {
+                                    setWizardState(() {
+                                      if (v == true) {
+                                        selectedBillNumbers.add(bNo);
+                                        billAllocations[bNo] = due;
+                                        ctrl.text = due.toStringAsFixed(2);
+                                      } else {
+                                        selectedBillNumbers.remove(bNo);
+                                        billAllocations.remove(bNo);
+                                      }
+                                      recalculateRunning();
+                                    });
+                                  },
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(bNo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(4)),
+                                            child: Text("${b['dueDays']}d due", style: TextStyle(color: Colors.orange.shade800, fontSize: 9, fontWeight: FontWeight.bold)),
+                                          ),
+                                          if (paidAmt > 0.01) ...[
+                                            const SizedBox(width: 4),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(4)),
+                                              child: Text("PARTIAL", style: TextStyle(color: Colors.blue.shade800, fontSize: 8, fontWeight: FontWeight.bold)),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        "Date: ${DateFormat('dd/MM/yy').format(b['date'])} | Bill: ₹${totalAmt.toStringAsFixed(2)} | Paid: ₹${paidAmt.toStringAsFixed(2)}",
+                                        style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text("Due: ₹${due.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Colors.green)),
+                              ],
+                            ),
+                            if (isSel) ...[
+                              const Divider(height: 12),
+                              Row(
+                                children: [
+                                  const SizedBox(width: 48),
+                                  const Text("Adjust ₹: ", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  const SizedBox(width: 6),
+                                  SizedBox(
+                                    width: 100,
+                                    height: 32,
+                                    child: TextField(
+                                      controller: ctrl,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      onChanged: (val) {
+                                        double p = double.tryParse(val) ?? 0.0;
+                                        if (p > due) {
+                                          p = due;
+                                          ctrl.text = due.toStringAsFixed(2);
+                                        }
+                                        setWizardState(() {
+                                          if (p > 0) {
+                                            if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
+                                            billAllocations[bNo] = p;
+                                          } else {
+                                            selectedBillNumbers.remove(bNo);
+                                            billAllocations.remove(bNo);
+                                          }
+                                          recalculateRunning();
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Text("Allocated: ₹${(billAllocations[bNo] ?? 0.0).toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.indigo.shade800)),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
                   },
-                );
-              },
-            )),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.indigo),
-              onPressed: () { setState(() => amountC.text = runningTotal.toStringAsFixed(2)); Navigator.pop(c); },
-              child: const Text("APPLY SELECTION", style: TextStyle(color: Colors.white)),
-            )
-          ]),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(10)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("${selectedBillNumbers.length} Bills Selected", style: TextStyle(color: Colors.indigo.shade900, fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text("Total: ₹${runningTotal.toStringAsFixed(2)}", style: TextStyle(color: Colors.indigo.shade900, fontWeight: FontWeight.w900, fontSize: 15)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.indigo),
+                onPressed: () {
+                  setState(() => amountC.text = runningTotal.toStringAsFixed(2));
+                  Navigator.pop(c);
+                },
+                child: const Text("APPLY SELECTION", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              )
+            ],
+          ),
         );
       }),
     );
@@ -311,14 +543,22 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
   void _handleFinalSave(PharoahManager ph) async {
     double amt = double.tryParse(amountC.text) ?? 0;
     if (selectedParty == null || amt <= 0 || selectedInternalAccount == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("All fields are mandatory!")));
-       return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("All fields are mandatory!")));
+      return;
     }
 
     int newVersion = 1;
     if (isUpdateMode && widget.existingVoucher != null) {
       newVersion = widget.existingVoucher!.version + 1;
     }
+
+    Map<String, double> finalAllocations = {};
+    if (selectedBillNumbers.isNotEmpty) {
+      for (var b in selectedBillNumbers) {
+        finalAllocations[b] = billAllocations[b] ?? 0.0;
+      }
+    }
+
     final v = Voucher(
       id: isUpdateMode ? widget.existingVoucher!.id : DateTime.now().millisecondsSinceEpoch.toString(),
       type: widget.type.toUpperCase(),
@@ -335,6 +575,7 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       narration: narrationC.text,
       status: "Active",
       linkedBillNumbers: selectedBillNumbers,
+      billAllocations: finalAllocations,
       version: newVersion,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       isDeleted: 0,

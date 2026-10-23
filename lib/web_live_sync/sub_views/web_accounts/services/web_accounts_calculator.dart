@@ -524,30 +524,58 @@ class WebAccountsCalculator {
     return (todayTotal + newAmount) > 200000;
   }
 
-  /// Returns unsettled credit bills for a party (used for Receipt / Payment bill-linking)
+  /// Returns unsettled and partially settled credit bills for a party
+  /// Follows Marg ERP 9+ / Tally Agst Ref bill-by-bill dynamic allocation:
+  /// - Excludes `excludeVoucherId` when modifying/auditing so currently allocated amounts do not hide bills.
+  /// - Supports partial settlements (e.g. ₹9 paid on ₹10 leaves ₹1 pending).
+  /// - Automatically un-settles bills when vouchers are modified to a lower amount or deleted/cancelled.
   static List<Map<String, dynamic>> getPendingBills({
     required String partyId,
     required bool isReceipt,
     required List<Sale> sales,
     required List<Purchase> purchases,
     required List<Voucher> vouchers,
+    String? excludeVoucherId,
   }) {
     List<Map<String, dynamic>> pending = [];
     DateTime now = DateTime.now();
+
+    final activeVouchers = vouchers.where((v) {
+      if (v.status != 'Active' || v.isDeleted != 0) return false;
+      if (excludeVoucherId != null &&
+          excludeVoucherId.isNotEmpty &&
+          (v.id == excludeVoucherId || v.voucherNo == excludeVoucherId)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
     if (isReceipt) {
       for (var s in sales.where((s) =>
           (s.partyId == partyId || s.partyName == partyId) &&
           s.paymentMode == 'CREDIT' &&
           s.status == 'Active')) {
-        bool alreadySettled = vouchers.any(
-            (v) => v.linkedBillNumbers.contains(s.billNo) && v.status == 'Active');
-        if (!alreadySettled) {
+        double billTotal = s.totalAmount;
+        double totalSettled = 0.0;
+
+        for (var v in activeVouchers) {
+          totalSettled += v.getAllocatedAmount(s.billNo);
+        }
+
+        if (totalSettled > billTotal) totalSettled = billTotal;
+        double remainingDue = billTotal - totalSettled;
+        remainingDue = double.parse(remainingDue.toStringAsFixed(2));
+
+        if (remainingDue > 0.01) {
           int days = now.difference(s.date).inDays;
           pending.add({
             'date': s.date,
             'billNo': s.billNo,
-            'amount': s.totalAmount,
+            'amount': remainingDue,
+            'totalAmount': billTotal,
+            'paidAmount': totalSettled,
             'dueDays': days,
+            'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
           });
         }
       }
@@ -555,19 +583,32 @@ class WebAccountsCalculator {
       for (var p in purchases.where((p) =>
           (p.partyId == partyId || p.distributorName == partyId) &&
           p.paymentMode == 'CREDIT')) {
-        bool alreadySettled = vouchers.any(
-            (v) => v.linkedBillNumbers.contains(p.billNo) && v.status == 'Active');
-        if (!alreadySettled) {
+        double billTotal = p.totalAmount;
+        double totalSettled = 0.0;
+
+        for (var v in activeVouchers) {
+          totalSettled += v.getAllocatedAmount(p.billNo);
+        }
+
+        if (totalSettled > billTotal) totalSettled = billTotal;
+        double remainingDue = billTotal - totalSettled;
+        remainingDue = double.parse(remainingDue.toStringAsFixed(2));
+
+        if (remainingDue > 0.01) {
           int days = now.difference(p.date).inDays;
           pending.add({
             'date': p.date,
             'billNo': p.billNo,
-            'amount': p.totalAmount,
+            'amount': remainingDue,
+            'totalAmount': billTotal,
+            'paidAmount': totalSettled,
             'dueDays': days,
+            'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
           });
         }
       }
     }
+
     pending.sort((a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
     return pending;
   }

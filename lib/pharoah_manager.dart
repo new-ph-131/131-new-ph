@@ -1294,31 +1294,72 @@ void registerBatchActivity({
   // 💹 ADVANCED ACCOUNTING & VOUCHER ENGINE
   // ===========================================================================
 
-  List<Map<String, dynamic>> getPendingBills(String partyId, bool isReceipt) {
+  List<Map<String, dynamic>> getPendingBills(String partyId, bool isReceipt, {String? excludeVoucherId}) {
     List<Map<String, dynamic>> pending = [];
     DateTime now = DateTime.now();
 
+    final activeVouchers = vouchers.where((v) {
+      if (v.status != 'Active' || v.isDeleted != 0) return false;
+      if (excludeVoucherId != null &&
+          excludeVoucherId.isNotEmpty &&
+          (v.id == excludeVoucherId || v.voucherNo == excludeVoucherId)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
     if (isReceipt) {
       for (var s in sales.where((s) => s.partyId == partyId && s.paymentMode == "CREDIT" && s.status == "Active")) {
-        bool alreadySettle = vouchers.any((v) => v.linkedBillNumbers.contains(s.billNo));
-        if (!alreadySettle) {
+        double billTotal = s.totalAmount;
+        double totalSettled = 0.0;
+        for (var v in activeVouchers) {
+          totalSettled += v.getAllocatedAmount(s.billNo);
+        }
+        if (totalSettled > billTotal) totalSettled = billTotal;
+        double remainingDue = billTotal - totalSettled;
+        remainingDue = double.parse(remainingDue.toStringAsFixed(2));
+
+        if (remainingDue > 0.01) {
           int days = now.difference(s.date).inDays;
-          pending.add({'date': s.date, 'billNo': s.billNo, 'amount': s.totalAmount, 'dueDays': days});
+          pending.add({
+            'date': s.date,
+            'billNo': s.billNo,
+            'amount': remainingDue,
+            'totalAmount': billTotal,
+            'paidAmount': totalSettled,
+            'dueDays': days,
+            'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
+          });
         }
       }
     } else {
       for (var p in purchases.where((p) => p.partyId == partyId && p.paymentMode == "CREDIT")) {
-        bool alreadySettle = vouchers.any((v) => v.linkedBillNumbers.contains(p.billNo));
-        if (!alreadySettle) {
+        double billTotal = p.totalAmount;
+        double totalSettled = 0.0;
+        for (var v in activeVouchers) {
+          totalSettled += v.getAllocatedAmount(p.billNo);
+        }
+        if (totalSettled > billTotal) totalSettled = billTotal;
+        double remainingDue = billTotal - totalSettled;
+        remainingDue = double.parse(remainingDue.toStringAsFixed(2));
+
+        if (remainingDue > 0.01) {
           int days = now.difference(p.date).inDays;
-          pending.add({'date': p.date, 'billNo': p.billNo, 'amount': p.totalAmount, 'dueDays': days});
+          pending.add({
+            'date': p.date,
+            'billNo': p.billNo,
+            'amount': remainingDue,
+            'totalAmount': billTotal,
+            'paidAmount': totalSettled,
+            'dueDays': days,
+            'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
+          });
         }
       }
     }
     pending.sort((a, b) => a['date'].compareTo(b['date']));
     return pending;
   }
-
   
   List<BankTransaction> getBankStatement(String bankName, DateTime from, DateTime to) {
     return AppAccountsCalculator.getBankBookStatement(

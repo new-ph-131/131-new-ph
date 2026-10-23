@@ -2455,13 +2455,14 @@ class PharoahWebManager with ChangeNotifier {
   // ===========================================================================
   // 💰 VOUCHER & ACCOUNTS HELPER ENGINE
   // ===========================================================================
-  List<Map<String, dynamic>> getPendingBills(String partyId, bool isReceipt) {
+  List<Map<String, dynamic>> getPendingBills(String partyId, bool isReceipt, {String? excludeVoucherId}) {
     return WebAccountsCalculator.getPendingBills(
       partyId: partyId,
       isReceipt: isReceipt,
       sales: sales,
       purchases: purchases,
       vouchers: vouchers,
+      excludeVoucherId: excludeVoucherId,
     );
   }
 

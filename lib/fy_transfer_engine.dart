@@ -91,35 +91,43 @@ class FYTransferEngine {
 
       // 3. 📝 BILL-BY-BILL OUTSTANDING (Pending Invoices Database)
       List<Map<String, dynamic>> pendingInvoices = [];
-      
-      // Collect all settled bill numbers across previous years
-      Set<String> settledBillNos = oldVouc
-          .where((v) => v.status == "Active")
-          .expand((v) => v.linkedBillNumbers)
-          .toSet();
+      final activeOldVouchers = oldVouc.where((v) => v.status == "Active").toList();
 
-      // Filter Unpaid Sales
+      // Filter Unpaid and Partially Settled Sales
       for (var s in oldSales.where((s) => s.status == "Active" && s.paymentMode == "CREDIT")) {
-        if (!settledBillNos.contains(s.billNo)) {
+        double billTotal = s.totalAmount;
+        double totalSettled = 0.0;
+        for (var v in activeOldVouchers) {
+          totalSettled += v.getAllocatedAmount(s.billNo);
+        }
+        double remainingDue = billTotal - totalSettled;
+        if (remainingDue > 0.01) {
           pendingInvoices.add({
             'billNo': s.billNo,
             'partyId': s.partyId,
             'partyName': s.partyName,
             'date': s.date.toIso8601String(),
-            'amount': s.totalAmount,
+            'amount': double.parse(remainingDue.toStringAsFixed(2)),
             'type': 'SALE'
           });
         }
       }
-      // Filter Unpaid Purchases
+
+      // Filter Unpaid and Partially Settled Purchases
       for (var p in oldPurc.where((p) => p.paymentMode == "CREDIT")) {
-        if (!settledBillNos.contains(p.billNo)) {
+        double billTotal = p.totalAmount;
+        double totalSettled = 0.0;
+        for (var v in activeOldVouchers) {
+          totalSettled += v.getAllocatedAmount(p.billNo);
+        }
+        double remainingDue = billTotal - totalSettled;
+        if (remainingDue > 0.01) {
           pendingInvoices.add({
             'billNo': p.billNo,
             'partyId': p.partyId,
             'partyName': p.distributorName,
             'date': p.date.toIso8601String(),
-            'amount': p.totalAmount,
+            'amount': double.parse(remainingDue.toStringAsFixed(2)),
             'type': 'PURCHASE'
           });
         }
