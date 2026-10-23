@@ -1,3 +1,4 @@
+import "sync_core/modules/batch_sync_module.dart";
 // FILE: lib/batch_sync_engine.dart (UPGRADED TWO-WAY SYNC ENGINE)
 
 import 'models.dart';
@@ -85,6 +86,15 @@ class BatchSyncEngine {
 
     // Disk par direct atomic save
     ph.save();
+    if (ph.activeCompany != null && ph.activeCompany!.id.isNotEmpty) {
+      final savedBatch = history[existingIdx != -1 ? existingIdx : history.length - 1];
+      BatchSyncModule.onBatchSaved(
+        batch: savedBatch,
+        medIdentityKey: productKey,
+        storeToken: ph.activeCompany!.id,
+        isDelete: false,
+      );
+    }
   }
 
   /// ===========================================================================

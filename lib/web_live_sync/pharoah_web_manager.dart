@@ -46,6 +46,7 @@ class PharoahWebManager with ChangeNotifier {
   String activePassword = "";
   String companyName = "PHAROAH STORE";
   String financialYear = "2026-27";
+  String get currentFY => financialYear;
   Map<String, dynamic> companyProfile = {};
   AppConfig appConfig = AppConfig();
 

@@ -13,6 +13,7 @@ import '../modules/debit_note_sync_module.dart';
 import '../modules/voucher_sync_module.dart';
 import '../modules/party_sync_module.dart';
 import '../modules/medicine_sync_module.dart';
+import '../modules/batch_sync_module.dart';
 import '../../inventory_logic_center.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
