@@ -9,6 +9,7 @@ import '../../web_app_date_logic.dart';
 import '../../web_pdf_router_service.dart';
 import '../web_billing/quick_add_party_modal.dart';
 import 'services/web_voucher_d1_sync_service.dart';
+import '../../../../sync_core/d1_sales_ledger_service.dart';
 
 class WebVoucherEntryView extends StatefulWidget {
   final VoidCallback onBack;
