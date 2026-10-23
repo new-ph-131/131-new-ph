@@ -237,6 +237,10 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
     String pName = typeUp == "CONTRA" ? selectedContraTargetAccount!.name : selectedParty!.name;
     String depIn = selectedInternalAccount!.name;
 
+    int newVersion = 1;
+    if (isUpdateMode && widget.existingVoucher != null) {
+      newVersion = widget.existingVoucher!.version + 1;
+    }
     final v = Voucher(
       id: isUpdateMode ? widget.existingVoucher!.id : "VCT-WEB-${DateTime.now().millisecondsSinceEpoch}",
       type: typeUp,
@@ -246,21 +250,26 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       partyName: pName,
       amount: amt,
       paymentMode: payMode,
+      bankName: payMode == "Bank" ? depIn : "",
       depositedIn: depIn,
       chequeNo: chequeNoC.text.trim(),
       chequeDate: payMode == "Bank" ? selectedChequeDate : null,
       narration: narrationC.text.trim(),
       status: "Active",
       linkedBillNumbers: selectedBillNumbers,
+      version: newVersion,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      isDeleted: 0,
     );
-
+    webPh.unmarkDeletedId(v.id, referenceNo: v.voucherNo);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, v.voucherNo);
     if (isUpdateMode) {
-      webPh.vouchers.removeWhere((old) => old.id == v.id);
+      webPh.vouchers.removeWhere((old) => old.id == v.id || (old.voucherNo == v.voucherNo && v.voucherNo.isNotEmpty));
     }
     webPh.vouchers.add(v);
     WebVoucherD1SyncService.onVoucherSaved(v, webPh.activeStoreToken);
-
     await webPh.pushUpdatedDataToCloud();
+    webPh.notifyListeners();
     setState(() => isSaving = false);
 
     if (andPrint) {

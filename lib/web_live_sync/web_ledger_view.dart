@@ -105,20 +105,23 @@ class _WebLedgerViewState extends State<WebLedgerView> {
     double totalMarketPayable = 0.0;
 
     for (var p in webPh.parties) {
-      if (p.name == "CASH") continue;
+      final isCashOrBank = p.name.trim().toUpperCase() == "CASH" || p.group.trim().toLowerCase().contains("cash") || p.group.trim().toLowerCase().contains("bank");
       double bal = webPh.calculatePartyBalance(p);
-      if (bal > 0) totalMarketReceivable += bal;
-      if (bal < 0) totalMarketPayable += bal.abs();
+      if (!isCashOrBank) {
+        if (bal > 0) totalMarketReceivable += bal;
+        if (bal < 0) totalMarketPayable += bal.abs();
+      }
     }
 
     final query = searchQuery.trim().toLowerCase();
     final filteredParties = webPh.parties.where((p) {
-      if (p.name == "CASH") return false;
+      final isCashOrBank = p.name.trim().toUpperCase() == "CASH" || p.group.trim().toLowerCase().contains("cash") || p.group.trim().toLowerCase().contains("bank");
       double bal = webPh.calculatePartyBalance(p);
 
       bool matchesGroup = true;
       if (groupFilter == "DEBTORS") matchesGroup = p.group == "Sundry Debtors";
       if (groupFilter == "CREDITORS") matchesGroup = p.group == "Sundry Creditors";
+      if (groupFilter == "CASH_BANK") matchesGroup = isCashOrBank;
       if (groupFilter == "DUE_ONLY") matchesGroup = bal != 0;
 
       bool matchesSearch = query.isEmpty ||
@@ -235,6 +238,8 @@ class _WebLedgerViewState extends State<WebLedgerView> {
                     _filterChip("SUPPLIERS (CREDITORS)", groupFilter == "CREDITORS", () => setState(() => groupFilter = "CREDITORS")),
                     const SizedBox(width: 8),
                     _filterChip("PENDING DUE ONLY", groupFilter == "DUE_ONLY", () => setState(() => groupFilter = "DUE_ONLY")),
+                    const SizedBox(width: 8),
+                    _filterChip("CASH & BANK", groupFilter == "CASH_BANK", () => setState(() => groupFilter = "CASH_BANK")),
                   ],
                 ),
               ),
@@ -342,7 +347,7 @@ class _WebLedgerViewState extends State<WebLedgerView> {
                   ),
                 ),
                 Text(
-                  bal == 0 ? "NIL" : (isDr ? "RECEIVABLE (Dr)" : "PAYABLE (Cr)"),
+                  bal == 0 ? "NIL" : ((p.name.trim().toUpperCase() == "CASH" || p.group.trim().toLowerCase().contains("cash") || p.group.trim().toLowerCase().contains("bank")) ? (isDr ? "IN HAND / ACTIVE (Dr)" : "DEFICIT / OVERDRAWN (Cr)") : (isDr ? "RECEIVABLE (Dr)" : "PAYABLE (Cr)")),
                   style: TextStyle(
                     color: isDr ? Colors.greenAccent : const Color(0xFFF87171),
                     fontSize: 8,
@@ -753,7 +758,7 @@ class _WebLedgerViewState extends State<WebLedgerView> {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
         child: Text(
-          group.contains("Debtors") ? "DEBTOR" : (group.contains("Creditors") ? "CREDITOR" : "OTHER"),
+          group.toLowerCase().contains("cash") ? "CASH" : (group.toLowerCase().contains("bank") ? "BANK" : (group.contains("Debtors") ? "DEBTOR" : (group.contains("Creditors") ? "CREDITOR" : "OTHER"))),
           style: TextStyle(color: fg, fontSize: 8, fontWeight: FontWeight.bold),
         ),
       ),

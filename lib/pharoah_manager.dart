@@ -1345,14 +1345,19 @@ void registerBatchActivity({
   }
 
   Future<String> finalizeVoucher(Voucher v) async {
-    int currentVer = 1;
+    int currentVer = v.version;
     final int existingIdx = vouchers.indexWhere((x) => x.id == v.id || x.voucherNo == v.voucherNo);
     if (existingIdx != -1) {
-      currentVer = vouchers[existingIdx].version + 1;
+      final oldVer = vouchers[existingIdx].version;
+      if (oldVer >= currentVer) {
+        currentVer = oldVer + 1;
+      }
     }
     v.updatedAt = DateTime.now().millisecondsSinceEpoch;
     v.version = currentVer;
-    vouchers.removeWhere((x) => x.id == v.id || x.voucherNo == v.voucherNo);
+    v.isDeleted = 0;
+    D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, v.voucherNo);
+    vouchers.removeWhere((x) => x.id == v.id || (v.voucherNo.isNotEmpty && x.voucherNo == v.voucherNo));
     vouchers.add(v);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {

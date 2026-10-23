@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'pharoah_manager.dart';
 import 'models.dart';
+import 'finance/party_ledger_statement_view.dart';
 
 class LedgerReportsView extends StatefulWidget {
   const LedgerReportsView({super.key});
@@ -54,7 +55,8 @@ class _LedgerReportsViewState extends State<LedgerReportsView> {
               padding: const EdgeInsets.all(10),
               itemBuilder: (context, index) {
                 final p = filteredParties[index];
-                if (p.name == "CASH") return const SizedBox.shrink(); // Cash ka ledger alag hota hai
+                final isCash = p.name.trim().toUpperCase() == "CASH" || p.group.trim().toLowerCase().contains("cash");
+                final isBank = p.group.trim().toLowerCase().contains("bank");
 
                 double balance = _calculateBalance(ph, p);
                 bool isDr = balance >= 0; // Dr = Mangte hain (Green), Cr = Dene hain (Red)
@@ -64,10 +66,10 @@ class _LedgerReportsViewState extends State<LedgerReportsView> {
                   margin: const EdgeInsets.only(bottom: 8),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => SingleLedgerDetailView(party: p))),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => PartyLedgerStatementView(initialParty: p))),
                     leading: CircleAvatar(
-                      backgroundColor: isDr ? Colors.green.shade50 : Colors.red.shade50,
-                      child: Icon(Icons.person, color: isDr ? Colors.green : Colors.red),
+                      backgroundColor: isCash ? Colors.teal.shade50 : (isBank ? Colors.indigo.shade50 : (isDr ? Colors.green.shade50 : Colors.red.shade50)),
+                      child: Icon(isCash ? Icons.account_balance_wallet_rounded : (isBank ? Icons.account_balance_rounded : Icons.person), color: isCash ? Colors.teal.shade800 : (isBank ? Colors.indigo.shade800 : (isDr ? Colors.green : Colors.red))),
                     ),
                     title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(p.city.isEmpty ? p.group : "${p.group} | ${p.city}"),
@@ -79,7 +81,7 @@ class _LedgerReportsViewState extends State<LedgerReportsView> {
                           "₹${balance.abs().toStringAsFixed(2)}",
                           style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: isDr ? Colors.green.shade700 : Colors.red.shade700),
                         ),
-                        Text(isDr ? "RECEIVABLE" : "PAYABLE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: isDr ? Colors.green : Colors.red)),
+                        Text(isCash ? "IN HAND" : (isBank ? "BANK BAL" : (isDr ? "RECEIVABLE" : "PAYABLE")), style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: isDr ? Colors.green : Colors.red)),
                       ],
                     ),
                   ),

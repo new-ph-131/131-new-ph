@@ -315,16 +315,31 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
        return;
     }
 
+    int newVersion = 1;
+    if (isUpdateMode && widget.existingVoucher != null) {
+      newVersion = widget.existingVoucher!.version + 1;
+    }
     final v = Voucher(
       id: isUpdateMode ? widget.existingVoucher!.id : DateTime.now().millisecondsSinceEpoch.toString(),
-      type: widget.type.toUpperCase(), voucherNo: voucherNo, date: selectedEntryDate,
-      partyId: selectedParty!.id, partyName: selectedParty!.name,
-      amount: amt, paymentMode: payMode, depositedIn: selectedInternalAccount!.name,
-      chequeNo: chequeNoC.text, chequeDate: payMode == "Bank" ? selectedChequeDate : null,
-      narration: narrationC.text, status: "Active", linkedBillNumbers: selectedBillNumbers,
+      type: widget.type.toUpperCase(),
+      voucherNo: voucherNo,
+      date: selectedEntryDate,
+      partyId: selectedParty!.id,
+      partyName: selectedParty!.name,
+      amount: amt,
+      paymentMode: payMode,
+      bankName: payMode == "Bank" ? selectedInternalAccount!.name : "",
+      depositedIn: selectedInternalAccount!.name,
+      chequeNo: chequeNoC.text,
+      chequeDate: payMode == "Bank" ? selectedChequeDate : null,
+      narration: narrationC.text,
+      status: "Active",
+      linkedBillNumbers: selectedBillNumbers,
+      version: newVersion,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      isDeleted: 0,
     );
 
-    if (isUpdateMode) ph.vouchers.removeWhere((old) => old.id == v.id);
     await ph.finalizeVoucher(v);
     _showSuccessHub(ph, v.id);
   }

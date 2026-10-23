@@ -338,6 +338,9 @@ class PharoahWebManager with ChangeNotifier {
     } else if (parties.isEmpty) {
       parties = [Party(id: 'cash', name: "CASH", group: "Cash in Hand")];
     }
+    if (!parties.any((p) => p.name.trim().toUpperCase() == "CASH" || p.id == "cash")) {
+      parties.insert(0, Party(id: 'cash', name: "CASH", group: "Cash in Hand"));
+    }
     // 1. Sales Sync with Anti-Zombie Shield & Strict LWW Guard (MANDATE 1 & 2)
     var allParsedSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
@@ -1472,6 +1475,7 @@ class PharoahWebManager with ChangeNotifier {
     _saveLocalTombstones();
     vouchers.removeWhere((item) => item.id == voucherId || (vNo.isNotEmpty && item.voucherNo.trim().toUpperCase() == vNo));
     notifyListeners();
+    pushUpdatedDataToCloud();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: voucherId,
