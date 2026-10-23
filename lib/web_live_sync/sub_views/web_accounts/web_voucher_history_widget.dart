@@ -50,7 +50,7 @@ class _WebVoucherHistoryWidgetState extends State<WebVoucherHistoryWidget> {
     final DateTime startDay = DateTime(fromDate.year, fromDate.month, fromDate.day);
     final DateTime endDay = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59);
 
-    List<Voucher> allVouchers = List.from(widget.webPh.vouchers)
+    List<Voucher> allVouchers = widget.webPh.vouchers
         .where((v) => v.isDeleted != 1 && v.status != "Deleted")
         .toList();
     allVouchers.sort((a, b) {
