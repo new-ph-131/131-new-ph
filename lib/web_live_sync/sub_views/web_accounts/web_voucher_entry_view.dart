@@ -242,19 +242,36 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
 
   void _onBillAmountChanged(String bNo, double dueAmt, String val) {
     double parsed = double.tryParse(val) ?? 0.0;
+    if (parsed < 0) parsed = 0.0;
     if (parsed > dueAmt) {
       parsed = dueAmt;
       billAmtControllers[bNo]?.text = dueAmt.toStringAsFixed(2);
       billAmtControllers[bNo]?.selection = TextSelection.fromPosition(TextPosition(offset: billAmtControllers[bNo]!.text.length));
     }
     setState(() {
-      if (parsed > 0) {
-        if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
-        billAllocations[bNo] = parsed;
-        billPaymentModes.putIfAbsent(bNo, () => payMode);
-      } else {
-        selectedBillNumbers.remove(bNo);
-        billAllocations.remove(bNo);
+      // Keep bill selected even when user backspaces to empty/0 so they can type a new number (e.g. 3) smoothly!
+      if (!selectedBillNumbers.contains(bNo)) {
+        selectedBillNumbers.add(bNo);
+      }
+      billAllocations[bNo] = parsed;
+      billPaymentModes.putIfAbsent(bNo, () => payMode);
+      _recalculateRunningTotal();
+    });
+  }
+
+  void _copyFirstBillInstrumentToAll() {
+    if (selectedBillNumbers.length < 2) return;
+    String firstBNo = selectedBillNumbers.first;
+    String firstMode = billPaymentModes[firstBNo] ?? payMode;
+    String? firstBank = billDepositBanks[firstBNo];
+    String firstChq = billChequeControllers[firstBNo]?.text ?? '';
+    DateTime firstDt = billChequeDates[firstBNo] ?? selectedChequeDate;
+    setState(() {
+      for (var bNo in selectedBillNumbers.skip(1)) {
+        billPaymentModes[bNo] = firstMode;
+        if (firstBank != null) billDepositBanks[bNo] = firstBank;
+        billChequeControllers.putIfAbsent(bNo, () => TextEditingController()).text = firstChq;
+        billChequeDates[bNo] = firstDt;
       }
       _recalculateRunningTotal();
     });
@@ -742,47 +759,149 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
             const SizedBox(height: 4),
             _buildPartySelectorSection(webPh, webPh.parties, themeColor),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text("PAYMENT MODE", style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      SegmentedButton<String>(
-                        segments: const [
-                          ButtonSegment(value: 'Cash', label: Text('Cash', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-                          ButtonSegment(value: 'Bank', label: Text('Bank/Chq', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
-                        ],
-                        selected: {payMode},
-                        onSelectionChanged: widget.isReadOnly ? null : (v) => setState(() => payMode = v.first),
-                      ),
-                    ],
-                  ),
+            if (selectedBillNumbers.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(typeUp == "RECEIPT" ? "DEPOSITED IN *" : "PAID FROM *", style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      _buildInternalAccountDropdown(
-                        internalAccounts.where((a) => payMode == "Cash" ? a.group == "Cash in Hand" : a.group == "Bank Accounts").toList(),
-                        selectedInternalAccount,
-                        (v) => setState(() => selectedInternalAccount = v),
-                      ),
-                    ],
-                  ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: Colors.white54, size: 13),
+                    SizedBox(width: 6),
+                    Text(
+                      "DIRECT / ON-ACCOUNT MODE (Select bills on right for bill-wise cheques)",
+                      style: TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("PAYMENT MODE", style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        SegmentedButton<String>(
+                          segments: const [
+                            ButtonSegment(value: 'Cash', label: Text('Cash', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                            ButtonSegment(value: 'Bank', label: Text('Bank/Chq', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                          ],
+                          selected: {payMode},
+                          onSelectionChanged: widget.isReadOnly ? null : (v) => setState(() => payMode = v.first),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(typeUp == "RECEIPT" ? "DEPOSITED IN *" : "PAID FROM *", style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        _buildInternalAccountDropdown(
+                          internalAccounts.where((a) => payMode == "Cash" ? a.group == "Cash in Hand" : a.group == "Bank Accounts").toList(),
+                          selectedInternalAccount,
+                          (v) => setState(() => selectedInternalAccount = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4), width: 1),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.verified_rounded, color: Color(0xFF38BDF8), size: 15),
+                            const SizedBox(width: 6),
+                            Text(
+                              "ACTIVE BILL-WISE INSTRUMENTS (${selectedBillNumbers.length})",
+                              style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.4),
+                            ),
+                          ],
+                        ),
+                        if (selectedBillNumbers.length > 1)
+                          InkWell(
+                            onTap: widget.isReadOnly ? null : _copyFirstBillInstrumentToAll,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFF38BDF8), width: 0.5),
+                              ),
+                              child: const Text(
+                                "SAME CHQ FOR ALL",
+                                style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ...selectedBillNumbers.map((bNo) {
+                      String m = billPaymentModes[bNo] ?? payMode;
+                      double bAmt = billAllocations[bNo] ?? 0.0;
+                      if (m.toLowerCase() == "bank") {
+                        String bBank = billDepositBanks[bNo] ?? (selectedInternalAccount?.name ?? "Bank");
+                        String bChq = billChequeControllers[bNo]?.text.trim() ?? "";
+                        String bDt = DateFormat('dd/MM/yy').format(billChequeDates[bNo] ?? selectedChequeDate);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  "🏦 Bill #$bNo → $bBank${bChq.isNotEmpty ? ' • Chq #$bChq' : ''} ($bDt)",
+                                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text("₹${bAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10.5, fontWeight: FontWeight.w900)),
+                            ],
+                          ),
+                        );
+                      } else {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text("💵 Bill #$bNo → CASH IN HAND", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
+                              Text("₹${bAmt.toStringAsFixed(2)}", style: const TextStyle(color: Colors.greenAccent, fontSize: 10.5, fontWeight: FontWeight.w900)),
+                            ],
+                          ),
+                        );
+                      }
+                    }),
+                  ],
+                ),
+              ),
+            ],
           ],
           const SizedBox(height: 14),
 
-          // Cheque Details (if mode is Bank)
-          if (payMode == "Bank" || typeUp == "CONTRA") ...[
+          // Cheque Details (only when no bills are selected & mode is Bank, or Contra)
+          if ((selectedBillNumbers.isEmpty && payMode == "Bank" && typeUp != "EXPENSE") || typeUp == "CONTRA") ...[
             Row(
               children: [
                 Expanded(
@@ -843,7 +962,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
           // Amount & Narration
           TextField(
             controller: amountC,
-            readOnly: widget.isReadOnly,
+            readOnly: widget.isReadOnly || selectedBillNumbers.isNotEmpty,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: TextStyle(color: themeColor, fontSize: 24, fontWeight: FontWeight.w900),
             decoration: InputDecoration(
@@ -1399,6 +1518,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
                                       height: 28,
                                       child: TextField(
                                         controller: billChequeControllers.putIfAbsent(bNo, () => TextEditingController(text: chequeNoC.text)),
+                                        onChanged: (_) => setState(() {}),
                                         style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                                         decoration: InputDecoration(
                                           isDense: true,

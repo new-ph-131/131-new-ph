@@ -170,49 +170,109 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
               const SizedBox(height: 25),
 
               if (selectedParty != null) ...[
-                _sectionLabel("3. PAYMENT MODE & INTERNAL LEDGER"),
+                _sectionLabel("3. BILL ADJUSTMENT"),
                 const SizedBox(height: 10),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'Cash', label: Text('Cash'), icon: Icon(Icons.money)),
-                    ButtonSegment(value: 'Bank', label: Text('Bank')),
-                  ],
-                  selected: {payMode},
-                  onSelectionChanged: (v) => setState(() => payMode = v.first),
-                ),
-                const SizedBox(height: 15),
-                DropdownButtonFormField<Party>(
-                  value: selectedInternalAccount,
-                  decoration: const InputDecoration(labelText: "Our Internal Account", border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
-                  items: ph.getInternalAccounts()
-                    .where((p) => payMode == "Cash" ? p.group == "Cash in Hand" : p.group == "Bank Accounts")
-                    .map((p) => DropdownMenuItem(value: p, child: Text(p.name))).toList(),
-                  onChanged: (v) => setState(() => selectedInternalAccount = v),
-                ),
+                _buildAdjustmentTrigger(themeColor, ph),
+                const SizedBox(height: 20),
 
-                if (payMode == "Bank") ...[
-                  const SizedBox(height: 20),
-                  _sectionLabel("4. CHEQUE / INSTRUMENT DETAILS"),
+                if (selectedBillNumbers.isEmpty) ...[
+                  _sectionLabel("4. DIRECT / ON-ACCOUNT PAYMENT MODE"),
                   const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(child: _input(chequeNoC, "Cheque No.", Icons.numbers)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _dateTile("CHEQUE DATE", selectedChequeDate, (d) => setState(() => selectedChequeDate = d), ph.currentFY, Colors.blueGrey)),
-                  ]),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'Cash', label: Text('Cash'), icon: Icon(Icons.money)),
+                      ButtonSegment(value: 'Bank', label: Text('Bank')),
+                    ],
+                    selected: {payMode},
+                    onSelectionChanged: (v) => setState(() => payMode = v.first),
+                  ),
+                  const SizedBox(height: 15),
+                  DropdownButtonFormField<Party>(
+                    value: selectedInternalAccount,
+                    decoration: const InputDecoration(labelText: "Our Internal Account", border: OutlineInputBorder(), filled: true, fillColor: Colors.white),
+                    items: ph.getInternalAccounts()
+                      .where((p) => payMode == "Cash" ? p.group == "Cash in Hand" : p.group == "Bank Accounts")
+                      .map((p) => DropdownMenuItem(value: p, child: Text(p.name))).toList(),
+                    onChanged: (v) => setState(() => selectedInternalAccount = v),
+                  ),
+
+                  if (payMode == "Bank") ...[
+                    const SizedBox(height: 20),
+                    _sectionLabel("5. CHEQUE / INSTRUMENT DETAILS"),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      Expanded(child: _input(chequeNoC, "Cheque No.", Icons.numbers)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _dateTile("CHEQUE DATE", selectedChequeDate, (d) => setState(() => selectedChequeDate = d), ph.currentFY, Colors.blueGrey)),
+                    ]),
+                  ],
+                ] else ...[
+                  _sectionLabel("4. ACTIVE BILL-WISE INSTRUMENTS (${selectedBillNumbers.length})"),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.indigo.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...selectedBillNumbers.map((bNo) {
+                          String m = billPaymentModes[bNo] ?? payMode;
+                          double bAmt = billAllocations[bNo] ?? 0.0;
+                          if (m.toLowerCase() == "bank") {
+                            String bBank = billDepositBanks[bNo] ?? (selectedInternalAccount?.name ?? "Bank");
+                            String bChq = billChequeControllers[bNo]?.text.trim() ?? "";
+                            String bDt = DateFormat('dd/MM/yy').format(billChequeDates[bNo] ?? selectedChequeDate);
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      "🏦 Bill #$bNo → $bBank${bChq.isNotEmpty ? ' • Chq #$bChq' : ''} ($bDt)",
+                                      style: TextStyle(color: Colors.indigo.shade900, fontSize: 11, fontWeight: FontWeight.bold),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text("₹${bAmt.toStringAsFixed(2)}", style: TextStyle(color: Colors.indigo.shade900, fontSize: 12, fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                            );
+                          } else {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text("💵 Bill #$bNo → CASH IN HAND", style: TextStyle(color: Colors.green.shade900, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  Text("₹${bAmt.toStringAsFixed(2)}", style: TextStyle(color: Colors.green.shade900, fontSize: 12, fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                            );
+                          }
+                        }),
+                      ],
+                    ),
+                  ),
                 ],
 
                 const SizedBox(height: 25),
-                _sectionLabel("5. BILL ADJUSTMENT"),
-                const SizedBox(height: 10),
-                _buildAdjustmentTrigger(themeColor, ph),
-
-                const SizedBox(height: 30),
-                _sectionLabel("6. FINAL AMOUNT & NARRATION"),
+                _sectionLabel("FINAL AMOUNT & NARRATION"),
                 const SizedBox(height: 10),
                 TextField(
-                  controller: amountC, keyboardType: TextInputType.number, 
+                  controller: amountC,
+                  readOnly: selectedBillNumbers.isNotEmpty,
+                  keyboardType: TextInputType.number, 
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-                  decoration: const InputDecoration(labelText: "VOUCHER AMOUNT ₹", border: OutlineInputBorder(), prefixIcon: Icon(Icons.currency_rupee)),
+                  decoration: InputDecoration(
+                    labelText: selectedBillNumbers.isNotEmpty ? "VOUCHER AMOUNT ₹ (Auto-Calculated)" : "VOUCHER AMOUNT ₹",
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.currency_rupee),
+                  ),
                 ),
                 const SizedBox(height: 15),
                 TextField(controller: narrationC, decoration: const InputDecoration(labelText: "Narration / Note", border: OutlineInputBorder(), prefixIcon: Icon(Icons.notes))),
@@ -523,18 +583,16 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
                                               ),
                                               onChanged: (val) {
                                                 double p = double.tryParse(val) ?? 0.0;
+                                                if (p < 0) p = 0.0;
                                                 if (p > due) {
                                                   p = due;
                                                   ctrl.text = due.toStringAsFixed(2);
+                                                  ctrl.selection = TextSelection.fromPosition(TextPosition(offset: ctrl.text.length));
                                                 }
                                                 setWizardState(() {
-                                                  if (p > 0) {
-                                                    if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
-                                                    billAllocations[bNo] = p;
-                                                  } else {
-                                                    selectedBillNumbers.remove(bNo);
-                                                    billAllocations.remove(bNo);
-                                                  }
+                                                  // Keep bill selected even when user backspaces to empty/0 so they can type a new number smoothly!
+                                                  if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
+                                                  billAllocations[bNo] = p;
                                                   recalculateRunning();
                                                 });
                                               },
@@ -703,8 +761,8 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
 
   void _handleFinalSave(PharoahManager ph) async {
     double amt = double.tryParse(amountC.text) ?? 0;
-    if (selectedParty == null || amt <= 0 || selectedInternalAccount == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("All fields are mandatory!")));
+    if (selectedParty == null || amt <= 0 || (selectedBillNumbers.isEmpty && selectedInternalAccount == null)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Select Party and enter a valid amount greater than ₹0!")));
       return;
     }
 
@@ -720,24 +778,71 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       }
     }
 
+    Party? defaultCashAcc;
+    Party? defaultBankAcc;
+    try {
+      defaultCashAcc = ph.parties.firstWhere((p) => p.group == "Cash in Hand");
+    } catch (_) {}
+    try {
+      defaultBankAcc = ph.parties.firstWhere((p) => p.group == "Bank Accounts");
+    } catch (_) {}
+    String depInFallback = selectedInternalAccount?.name ?? (defaultCashAcc?.name ?? "CASH");
+
     List<Map<String, dynamic>> finalChequeInstruments = [];
+    Set<String> usedBanks = {};
+    Set<String> usedCheques = {};
+    List<String> bankBills = [];
+    List<String> cashBills = [];
+
     for (var bNo in selectedBillNumbers) {
       String mode = billPaymentModes[bNo] ?? payMode;
+      double bAmt = billAllocations[bNo] ?? 0.0;
       if (mode.toLowerCase() == "bank") {
-        String bBank = billDepositBanks[bNo] ?? selectedInternalAccount?.name ?? '';
+        bankBills.add(bNo);
+        String bBank = billDepositBanks[bNo] ??
+            (selectedInternalAccount?.group == "Bank Accounts" ? selectedInternalAccount!.name : (defaultBankAcc?.name ?? depInFallback));
         String bChqNo = billChequeControllers[bNo]?.text.trim() ?? chequeNoC.text.trim();
         DateTime bChqDate = billChequeDates[bNo] ?? selectedChequeDate;
+        if (bBank.isNotEmpty) usedBanks.add(bBank);
+        if (bChqNo.isNotEmpty) usedCheques.add(bChqNo);
         finalChequeInstruments.add({
           'billNo': bNo,
-          'amount': billAllocations[bNo] ?? 0.0,
-          'paymentMode': mode,
+          'amount': bAmt,
+          'paymentMode': 'Bank',
           'bankName': bBank,
           'depositedIn': bBank,
           'chequeNo': bChqNo,
           'chequeDate': bChqDate.toIso8601String(),
         });
+      } else {
+        cashBills.add(bNo);
+        String cDep = defaultCashAcc?.name ?? "CASH";
+        usedBanks.add(cDep);
+        finalChequeInstruments.add({
+          'billNo': bNo,
+          'amount': bAmt,
+          'paymentMode': 'Cash',
+          'bankName': '',
+          'depositedIn': cDep,
+          'chequeNo': '',
+          'chequeDate': selectedEntryDate.toIso8601String(),
+        });
       }
     }
+
+    String effectiveMode = payMode;
+    if (selectedBillNumbers.isNotEmpty) {
+      if (bankBills.isNotEmpty) {
+        effectiveMode = "Bank";
+      } else {
+        effectiveMode = "Cash";
+      }
+    }
+    String effectiveDepIn = usedBanks.isNotEmpty ? usedBanks.join(", ") : depInFallback;
+    String effectiveChequeNo = usedCheques.isNotEmpty ? usedCheques.join(", ") : chequeNoC.text.trim();
+    DateTime? effectiveChequeDate = effectiveMode == "Bank"
+        ? (bankBills.isNotEmpty ? (billChequeDates[bankBills.first] ?? selectedChequeDate) : selectedChequeDate)
+        : null;
 
     final v = Voucher(
       id: isUpdateMode ? widget.existingVoucher!.id : DateTime.now().millisecondsSinceEpoch.toString(),
@@ -747,11 +852,11 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       partyId: selectedParty!.id,
       partyName: selectedParty!.name,
       amount: amt,
-      paymentMode: payMode,
-      bankName: payMode == "Bank" ? selectedInternalAccount!.name : "",
-      depositedIn: selectedInternalAccount!.name,
-      chequeNo: chequeNoC.text,
-      chequeDate: payMode == "Bank" ? selectedChequeDate : null,
+      paymentMode: effectiveMode,
+      bankName: effectiveMode == "Bank" ? effectiveDepIn : "",
+      depositedIn: effectiveDepIn,
+      chequeNo: effectiveChequeNo,
+      chequeDate: effectiveChequeDate,
       narration: narrationC.text,
       status: "Active",
       linkedBillNumbers: selectedBillNumbers,
