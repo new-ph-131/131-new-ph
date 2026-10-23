@@ -241,7 +241,31 @@ class MasterSyncOrchestrator {
           }
           break;
         case 'VOUCHER':
-          mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phApp.vouchers, envelope);
+          final vMap = envelope.billData;
+          final String vNo = (vMap['voucherNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, vNo);
+            if (phApp.activeCompany != null) {
+              final List<String> tKeys = [envelope.syncId, if (vNo.isNotEmpty) vNo];
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, tKeys);
+            }
+            final int beforeLen = phApp.vouchers.length;
+            phApp.vouchers.removeWhere((v) =>
+              v.id == envelope.syncId ||
+              (vNo.isNotEmpty && v.voucherNo.trim().toUpperCase() == vNo)
+            );
+            mutated = phApp.vouchers.length != beforeLen;
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, vNo);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: vNo);
+            }
+            mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phApp.vouchers, envelope);
+          }
+          if (mutated) {
+            phApp.save();
+            phApp.notifyListeners();
+          }
           break;
         default:
           debugPrint("⚠ [MasterSyncOrchestrator] Unknown document type: $docType");
@@ -430,7 +454,20 @@ class MasterSyncOrchestrator {
           }
           break;
         case 'VOUCHER':
-          mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phWeb.vouchers, envelope);
+          final vMap = envelope.billData;
+          final String vNo = (vMap['voucherNo'] ?? '').toString().trim().toUpperCase();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, vNo);
+            phWeb.purgeDeletedIds([envelope.syncId, if (vNo.isNotEmpty) vNo]);
+            mutated = true;
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, vNo);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: vNo);
+            mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phWeb.vouchers, envelope);
+          }
+          if (mutated) {
+            phWeb.notifyListeners();
+          }
           break;
         default:
           debugPrint("⚠ [MasterSyncOrchestrator] Unknown document type: $docType");

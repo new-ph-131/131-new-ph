@@ -24,7 +24,7 @@ class DeltaMergeEngine {
       String syncId = (cloudMap["sync_id"] ?? cloudMap["id"] ?? "").toString().trim();
       int cloudVersion = int.tryParse(cloudMap["version"]?.toString() ?? "1") ?? 1;
       int cloudTimestamp = int.tryParse(cloudMap["updated_at"]?.toString() ?? cloudMap["updatedAt"]?.toString() ?? "0") ?? 0;
-      int cloudIsDeleted = int.tryParse(cloudMap["is_deleted"]?.toString() ?? cloudMap["isDeleted"]?.toString() ?? (cloudMap["status"] == "Deleted" || cloudMap["status"] == "Cancelled" ? "1" : "0")) ?? 0;
+      int cloudIsDeleted = int.tryParse(cloudMap["is_deleted"]?.toString() ?? cloudMap["isDeleted"]?.toString() ?? (cloudMap["status"] == "Deleted" ? "1" : "0")) ?? 0;
 
       if (syncId.isEmpty) continue;
 

@@ -1,3 +1,4 @@
+import 'sub_views/web_accounts/services/web_voucher_d1_sync_service.dart';
 import 'sub_views/web_accounts/services/web_accounts_calculator.dart';
 import "../logic/master_cascade_service.dart";
 import "../logic/product_integrity_service.dart";
@@ -412,27 +413,7 @@ class PharoahWebManager with ChangeNotifier {
       }
       sales = masterSalesMap.values.toList();
 
-      // 🚀 EDGE D1 REAL-TIME SALES DELTAS HARVEST
-      if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
-        D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
-          if (edgeEvents.isNotEmpty) {
-            if (D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents)) {
-              // Post-D1 Deduplication pass
-              Map<String, Sale> postD1Map = {};
-              for (var s in sales) {
-                String key = s.billNo.trim().toUpperCase();
-                if (key.isEmpty) key = s.id.trim();
-                if (!postD1Map.containsKey(key) || s.version >= postD1Map[key]!.version) {
-                  postD1Map[key] = s;
-                }
-              }
-              sales = postD1Map.values.toList();
-              rebuildInventory();
-              notifyListeners();
-            }
-          }
-        }).catchError((_) {});
-      }
+      // (Unified D1 Edge Harvest runs after Vouchers sync below so Sales, Purchases & Vouchers all share the same delta batch)
     }
 
     // 2. Purchases Sync with Anti-Zombie Composite Key Shield & Strict Multi-Key Protection
@@ -547,32 +528,37 @@ class PharoahWebManager with ChangeNotifier {
         return true;
       }).toList();
 
-      if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
-        D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
-          if (edgeEvents.isNotEmpty) {
-            if (D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents)) {
-              rebuildInventory();
-              notifyListeners();
-            }
-          }
-        }).catchError((_) {});
-      }
     }
 
-    // 3. Vouchers Sync with Anti-Zombie Multi-Key Protection
+    // 3. Vouchers Sync with Anti-Zombie Multi-Key Protection & D1 Shield
     var allParsedVouc = (decodeJson('vouc.json') as List?)
         ?.map((e) => Voucher.fromMap(e))
         .toList();
     if (allParsedVouc != null) {
       for (var v in allParsedVouc) {
-        if (v.isDeleted == 1) continue;
+        if (v.isDeleted == 1 || v.status == "Deleted") continue;
         final String cleanVNo = v.voucherNo.trim().toUpperCase();
-        if ((v.id.isNotEmpty && deletedRecordIds.contains(v.id)) ||
-            (cleanVNo.isNotEmpty && deletedRecordIds.contains(cleanVNo)) ||
-            (v.id.isNotEmpty && localTombstoneRegistry.containsKey(v.id)) ||
-            (cleanVNo.isNotEmpty && localTombstoneRegistry.containsKey(cleanVNo))) {
+        if (D1SalesLedgerService.isBillDeleted(v.id, cleanVNo)) continue;
+        final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo);
+        if (knownVer > v.version) continue;
+
+        if (v.id.isNotEmpty && (deletedRecordIds.contains(v.id) || deletedRecordIds.contains(v.id.toUpperCase()))) {
           continue;
         }
+        final int idDelTs = localTombstoneRegistry[v.id] ?? localTombstoneRegistry[v.id.toUpperCase()] ?? 0;
+        if (idDelTs > 0) continue;
+
+        final int secDelTs = cleanVNo.isNotEmpty
+            ? (localTombstoneRegistry[cleanVNo] ?? localTombstoneRegistry[cleanVNo.toUpperCase()] ?? 0)
+            : 0;
+        if (secDelTs > 0 && (v.updatedAt == 0 || secDelTs >= v.updatedAt)) {
+          continue;
+        }
+        if (cleanVNo.isNotEmpty) {
+          deletedRecordIds.remove(cleanVNo);
+          deletedRecordIds.remove(cleanVNo.toUpperCase());
+        }
+
         int idx = vouchers.indexWhere((lv) => 
           (v.id.isNotEmpty && lv.id == v.id) ||
           (cleanVNo.isNotEmpty && lv.voucherNo.trim().toUpperCase() == cleanVNo)
@@ -590,11 +576,52 @@ class PharoahWebManager with ChangeNotifier {
       for (var v in vouchers) {
         String key = v.voucherNo.trim().toUpperCase();
         if (key.isEmpty) key = v.id.trim();
-        if (!masterVoucMap.containsKey(key) || v.version >= masterVoucMap[key]!.version) {
+        if (!masterVoucMap.containsKey(key) ||
+            v.version > masterVoucMap[key]!.version ||
+            (v.version == masterVoucMap[key]!.version && v.updatedAt >= masterVoucMap[key]!.updatedAt)) {
           masterVoucMap[key] = v;
         }
       }
-      vouchers = masterVoucMap.values.toList();
+      vouchers = masterVoucMap.values.where((v) {
+        if (v.isDeleted == 1 || v.status == "Deleted") return false;
+        final String vNo = v.voucherNo.trim().toUpperCase();
+        if (D1SalesLedgerService.isBillDeleted(v.id, vNo)) return false;
+        if (v.id.isNotEmpty && (deletedRecordIds.contains(v.id) || deletedRecordIds.contains(v.id.toUpperCase()))) return false;
+        if (v.id.isNotEmpty && (localTombstoneRegistry.containsKey(v.id) || localTombstoneRegistry.containsKey(v.id.toUpperCase()))) return false;
+        final int secDelTs = vNo.isNotEmpty
+            ? (localTombstoneRegistry[vNo] ?? localTombstoneRegistry[vNo.toUpperCase()] ?? 0)
+            : 0;
+        if (secDelTs > 0 && (v.updatedAt == 0 || secDelTs >= v.updatedAt)) return false;
+        return true;
+      }).toList();
+    }
+
+    // 🚀 UNIFIED D1 EDGE REAL-TIME DELTAS HARVEST (SALES + PURCHASES + VOUCHERS)
+    if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
+      D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
+        if (edgeEvents.isNotEmpty) {
+          final bool sMut = D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents);
+          final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents);
+          final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents);
+          if (sMut) {
+            Map<String, Sale> postD1Map = {};
+            for (var s in sales) {
+              String key = s.billNo.trim().toUpperCase();
+              if (key.isEmpty) key = s.id.trim();
+              if (!postD1Map.containsKey(key) || s.version >= postD1Map[key]!.version) {
+                postD1Map[key] = s;
+              }
+            }
+            sales = postD1Map.values.toList();
+          }
+          if (sMut || pMut) {
+            rebuildInventory();
+          }
+          if (sMut || pMut || vMut) {
+            notifyListeners();
+          }
+        }
+      }).catchError((_) {});
     }
 
     // 4. Sale Challans Sync with Anti-Zombie Multi-Key Protection & Chronological LWW Guard
@@ -1457,28 +1484,77 @@ class PharoahWebManager with ChangeNotifier {
     );
   }
 
+  void addVoucherAndSync(Voucher v) {
+    final String cleanVNo = v.voucherNo.trim().toUpperCase();
+    unmarkDeletedId(v.id, referenceNo: cleanVNo);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, cleanVNo);
+
+    final int existingIdx = vouchers.indexWhere((old) =>
+      old.id == v.id || (cleanVNo.isNotEmpty && old.voucherNo.trim().toUpperCase() == cleanVNo)
+    );
+    int maxVer = v.version;
+    if (existingIdx != -1 && vouchers[existingIdx].version >= maxVer) {
+      maxVer = vouchers[existingIdx].version + 1;
+    }
+    final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo);
+    if (knownVer >= maxVer) {
+      maxVer = knownVer + 1;
+    }
+    v.version = maxVer;
+    v.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    v.isDeleted = 0;
+    D1SalesLedgerService.recordKnownVersion(v.id, cleanVNo, v.version);
+
+    vouchers.removeWhere((old) =>
+      old.id == v.id || (cleanVNo.isNotEmpty && old.voucherNo.trim().toUpperCase() == cleanVNo)
+    );
+    vouchers.add(v);
+    notifyListeners();
+
+    WebVoucherD1SyncService.onVoucherSaved(v, activeStoreToken, clientSource: "WEB_PORTAL");
+    _autoSyncService.triggerAutoSync(
+      action: 'VOUCHER_SAVED',
+      entityId: v.id,
+      unmarkedIds: [v.id, if (cleanVNo.isNotEmpty) cleanVNo],
+    );
+  }
+
   void deleteVoucher(String voucherId) {
+    String realId = voucherId;
     String vNo = "";
     try {
       final targetV = vouchers.firstWhere((item) => item.id == voucherId || item.voucherNo == voucherId);
+      realId = targetV.id;
       vNo = targetV.voucherNo.trim().toUpperCase();
-      D1SalesLedgerService.markPermanentlyDeleted(voucherId, vNo);
-      VoucherSyncModule.onVoucherDeleted(targetV, activeStoreToken);
-    } catch (_) {}
+      WebVoucherD1SyncService.onVoucherDeleted(targetV, activeStoreToken, clientSource: "WEB_PORTAL");
+    } catch (_) {
+      D1SalesLedgerService.markPermanentlyDeleted(voucherId);
+    }
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final List<String> delKeys = [voucherId, if (vNo.isNotEmpty) vNo];
+    final List<String> delKeys = [
+      realId,
+      if (voucherId != realId) voucherId,
+      if (vNo.isNotEmpty) vNo,
+    ];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
+      localTombstoneRegistry[k.toUpperCase()] = delTime;
       deletedRecordIds.add(k);
+      deletedRecordIds.add(k.toUpperCase());
       unmarkedRecordIds.remove(k);
+      unmarkedRecordIds.remove(k.toUpperCase());
     }
     _saveLocalTombstones();
-    vouchers.removeWhere((item) => item.id == voucherId || (vNo.isNotEmpty && item.voucherNo.trim().toUpperCase() == vNo));
+    vouchers.removeWhere((item) =>
+      item.id == realId ||
+      item.id == voucherId ||
+      (vNo.isNotEmpty && item.voucherNo.trim().toUpperCase() == vNo)
+    );
     notifyListeners();
     pushUpdatedDataToCloud();
     _autoSyncService.triggerAutoSync(
-      action: 'RECORD_DELETED',
-      entityId: voucherId,
+      action: 'DELETE_VOUCHER',
+      entityId: realId,
       deletedIds: delKeys,
     );
   }
@@ -2476,14 +2552,38 @@ class PharoahWebManager with ChangeNotifier {
 
 
   void cancelVoucher(String id) {
-    int i = vouchers.indexWhere((v) => v.id == id);
+    int i = vouchers.indexWhere((v) => v.id == id || v.voucherNo == id);
     if (i != -1) {
-      vouchers[i].status = "Cancelled";
-      if (!vouchers[i].narration.startsWith("[CANCELLED]")) {
-        vouchers[i].narration = "[CANCELLED] ${vouchers[i].narration}";
+      final targetV = vouchers[i];
+      final String realId = targetV.id;
+      final String cleanVNo = targetV.voucherNo.trim().toUpperCase();
+      int nextVer = targetV.version + 1;
+      final int knownVer = D1SalesLedgerService.getKnownVersion(realId, cleanVNo);
+      if (knownVer >= nextVer) {
+        nextVer = knownVer + 1;
       }
+
+      for (int idx = 0; idx < vouchers.length; idx++) {
+        if (vouchers[idx].id == realId || (cleanVNo.isNotEmpty && vouchers[idx].voucherNo.trim().toUpperCase() == cleanVNo)) {
+          vouchers[idx].status = "Cancelled";
+          vouchers[idx].isDeleted = 0;
+          if (!vouchers[idx].narration.startsWith("[CANCELLED]")) {
+            vouchers[idx].narration = "[CANCELLED] ${vouchers[idx].narration}".trim();
+          }
+          vouchers[idx].version = nextVer;
+          vouchers[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+        }
+      }
+
+      unmarkDeletedId(realId, referenceNo: cleanVNo);
+      WebVoucherD1SyncService.onVoucherCancelled(vouchers[i], activeStoreToken, clientSource: "WEB_PORTAL");
       notifyListeners();
-      _autoSyncService.triggerAutoSync();
+      pushUpdatedDataToCloud();
+      _autoSyncService.triggerAutoSync(
+        action: 'CANCEL_VOUCHER',
+        entityId: realId,
+        unmarkedIds: [realId, if (cleanVNo.isNotEmpty) cleanVNo],
+      );
     }
   }
 

@@ -539,13 +539,8 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
 
     webPh.unmarkDeletedId(v.id, referenceNo: v.voucherNo);
     D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, v.voucherNo);
-    if (isUpdateMode) {
-      webPh.vouchers.removeWhere((old) => old.id == v.id || (old.voucherNo == v.voucherNo && v.voucherNo.isNotEmpty));
-    }
-    webPh.vouchers.add(v);
-    WebVoucherD1SyncService.onVoucherSaved(v, webPh.activeStoreToken);
+    webPh.addVoucherAndSync(v);
     await webPh.pushUpdatedDataToCloud();
-    webPh.notifyListeners();
     setState(() => isSaving = false);
 
     if (andPrint) {

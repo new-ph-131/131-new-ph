@@ -1,3 +1,4 @@
+import "sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import "../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/app_sync_engine.dart
 
@@ -102,7 +103,8 @@ class AppSyncEngine {
               if (edgeEvents.isNotEmpty) {
                 bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
                 bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
-                if (d1Sales || d1Purc) d1HasChanges = true;
+                bool d1Vouc = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
+                if (d1Sales || d1Purc || d1Vouc) d1HasChanges = true;
                 for (final ev in edgeEvents) {
                   final String action = (ev["action"] ?? "").toString().toUpperCase();
                   final String bId = (ev["bill_id"] ?? "").toString().trim();

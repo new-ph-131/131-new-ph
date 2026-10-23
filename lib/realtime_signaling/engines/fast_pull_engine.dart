@@ -1,3 +1,4 @@
+import "../../web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import "../../logic/master_cascade_service.dart";
 import "../../logic/product_integrity_service.dart";
 import "../../sync_core/d1_sales_ledger_service.dart";
@@ -44,6 +45,7 @@ class FastPullEngine {
           if (edgeEvents.isNotEmpty) {
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
+            bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
             final List<String> newTombKeys = [];
             final List<String> newUnmarkKeys = [];
             for (final ev in edgeEvents) {
@@ -141,15 +143,17 @@ class FastPullEngine {
               }
               await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
             }
-            if (d1SalesMutated || d1PurcMutated) {
-              InventoryLogicCenter.rebuildAllInventory(
-                medicines: ph.medicines,
-                batchHistory: ph.batchHistory,
-                purchases: ph.purchases,
-                sales: ph.sales,
-                saleReturns: ph.saleReturns,
-                purchaseReturns: ph.purchaseReturns,
-              );
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated) {
+              if (d1SalesMutated || d1PurcMutated) {
+                InventoryLogicCenter.rebuildAllInventory(
+                  medicines: ph.medicines,
+                  batchHistory: ph.batchHistory,
+                  purchases: ph.purchases,
+                  sales: ph.sales,
+                  saleReturns: ph.saleReturns,
+                  purchaseReturns: ph.purchaseReturns,
+                );
+              }
               if (d1SalesMutated) {
                 await File('$workingDir/sales.json').writeAsString(
                   jsonEncode(ph.sales.map((e) => e.toMap()).toList()),
@@ -158,6 +162,11 @@ class FastPullEngine {
               if (d1PurcMutated) {
                 await File('$workingDir/purc.json').writeAsString(
                   jsonEncode(ph.purchases.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1VoucMutated) {
+                await File('$workingDir/vouc.json').writeAsString(
+                  jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()),
                 );
               }
               ph.notifyListeners();
@@ -233,7 +242,7 @@ class FastPullEngine {
           final List<dynamic> filtered = [];
           for (final item in rawList) {
             if (item is Map) {
-              final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" || item["status"] == "Cancelled" ? "1" : "0")) ?? 0;
+              final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" ? "1" : "0")) ?? 0;
               if (isDel == 1) continue;
               final int itemUpdatedAt = int.tryParse(item["updated_at"]?.toString() ?? item["updatedAt"]?.toString() ?? "0") ?? 0;
               final keys = keyExtractor(item);

@@ -1,3 +1,4 @@
+import "web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import 'logic/app_accounts_calculator.dart';
 import 'logic/master_cascade_service.dart';
 import 'logic/product_integrity_service.dart';
@@ -354,7 +355,7 @@ class PharoahManager with ChangeNotifier {
         ?.map((e) => Purchase.fromMap(e))
         .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
         .toList() ?? [];
-    vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
+    vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)
         ?.map((e) => SaleChallan.fromMap(e))
         .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))
@@ -1386,24 +1387,44 @@ void registerBatchActivity({
   }
 
   Future<String> finalizeVoucher(Voucher v) async {
+    final String cleanVNo = v.voucherNo.trim().toUpperCase();
     int currentVer = v.version;
-    final int existingIdx = vouchers.indexWhere((x) => x.id == v.id || x.voucherNo == v.voucherNo);
+    final int existingIdx = vouchers.indexWhere((x) =>
+      x.id == v.id || (cleanVNo.isNotEmpty && x.voucherNo.trim().toUpperCase() == cleanVNo)
+    );
     if (existingIdx != -1) {
       final oldVer = vouchers[existingIdx].version;
       if (oldVer >= currentVer) {
         currentVer = oldVer + 1;
       }
     }
+    final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo);
+    if (knownVer >= currentVer) {
+      currentVer = knownVer + 1;
+    }
     v.updatedAt = DateTime.now().millisecondsSinceEpoch;
     v.version = currentVer;
     v.isDeleted = 0;
-    D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, v.voucherNo);
-    vouchers.removeWhere((x) => x.id == v.id || (v.voucherNo.isNotEmpty && x.voucherNo == v.voucherNo));
+    D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, cleanVNo);
+    D1SalesLedgerService.recordKnownVersion(v.id, cleanVNo, v.version);
+
+    vouchers.removeWhere((x) =>
+      x.id == v.id || (cleanVNo.isNotEmpty && x.voucherNo.trim().toUpperCase() == cleanVNo)
+    );
     vouchers.add(v);
+    notifyListeners();
+    await save();
+
     if (activeCompany != null) {
-      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) VoucherSyncModule.onVoucherSaved(v, t);
-      });
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(
+        activeCompany!.id,
+        id: v.id,
+        secondaryKey: cleanVNo,
+      );
+      final String t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      if (t.isNotEmpty) {
+        WebVoucherD1SyncService.onVoucherSaved(v, t, clientSource: "MOBILE_APP");
+      }
       String seriesType = v.type.toUpperCase();
       String prefix = v.voucherNo.split(RegExp(r'\d')).first;
       await PharoahNumberingEngine.updateSeriesCounter(
@@ -1412,9 +1433,13 @@ void registerBatchActivity({
         usedNumber: v.voucherNo,
         prefix: prefix,
       );
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'VOUCHER_SAVED',
+        entityId: v.id,
+        unmarkedIds: [v.id, if (cleanVNo.isNotEmpty) cleanVNo],
+      );
     }
-    await save();
-    notifyListeners();
     return v.id;
   }
 
@@ -1544,42 +1569,99 @@ void registerBatchActivity({
     addLog("ACCOUNTS", "Reversed Impact of ${v.voucherNo} for ${v.partyName}");
   }
 
-  void cancelVoucher(String id) {
-    int i = vouchers.indexWhere((v) => v.id == id);
+  Future<void> cancelVoucher(String id) async {
+    int i = vouchers.indexWhere((v) => v.id == id || v.voucherNo == id);
     if (i != -1) {
-      _reverseVoucherImpact(vouchers[i]);
-      vouchers[i].status = "Cancelled";
-      vouchers[i].narration = "[CANCELLED] " + vouchers[i].narration;
-      save();
+      final v = vouchers[i];
+      final String cleanVNo = v.voucherNo.trim().toUpperCase();
+      _reverseVoucherImpact(v);
+
+      int nextVer = v.version + 1;
+      final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo);
+      if (knownVer >= nextVer) {
+        nextVer = knownVer + 1;
+      }
+
+      for (int idx = 0; idx < vouchers.length; idx++) {
+        if (vouchers[idx].id == v.id || (cleanVNo.isNotEmpty && vouchers[idx].voucherNo.trim().toUpperCase() == cleanVNo)) {
+          vouchers[idx].status = "Cancelled";
+          vouchers[idx].isDeleted = 0;
+          if (!vouchers[idx].narration.startsWith("[CANCELLED]")) {
+            vouchers[idx].narration = "[CANCELLED] ${vouchers[idx].narration}".trim();
+          }
+          vouchers[idx].version = nextVer;
+          vouchers[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+        }
+      }
+
+      D1SalesLedgerService.unmarkPermanentlyDeleted(v.id, cleanVNo);
+      D1SalesLedgerService.recordKnownVersion(v.id, cleanVNo, v.version);
+
+      // Immediate 0ms UI update on first tap
       notifyListeners();
+      await save();
+
+      if (activeCompany != null) {
+        await TombstoneEngine.unmarkTombstoneWithTimestamp(
+          activeCompany!.id,
+          id: v.id,
+          secondaryKey: cleanVNo,
+        );
+        final String t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+        if (t.isNotEmpty) {
+          WebVoucherD1SyncService.onVoucherCancelled(v, t, clientSource: "MOBILE_APP");
+        }
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'CANCEL_VOUCHER',
+          entityId: v.id,
+          unmarkedIds: [v.id, if (cleanVNo.isNotEmpty) cleanVNo],
+        );
+      }
     }
   }
 
-  void deleteVoucher(String id) {
-    int i = vouchers.indexWhere((v) => v.id == id);
+  Future<void> deleteVoucher(String id) async {
+    int i = vouchers.indexWhere((v) => v.id == id || v.voucherNo == id);
     if (i != -1) {
       final v = vouchers[i];
-      if (activeCompany != null) {
-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) VoucherSyncModule.onVoucherDeleted(v, t);
-        });
-      }
+      final String realId = v.id;
+      final String vNo = v.voucherNo.trim().toUpperCase();
       _reverseVoucherImpact(v);
-      final vNo = v.voucherNo;
-      D1SalesLedgerService.markPermanentlyDeleted(id, vNo);
-      vouchers.removeAt(i);
+
+      // 1. Synchronous memory & D1 gravestone lock + immediate 0ms UI removal on 1st tap
+      D1SalesLedgerService.markPermanentlyDeleted(realId, vNo);
+      D1SalesLedgerService.recordKnownVersion(realId, vNo, 999999);
+      vouchers.removeWhere((x) =>
+        x.id == realId ||
+        x.id == id ||
+        (vNo.isNotEmpty && x.voucherNo.trim().toUpperCase() == vNo)
+      );
+      notifyListeners();
+
+      // 2. Persist disk & SharedPreferences tombstones BEFORE triggering cloud sync so it can NEVER resurrect
+      final List<String> delKeys = [
+        realId,
+        if (id != realId) id,
+        if (vNo.isNotEmpty) vNo,
+      ];
       if (activeCompany != null) {
-        final List<String> delKeys = [id, if (vNo.isNotEmpty) vNo];
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        await TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+      }
+      await save();
+
+      if (activeCompany != null) {
+        final String t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+        if (t.isNotEmpty) {
+          WebVoucherD1SyncService.onVoucherDeleted(v, t, clientSource: "MOBILE_APP");
+        }
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_VOUCHER',
-          entityId: id,
+          entityId: realId,
           deletedIds: delKeys,
         );
-        }
-      save();
-      notifyListeners();
+      }
     }
   }
 
@@ -2377,7 +2459,7 @@ void registerBatchActivity({
         ?.map((e) => Purchase.fromMap(e))
         .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
         .toList() ?? [];
-    vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).toList() ?? [];
+    vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)
         ?.map((e) => SaleChallan.fromMap(e))
         .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))

@@ -95,10 +95,31 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       runningTotal = v.amount;
 
       try {
-        selectedParty = ph.parties.firstWhere((p) => p.id == v.partyId);
-        selectedInternalAccount = ph.parties.firstWhere((p) => p.name == v.depositedIn);
-        pendingBills = ph.getPendingBills(selectedParty!.id, widget.type.toUpperCase() == "RECEIPT", excludeVoucherId: v.id);
-      } catch (e) { debugPrint("Sync Error: $e"); }
+        selectedParty = ph.parties.firstWhere(
+          (p) => p.id == v.partyId || p.name.toLowerCase() == v.partyName.toLowerCase(),
+          orElse: () => Party(id: v.partyId, name: v.partyName),
+        );
+      } catch (e) {
+        selectedParty = Party(id: v.partyId, name: v.partyName);
+      }
+      try {
+        selectedInternalAccount = ph.parties.firstWhere(
+          (p) => p.name.toLowerCase() == v.depositedIn.toLowerCase() ||
+                 v.depositedIn.toLowerCase().contains(p.name.toLowerCase()),
+        );
+      } catch (_) {
+        try {
+          String targetGroup = v.paymentMode.toLowerCase() == "cash" ? "Cash in Hand" : "Bank Accounts";
+          selectedInternalAccount = ph.parties.firstWhere((p) => p.group == targetGroup);
+        } catch (_) {}
+      }
+      if (selectedParty != null) {
+        pendingBills = ph.getPendingBills(
+          selectedParty!.id,
+          widget.type.toUpperCase() == "RECEIPT",
+          excludeVoucherId: v.id,
+        );
+      }
 
     } else {
       selectedEntryDate = PharoahDateController.getInitialBillDate(ph.currentFY);

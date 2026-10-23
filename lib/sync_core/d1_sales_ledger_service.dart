@@ -601,11 +601,14 @@ class D1SalesLedgerService {
       final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
       final dynamic rawSale = ev["sale_data"];
 
-      // Skip Purchase events so they never pollute Sales
+      // Skip Purchase and Voucher events so they never pollute Sales
       if (rawSale is Map &&
           (rawSale["doc_type"] == "PURCHASE" ||
+           rawSale["doc_type"] == "VOUCHER" ||
            rawSale.containsKey("distributorName") ||
-           rawSale.containsKey("internalNo"))) {
+           rawSale.containsKey("internalNo") ||
+           rawSale.containsKey("voucherNo") ||
+           rawSale.containsKey("depositedIn"))) {
         continue;
       }
 
@@ -670,6 +673,12 @@ class D1SalesLedgerService {
       final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
       final dynamic rawData = ev["sale_data"];
 
+      if (rawData is Map &&
+          (rawData["doc_type"] == "VOUCHER" ||
+           rawData.containsKey("voucherNo") ||
+           rawData.containsKey("depositedIn"))) {
+        continue;
+      }
       final bool isPurchasePayload = rawData is Map &&
           (rawData["doc_type"] == "PURCHASE" ||
            rawData.containsKey("distributorName") ||
