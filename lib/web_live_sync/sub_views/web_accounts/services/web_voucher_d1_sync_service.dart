@@ -7,7 +7,6 @@ import 'package:http/http.dart' as http;
 import '../../../../models.dart';
 import '../../../../sync_core/modules/voucher_sync_module.dart';
 import '../../../../sync_core/d1_sales_ledger_service.dart';
-import '../../../web_cloud_config.dart';
 
 /// 🌐 WebVoucherD1SyncService
 /// Dedicated synchronization service for Vouchers, Payments, Receipts, Contras, and Expenses.
@@ -147,7 +146,7 @@ class WebVoucherD1SyncService {
         },
       };
       final res = await http.post(
-        Uri.parse(WebCloudConfig.edgeSignalEndpoint),
+        Uri.parse(D1SalesLedgerService.endpoint),
         headers: _headers,
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 6));
@@ -194,7 +193,7 @@ class WebVoucherD1SyncService {
         },
       };
       final res = await http.post(
-        Uri.parse(WebCloudConfig.edgeSignalEndpoint),
+        Uri.parse(D1SalesLedgerService.endpoint),
         headers: _headers,
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 6));
