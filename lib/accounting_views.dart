@@ -628,10 +628,10 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
                                             const SizedBox(width: 6),
                                             InkWell(
                                               onTap: () async {
-                                                DateTime? picked = await PharoahDateController.selectDate(
+                                                DateTime? picked = await PharoahDateController.pickDate(
                                                   context: context,
+                                                  currentFY: ph.currentFY,
                                                   initialDate: billChequeDates[bNo] ?? selectedChequeDate,
-                                                  activeFY: ph.currentFY,
                                                 );
                                                 if (picked != null) {
                                                   setWizardState(() => billChequeDates[bNo] = picked);
