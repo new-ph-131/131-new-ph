@@ -50,6 +50,9 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
   List<String> selectedBillNumbers = [];
   Map<String, double> billAllocations = {};
   Map<String, String> billPaymentModes = {}; // 'Cash' or 'Bank'
+  Map<String, String> billDepositBanks = {};
+  Map<String, DateTime> billChequeDates = {};
+  final Map<String, TextEditingController> billChequeControllers = {};
   final Map<String, TextEditingController> billAmtControllers = {};
   double runningTotal = 0.0;
   double cashAllocatedTotal = 0.0;
@@ -136,6 +139,10 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       c.dispose();
     }
     billAmtControllers.clear();
+    for (var c in billChequeControllers.values) {
+      c.dispose();
+    }
+    billChequeControllers.clear();
     super.dispose();
   }
 

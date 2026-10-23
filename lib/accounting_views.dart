@@ -35,6 +35,10 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
   Party? selectedParty;
   Party? selectedInternalAccount; 
   String payMode = "Cash";
+  Map<String, String> billPaymentModes = {};
+  Map<String, String> billDepositBanks = {};
+  Map<String, DateTime> billChequeDates = {};
+  final Map<String, TextEditingController> billChequeControllers = {};
   String voucherNo = "Loading...";
   bool isUpdateMode = false;
 
@@ -559,6 +563,25 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       }
     }
 
+    List<Map<String, dynamic>> finalChequeInstruments = [];
+    for (var bNo in selectedBillNumbers) {
+      String mode = billPaymentModes[bNo] ?? payMode;
+      if (mode.toLowerCase() == "bank") {
+        String bBank = billDepositBanks[bNo] ?? selectedInternalAccount?.name ?? '';
+        String bChqNo = billChequeControllers[bNo]?.text.trim() ?? chequeNoC.text.trim();
+        DateTime bChqDate = billChequeDates[bNo] ?? selectedChequeDate;
+        finalChequeInstruments.add({
+          'billNo': bNo,
+          'amount': billAllocations[bNo] ?? 0.0,
+          'paymentMode': mode,
+          'bankName': bBank,
+          'depositedIn': bBank,
+          'chequeNo': bChqNo,
+          'chequeDate': bChqDate.toIso8601String(),
+        });
+      }
+    }
+
     final v = Voucher(
       id: isUpdateMode ? widget.existingVoucher!.id : DateTime.now().millisecondsSinceEpoch.toString(),
       type: widget.type.toUpperCase(),
@@ -576,6 +599,7 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
       status: "Active",
       linkedBillNumbers: selectedBillNumbers,
       billAllocations: finalAllocations,
+      chequeInstruments: finalChequeInstruments,
       version: newVersion,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       isDeleted: 0,
