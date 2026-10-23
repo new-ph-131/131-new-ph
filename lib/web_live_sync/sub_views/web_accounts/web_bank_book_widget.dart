@@ -54,10 +54,39 @@ class _WebBankBookWidgetState extends State<WebBankBookWidget> {
       final bName = selectedBankAccount!.name.trim().toUpperCase();
 
       for (var v in widget.webPh.vouchers.where((v) => v.status == "Active")) {
-        if (v.depositedIn.trim().toUpperCase() != bName) continue;
         final vDateOnly = _dateOnly(v.date);
-
         bool isRec = v.type.toUpperCase() == "RECEIPT";
+
+        if (v.chequeInstruments.isNotEmpty) {
+          for (var inst in v.chequeInstruments) {
+            String instBank = (inst['depositedIn'] ?? inst['bankName'] ?? '').toString().trim().toUpperCase();
+            if (instBank != bName) continue;
+            double instAmt = (inst['amount'] as num?)?.toDouble() ?? 0.0;
+            if (instAmt <= 0) continue;
+            double inAmt = isRec ? instAmt : 0.0;
+            double outAmt = isRec ? 0.0 : instAmt;
+            String instBill = inst['billNo']?.toString() ?? '';
+            String instChq = inst['chequeNo']?.toString() ?? '';
+            DateTime? instDt = inst['chequeDate'] != null ? DateTime.tryParse(inst['chequeDate'].toString()) : null;
+            String dtStr = instDt != null ? " (${DateFormat('dd/MM/yy').format(instDt)})" : "";
+
+            if (vDateOnly.isBefore(fDateOnly)) {
+              openBal += (inAmt - outAmt);
+            } else if (!vDateOnly.isAfter(tDateOnly)) {
+              statement.add({
+                'date': v.date,
+                'particulars': "${v.type.toUpperCase()}: ${v.partyName}${instBill.isNotEmpty ? ' [Agst $instBill]' : ''}",
+                'reference': instChq.isNotEmpty ? "${v.voucherNo} • Chq: $instChq$dtStr" : v.voucherNo,
+                'in': inAmt,
+                'out': outAmt,
+              });
+            }
+          }
+          continue;
+        }
+
+        if (v.depositedIn.trim().toUpperCase() != bName) continue;
+
         double inAmt = isRec ? v.amount : 0.0;
         double outAmt = isRec ? 0.0 : v.amount;
 

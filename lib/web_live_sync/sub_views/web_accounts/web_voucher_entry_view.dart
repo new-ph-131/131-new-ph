@@ -107,6 +107,26 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
         double initialAlloc = billAllocations[bNo] ?? (selectedBillNumbers.contains(bNo) ? due : 0.0);
         billAmtControllers[bNo] = TextEditingController(text: initialAlloc > 0 ? initialAlloc.toStringAsFixed(2) : due.toStringAsFixed(2));
         billPaymentModes[bNo] = v.paymentMode;
+        billDepositBanks[bNo] = v.depositedIn;
+        billChequeControllers[bNo] = TextEditingController(text: v.chequeNo);
+        billChequeDates[bNo] = v.chequeDate ?? v.date;
+      }
+      if (v.chequeInstruments.isNotEmpty) {
+        for (var inst in v.chequeInstruments) {
+          String bNo = inst['billNo']?.toString() ?? '';
+          if (bNo.isNotEmpty) {
+            billPaymentModes[bNo] = inst['paymentMode']?.toString() ?? v.paymentMode;
+            if (inst['bankName'] != null && inst['bankName'].toString().isNotEmpty) {
+              billDepositBanks[bNo] = inst['bankName'].toString();
+            } else if (inst['depositedIn'] != null && inst['depositedIn'].toString().isNotEmpty) {
+              billDepositBanks[bNo] = inst['depositedIn'].toString();
+            }
+            billChequeControllers[bNo] = TextEditingController(text: inst['chequeNo']?.toString() ?? '');
+            if (inst['chequeDate'] != null) {
+              billChequeDates[bNo] = DateTime.tryParse(inst['chequeDate'].toString()) ?? (v.chequeDate ?? v.date);
+            }
+          }
+        }
       }
       _recalculateRunningTotal();
     } else {
@@ -153,18 +173,32 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       selectedBillNumbers.clear();
       billAllocations.clear();
       billPaymentModes.clear();
+      billDepositBanks.clear();
+      billChequeDates.clear();
       for (var c in billAmtControllers.values) {
         c.dispose();
       }
       billAmtControllers.clear();
+      for (var c in billChequeControllers.values) {
+        c.dispose();
+      }
+      billChequeControllers.clear();
       runningTotal = 0.0;
       amountC.clear();
+
+      final defaultBankName = webPh.parties.where((p) => p.group == "Bank Accounts").isNotEmpty
+          ? webPh.parties.firstWhere((p) => p.group == "Bank Accounts").name
+          : (selectedInternalAccount?.name ?? "");
+
       pendingBills = webPh.getPendingBills(party.id, widget.type.toUpperCase() == "RECEIPT");
       for (var b in pendingBills) {
         String bNo = b['billNo'].toString();
         double due = (b['amount'] as num).toDouble();
         billAmtControllers[bNo] = TextEditingController(text: due.toStringAsFixed(2));
         billPaymentModes[bNo] = payMode;
+        billDepositBanks[bNo] = selectedInternalAccount?.group == "Bank Accounts" ? selectedInternalAccount!.name : defaultBankName;
+        billChequeControllers[bNo] = TextEditingController(text: chequeNoC.text);
+        billChequeDates[bNo] = selectedChequeDate;
       }
     });
   }
@@ -333,16 +367,21 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       }
     }
 
-    // Split bills check: Cash bills vs Bank bills
-    final cashBills = selectedBillNumbers.where((b) => (billPaymentModes[b] ?? payMode).toLowerCase() == "cash").toList();
-    final bankBills = selectedBillNumbers.where((b) => (billPaymentModes[b] ?? payMode).toLowerCase() == "bank").toList();
+    // Collect Cash & Bank allocations for Section 269ST check & Single Unified Voucher
+    List<String> cashBills = [];
+    List<String> bankBills = [];
+    for (var bNo in selectedBillNumbers) {
+      String m = (billPaymentModes[bNo] ?? payMode).toLowerCase();
+      if (m == "bank") {
+        bankBills.add(bNo);
+      } else {
+        cashBills.add(bNo);
+      }
+    }
 
-    bool isSplitMode = !isUpdateMode && cashBills.isNotEmpty && bankBills.isNotEmpty;
-
-    // Cash limit check (269ST)
-    double totalCashInThisSave = isSplitMode 
+    double totalCashInThisSave = cashBills.isNotEmpty
         ? cashBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0))
-        : (payMode == "Cash" ? amt : 0.0);
+        : (payMode.toLowerCase() == "cash" && selectedBillNumbers.isEmpty ? amt : 0.0);
 
     if (totalCashInThisSave > 0 && selectedParty != null && webPh.isCashLimitExceeded(selectedParty!.id, totalCashInThisSave)) {
       bool? proceed = await showDialog<bool>(
@@ -389,89 +428,61 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       defaultBankAcc = webPh.parties.firstWhere((p) => p.group == "Bank Accounts");
     } catch (_) {}
 
-    if (isSplitMode) {
-      // 1. CREATE CASH VOUCHER
-      double cashAmt = cashBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0));
-      Map<String, double> cashAlloc = { for (var b in cashBills) b: billAllocations[b] ?? 0.0 };
-      String prefix = typeUp == "RECEIPT" ? "RCT-" : (typeUp == "PAYMENT" ? "PAY-" : "VCT-");
-      String cashVNo = webPh.getNextBillNumber(typeUp, prefix, 101);
-      String cashDepIn = defaultCashAcc?.name ?? "CASH";
+    // Build structured chequeInstruments list for Single Unified Voucher
+    List<Map<String, dynamic>> finalChequeInstruments = [];
+    Set<String> usedBanks = {};
+    Set<String> usedCheques = {};
 
-      final vCash = Voucher(
-        id: "VCT-WEB-${DateTime.now().millisecondsSinceEpoch}-1",
-        type: typeUp,
-        voucherNo: cashVNo,
-        date: selectedEntryDate,
-        partyId: pId,
-        partyName: pName,
-        amount: cashAmt,
-        paymentMode: "Cash",
-        bankName: "",
-        depositedIn: cashDepIn,
-        chequeNo: "",
-        chequeDate: null,
-        narration: "${narrationC.text.trim()} [Cash Agst ${cashBills.join(', ')}]".trim(),
-        status: "Active",
-        linkedBillNumbers: cashBills,
-        billAllocations: cashAlloc,
-        version: 1,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        isDeleted: 0,
-      );
-
-      // 2. CREATE BANK VOUCHER
-      double bankAmt = bankBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0));
-      Map<String, double> bankAlloc = { for (var b in bankBills) b: billAllocations[b] ?? 0.0 };
-      String bankVNo = webPh.getNextBillNumber(typeUp, prefix, 102);
-      String bankDepIn = (selectedInternalAccount?.group == "Bank Accounts" ? selectedInternalAccount!.name : defaultBankAcc?.name) ?? depIn;
-
-      final vBank = Voucher(
-        id: "VCT-WEB-${DateTime.now().millisecondsSinceEpoch + 1}-2",
-        type: typeUp,
-        voucherNo: bankVNo,
-        date: selectedEntryDate,
-        partyId: pId,
-        partyName: pName,
-        amount: bankAmt,
-        paymentMode: "Bank",
-        bankName: bankDepIn,
-        depositedIn: bankDepIn,
-        chequeNo: chequeNoC.text.trim(),
-        chequeDate: selectedChequeDate,
-        narration: "${narrationC.text.trim()} [Bank Agst ${bankBills.join(', ')}]".trim(),
-        status: "Active",
-        linkedBillNumbers: bankBills,
-        billAllocations: bankAlloc,
-        version: 1,
-        updatedAt: DateTime.now().millisecondsSinceEpoch + 1,
-        isDeleted: 0,
-      );
-
-      webPh.unmarkDeletedId(vCash.id, referenceNo: vCash.voucherNo);
-      D1SalesLedgerService.unmarkPermanentlyDeleted(vCash.id, vCash.voucherNo);
-      webPh.vouchers.add(vCash);
-      WebVoucherD1SyncService.onVoucherSaved(vCash, webPh.activeStoreToken);
-
-      webPh.unmarkDeletedId(vBank.id, referenceNo: vBank.voucherNo);
-      D1SalesLedgerService.unmarkPermanentlyDeleted(vBank.id, vBank.voucherNo);
-      webPh.vouchers.add(vBank);
-      WebVoucherD1SyncService.onVoucherSaved(vBank, webPh.activeStoreToken);
-
-      await webPh.pushUpdatedDataToCloud();
-      webPh.notifyListeners();
-      setState(() => isSaving = false);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("✅ Created 2 Smart Vouchers: Cash ($cashVNo ₹${cashAmt.toStringAsFixed(2)}) & Bank ($bankVNo ₹${bankAmt.toStringAsFixed(2)})!"),
-            backgroundColor: Colors.green,
-          ),
-        );
-        widget.onBack();
+    for (var bNo in selectedBillNumbers) {
+      String m = billPaymentModes[bNo] ?? payMode;
+      double bAmt = billAllocations[bNo] ?? 0.0;
+      if (m.toLowerCase() == "bank") {
+        String bBank = billDepositBanks[bNo] ??
+            (selectedInternalAccount?.group == "Bank Accounts" ? selectedInternalAccount!.name : (defaultBankAcc?.name ?? depIn));
+        String bChq = billChequeControllers[bNo]?.text.trim() ?? chequeNoC.text.trim();
+        DateTime bDate = billChequeDates[bNo] ?? selectedChequeDate;
+        if (bBank.isNotEmpty) usedBanks.add(bBank);
+        if (bChq.isNotEmpty) usedCheques.add(bChq);
+        finalChequeInstruments.add({
+          'billNo': bNo,
+          'amount': bAmt,
+          'paymentMode': 'Bank',
+          'bankName': bBank,
+          'depositedIn': bBank,
+          'chequeNo': bChq,
+          'chequeDate': bDate.toIso8601String(),
+        });
+      } else {
+        String cDep = defaultCashAcc?.name ?? "CASH";
+        usedBanks.add(cDep);
+        finalChequeInstruments.add({
+          'billNo': bNo,
+          'amount': bAmt,
+          'paymentMode': 'Cash',
+          'bankName': '',
+          'depositedIn': cDep,
+          'chequeNo': '',
+          'chequeDate': selectedEntryDate.toIso8601String(),
+        });
       }
-      return;
     }
+
+    String effectiveMode = payMode;
+    if (selectedBillNumbers.isNotEmpty) {
+      if (bankBills.isNotEmpty && cashBills.isEmpty) {
+        effectiveMode = "Bank";
+      } else if (cashBills.isNotEmpty && bankBills.isEmpty) {
+        effectiveMode = "Cash";
+      } else if (bankBills.isNotEmpty && cashBills.isNotEmpty) {
+        effectiveMode = "Bank";
+      }
+    }
+
+    String effectiveDepIn = usedBanks.isNotEmpty ? usedBanks.join(", ") : depIn;
+    String effectiveChequeNo = usedCheques.isNotEmpty ? usedCheques.join(", ") : chequeNoC.text.trim();
+    DateTime? effectiveChequeDate = effectiveMode == "Bank"
+        ? (bankBills.isNotEmpty ? (billChequeDates[bankBills.first] ?? selectedChequeDate) : selectedChequeDate)
+        : null;
 
     // Standard Single Voucher Save (or Update)
     int newVersion = 1;
@@ -494,15 +505,16 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       partyId: pId,
       partyName: pName,
       amount: amt,
-      paymentMode: payMode,
-      bankName: payMode == "Bank" ? depIn : "",
-      depositedIn: depIn,
-      chequeNo: chequeNoC.text.trim(),
-      chequeDate: payMode == "Bank" ? selectedChequeDate : null,
+      paymentMode: effectiveMode,
+      bankName: effectiveMode == "Bank" ? effectiveDepIn : "",
+      depositedIn: effectiveDepIn,
+      chequeNo: effectiveChequeNo,
+      chequeDate: effectiveChequeDate,
       narration: narrationC.text.trim(),
       status: "Active",
       linkedBillNumbers: selectedBillNumbers,
       billAllocations: finalAllocations,
+      chequeInstruments: finalChequeInstruments,
       version: newVersion,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       isDeleted: 0,
@@ -1027,6 +1039,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
   // 📊 RIGHT SIDECAR (INTERACTIVE SETTLEMENT & LIVE FINANCIAL INTELLIGENCE)
   // ===========================================================================
   Widget _buildRightInteractiveSidecar(PharoahWebManager webPh, Color themeColor, String typeUp) {
+    final bankAccounts = webPh.parties.where((p) => p.group == "Bank Accounts").toList();
     if (typeUp == "CONTRA") {
       return _buildContraTransferPreview(webPh);
     }
@@ -1347,16 +1360,32 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
                                       padding: const EdgeInsets.symmetric(horizontal: 6),
                                       decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
                                       child: DropdownButtonHideUnderline(
-                                        child: DropdownButton<String>(
-                                          value: billDepositBanks[bNo] ?? selectedInternalAccount?.name ?? (bankAccounts.isNotEmpty ? bankAccounts.first.name : ''),
-                                          isExpanded: true,
-                                          dropdownColor: const Color(0xFF1E293B),
-                                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                          items: bankAccounts.map((a) => DropdownMenuItem(value: a.name, child: Text(a.name, overflow: TextOverflow.ellipsis))).toList(),
-                                          onChanged: widget.isReadOnly ? null : (val) {
-                                            if (val != null) {
-                                              setState(() => billDepositBanks[bNo] = val);
+                                        child: Builder(
+                                          builder: (ctx) {
+                                            final bankNames = bankAccounts.map((a) => a.name).toSet().toList();
+                                            String? currentBank = billDepositBanks[bNo];
+                                            if (currentBank == null || !bankNames.contains(currentBank)) {
+                                              if (selectedInternalAccount != null && bankNames.contains(selectedInternalAccount!.name)) {
+                                                currentBank = selectedInternalAccount!.name;
+                                              } else if (bankNames.isNotEmpty) {
+                                                currentBank = bankNames.first;
+                                              } else {
+                                                currentBank = null;
+                                              }
                                             }
+                                            return DropdownButton<String>(
+                                              value: currentBank,
+                                              hint: const Text("Select Bank", style: TextStyle(color: Colors.white38, fontSize: 9)),
+                                              isExpanded: true,
+                                              dropdownColor: const Color(0xFF1E293B),
+                                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                              items: bankNames.map((name) => DropdownMenuItem(value: name, child: Text(name, overflow: TextOverflow.ellipsis))).toList(),
+                                              onChanged: widget.isReadOnly ? null : (val) {
+                                                if (val != null) {
+                                                  setState(() => billDepositBanks[bNo] = val);
+                                                }
+                                              },
+                                            );
                                           },
                                         ),
                                       ),
@@ -1440,18 +1469,47 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
                         Text("Total: ₹${runningTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.greenAccent, fontSize: 13, fontWeight: FontWeight.w900)),
                       ],
                     ),
-                    if (cashAllocatedTotal > 0 && bankAllocatedTotal > 0) ...[
+                    if (selectedBillNumbers.isNotEmpty) ...[
                       const Divider(color: Colors.white24, height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text("💵 Cash: ₹${cashAllocatedTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white70, fontSize: 9.5)),
-                          Text("🏦 Bank: ₹${bankAllocatedTotal.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white70, fontSize: 9.5)),
-                        ],
-                      ),
+                      ...selectedBillNumbers.map((bNo) {
+                        String m = billPaymentModes[bNo] ?? payMode;
+                        double bAmt = billAllocations[bNo] ?? 0.0;
+                        if (m.toLowerCase() == "bank") {
+                          String bBank = billDepositBanks[bNo] ?? (selectedInternalAccount?.name ?? "Bank");
+                          String bChq = billChequeControllers[bNo]?.text.trim() ?? "";
+                          String bDt = DateFormat('dd/MM/yy').format(billChequeDates[bNo] ?? selectedChequeDate);
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 3),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "🏦 $bNo → $bBank${bChq.isNotEmpty ? ' • Chq #$bChq' : ''} ($bDt)",
+                                    style: const TextStyle(color: Colors.white70, fontSize: 9),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text("₹${bAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 9.5, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          );
+                        } else {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 3),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text("💵 $bNo → CASH", style: const TextStyle(color: Colors.white70, fontSize: 9)),
+                                Text("₹${bAmt.toStringAsFixed(2)}", style: const TextStyle(color: Colors.greenAccent, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          );
+                        }
+                      }),
                       const SizedBox(height: 4),
                       const Text(
-                        "⚡ Multi-Mode Split: Will automatically create 1 Cash & 1 Bank voucher on save!",
+                        "✅ Single Unified Voucher: All cheques & bank allocations will be saved in 1 voucher!",
                         style: TextStyle(color: Color(0xFF38BDF8), fontSize: 8.5, fontStyle: FontStyle.italic),
                       ),
                     ],

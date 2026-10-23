@@ -75,6 +75,23 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
           billAllocations[bNo] = v.getAllocatedAmount(bNo);
         }
       }
+      if (v.chequeInstruments.isNotEmpty) {
+        for (var inst in v.chequeInstruments) {
+          String bNo = inst['billNo']?.toString() ?? '';
+          if (bNo.isNotEmpty) {
+            billPaymentModes[bNo] = inst['paymentMode']?.toString() ?? v.paymentMode;
+            if (inst['bankName'] != null && inst['bankName'].toString().isNotEmpty) {
+              billDepositBanks[bNo] = inst['bankName'].toString();
+            } else if (inst['depositedIn'] != null && inst['depositedIn'].toString().isNotEmpty) {
+              billDepositBanks[bNo] = inst['depositedIn'].toString();
+            }
+            billChequeControllers[bNo] = TextEditingController(text: inst['chequeNo']?.toString() ?? '');
+            if (inst['chequeDate'] != null) {
+              billChequeDates[bNo] = DateTime.tryParse(inst['chequeDate'].toString()) ?? (v.chequeDate ?? v.date);
+            }
+          }
+        }
+      }
       runningTotal = v.amount;
 
       try {
@@ -469,45 +486,185 @@ class _VoucherEntryViewState extends State<VoucherEntryView> {
                             ),
                             if (isSel) ...[
                               const Divider(height: 12),
-                              Row(
-                                children: [
-                                  const SizedBox(width: 48),
-                                  const Text("Adjust ₹: ", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 6),
-                                  SizedBox(
-                                    width: 100,
-                                    height: 32,
-                                    child: TextField(
-                                      controller: ctrl,
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                      decoration: InputDecoration(
-                                        isDense: true,
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                              Builder(
+                                builder: (ctx) {
+                                  String itemMode = billPaymentModes[bNo] ?? payMode;
+                                  final bankAccounts = ph.parties.where((p) => p.group == "Bank Accounts").toList();
+                                  final bankNames = bankAccounts.map((a) => a.name).toSet().toList();
+                                  String? currentBank = billDepositBanks[bNo];
+                                  if (currentBank == null || !bankNames.contains(currentBank)) {
+                                    if (selectedInternalAccount != null && bankNames.contains(selectedInternalAccount!.name)) {
+                                      currentBank = selectedInternalAccount!.name;
+                                    } else if (bankNames.isNotEmpty) {
+                                      currentBank = bankNames.first;
+                                    } else {
+                                      currentBank = null;
+                                    }
+                                  }
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const SizedBox(width: 12),
+                                          const Text("Adjust ₹: ", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                          const SizedBox(width: 4),
+                                          SizedBox(
+                                            width: 90,
+                                            height: 30,
+                                            child: TextField(
+                                              controller: ctrl,
+                                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              decoration: InputDecoration(
+                                                isDense: true,
+                                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                                              ),
+                                              onChanged: (val) {
+                                                double p = double.tryParse(val) ?? 0.0;
+                                                if (p > due) {
+                                                  p = due;
+                                                  ctrl.text = due.toStringAsFixed(2);
+                                                }
+                                                setWizardState(() {
+                                                  if (p > 0) {
+                                                    if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
+                                                    billAllocations[bNo] = p;
+                                                  } else {
+                                                    selectedBillNumbers.remove(bNo);
+                                                    billAllocations.remove(bNo);
+                                                  }
+                                                  recalculateRunning();
+                                                });
+                                              },
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          // Mode Toggle: Cash vs Bank
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade200,
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                InkWell(
+                                                  onTap: () => setWizardState(() => billPaymentModes[bNo] = "Cash"),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: itemMode.toLowerCase() == "cash" ? Colors.green.shade700 : Colors.transparent,
+                                                      borderRadius: BorderRadius.circular(5),
+                                                    ),
+                                                    child: Text("Cash", style: TextStyle(color: itemMode.toLowerCase() == "cash" ? Colors.white : Colors.black54, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                  ),
+                                                ),
+                                                InkWell(
+                                                  onTap: () => setWizardState(() => billPaymentModes[bNo] = "Bank"),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: itemMode.toLowerCase() == "bank" ? Colors.indigo.shade700 : Colors.transparent,
+                                                      borderRadius: BorderRadius.circular(5),
+                                                    ),
+                                                    child: Text("Bank", style: TextStyle(color: itemMode.toLowerCase() == "bank" ? Colors.white : Colors.black54, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      onChanged: (val) {
-                                        double p = double.tryParse(val) ?? 0.0;
-                                        if (p > due) {
-                                          p = due;
-                                          ctrl.text = due.toStringAsFixed(2);
-                                        }
-                                        setWizardState(() {
-                                          if (p > 0) {
-                                            if (!selectedBillNumbers.contains(bNo)) selectedBillNumbers.add(bNo);
-                                            billAllocations[bNo] = p;
-                                          } else {
-                                            selectedBillNumbers.remove(bNo);
-                                            billAllocations.remove(bNo);
-                                          }
-                                          recalculateRunning();
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text("Allocated: ₹${(billAllocations[bNo] ?? 0.0).toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.indigo.shade800)),
-                                ],
+                                      if (itemMode.toLowerCase() == "bank") ...[
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              flex: 2,
+                                              child: Container(
+                                                height: 30,
+                                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey.shade400),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: DropdownButtonHideUnderline(
+                                                  child: DropdownButton<String>(
+                                                    value: currentBank,
+                                                    hint: const Text("Bank", style: TextStyle(fontSize: 10)),
+                                                    isExpanded: true,
+                                                    style: const TextStyle(color: Colors.black87, fontSize: 10.5, fontWeight: FontWeight.bold),
+                                                    items: bankNames.map((name) => DropdownMenuItem(value: name, child: Text(name, overflow: TextOverflow.ellipsis))).toList(),
+                                                    onChanged: (val) {
+                                                      if (val != null) {
+                                                        setWizardState(() => billDepositBanks[bNo] = val);
+                                                      }
+                                                    },
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              flex: 2,
+                                              child: SizedBox(
+                                                height: 30,
+                                                child: TextField(
+                                                  controller: billChequeControllers.putIfAbsent(bNo, () => TextEditingController(text: chequeNoC.text)),
+                                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                                                  decoration: InputDecoration(
+                                                    isDense: true,
+                                                    hintText: "Cheque No",
+                                                    hintStyle: const TextStyle(fontSize: 9.5),
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            InkWell(
+                                              onTap: () async {
+                                                DateTime? picked = await PharoahDateController.selectDate(
+                                                  context: context,
+                                                  initialDate: billChequeDates[bNo] ?? selectedChequeDate,
+                                                  activeFY: ph.currentFY,
+                                                );
+                                                if (picked != null) {
+                                                  setWizardState(() => billChequeDates[bNo] = picked);
+                                                }
+                                              },
+                                              child: Container(
+                                                height: 30,
+                                                padding: const EdgeInsets.symmetric(horizontal: 6),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.indigo.shade50,
+                                                  border: Border.all(color: Colors.indigo.shade200),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                alignment: Alignment.center,
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(Icons.event, size: 12, color: Colors.indigo),
+                                                    const SizedBox(width: 3),
+                                                    Text(
+                                                      DateFormat('dd/MM/yy').format(billChequeDates[bNo] ?? selectedChequeDate),
+                                                      style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.indigo),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  );
+                                },
                               ),
                             ],
                           ],

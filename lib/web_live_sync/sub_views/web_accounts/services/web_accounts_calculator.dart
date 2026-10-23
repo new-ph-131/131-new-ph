@@ -84,6 +84,18 @@ class WebAccountsCalculator {
       // Vouchers: Receipts, Payments, Contras
       for (var v in vouchers.where((v) => v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
+        if (v.chequeInstruments.isNotEmpty && (type == 'RECEIPT' || type == 'PAYMENT' || type == 'EXPENSE')) {
+          for (var inst in v.chequeInstruments) {
+            String imode = (inst['paymentMode'] ?? '').toString().trim().toUpperCase();
+            String idep = (inst['depositedIn'] ?? '').toString().trim().toUpperCase();
+            if (imode == 'CASH' || idep == 'CASH' || idep == 'CASH IN HAND') {
+              double iamt = (inst['amount'] as num?)?.toDouble() ?? 0.0;
+              if (type == 'RECEIPT') cashBal += iamt;
+              else cashBal -= iamt;
+            }
+          }
+          continue;
+        }
         final mode = v.paymentMode.trim().toUpperCase();
         final dep = v.depositedIn.trim().toUpperCase();
         final src = v.bankName.trim().toUpperCase();
@@ -112,6 +124,17 @@ class WebAccountsCalculator {
 
       for (var v in vouchers.where((v) => v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
+        if (v.chequeInstruments.isNotEmpty && (type == 'RECEIPT' || type == 'PAYMENT' || type == 'EXPENSE')) {
+          for (var inst in v.chequeInstruments) {
+            String idep = (inst['depositedIn'] ?? inst['bankName'] ?? '').toString().trim().toUpperCase();
+            if (idep == pName) {
+              double iamt = (inst['amount'] as num?)?.toDouble() ?? 0.0;
+              if (type == 'RECEIPT') bankBal += iamt;
+              else bankBal -= iamt;
+            }
+          }
+          continue;
+        }
         final mode = v.paymentMode.trim().toUpperCase();
         final dep = v.depositedIn.trim().toUpperCase();
         final src = v.bankName.trim().toUpperCase();
@@ -275,6 +298,26 @@ class WebAccountsCalculator {
 
       for (var v in vouchers.where((v) => v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
+        if (v.chequeInstruments.isNotEmpty && (type == 'RECEIPT' || type == 'PAYMENT' || type == 'EXPENSE')) {
+          for (var inst in v.chequeInstruments) {
+            String idep = (inst['depositedIn'] ?? inst['bankName'] ?? '').toString().trim().toUpperCase();
+            if (idep == pName) {
+              double iamt = (inst['amount'] as num?)?.toDouble() ?? 0.0;
+              String ichq = inst['chequeNo']?.toString() ?? '';
+              String ibill = inst['billNo']?.toString() ?? '';
+              allTxns.add({
+                'date': v.date,
+                'ref': v.voucherNo,
+                'type': type,
+                'dr': type == 'RECEIPT' ? iamt : 0.0,
+                'cr': type == 'RECEIPT' ? 0.0 : iamt,
+                'particulars': "${type == 'RECEIPT' ? 'Receipt' : type}: ${v.partyName}${ibill.isNotEmpty ? ' (Agst ' + ibill + ')' : ''}${ichq.isNotEmpty ? ' [Chq: ' + ichq + ']' : ''}",
+                'obj': v,
+              });
+            }
+          }
+          continue;
+        }
         final mode = v.paymentMode.trim().toUpperCase();
         final dep = v.depositedIn.trim().toUpperCase();
         final src = v.bankName.trim().toUpperCase();

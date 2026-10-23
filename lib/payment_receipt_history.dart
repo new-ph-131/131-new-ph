@@ -203,6 +203,32 @@ class _PaymentReceiptHistoryState extends State<PaymentReceiptHistory> {
               
               Text("${v.voucherNo} | ${v.paymentMode}", 
                 style: const TextStyle(fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
+              if (v.chequeInstruments.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    "Agst: " + v.chequeInstruments.map((inst) {
+                      String bNo = inst['billNo']?.toString() ?? '';
+                      double amt = (inst['amount'] as num?)?.toDouble() ?? 0.0;
+                      String bank = inst['bankName']?.toString() ?? '';
+                      String chq = inst['chequeNo']?.toString() ?? '';
+                      return "$bNo (₹${amt.toStringAsFixed(0)})${bank.isNotEmpty ? ' [$bank' : ''}${chq.isNotEmpty ? ' Chq:$chq' : ''}${bank.isNotEmpty ? ']' : ''}";
+                    }).join(", "),
+                    style: TextStyle(fontSize: 9, color: Colors.indigo.shade700, fontWeight: FontWeight.w700),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              else if (v.billAllocations.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    "Agst: " + v.billAllocations.entries.map((e) => "${e.key} (₹${e.value.toStringAsFixed(0)})").join(", "),
+                    style: TextStyle(fontSize: 9, color: Colors.indigo.shade700, fontWeight: FontWeight.w700),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
             ])),
             Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Text("₹${v.amount.toStringAsFixed(2)}", 
