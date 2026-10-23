@@ -536,6 +536,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
+    final bankAccounts = webPh.parties.where((p) => p.group == "Bank Accounts").toList();
 
     Color themeColor = const Color(0xFF10B981);
     String typeUp = widget.type.toUpperCase();
