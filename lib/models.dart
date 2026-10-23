@@ -708,6 +708,7 @@ class Voucher {
   double amount;
   List<String> linkedBillNumbers;
   Map<String, double> billAllocations; // Bill-by-Bill partial allocation: { 'INV-101': 500.0, 'INV-102': 250.0 }
+  List<Map<String, dynamic>> chequeInstruments; // Multi-cheque / multi-bank instruments per bill
   String chequeNo;
   String bankName;
   String depositedIn;
@@ -728,6 +729,7 @@ class Voucher {
     this.narration = "",
     this.linkedBillNumbers = const [],
     this.billAllocations = const {},
+    this.chequeInstruments = const [],
     this.chequeNo = "",
     this.bankName = "",
     this.depositedIn = "",
@@ -755,6 +757,7 @@ class Voucher {
     'paymentMode': paymentMode, 'narration': narration, 'status': status,
     'linkedBillNumbers': linkedBillNumbers.isNotEmpty ? linkedBillNumbers : billAllocations.keys.toList(),
     'billAllocations': billAllocations,
+    'chequeInstruments': chequeInstruments,
     'chequeNo': chequeNo, 'bankName': bankName, 'depositedIn': depositedIn,
     'chequeDate': chequeDate?.toIso8601String(), 'roundOff': roundOff,
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
@@ -797,6 +800,9 @@ class Voucher {
       status: map['status'] ?? "Active",
       linkedBillNumbers: parsedLinkedBills,
       billAllocations: parsedAllocations,
+      chequeInstruments: List<Map<String, dynamic>>.from(
+          (map['chequeInstruments'] as List?)?.map((e) => Map<String, dynamic>.from(e)) ?? []
+      ),
       chequeNo: map['chequeNo'] ?? "", bankName: map['bankName'] ?? "",
       depositedIn: map['depositedIn'] ?? "",
       chequeDate: map['chequeDate'] != null ? DateTime.parse(map['chequeDate']) : null,

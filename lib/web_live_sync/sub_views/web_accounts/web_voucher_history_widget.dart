@@ -290,7 +290,22 @@ class _WebVoucherHistoryWidgetState extends State<WebVoucherHistoryWidget> {
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-              if (v.billAllocations.isNotEmpty)
+              if (v.chequeInstruments.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    "Agst: " + v.chequeInstruments.map((inst) {
+                      String bNo = inst['billNo']?.toString() ?? '';
+                      double amt = (inst['amount'] as num?)?.toDouble() ?? 0.0;
+                      String bank = inst['bankName']?.toString() ?? '';
+                      String chq = inst['chequeNo']?.toString() ?? '';
+                      return "$bNo (₹${amt.toStringAsFixed(2)})${bank.isNotEmpty ? ' [$bank' : ''}${chq.isNotEmpty ? ' Chq:$chq' : ''}${bank.isNotEmpty ? ']' : ''}";
+                    }).join(", "),
+                    style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 9, fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              else if (v.billAllocations.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(

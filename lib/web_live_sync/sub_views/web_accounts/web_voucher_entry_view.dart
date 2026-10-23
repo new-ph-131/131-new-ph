@@ -1326,6 +1326,90 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
                                 ),
                               ],
                             ),
+                            if (itemMode.toLowerCase() == "bank") ...[
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  const SizedBox(width: 30),
+                                  // Bank Dropdown
+                                  Expanded(
+                                    flex: 2,
+                                    child: Container(
+                                      height: 28,
+                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          value: billDepositBanks[bNo] ?? selectedInternalAccount?.name ?? (bankAccounts.isNotEmpty ? bankAccounts.first.name : ''),
+                                          isExpanded: true,
+                                          dropdownColor: const Color(0xFF1E293B),
+                                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                          items: bankAccounts.map((a) => DropdownMenuItem(value: a.name, child: Text(a.name, overflow: TextOverflow.ellipsis))).toList(),
+                                          onChanged: widget.isReadOnly ? null : (val) {
+                                            if (val != null) {
+                                              setState(() => billDepositBanks[bNo] = val);
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Cheque No
+                                  Expanded(
+                                    flex: 2,
+                                    child: SizedBox(
+                                      height: 28,
+                                      child: TextField(
+                                        controller: billChequeControllers.putIfAbsent(bNo, () => TextEditingController(text: chequeNoC.text)),
+                                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                        decoration: InputDecoration(
+                                          isDense: true,
+                                          hintText: "Cheque / Ref No",
+                                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 8.5),
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                                          filled: true,
+                                          fillColor: const Color(0xFF0F172A),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Colors.white24, width: 0.8)),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Cheque Date
+                                  InkWell(
+                                    onTap: widget.isReadOnly ? null : () async {
+                                      final picked = await showDatePicker(
+                                        context: context,
+                                        initialDate: billChequeDates[bNo] ?? selectedChequeDate,
+                                        firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
+                                        lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
+                                      );
+                                      if (picked != null) {
+                                        setState(() => billChequeDates[bNo] = picked);
+                                      }
+                                    },
+                                    child: Container(
+                                      height: 28,
+                                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                                      decoration: BoxDecoration(color: const Color(0xFF0F172A), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white12)),
+                                      alignment: Alignment.center,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.event_rounded, size: 12, color: Color(0xFF38BDF8)),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            DateFormat('dd/MM/yy').format(billChequeDates[bNo] ?? selectedChequeDate),
+                                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ],
                       ),
