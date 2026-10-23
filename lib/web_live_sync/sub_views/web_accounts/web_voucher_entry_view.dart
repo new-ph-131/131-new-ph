@@ -387,7 +387,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       double cashAmt = cashBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0));
       Map<String, double> cashAlloc = { for (var b in cashBills) b: billAllocations[b] ?? 0.0 };
       String prefix = typeUp == "RECEIPT" ? "RCT-" : (typeUp == "PAYMENT" ? "PAY-" : "VCT-");
-      String cashVNo = webPh.getNextBillNumber(typeKey, prefix, 101);
+      String cashVNo = webPh.getNextBillNumber(typeUp, prefix, 101);
       String cashDepIn = defaultCashAcc?.name ?? "CASH";
 
       final vCash = Voucher(
@@ -415,7 +415,7 @@ class _WebVoucherEntryViewState extends State<WebVoucherEntryView> {
       // 2. CREATE BANK VOUCHER
       double bankAmt = bankBills.fold(0.0, (s, b) => s + (billAllocations[b] ?? 0.0));
       Map<String, double> bankAlloc = { for (var b in bankBills) b: billAllocations[b] ?? 0.0 };
-      String bankVNo = webPh.getNextBillNumber(typeKey, prefix, 102);
+      String bankVNo = webPh.getNextBillNumber(typeUp, prefix, 102);
       String bankDepIn = (selectedInternalAccount?.group == "Bank Accounts" ? selectedInternalAccount!.name : defaultBankAcc?.name) ?? depIn;
 
       final vBank = Voucher(
