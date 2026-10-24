@@ -1,20 +1,18 @@
+// FILE: lib/web_live_sync/web_salt_master.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../models.dart';
-import '../logic/master_cascade_service.dart';
+import 'package:provider/provider.dart';
 import 'pharoah_web_manager.dart';
+import 'web_models.dart';
+import '../logic/master_cascade_service.dart';
 
 class WebSaltMasterView extends StatefulWidget {
-  final PharoahWebManager manager;
-  final Function(String) onNavigate;
-  final bool isDark;
+  final VoidCallback onBack;
 
   const WebSaltMasterView({
     super.key,
-    required this.manager,
-    required this.onNavigate,
-    required this.isDark,
+    required this.onBack,
   });
 
   @override
@@ -47,13 +45,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
     super.dispose();
   }
 
-  Map<String, List<Medicine>> _buildSaltProductsMap() {
+  Map<String, List<Medicine>> _buildSaltProductsMap(PharoahWebManager webPh) {
     final Map<String, List<Medicine>> map = {};
-    for (final s in widget.manager.salts) {
+    for (final s in webPh.salts) {
       map[s.id] = [];
     }
-    for (final m in widget.manager.medicines) {
-      for (final s in widget.manager.salts) {
+    for (final m in webPh.medicines) {
+      for (final s in webPh.salts) {
         if (MasterCascadeService.belongsToSalt(m, s)) {
           map.putIfAbsent(s.id, () => []).add(m);
         }
@@ -63,42 +61,41 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
   }
 
   double _calcStockValue(List<Medicine> meds) {
-    double total = 0;
+    double total = 0.0;
     for (final m in meds) {
-      for (final b in m.batches) {
-        if (b.stockUnits > 0) {
-          final pSize = m.packSize > 0 ? m.packSize : 1;
-          total += (b.stockUnits / pSize) * b.pRate;
-        }
+      if (m.stock > 0) {
+        total += m.stock * (m.purRate > 0 ? m.purRate : m.rateA);
       }
     }
     return total;
   }
 
-  int _calcTotalUnits(List<Medicine> meds) {
-    int units = 0;
+  double _calcTotalUnits(List<Medicine> meds) {
+    double units = 0.0;
     for (final m in meds) {
-      units += m.totalStockUnits;
+      if (m.stock > 0) {
+        units += m.stock;
+      }
     }
     return units;
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isDark = widget.isDark;
-    final Color bgColor = isDark ? const Color(0xFF0B0F19) : const Color(0xFFF1F5F9);
-    final Color cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final Color textCol = isDark ? Colors.white : const Color(0xFF0F172A);
-    final Color subCol = isDark ? Colors.white60 : Colors.black54;
-    final Color borderCol = isDark ? Colors.white12 : Colors.black12;
+    final webPh = Provider.of<PharoahWebManager>(context);
+    const Color bgColor = Color(0xFF0B0F19);
+    const Color cardBg = Color(0xFF1E293B);
+    const Color textCol = Colors.white;
+    const Color subCol = Colors.white60;
+    const Color borderCol = Colors.white12;
 
-    final allSalts = List<Salt>.from(widget.manager.salts);
-    final prodMap = _buildSaltProductsMap();
+    final allSalts = List<Salt>.from(webPh.salts);
+    final prodMap = _buildSaltProductsMap(webPh);
 
     int monoCount = 0;
     int combCount = 0;
     int mappedProdsCount = 0;
-    double totalPortfolioVal = 0;
+    double totalPortfolioVal = 0.0;
 
     for (final s in allSalts) {
       if (s.type.toUpperCase() == "MONO") {
@@ -123,10 +120,8 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
         final matchSalt = s.name.toLowerCase().contains(q) ||
-            s.dosage.toLowerCase().contains(q) ||
-            s.indication.toLowerCase().contains(q) ||
-            s.sideEffects.toLowerCase().contains(q) ||
-            s.type.toLowerCase().contains(q);
+            s.type.toLowerCase().contains(q) ||
+            s.id.toLowerCase().contains(q);
         final matchBrand = pList.any((m) => m.name.toLowerCase().contains(q));
         return matchSalt || matchBrand;
       }
@@ -149,12 +144,12 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.f2): () => _showSaltDialog(),
+        const SingleActivator(LogicalKeyboardKey.f2): () => _showSaltDialog(webPh),
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (_selectedSaltForDrawer != null) {
             setState(() => _selectedSaltForDrawer = null);
           } else {
-            widget.onNavigate("DASHBOARD");
+            widget.onBack();
           }
         },
       },
@@ -177,7 +172,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildHeaderBar(cardBg, textCol, subCol, borderCol),
+                        _buildHeaderBar(webPh, cardBg, textCol, subCol, borderCol),
                         const SizedBox(height: 14),
                         _buildKpiRow(
                           totalSalts: allSalts.length,
@@ -201,13 +196,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                         const SizedBox(height: 14),
                         Expanded(
                           child: _buildSaltTable(
+                            webPh,
                             filtered,
                             prodMap,
                             cardBg,
                             textCol,
                             subCol,
                             borderCol,
-                            isDark,
                           ),
                         ),
                       ],
@@ -218,13 +213,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                     Expanded(
                       flex: 4,
                       child: _buildSaltProductsDrawer(
+                        webPh,
                         _selectedSaltForDrawer!,
                         prodMap[_selectedSaltForDrawer!.id] ?? [],
                         cardBg,
                         textCol,
                         subCol,
                         borderCol,
-                        isDark,
                       ),
                     ),
                   ],
@@ -237,7 +232,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
     );
   }
 
-  Widget _buildHeaderBar(Color cardBg, Color textCol, Color subCol, Color borderCol) {
+  Widget _buildHeaderBar(
+    PharoahWebManager webPh,
+    Color cardBg,
+    Color textCol,
+    Color subCol,
+    Color borderCol,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -247,6 +248,19 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
       ),
       child: Row(
         children: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white12,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            onPressed: widget.onBack,
+            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            label: const Text("BACK", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 14),
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -291,14 +305,14 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  "Manage chemical compositions, indications & generic formulas — renaming a salt automatically cascades across all linked products & substitutes.",
+                  "Manage chemical compositions & generic formulas — renaming a Salt automatically cascades across all linked products & substitutes.",
                   style: TextStyle(color: subCol, fontSize: 12),
                 ),
               ],
             ),
           ),
           OutlinedButton.icon(
-            onPressed: () => _showMergeSaltsDialog(),
+            onPressed: () => _showMergeSaltsDialog(webPh),
             icon: const Icon(Icons.merge_type_rounded, size: 18, color: Color(0xFF8B5CF6)),
             label: const Text(
               "MERGE DUPLICATES",
@@ -312,7 +326,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
           ),
           const SizedBox(width: 10),
           ElevatedButton.icon(
-            onPressed: () => _showSaltDialog(),
+            onPressed: () => _showSaltDialog(webPh),
             icon: const Icon(Icons.add_rounded, size: 18),
             label: const Text(
               "ADD NEW SALT (F2)",
@@ -324,12 +338,6 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-          ),
-          const SizedBox(width: 10),
-          IconButton(
-            tooltip: "Close (Esc)",
-            onPressed: () => widget.onNavigate("DASHBOARD"),
-            icon: Icon(Icons.close_rounded, color: textCol),
           ),
         ],
       ),
@@ -489,7 +497,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
               focusNode: _searchFocus,
               style: TextStyle(color: textCol, fontSize: 13, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
-                hintText: "Search by Salt Formula, Strength, Indication, or Substitute Brand Name...",
+                hintText: "Search by Salt Formula, Composition Type, or Substitute Brand Name...",
                 hintStyle: TextStyle(color: subCol, fontSize: 12),
                 prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF0D9488), size: 20),
                 suffixIcon: _searchQuery.isNotEmpty
@@ -501,7 +509,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                 filled: true,
-                fillColor: widget.isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8FAFC),
+                fillColor: Colors.white.withValues(alpha: 0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: borderCol),
@@ -585,13 +593,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
   }
 
   Widget _buildSaltTable(
+    PharoahWebManager webPh,
     List<Salt> list,
     Map<String, List<Medicine>> prodMap,
     Color cardBg,
     Color textCol,
     Color subCol,
     Color borderCol,
-    bool isDark,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -603,17 +611,16 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              border: Border(bottom: BorderSide(color: borderCol)),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F172A),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Colors.white12)),
             ),
             child: Row(
               children: [
                 Expanded(flex: 4, child: _th("SALT / CHEMICAL FORMULA", subCol)),
-                Expanded(flex: 1, child: _th("TYPE", subCol)),
-                Expanded(flex: 2, child: _th("STRENGTH / DOSAGE", subCol)),
-                Expanded(flex: 2, child: _th("THERAPEUTIC INDICATION", subCol)),
+                Expanded(flex: 2, child: _th("COMPOSITION TYPE", subCol)),
+                Expanded(flex: 3, child: _th("SAMPLE SUBSTITUTE BRANDS", subCol)),
                 Expanded(flex: 2, child: _th("SUBSTITUTE BRANDS", subCol)),
                 Expanded(flex: 2, child: _th("STOCK VALUE", subCol)),
                 SizedBox(width: 170, child: _th("MASTER ACTIONS", subCol, alignRight: true)),
@@ -644,6 +651,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                       final stockVal = _calcStockValue(meds);
                       final stockUnits = _calcTotalUnits(meds);
                       final isSelected = _selectedSaltForDrawer?.id == s.id;
+                      final sampleBrands = meds.take(3).map((m) => m.name).join(", ");
 
                       Color typeColor = const Color(0xFF10B981);
                       if (s.type.toUpperCase() == "DUO") typeColor = const Color(0xFF3B82F6);
@@ -689,13 +697,12 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                               fontSize: 13.5,
                                             ),
                                           ),
-                                          if (s.sideEffects.isNotEmpty)
-                                            Text(
-                                              "Note: ${s.sideEffects}",
-                                              style: TextStyle(color: subCol, fontSize: 10.5),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
+                                          Text(
+                                            "ID: ${s.id} • v${s.version}",
+                                            style: TextStyle(color: subCol, fontSize: 10.5),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -703,7 +710,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                 ),
                               ),
                               Expanded(
-                                flex: 1,
+                                flex: 2,
                                 child: Align(
                                   alignment: Alignment.centerLeft,
                                   child: Container(
@@ -724,20 +731,9 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                 ),
                               ),
                               Expanded(
-                                flex: 2,
+                                flex: 3,
                                 child: Text(
-                                  s.dosage.isEmpty ? "—" : s.dosage,
-                                  style: TextStyle(
-                                    color: textCol,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  s.indication.isEmpty ? "—" : s.indication,
+                                  sampleBrands.isEmpty ? "No brands linked yet" : sampleBrands,
                                   style: TextStyle(color: subCol, fontSize: 12),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -783,7 +779,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                       ),
                                     ),
                                     Text(
-                                      "$stockUnits Units",
+                                      "${stockUnits.toStringAsFixed(0)} Units",
                                       style: TextStyle(color: subCol, fontSize: 10.5),
                                     ),
                                   ],
@@ -805,7 +801,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                     ),
                                     IconButton(
                                       tooltip: "Modify Salt (Cascades Across Products)",
-                                      onPressed: () => _showSaltDialog(existing: s),
+                                      onPressed: () => _showSaltDialog(webPh, existing: s),
                                       icon: const Icon(
                                         Icons.edit_note_rounded,
                                         color: Color(0xFF3B82F6),
@@ -814,7 +810,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                     ),
                                     IconButton(
                                       tooltip: "Delete / Reassign Salt",
-                                      onPressed: () => _confirmDeleteSalt(s, meds),
+                                      onPressed: () => _confirmDeleteSalt(webPh, s, meds),
                                       icon: const Icon(
                                         Icons.delete_outline_rounded,
                                         color: Colors.redAccent,
@@ -850,13 +846,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
   }
 
   Widget _buildSaltProductsDrawer(
+    PharoahWebManager webPh,
     Salt salt,
     List<Medicine> meds,
     Color cardBg,
     Color textCol,
     Color subCol,
     Color borderCol,
-    bool isDark,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -895,14 +891,14 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                         style: TextStyle(color: textCol, fontSize: 15, fontWeight: FontWeight.w900),
                       ),
                       Text(
-                        "${meds.length} Substitute Brands • ${salt.dosage.isEmpty ? salt.type : '${salt.type} • ${salt.dosage}'}",
+                        "${meds.length} Substitute Brands • Type: ${salt.type.toUpperCase()}",
                         style: TextStyle(color: subCol, fontSize: 11.5),
                       ),
                     ],
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () => _showBulkLinkProductsToSaltDialog(salt),
+                  onPressed: () => _showBulkLinkProductsToSaltDialog(webPh, salt),
                   icon: const Icon(Icons.add_link_rounded, size: 16),
                   label: const Text(
                     "LINK BRANDS",
@@ -940,7 +936,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                     separatorBuilder: (_, __) => Divider(height: 1, color: borderCol),
                     itemBuilder: (ctx, i) {
                       final m = meds[i];
-                      final compName = widget.manager.resolveCompanyName(m);
+                      final compName = webPh.resolveCompanyName(m.companyId);
                       return ListTile(
                         dense: true,
                         title: Text(
@@ -952,11 +948,11 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                           ),
                         ),
                         subtitle: Text(
-                          "Co: $compName • Pack: ${m.pack} • Stock: ${m.displayStock}",
+                          "Co: $compName • Pack: ${m.packing} • Stock: ${m.stock.toStringAsFixed(0)}",
                           style: TextStyle(color: subCol, fontSize: 11),
                         ),
                         trailing: Text(
-                          "MRP ₹${m.batches.isNotEmpty ? m.batches.first.mrp.toStringAsFixed(2) : '0.00'}",
+                          "MRP ₹${m.mrp.toStringAsFixed(2)}",
                           style: const TextStyle(
                             color: Color(0xFF0D9488),
                             fontWeight: FontWeight.w800,
@@ -972,12 +968,9 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
     );
   }
 
-  void _showSaltDialog({Salt? existing}) {
+  void _showSaltDialog(PharoahWebManager webPh, {Salt? existing}) {
     final bool isEdit = existing != null;
     final nameCtrl = TextEditingController(text: existing?.name ?? "");
-    final dosageCtrl = TextEditingController(text: existing?.dosage ?? "");
-    final indCtrl = TextEditingController(text: existing?.indication ?? "");
-    final sideCtrl = TextEditingController(text: existing?.sideEffects ?? "");
     String selectedType = existing?.type.toUpperCase() ?? "MONO";
     if (!["MONO", "DUO", "MULTI"].contains(selectedType)) {
       selectedType = "MONO";
@@ -988,7 +981,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: Row(
               children: [
@@ -996,8 +989,8 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 const SizedBox(width: 10),
                 Text(
                   isEdit ? "MODIFY SALT FORMULA (CASCADE)" : "CREATE NEW SALT FORMULA",
-                  style: TextStyle(
-                    color: widget.isDark ? Colors.white : Colors.black87,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
@@ -1005,7 +998,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
               ],
             ),
             content: SizedBox(
-              width: 500,
+              width: 480,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1038,11 +1031,11 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                         ),
                       ),
                     _dialogField("Chemical / Generic Salt Formula *", nameCtrl, autofocus: true),
-                    const SizedBox(height: 12),
-                    Text(
+                    const SizedBox(height: 14),
+                    const Text(
                       "COMPOSITION TYPE",
                       style: TextStyle(
-                        color: widget.isDark ? Colors.white60 : Colors.black54,
+                        color: Colors.white60,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
@@ -1063,15 +1056,15 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                                   color: active ? const Color(0xFF0D9488) : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: active ? const Color(0xFF0D9488) : Colors.grey.withValues(alpha: 0.4),
+                                    color: active
+                                        ? const Color(0xFF0D9488)
+                                        : Colors.grey.withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Text(
                                   t,
-                                  style: TextStyle(
-                                    color: active
-                                        ? Colors.white
-                                        : (widget.isDark ? Colors.white : Colors.black87),
+                                  style: const TextStyle(
+                                    color: Colors.white,
                                     fontWeight: FontWeight.w800,
                                     fontSize: 12,
                                   ),
@@ -1082,12 +1075,6 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                         );
                       }).toList(),
                     ),
-                    const SizedBox(height: 12),
-                    _dialogField("Standard Strength / Dosage (e.g. 500mg / 650mg)", dosageCtrl),
-                    const SizedBox(height: 10),
-                    _dialogField("Therapeutic Indication (e.g. Antipyretic, Antibiotic)", indCtrl),
-                    const SizedBox(height: 10),
-                    _dialogField("Side Effects / Clinical Notes", sideCtrl),
                   ],
                 ),
               ),
@@ -1103,7 +1090,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                 ),
-                onPressed: () async {
+                onPressed: () {
                   final newName = nameCtrl.text.trim().toUpperCase();
                   if (newName.isEmpty) return;
 
@@ -1111,16 +1098,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                     id: existing?.id ?? "SLT_${DateTime.now().millisecondsSinceEpoch}",
                     name: newName,
                     type: selectedType,
-                    dosage: dosageCtrl.text.trim(),
-                    indication: indCtrl.text.trim(),
-                    sideEffects: sideCtrl.text.trim(),
                     updatedAt: DateTime.now().millisecondsSinceEpoch,
                     version: (existing?.version ?? 0) + 1,
                   );
 
-                  await widget.manager.saveOrUpdateSalt(
+                  final cascaded = webPh.saveOrUpdateSalt(
                     saltObj,
-                    oldName: existing?.name,
+                    previousName: existing?.name,
                   );
 
                   if (mounted) {
@@ -1134,7 +1118,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                       SnackBar(
                         content: Text(
                           isEdit
-                              ? "Salt '${saltObj.name}' updated & cascaded across linked products!"
+                              ? "Salt '${saltObj.name}' updated & cascaded across $cascaded linked products!"
                               : "Salt '${saltObj.name}' created & synced!",
                         ),
                         backgroundColor: const Color(0xFF0D9488),
@@ -1153,15 +1137,14 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
   }
 
   Widget _dialogField(String label, TextEditingController ctrl, {bool autofocus = false}) {
-    final textCol = widget.isDark ? Colors.white : Colors.black87;
     return TextField(
       controller: ctrl,
       autofocus: autofocus,
-      style: TextStyle(color: textCol, fontSize: 13, fontWeight: FontWeight.w600),
+      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(
-          color: widget.isDark ? Colors.white60 : Colors.black54,
+        labelStyle: const TextStyle(
+          color: Colors.white60,
           fontSize: 12,
         ),
         isDense: true,
@@ -1170,21 +1153,21 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
     );
   }
 
-  void _confirmDeleteSalt(Salt salt, List<Medicine> linkedMeds) {
+  void _confirmDeleteSalt(PharoahWebManager webPh, Salt salt, List<Medicine> linkedMeds) {
     Salt? targetReassign;
-    final otherSalts = widget.manager.salts.where((s) => s.id != salt.id).toList();
+    final otherSalts = webPh.salts.where((s) => s.id != salt.id).toList();
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: Text(
               "Delete Salt '${salt.name}'?",
-              style: TextStyle(
-                color: widget.isDark ? Colors.white : Colors.black87,
+              style: const TextStyle(
+                color: Colors.white,
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
               ),
@@ -1199,8 +1182,8 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                     linkedMeds.isEmpty
                         ? "No products are currently linked to this salt. It will be permanently removed and synced across Web & Mobile App."
                         : "There are ${linkedMeds.length} products linked to '${salt.name}'. You can optionally reassign those products to another salt before deleting:",
-                    style: TextStyle(
-                      color: widget.isDark ? Colors.white70 : Colors.black87,
+                    style: const TextStyle(
+                      color: Colors.white70,
                       fontSize: 13,
                     ),
                   ),
@@ -1208,9 +1191,11 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                     const SizedBox(height: 14),
                     DropdownButtonFormField<Salt?>(
                       value: targetReassign,
-                      dropdownColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+                      dropdownColor: const Color(0xFF1E293B),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
                       decoration: InputDecoration(
                         labelText: "Reassign Linked Products To (Optional)",
+                        labelStyle: const TextStyle(color: Colors.white60),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         isDense: true,
                       ),
@@ -1242,14 +1227,14 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                   backgroundColor: Colors.redAccent,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () async {
+                onPressed: () {
                   if (targetReassign != null) {
-                    await widget.manager.mergeSalts(
+                    webPh.mergeSalts(
                       source: salt,
                       target: targetReassign!,
                     );
                   } else {
-                    await widget.manager.deleteSaltMaster(salt.id);
+                    webPh.deleteSaltMaster(salt.id);
                   }
                   if (mounted) {
                     setState(() {
@@ -1270,17 +1255,17 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
     );
   }
 
-  void _showMergeSaltsDialog() {
-    if (widget.manager.salts.length < 2) return;
-    Salt? sourceSalt = widget.manager.salts.first;
-    Salt? targetSalt = widget.manager.salts.length > 1 ? widget.manager.salts[1] : null;
+  void _showMergeSaltsDialog(PharoahWebManager webPh) {
+    if (webPh.salts.length < 2) return;
+    Salt? sourceSalt = webPh.salts.first;
+    Salt? targetSalt = webPh.salts.length > 1 ? webPh.salts[1] : null;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: const Row(
               children: [
@@ -1288,7 +1273,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 SizedBox(width: 10),
                 Text(
                   "MERGE DUPLICATE SALTS",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
                 ),
               ],
             ),
@@ -1300,17 +1285,20 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 children: [
                   const Text(
                     "Move all linked products from Source Salt into Target Salt and remove the duplicate Source Salt:",
-                    style: TextStyle(fontSize: 12.5),
+                    style: TextStyle(color: Colors.white70, fontSize: 12.5),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<Salt>(
                     value: sourceSalt,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     decoration: const InputDecoration(
                       labelText: "Duplicate Source Salt (Will Be Removed)",
+                      labelStyle: TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    items: widget.manager.salts
+                    items: webPh.salts
                         .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
                         .toList(),
                     onChanged: (v) => setDialogState(() => sourceSalt = v),
@@ -1318,12 +1306,15 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                   const SizedBox(height: 14),
                   DropdownButtonFormField<Salt>(
                     value: targetSalt,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     decoration: const InputDecoration(
                       labelText: "Master Target Salt (Will Keep All Brands)",
+                      labelStyle: TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    items: widget.manager.salts
+                    items: webPh.salts
                         .map((s) => DropdownMenuItem(value: s, child: Text(s.name)))
                         .toList(),
                     onChanged: (v) => setDialogState(() => targetSalt = v),
@@ -1338,11 +1329,11 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                   backgroundColor: const Color(0xFF8B5CF6),
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () async {
+                onPressed: () {
                   if (sourceSalt == null || targetSalt == null || sourceSalt!.id == targetSalt!.id) {
                     return;
                   }
-                  await widget.manager.mergeSalts(source: sourceSalt!, target: targetSalt!);
+                  webPh.mergeSalts(source: sourceSalt!, target: targetSalt!);
                   if (mounted) {
                     setState(() => _selectedSaltForDrawer = targetSalt);
                     Navigator.pop(ctx);
@@ -1364,7 +1355,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
     );
   }
 
-  void _showBulkLinkProductsToSaltDialog(Salt salt) {
+  void _showBulkLinkProductsToSaltDialog(PharoahWebManager webPh, Salt salt) {
     String filterQ = "";
     final Set<String> selectedIds = {};
 
@@ -1372,20 +1363,21 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final candidates = widget.manager.medicines.where((m) {
+          final candidates = webPh.medicines.where((m) {
             if (MasterCascadeService.belongsToSalt(m, salt)) return false;
             if (filterQ.isEmpty) return true;
+            final curSalt = webPh.resolveSaltName(m.saltId);
             return m.name.toLowerCase().contains(filterQ.toLowerCase()) ||
-                m.salt.toLowerCase().contains(filterQ.toLowerCase());
+                curSalt.toLowerCase().contains(filterQ.toLowerCase());
           }).toList();
 
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: Text(
               "Link Brands to ${salt.name}",
-              style: TextStyle(
-                color: widget.isDark ? Colors.white : Colors.black87,
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
               ),
@@ -1397,9 +1389,11 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 children: [
                   TextField(
                     onChanged: (v) => setDialogState(() => filterQ = v.trim()),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     decoration: InputDecoration(
                       hintText: "Search products to link to ${salt.name}...",
-                      prefixIcon: const Icon(Icons.search_rounded),
+                      hintStyle: const TextStyle(color: Colors.white54),
+                      prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
                       isDense: true,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -1411,11 +1405,18 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                       itemBuilder: (ctx, i) {
                         final m = candidates[i];
                         final checked = selectedIds.contains(m.id);
+                        final curSalt = webPh.resolveSaltName(m.saltId);
                         return CheckboxListTile(
                           dense: true,
                           value: checked,
-                          title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                          subtitle: Text("Current Salt: ${m.salt.isEmpty ? 'None' : m.salt}"),
+                          title: Text(
+                            m.name,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            "Current Salt: ${curSalt.isEmpty ? 'None' : curSalt}",
+                            style: const TextStyle(color: Colors.white60, fontSize: 11),
+                          ),
                           onChanged: (v) {
                             setDialogState(() {
                               if (v == true) {
@@ -1441,18 +1442,13 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                 ),
                 onPressed: selectedIds.isEmpty
                     ? null
-                    : () async {
-                        final now = DateTime.now().millisecondsSinceEpoch;
-                        for (final m in widget.manager.medicines) {
+                    : () {
+                        for (final m in webPh.medicines) {
                           if (selectedIds.contains(m.id)) {
                             m.saltId = salt.id;
-                            m.salt = salt.name;
-                            m.updatedAt = now;
-                            m.version += 1;
-                            await widget.manager.orchestrator.syncProduct(m);
+                            webPh.updateMedicine(m);
                           }
                         }
-                        await widget.manager.pushUpdatedDataToCloud();
                         if (mounted) {
                           setState(() {});
                           Navigator.pop(ctx);

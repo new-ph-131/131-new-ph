@@ -302,23 +302,17 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     // --- STANDALONE ENTERPRISE MASTERS (COMPANY, SALT, ROUTE) ---
     if (currentView == "GO_M_COMP") {
       return WebCompanyMasterView(
-        manager: webPh,
-        onNavigate: (_) => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
-        isDark: true,
+        onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
       );
     }
     if (currentView == "GO_M_SALT") {
       return WebSaltMasterView(
-        manager: webPh,
-        onNavigate: (_) => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
-        isDark: true,
+        onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
       );
     }
     if (currentView == "GO_M_ROUTE") {
       return WebRouteMasterView(
-        manager: webPh,
-        onNavigate: (_) => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
-        isDark: true,
+        onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
       );
     }
 

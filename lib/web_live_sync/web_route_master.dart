@@ -1,20 +1,18 @@
+// FILE: lib/web_live_sync/web_route_master.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../models.dart';
-import '../logic/master_cascade_service.dart';
+import 'package:provider/provider.dart';
 import 'pharoah_web_manager.dart';
+import 'web_models.dart';
+import '../logic/master_cascade_service.dart';
 
 class WebRouteMasterView extends StatefulWidget {
-  final PharoahWebManager manager;
-  final Function(String) onNavigate;
-  final bool isDark;
+  final VoidCallback onBack;
 
   const WebRouteMasterView({
     super.key,
-    required this.manager,
-    required this.onNavigate,
-    required this.isDark,
+    required this.onBack,
   });
 
   @override
@@ -47,13 +45,13 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     super.dispose();
   }
 
-  Map<String, List<Party>> _buildRoutePartiesMap() {
+  Map<String, List<Party>> _buildRoutePartiesMap(PharoahWebManager webPh) {
     final Map<String, List<Party>> map = {};
-    for (final r in widget.manager.routes) {
+    for (final r in webPh.routes) {
       map[r.id] = [];
     }
-    for (final p in widget.manager.parties) {
-      for (final r in widget.manager.routes) {
+    for (final p in webPh.parties) {
+      for (final r in webPh.routes) {
         if (MasterCascadeService.belongsToRoute(p, r)) {
           map.putIfAbsent(r.id, () => []).add(p);
         }
@@ -62,10 +60,29 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     return map;
   }
 
-  double _calcRouteReceivables(List<Party> parties) {
-    double sum = 0;
+  double _getPartyLiveBalance(PharoahWebManager webPh, Party p) {
+    double bal = p.opBal;
+    for (final s in webPh.sales) {
+      if (s.partyId == p.id && s.paymentMode.toUpperCase() == "CREDIT") {
+        bal += s.netTotal;
+      }
+    }
+    for (final v in webPh.vouchers) {
+      if (v.partyId == p.id) {
+        if (v.type.toUpperCase() == "RECEIPT") {
+          bal -= v.amount;
+        } else if (v.type.toUpperCase() == "PAYMENT") {
+          bal += v.amount;
+        }
+      }
+    }
+    return bal;
+  }
+
+  double _calcRouteReceivables(PharoahWebManager webPh, List<Party> parties) {
+    double sum = 0.0;
     for (final p in parties) {
-      final bal = widget.manager.getLiveBalance(p);
+      final bal = _getPartyLiveBalance(webPh, p);
       if (bal > 0) sum += bal;
     }
     return sum;
@@ -73,30 +90,30 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isDark = widget.isDark;
-    final Color bgColor = isDark ? const Color(0xFF0B0F19) : const Color(0xFFF1F5F9);
-    final Color cardBg = isDark ? const Color(0xFF1E293B) : Colors.white;
-    final Color textCol = isDark ? Colors.white : const Color(0xFF0F172A);
-    final Color subCol = isDark ? Colors.white60 : Colors.black54;
-    final Color borderCol = isDark ? Colors.white12 : Colors.black12;
+    final webPh = Provider.of<PharoahWebManager>(context);
+    const Color bgColor = Color(0xFF0B0F19);
+    const Color cardBg = Color(0xFF1E293B);
+    const Color textCol = Colors.white;
+    const Color subCol = Colors.white60;
+    const Color borderCol = Colors.white12;
 
-    final allRoutes = List<RouteArea>.from(widget.manager.routes);
-    final partyMap = _buildRoutePartiesMap();
+    final allRoutes = List<RouteArea>.from(webPh.routes);
+    final partyMap = _buildRoutePartiesMap(webPh);
 
     int activeRoutesCount = 0;
     int mappedPartiesCount = 0;
-    double totalRouteReceivables = 0;
+    double totalRouteReceivables = 0.0;
 
     for (final r in allRoutes) {
       final pList = partyMap[r.id] ?? [];
       if (pList.isNotEmpty) {
         activeRoutesCount++;
         mappedPartiesCount += pList.length;
-        totalRouteReceivables += _calcRouteReceivables(pList);
+        totalRouteReceivables += _calcRouteReceivables(webPh, pList);
       }
     }
 
-    int unassignedPartiesCount = widget.manager.parties.where((p) {
+    int unassignedPartiesCount = webPh.parties.where((p) {
       final rt = p.route.trim().toUpperCase();
       return rt.isEmpty || rt == "ALL" || rt == "DEFAULT";
     }).length;
@@ -104,7 +121,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     // Filter
     List<RouteArea> filtered = allRoutes.where((r) {
       final pList = partyMap[r.id] ?? [];
-      final rec = _calcRouteReceivables(pList);
+      final rec = _calcRouteReceivables(webPh, pList);
       if (_filterMode == "ACTIVE" && pList.isEmpty) return false;
       if (_filterMode == "HIGH_RECEIVABLES" && rec <= 0) return false;
       if (_filterMode == "EMPTY" && pList.isNotEmpty) return false;
@@ -127,8 +144,8 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
         final cb = (partyMap[b.id] ?? []).length;
         if (cb != ca) return cb.compareTo(ca);
       } else if (_sortBy == "RECEIVABLES_DESC") {
-        final ra = _calcRouteReceivables(partyMap[a.id] ?? []);
-        final rb = _calcRouteReceivables(partyMap[b.id] ?? []);
+        final ra = _calcRouteReceivables(webPh, partyMap[a.id] ?? []);
+        final rb = _calcRouteReceivables(webPh, partyMap[b.id] ?? []);
         if (rb != ra) return rb.compareTo(ra);
       }
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -136,12 +153,12 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.f2): () => _showRouteDialog(),
+        const SingleActivator(LogicalKeyboardKey.f2): () => _showRouteDialog(webPh),
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (_selectedRouteForDrawer != null) {
             setState(() => _selectedRouteForDrawer = null);
           } else {
-            widget.onNavigate("DASHBOARD");
+            widget.onBack();
           }
         },
       },
@@ -164,7 +181,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildHeaderBar(cardBg, textCol, subCol, borderCol),
+                        _buildHeaderBar(webPh, cardBg, textCol, subCol, borderCol),
                         const SizedBox(height: 14),
                         _buildKpiRow(
                           totalRoutes: allRoutes.length,
@@ -188,13 +205,13 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                         const SizedBox(height: 14),
                         Expanded(
                           child: _buildRouteTable(
+                            webPh,
                             filtered,
                             partyMap,
                             cardBg,
                             textCol,
                             subCol,
                             borderCol,
-                            isDark,
                           ),
                         ),
                       ],
@@ -205,13 +222,13 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                     Expanded(
                       flex: 4,
                       child: _buildRoutePartiesDrawer(
+                        webPh,
                         _selectedRouteForDrawer!,
                         partyMap[_selectedRouteForDrawer!.id] ?? [],
                         cardBg,
                         textCol,
                         subCol,
                         borderCol,
-                        isDark,
                       ),
                     ),
                   ],
@@ -224,7 +241,13 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     );
   }
 
-  Widget _buildHeaderBar(Color cardBg, Color textCol, Color subCol, Color borderCol) {
+  Widget _buildHeaderBar(
+    PharoahWebManager webPh,
+    Color cardBg,
+    Color textCol,
+    Color subCol,
+    Color borderCol,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
@@ -234,6 +257,19 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
       ),
       child: Row(
         children: [
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white12,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            onPressed: widget.onBack,
+            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            label: const Text("BACK", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 14),
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -285,7 +321,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
             ),
           ),
           OutlinedButton.icon(
-            onPressed: () => _showMergeRoutesDialog(),
+            onPressed: () => _showMergeRoutesDialog(webPh),
             icon: const Icon(Icons.merge_type_rounded, size: 18, color: Color(0xFF8B5CF6)),
             label: const Text(
               "MERGE ROUTES",
@@ -299,7 +335,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
           ),
           const SizedBox(width: 10),
           ElevatedButton.icon(
-            onPressed: () => _showRouteDialog(),
+            onPressed: () => _showRouteDialog(webPh),
             icon: const Icon(Icons.add_location_alt_rounded, size: 18),
             label: const Text(
               "ADD NEW ROUTE (F2)",
@@ -311,12 +347,6 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-          ),
-          const SizedBox(width: 10),
-          IconButton(
-            tooltip: "Close (Esc)",
-            onPressed: () => widget.onNavigate("DASHBOARD"),
-            icon: Icon(Icons.close_rounded, color: textCol),
           ),
         ],
       ),
@@ -488,7 +518,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                 filled: true,
-                fillColor: widget.isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8FAFC),
+                fillColor: Colors.white.withValues(alpha: 0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide(color: borderCol),
@@ -568,13 +598,13 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
   }
 
   Widget _buildRouteTable(
+    PharoahWebManager webPh,
     List<RouteArea> list,
     Map<String, List<Party>> partyMap,
     Color cardBg,
     Color textCol,
     Color subCol,
     Color borderCol,
-    bool isDark,
   ) {
     return Container(
       decoration: BoxDecoration(
@@ -586,10 +616,10 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              border: Border(bottom: BorderSide(color: borderCol)),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F172A),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Colors.white12)),
             ),
             child: Row(
               children: [
@@ -622,7 +652,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                     itemBuilder: (ctx, i) {
                       final r = list[i];
                       final parties = partyMap[r.id] ?? [];
-                      final receivables = _calcRouteReceivables(parties);
+                      final receivables = _calcRouteReceivables(webPh, parties);
                       final isSelected = _selectedRouteForDrawer?.id == r.id;
 
                       final previewNames = parties.take(3).map((p) => p.name).join(", ");
@@ -739,7 +769,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                                     ),
                                     IconButton(
                                       tooltip: "Rename Route (Cascades Across All Parties)",
-                                      onPressed: () => _showRouteDialog(existing: r),
+                                      onPressed: () => _showRouteDialog(webPh, existing: r),
                                       icon: const Icon(
                                         Icons.edit_note_rounded,
                                         color: Color(0xFF3B82F6),
@@ -748,7 +778,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                                     ),
                                     IconButton(
                                       tooltip: "Delete / Reassign Route",
-                                      onPressed: () => _confirmDeleteRoute(r, parties),
+                                      onPressed: () => _confirmDeleteRoute(webPh, r, parties),
                                       icon: const Icon(
                                         Icons.delete_outline_rounded,
                                         color: Colors.redAccent,
@@ -784,15 +814,15 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
   }
 
   Widget _buildRoutePartiesDrawer(
+    PharoahWebManager webPh,
     RouteArea route,
     List<Party> parties,
     Color cardBg,
     Color textCol,
     Color subCol,
     Color borderCol,
-    bool isDark,
   ) {
-    final totalDue = _calcRouteReceivables(parties);
+    final totalDue = _calcRouteReceivables(webPh, parties);
 
     return Container(
       decoration: BoxDecoration(
@@ -838,7 +868,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () => _showBulkAssignPartiesToRouteDialog(route),
+                  onPressed: () => _showBulkAssignPartiesToRouteDialog(webPh, route),
                   icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
                   label: const Text(
                     "ASSIGN PARTIES",
@@ -876,7 +906,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                     separatorBuilder: (_, __) => Divider(height: 1, color: borderCol),
                     itemBuilder: (ctx, i) {
                       final p = parties[i];
-                      final bal = widget.manager.getLiveBalance(p);
+                      final bal = _getPartyLiveBalance(webPh, p);
                       return ListTile(
                         dense: true,
                         title: Text(
@@ -910,14 +940,14 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     );
   }
 
-  void _showRouteDialog({RouteArea? existing}) {
+  void _showRouteDialog(PharoahWebManager webPh, {RouteArea? existing}) {
     final bool isEdit = existing != null;
     final nameCtrl = TextEditingController(text: existing?.name ?? "");
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+        backgroundColor: const Color(0xFF1E293B),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Row(
           children: [
@@ -925,8 +955,8 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
             const SizedBox(width: 10),
             Text(
               isEdit ? "MODIFY ROUTE (CASCADE UPDATE)" : "CREATE NEW ROUTE / BEAT",
-              style: TextStyle(
-                color: widget.isDark ? Colors.white : Colors.black87,
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
               ),
@@ -967,13 +997,14 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
               TextField(
                 controller: nameCtrl,
                 autofocus: true,
-                style: TextStyle(
-                  color: widget.isDark ? Colors.white : Colors.black87,
+                style: const TextStyle(
+                  color: Colors.white,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
                 ),
                 decoration: InputDecoration(
                   labelText: "Route / Area / Market Beat Name *",
+                  labelStyle: const TextStyle(color: Colors.white60),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   isDense: true,
                 ),
@@ -992,7 +1023,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             ),
-            onPressed: () async {
+            onPressed: () {
               final newName = nameCtrl.text.trim().toUpperCase();
               if (newName.isEmpty) return;
 
@@ -1003,9 +1034,9 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                 version: (existing?.version ?? 0) + 1,
               );
 
-              await widget.manager.saveOrUpdateRoute(
+              final cascaded = webPh.saveOrUpdateRoute(
                 routeObj,
-                oldName: existing?.name,
+                previousName: existing?.name,
               );
 
               if (mounted) {
@@ -1019,7 +1050,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                   SnackBar(
                     content: Text(
                       isEdit
-                          ? "Route '${routeObj.name}' updated & cascaded across all linked parties!"
+                          ? "Route '${routeObj.name}' updated & cascaded across $cascaded linked parties!"
                           : "Route '${routeObj.name}' created & synced!",
                     ),
                     backgroundColor: const Color(0xFFE11D48),
@@ -1035,21 +1066,21 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     );
   }
 
-  void _confirmDeleteRoute(RouteArea route, List<Party> linkedParties) {
+  void _confirmDeleteRoute(PharoahWebManager webPh, RouteArea route, List<Party> linkedParties) {
     RouteArea? targetReassign;
-    final otherRoutes = widget.manager.routes.where((r) => r.id != route.id).toList();
+    final otherRoutes = webPh.routes.where((r) => r.id != route.id).toList();
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: Text(
               "Delete Route '${route.name}'?",
-              style: TextStyle(
-                color: widget.isDark ? Colors.white : Colors.black87,
+              style: const TextStyle(
+                color: Colors.white,
                 fontWeight: FontWeight.w900,
                 fontSize: 16,
               ),
@@ -1064,8 +1095,8 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                     linkedParties.isEmpty
                         ? "No parties are currently assigned to this route. It will be permanently deleted across Web & Mobile App."
                         : "There are ${linkedParties.length} parties assigned to '${route.name}'. You can optionally move those parties to another route before deleting:",
-                    style: TextStyle(
-                      color: widget.isDark ? Colors.white70 : Colors.black87,
+                    style: const TextStyle(
+                      color: Colors.white70,
                       fontSize: 13,
                     ),
                   ),
@@ -1073,9 +1104,11 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                     const SizedBox(height: 14),
                     DropdownButtonFormField<RouteArea?>(
                       value: targetReassign,
-                      dropdownColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+                      dropdownColor: const Color(0xFF1E293B),
+                      style: const TextStyle(color: Colors.white, fontSize: 12.5),
                       decoration: InputDecoration(
                         labelText: "Reassign Parties To Route (Optional)",
+                        labelStyle: const TextStyle(color: Colors.white60),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                         isDense: true,
                       ),
@@ -1107,14 +1140,14 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                   backgroundColor: Colors.redAccent,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () async {
+                onPressed: () {
                   if (targetReassign != null) {
-                    await widget.manager.mergeRoutes(
+                    webPh.mergeRoutes(
                       source: route,
                       target: targetReassign!,
                     );
                   } else {
-                    await widget.manager.deleteRouteMaster(route.id);
+                    webPh.deleteRouteMaster(route.id);
                   }
                   if (mounted) {
                     setState(() {
@@ -1135,17 +1168,17 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     );
   }
 
-  void _showMergeRoutesDialog() {
-    if (widget.manager.routes.length < 2) return;
-    RouteArea? sourceRoute = widget.manager.routes.first;
-    RouteArea? targetRoute = widget.manager.routes.length > 1 ? widget.manager.routes[1] : null;
+  void _showMergeRoutesDialog(PharoahWebManager webPh) {
+    if (webPh.routes.length < 2) return;
+    RouteArea? sourceRoute = webPh.routes.first;
+    RouteArea? targetRoute = webPh.routes.length > 1 ? webPh.routes[1] : null;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: const Row(
               children: [
@@ -1153,7 +1186,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                 SizedBox(width: 10),
                 Text(
                   "MERGE DUPLICATE ROUTES",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
                 ),
               ],
             ),
@@ -1165,17 +1198,20 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                 children: [
                   const Text(
                     "Move all parties from Source Route into Target Route and delete the duplicate Source Route:",
-                    style: TextStyle(fontSize: 12.5),
+                    style: TextStyle(color: Colors.white70, fontSize: 12.5),
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<RouteArea>(
                     value: sourceRoute,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     decoration: const InputDecoration(
                       labelText: "Duplicate Source Route (Will Be Removed)",
+                      labelStyle: TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    items: widget.manager.routes
+                    items: webPh.routes
                         .map((r) => DropdownMenuItem(value: r, child: Text(r.name)))
                         .toList(),
                     onChanged: (v) => setDialogState(() => sourceRoute = v),
@@ -1183,12 +1219,15 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                   const SizedBox(height: 14),
                   DropdownButtonFormField<RouteArea>(
                     value: targetRoute,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     decoration: const InputDecoration(
                       labelText: "Master Target Route (Will Keep All Parties)",
+                      labelStyle: TextStyle(color: Colors.white60),
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
-                    items: widget.manager.routes
+                    items: webPh.routes
                         .map((r) => DropdownMenuItem(value: r, child: Text(r.name)))
                         .toList(),
                     onChanged: (v) => setDialogState(() => targetRoute = v),
@@ -1203,11 +1242,11 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                   backgroundColor: const Color(0xFF8B5CF6),
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () async {
+                onPressed: () {
                   if (sourceRoute == null || targetRoute == null || sourceRoute!.id == targetRoute!.id) {
                     return;
                   }
-                  await widget.manager.mergeRoutes(source: sourceRoute!, target: targetRoute!);
+                  webPh.mergeRoutes(source: sourceRoute!, target: targetRoute!);
                   if (mounted) {
                     setState(() => _selectedRouteForDrawer = targetRoute);
                     Navigator.pop(ctx);
@@ -1229,7 +1268,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
     );
   }
 
-  void _showBulkAssignPartiesToRouteDialog(RouteArea route) {
+  void _showBulkAssignPartiesToRouteDialog(PharoahWebManager webPh, RouteArea route) {
     String filterQ = "";
     final Set<String> selectedIds = {};
 
@@ -1237,7 +1276,7 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final candidates = widget.manager.parties.where((p) {
+          final candidates = webPh.parties.where((p) {
             if (MasterCascadeService.belongsToRoute(p, route)) return false;
             if (filterQ.isEmpty) return true;
             return p.name.toLowerCase().contains(filterQ.toLowerCase()) ||
@@ -1246,12 +1285,12 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
           }).toList();
 
           return AlertDialog(
-            backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+            backgroundColor: const Color(0xFF1E293B),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             title: Text(
               "Assign Parties to ${route.name}",
-              style: TextStyle(
-                color: widget.isDark ? Colors.white : Colors.black87,
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
               ),
@@ -1263,9 +1302,11 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                 children: [
                   TextField(
                     onChanged: (v) => setDialogState(() => filterQ = v.trim()),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5),
                     decoration: InputDecoration(
                       hintText: "Search parties to assign to ${route.name}...",
-                      prefixIcon: const Icon(Icons.search_rounded),
+                      hintStyle: const TextStyle(color: Colors.white54),
+                      prefixIcon: const Icon(Icons.search_rounded, color: Colors.white70),
                       isDense: true,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -1280,8 +1321,14 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                         return CheckboxListTile(
                           dense: true,
                           value: checked,
-                          title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                          subtitle: Text("Current Route: ${p.route.isEmpty ? 'ALL' : p.route} • Ph: ${p.phone}"),
+                          title: Text(
+                            p.name,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            "Current Route: ${p.route.isEmpty ? 'ALL' : p.route} • Ph: ${p.phone}",
+                            style: const TextStyle(color: Colors.white60, fontSize: 11),
+                          ),
                           onChanged: (v) {
                             setDialogState(() {
                               if (v == true) {
@@ -1307,17 +1354,13 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
                 ),
                 onPressed: selectedIds.isEmpty
                     ? null
-                    : () async {
-                        final now = DateTime.now().millisecondsSinceEpoch;
-                        for (final p in widget.manager.parties) {
+                    : () {
+                        for (final p in webPh.parties) {
                           if (selectedIds.contains(p.id)) {
                             p.route = route.name;
-                            p.updatedAt = now;
-                            p.version += 1;
-                            await widget.manager.orchestrator.syncParty(p);
+                            webPh.updateParty(p);
                           }
                         }
-                        await widget.manager.pushUpdatedDataToCloud();
                         if (mounted) {
                           setState(() {});
                           Navigator.pop(ctx);
