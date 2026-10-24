@@ -77,6 +77,137 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // ===========================================================================
+  // 0. SEARCHABLE PRODUCT SELECTION MODAL
+  // ===========================================================================
+  Future<Medicine?> _showProductSearchPickerModal(PharoahWebManager webPh) async {
+    return await showDialog<Medicine>(
+      context: context,
+      builder: (ctx) {
+        String modalSearch = "";
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final q = modalSearch.trim().toLowerCase();
+            final results = q.isEmpty
+                ? webPh.medicines
+                : webPh.medicines.where((m) =>
+                    m.name.toLowerCase().contains(q) ||
+                    m.systemId.toLowerCase().contains(q) ||
+                    m.packing.toLowerCase().contains(q)).toList();
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E293B),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const BorderSide(color: Colors.white12),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.inventory_2_rounded, color: Color(0xFF38BDF8), size: 22),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      "SEARCH & SELECT PRODUCT ITEM",
+                      style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 580,
+                height: 480,
+                child: Column(
+                  children: [
+                    TextField(
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: "Search medicine by name, brand, or system ID...",
+                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                        prefixIcon: const Icon(Icons.search, color: Color(0xFF38BDF8), size: 18),
+                        suffixIcon: modalSearch.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
+                                onPressed: () => setModalState(() => modalSearch = ""),
+                              )
+                            : null,
+                        filled: true,
+                        fillColor: Colors.black26,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                      ),
+                      onChanged: (v) => setModalState(() => modalSearch = v),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: results.isEmpty
+                          ? Center(
+                              child: Text(
+                                "No products match '$modalSearch'",
+                                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: results.length,
+                              separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                              itemBuilder: (c, i) {
+                                final m = results[i];
+                                final batchesCount = webPh.batchHistory[m.identityKey]?.length ?? 0;
+                                return ListTile(
+                                  dense: true,
+                                  leading: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black38,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      m.systemId,
+                                      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    m.name,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  subtitle: Text(
+                                    "Pack: ${m.packing} • MRP ₹${m.mrp.toStringAsFixed(2)} • Pur ₹${m.purRate.toStringAsFixed(2)} • Stock: ${m.stock.toInt()} Units",
+                                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                                  ),
+                                  trailing: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: batchesCount > 0 ? const Color(0xFF34D399).withOpacity(0.15) : Colors.amber.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      "$batchesCount Batches",
+                                      style: TextStyle(
+                                        color: batchesCount > 0 ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  onTap: () => Navigator.pop(ctx, m),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ===========================================================================
   // 1. REGISTER NEW BATCH DIALOG (WITH D1 SYNC)
   // ===========================================================================
   void _showAddBatchDialog(PharoahWebManager webPh, [Medicine? defaultMed]) {
@@ -126,33 +257,59 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (defaultMed == null) ...[
-                    DropdownButtonFormField<Medicine>(
-                      value: chosenMed,
-                      dropdownColor: const Color(0xFF0F172A),
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                      decoration: InputDecoration(
-                        labelText: "SELECT PRODUCT *",
-                        labelStyle: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
-                        filled: true,
-                        fillColor: Colors.black26,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                      ),
-                      items: webPh.medicines.map((m) => DropdownMenuItem(
-                        value: m,
-                        child: Text("${m.name} (${m.systemId})", overflow: TextOverflow.ellipsis),
-                      )).toList(),
-                      onChanged: (val) {
-                        if (val != null) {
+                    InkWell(
+                      onTap: () async {
+                        final picked = await _showProductSearchPickerModal(webPh);
+                        if (picked != null) {
                           setDialogState(() {
-                            chosenMed = val;
-                            mrpC.text = val.mrp.toStringAsFixed(2);
-                            purRateC.text = val.purRate.toStringAsFixed(2);
-                            rateAC.text = val.rateA.toStringAsFixed(2);
-                            rateBC.text = val.rateB.toStringAsFixed(2);
-                            rateCC.text = val.rateC.toStringAsFixed(2);
+                            chosenMed = picked;
+                            mrpC.text = picked.mrp.toStringAsFixed(2);
+                            purRateC.text = picked.purRate.toStringAsFixed(2);
+                            rateAC.text = picked.rateA.toStringAsFixed(2);
+                            rateBC.text = picked.rateB.toStringAsFixed(2);
+                            rateCC.text = picked.rateC.toStringAsFixed(2);
                           });
                         }
                       },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.search, color: Color(0xFF38BDF8), size: 18),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    "PRODUCT ITEM (CLICK TO SEARCH / CHANGE) *",
+                                    style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    "${chosenMed.name} (${chosenMed.systemId}) • Stock: ${chosenMed.stock.toInt()}",
+                                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2563EB).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text("CHANGE", style: TextStyle(color: Color(0xFF60A5FA), fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -990,6 +1147,15 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
 
     // 2. Filter batches based on Search Query and Active Filter Tab
     final query = searchQuery.trim().toLowerCase();
+
+    // Match products for instant live product list dropdown
+    final List<Medicine> matchingMeds = query.isEmpty
+        ? <Medicine>[]
+        : webPh.medicines.where((m) =>
+            m.name.toLowerCase().contains(query) ||
+            m.systemId.toLowerCase().contains(query) ||
+            m.packing.toLowerCase().contains(query)).take(8).toList();
+
     List<GlobalBatchItem> filteredBatches = allBatches.where((item) {
       final m = item.medicine;
       final b = item.batch;
@@ -1067,7 +1233,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
           const SizedBox(height: 16),
 
           // --- TOOLBAR (SEARCH + DUAL MODE SWITCH + FILTER TABS) ---
-          _buildFilterToolbar(webPh, filteredBatches),
+          _buildFilterToolbar(webPh, filteredBatches, matchingMeds),
           const SizedBox(height: 16),
 
           // --- PRODUCT FOCUS BANNER (IF IN DRILL-DOWN MODE) ---
@@ -1275,7 +1441,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   // ===========================================================================
   // 10. FILTER TOOLBAR & DUAL MODE SWITCH
   // ===========================================================================
-  Widget _buildFilterToolbar(PharoahWebManager webPh, List<GlobalBatchItem> currentItems) {
+  Widget _buildFilterToolbar(PharoahWebManager webPh, List<GlobalBatchItem> currentItems, List<Medicine> matchingMeds) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -1295,7 +1461,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   style: const TextStyle(color: Colors.white, fontSize: 12),
                   decoration: InputDecoration(
                     hintText: isGlobalExplorer
-                        ? "Search by Batch No, Medicine Name, or System ID..."
+                        ? "Search by Medicine Name, Batch No, or System ID..."
                         : "Search batches of '${selectedMed?.name ?? "selected product"}'...",
                     hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
                     prefixIcon: const Icon(Icons.search, color: Color(0xFF38BDF8), size: 16),
@@ -1316,7 +1482,31 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   onChanged: (v) => setState(() => searchQuery = v),
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 10),
+
+              // Quick Product Catalog Picker Button
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF38BDF8),
+                  side: const BorderSide(color: Color(0xFF38BDF8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final picked = await _showProductSearchPickerModal(webPh);
+                  if (picked != null) {
+                    setState(() {
+                      selectedMed = picked;
+                      isGlobalExplorer = false;
+                      searchQuery = "";
+                      searchController.clear();
+                    });
+                  }
+                },
+                icon: const Icon(Icons.inventory_2_outlined, size: 15),
+                label: const Text("PRODUCT CATALOG", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 10),
 
               // Mode Toggle (Global Explorer vs Product Focus)
               Container(
@@ -1354,6 +1544,153 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               ),
             ],
           ),
+
+          // Matching Products Dropdown / Autocomplete (appears when user searches)
+          if (searchQuery.trim().isNotEmpty && matchingMeds.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF38BDF8).withOpacity(0.12),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(7)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.medication_liquid_rounded, color: Color(0xFF38BDF8), size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          "MATCHING PRODUCTS (${matchingMeds.length}) — Click to focus product and manage its batches",
+                          style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                        const Spacer(),
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              searchQuery = "";
+                              searchController.clear();
+                            });
+                          },
+                          child: const Text("Dismiss", style: TextStyle(color: Colors.white38, fontSize: 10)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ...matchingMeds.map((med) {
+                    final bList = webPh.batchHistory[med.identityKey] ?? [];
+                    final isCur = selectedMed?.identityKey == med.identityKey && !isGlobalExplorer;
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          selectedMed = med;
+                          isGlobalExplorer = false;
+                          searchQuery = "";
+                          searchController.clear();
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isCur ? const Color(0xFF2563EB).withOpacity(0.18) : Colors.transparent,
+                          border: const Border(bottom: BorderSide(color: Colors.white10)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black45,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                med.systemId,
+                                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 9.5, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    med.name,
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    "Pack: ${med.packing} • MRP ₹${med.mrp.toStringAsFixed(2)} • Pur ₹${med.purRate.toStringAsFixed(2)} • Stock: ${med.stock.toInt()} Units",
+                                    style: const TextStyle(color: Colors.white54, fontSize: 10),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: bList.isNotEmpty ? const Color(0xFF34D399).withOpacity(0.15) : Colors.amber.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                bList.isNotEmpty ? "${bList.length} BATCHES" : "0 BATCHES",
+                                style: TextStyle(
+                                  color: bList.isNotEmpty ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  selectedMed = med;
+                                  isGlobalExplorer = false;
+                                  searchQuery = "";
+                                  searchController.clear();
+                                });
+                              },
+                              icon: const Icon(Icons.remove_red_eye_rounded, size: 12),
+                              label: const Text("VIEW BATCHES", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                            const SizedBox(width: 6),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF38BDF8),
+                                side: const BorderSide(color: Color(0xFF38BDF8)),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                              onPressed: () => _showAddBatchDialog(webPh, med),
+                              icon: const Icon(Icons.add, size: 12),
+                              label: const Text("ADD BATCH", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
 
           // Filter Chips
@@ -1482,6 +1819,38 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               ],
             ),
           ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () => _showAddBatchDialog(webPh, med),
+            icon: const Icon(Icons.add, size: 14),
+            label: const Text("NEW BATCH", style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF38BDF8),
+              side: const BorderSide(color: Color(0xFF38BDF8)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () async {
+              final picked = await _showProductSearchPickerModal(webPh);
+              if (picked != null) {
+                setState(() {
+                  selectedMed = picked;
+                  isGlobalExplorer = false;
+                });
+              }
+            },
+            icon: const Icon(Icons.swap_horiz_rounded, size: 14),
+            label: const Text("CHANGE PRODUCT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF38BDF8),
@@ -1799,6 +2168,74 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   // 13. EMPTY STATE & INPUT HELPER
   // ===========================================================================
   Widget _buildEmptyState(PharoahWebManager webPh) {
+    if (!isGlobalExplorer && selectedMed != null) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          constraints: const BoxConstraints(maxWidth: 540),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.inventory_2_outlined, color: Color(0xFF38BDF8), size: 48),
+              const SizedBox(height: 14),
+              Text(
+                "No Batches Registered for ${selectedMed!.name}",
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                "System ID: ${selectedMed!.systemId} • Pack: ${selectedMed!.packing} • Current Stock: ${selectedMed!.stock.toInt()} Units",
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+              const SizedBox(height: 18),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => _showAddBatchDialog(webPh, selectedMed!),
+                icon: const Icon(Icons.add_box_rounded, size: 18),
+                label: Text("REGISTER FIRST BATCH FOR ${selectedMed!.name.toUpperCase()}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: () async {
+                      final picked = await _showProductSearchPickerModal(webPh);
+                      if (picked != null) {
+                        setState(() {
+                          selectedMed = picked;
+                          isGlobalExplorer = false;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.search, size: 14, color: Colors.white54),
+                    label: const Text("Select Another Product", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  ),
+                  const Text(" • ", style: TextStyle(color: Colors.white24)),
+                  TextButton(
+                    onPressed: () => setState(() => isGlobalExplorer = true),
+                    child: const Text("Return to Global Explorer", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1811,24 +2248,49 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
           ),
           const SizedBox(height: 6),
           const Text(
-            "Try selecting a different filter tab or clear your search term.",
+            "Try selecting a different filter tab, clearing your search term, or browsing the Product Catalog.",
             style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
           const SizedBox(height: 14),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              setState(() {
-                searchQuery = "";
-                searchController.clear();
-                activeFilter = "ALL";
-              });
-            },
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text("RESET FILTERS"),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  setState(() {
+                    searchQuery = "";
+                    searchController.clear();
+                    activeFilter = "ALL";
+                  });
+                },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text("RESET FILTERS"),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF38BDF8),
+                  side: const BorderSide(color: Color(0xFF38BDF8)),
+                ),
+                onPressed: () async {
+                  final m = await _showProductSearchPickerModal(webPh);
+                  if (m != null) {
+                    setState(() {
+                      selectedMed = m;
+                      isGlobalExplorer = false;
+                      searchQuery = "";
+                      searchController.clear();
+                    });
+                  }
+                },
+                icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                label: const Text("BROWSE PRODUCT CATALOG"),
+              ),
+            ],
           ),
         ],
       ),
