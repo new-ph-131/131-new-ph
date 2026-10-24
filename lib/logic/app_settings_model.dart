@@ -35,7 +35,13 @@ class AppConfig {
   String caName;
   String caMailID;        // Pehle caEmail tha
   String caPhone;
-  bool isAuditMode; 
+  bool isAuditMode;
+
+  // --- 🔐 USER CONTROL & DEVELOPER SECURITY ACCESS ---
+  String developerPassword;
+  String userMasterPin;
+  bool developerAllowBatchHistoryToUser;
+  bool userEnableBatchHistory; 
 
   AppConfig({
     this.salePrefix = "INV-",
@@ -73,6 +79,12 @@ class AppConfig {
     this.caMailID = "",
     this.caPhone = "",
     this.isAuditMode = false,
+
+    // Developer & User Access Control Defaults
+    this.developerPassword = "Rawat@1122",
+    this.userMasterPin = "1234",
+    this.developerAllowBatchHistoryToUser = false,
+    this.userEnableBatchHistory = true,
   });
 
   Map<String, dynamic> toMap() {
@@ -109,6 +121,12 @@ class AppConfig {
       'caMailID': caMailID,
       'caPhone': caPhone,
       'isAuditMode': isAuditMode,
+
+      // Access Control
+      'developerPassword': developerPassword,
+      'userMasterPin': userMasterPin,
+      'developerAllowBatchHistoryToUser': developerAllowBatchHistoryToUser,
+      'userEnableBatchHistory': userEnableBatchHistory,
     };
   }
 
@@ -149,6 +167,11 @@ class AppConfig {
       caMailID: map['caMailID'] ?? map['caEmail'] ?? "",
       caPhone: map['caPhone'] ?? "",
       isAuditMode: map['isAuditMode'] ?? false,
+
+      developerPassword: map['developerPassword'] ?? "Rawat@1122",
+      userMasterPin: map['userMasterPin'] ?? "1234",
+      developerAllowBatchHistoryToUser: map['developerAllowBatchHistoryToUser'] ?? false,
+      userEnableBatchHistory: map['userEnableBatchHistory'] ?? true,
     );
   }
 }

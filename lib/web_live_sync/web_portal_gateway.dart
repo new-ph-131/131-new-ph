@@ -30,6 +30,7 @@ import 'web_batch_master.dart';
 import 'web_aux_masters.dart';
 import 'web_challan_view.dart';
 import 'web_ca_profile_view.dart';
+import 'sub_views/user_control/web_user_control_view.dart';
 import 'web_shortage_register.dart';
 import 'web_ledger_view.dart';
 
@@ -282,6 +283,9 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     }
     if (currentView == "GO_M_CA") {
       return WebCaProfileView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));
+    }
+    if (currentView == "GO_M_USER_CONTROL") {
+      return WebUserControlView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));
     }
 
     // --- AUX MASTERS ---

@@ -10,6 +10,7 @@ import 'package:pharoah_erp/web_live_sync/web_models.dart';
 import 'package:pharoah_erp/logic/batch_cascade_engine.dart';
 import 'package:pharoah_erp/sync_core/modules/batch_sync_module.dart';
 import 'package:pharoah_erp/app_date_logic.dart';
+import 'batch_audit_workbench.dart';
 class ProductBatchTraceabilityScreen extends StatefulWidget {
   final Medicine medicine;
   final VoidCallback onBack;
@@ -26,6 +27,8 @@ class ProductBatchTraceabilityScreen extends StatefulWidget {
 
 class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilityScreen> {
   String selectedFilter = 'ALL'; // ALL, ACTIVE, EXPIRED, ZERO
+  bool _isViewingAuditHistory = false;
+  String? _targetAuditBatchNo;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +47,21 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
       if (selectedFilter == 'ZERO') return b.qty == 0;
       return true;
     }).toList();
+
+    final bool canViewAudit = webPh.appConfig.developerAllowBatchHistoryToUser && webPh.appConfig.userEnableBatchHistory;
+
+    if (_isViewingAuditHistory && canViewAudit) {
+      return BatchAuditWorkbench(
+        medicine: widget.medicine,
+        batches: batches,
+        initialBatchNo: _targetAuditBatchNo,
+        onBack: () => setState(() {
+          _isViewingAuditHistory = false;
+          _targetAuditBatchNo = null;
+        }),
+        isWebTheme: true,
+      );
+    }
 
     return Container(
       color: const Color(0xFF0F172A),
@@ -118,6 +136,23 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                   ),
                 ),
                 const SizedBox(width: 16),
+                if (canViewAudit) ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => setState(() {
+                      _isViewingAuditHistory = true;
+                      _targetAuditBatchNo = null;
+                    }),
+                    icon: const Icon(Icons.table_chart_rounded, size: 16),
+                    label: const Text("AUDIT HISTORY LEDGER", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2563EB),
@@ -327,6 +362,25 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                                           ),
                                           const SizedBox(width: 6),
 
+                                          if (canViewAudit) ...[
+                                            ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFF0D9488),
+                                                foregroundColor: Colors.white,
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                                minimumSize: Size.zero,
+                                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                              ),
+                                              onPressed: () => setState(() {
+                                                _isViewingAuditHistory = true;
+                                                _targetAuditBatchNo = b.batch;
+                                              }),
+                                              icon: const Icon(Icons.history_edu_rounded, size: 12),
+                                              label: const Text("AUDIT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                            ),
+                                            const SizedBox(width: 6),
+                                          ],
                                           // TRAIL & LEDGER BUTTON
                                           OutlinedButton.icon(
                                             style: OutlinedButton.styleFrom(

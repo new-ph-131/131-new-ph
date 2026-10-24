@@ -7,6 +7,7 @@ import 'models.dart';
 import 'app_date_logic.dart';
 import 'logic/batch_cascade_engine.dart';
 import 'sync_core/modules/batch_sync_module.dart';
+import 'web_live_sync/sub_views/web_stock/batch_audit_workbench.dart';
 
 class BatchMasterView extends StatefulWidget {
   const BatchMasterView({super.key});
@@ -24,6 +25,25 @@ class _BatchMasterViewState extends State<BatchMasterView> {
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  void _openAuditWorkbench(PharoahManager ph, Medicine med, [String? batchNo]) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => Scaffold(
+          body: SafeArea(
+            child: BatchAuditWorkbench(
+              medicine: med,
+              batches: ph.batchHistory[med.identityKey] ?? [],
+              initialBatchNo: batchNo,
+              onBack: () => Navigator.pop(c),
+              isWebTheme: false,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ===========================================================================
@@ -801,6 +821,13 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                       ],
                     ),
                   ),
+                  if (ph.config.developerAllowBatchHistoryToUser && ph.config.userEnableBatchHistory) ...[
+                    IconButton(
+                      icon: const Icon(Icons.table_chart_rounded, color: Color(0xFF0F766E)),
+                      tooltip: "Batch Adjustment Audit History",
+                      onPressed: () => _openAuditWorkbench(ph, selectedMed!),
+                    ),
+                  ],
                   IconButton(
                     icon: const Icon(Icons.close_rounded, color: Colors.red),
                     onPressed: () => setState(() => selectedMed = null),
@@ -936,6 +963,10 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                     _actionBtn("CASCADE EDIT", Icons.sync_alt_rounded, Colors.indigo, () => _showCascadeEditDialog(ph, med, b)),
                     const SizedBox(width: 8),
                     _actionBtn("ADJUST", Icons.exposure, Colors.orange.shade800, () => _showAdjustmentDialog(ph, med, b)),
+                    if (ph.config.developerAllowBatchHistoryToUser && ph.config.userEnableBatchHistory) ...[
+                      const SizedBox(width: 8),
+                      _actionBtn("AUDIT", Icons.table_chart_rounded, const Color(0xFF0F766E), () => _openAuditWorkbench(ph, med, b.batch)),
+                    ],
                     const SizedBox(width: 8),
                     _actionBtn("DELETE", Icons.delete_outline, Colors.red.shade700, () => _showDeleteBatchDialog(ph, med, b)),
                   ],

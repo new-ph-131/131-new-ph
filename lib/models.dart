@@ -105,6 +105,52 @@ class Salesman {
   factory Salesman.fromMap(Map<String, dynamic> map) => Salesman(id: map['id'] ?? "", name: map['name'] ?? "", phone: map['phone'] ?? "", route: map['route'] ?? "");
 }
 
+class BatchAdjustmentRecord {
+  final String id;
+  final int timestamp;
+  final double previousQty;
+  final double adjustmentQty;
+  final double newQty;
+  final String reason;
+  final String adjustedBy;
+  final String notes;
+
+  BatchAdjustmentRecord({
+    required this.id,
+    required this.timestamp,
+    required this.previousQty,
+    required this.adjustmentQty,
+    required this.newQty,
+    required this.reason,
+    this.adjustedBy = "User",
+    this.notes = "",
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'timestamp': timestamp,
+    'previousQty': previousQty,
+    'adjustmentQty': adjustmentQty,
+    'newQty': newQty,
+    'reason': reason,
+    'adjustedBy': adjustedBy,
+    'notes': notes,
+  };
+
+  factory BatchAdjustmentRecord.fromMap(Map<String, dynamic> map) => BatchAdjustmentRecord(
+    id: (map['id'] ?? '').toString(),
+    timestamp: map['timestamp'] is int
+        ? map['timestamp']
+        : (int.tryParse(map['timestamp']?.toString() ?? '0') ?? 0),
+    previousQty: (map['previousQty'] ?? 0.0).toDouble(),
+    adjustmentQty: (map['adjustmentQty'] ?? 0.0).toDouble(),
+    newQty: (map['newQty'] ?? 0.0).toDouble(),
+    reason: (map['reason'] ?? '').toString(),
+    adjustedBy: (map['adjustedBy'] ?? 'User').toString(),
+    notes: (map['notes'] ?? '').toString(),
+  );
+}
+
 class BatchInfo { 
   String batch, exp, packing, adjReason; 
   double mrp, rate, qty, openingQty, adjustmentQty, breakageQty; 
@@ -120,6 +166,7 @@ class BatchInfo {
   String status; // 'Active', 'Hold', 'Blocked'
   int version;
   int updatedAt;
+  List<BatchAdjustmentRecord> adjustmentHistory;
 
   BatchInfo({
     required this.batch, 
@@ -143,7 +190,8 @@ class BatchInfo {
     this.status = "Active",
     this.version = 1,
     this.updatedAt = 0,
-  });
+    List<BatchAdjustmentRecord>? adjustmentHistory,
+  }) : adjustmentHistory = adjustmentHistory ?? [];
 
   Map<String, dynamic> toMap() => {
     'batch': batch, 
@@ -167,6 +215,7 @@ class BatchInfo {
     'status': status,
     'version': version,
     'updatedAt': updatedAt,
+    'adjustmentHistory': adjustmentHistory.map((a) => a.toMap()).toList(),
   };
 
   factory BatchInfo.fromMap(Map<String, dynamic> map) => BatchInfo(
@@ -191,6 +240,11 @@ class BatchInfo {
     status: map['status'] ?? "Active",
     version: map['version'] is int ? map['version'] : (int.tryParse(map['version']?.toString() ?? "1") ?? 1),
     updatedAt: map['updatedAt'] is int ? map['updatedAt'] : (int.tryParse(map['updatedAt']?.toString() ?? "0") ?? 0),
+    adjustmentHistory: map['adjustmentHistory'] != null && map['adjustmentHistory'] is List
+        ? (map['adjustmentHistory'] as List)
+            .map((e) => BatchAdjustmentRecord.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList()
+        : [],
   ); 
 }
 

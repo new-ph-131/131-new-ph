@@ -130,6 +130,7 @@ class WebModulesRegistry {
         WebActionItem(key: "GO_M_COMP", title: "Company", subtitle: "Manufacturer Library", icon: Icons.business_rounded, color: Color(0xFF9A3412)),
         WebActionItem(key: "GO_M_SALT", title: "Salt Master", subtitle: "Mono/Duo Salt Master", icon: Icons.science_rounded, color: Color(0xFFC2410C)),
         WebActionItem(key: "GO_M_CA", title: "CA Profile", subtitle: "Auditor & Mail Redirection", icon: Icons.assignment_ind_rounded, color: Color(0xFFEA580C)),
+        WebActionItem(key: "GO_M_USER_CONTROL", title: "User Control", subtitle: "Developer & Staff Rights", icon: Icons.admin_panel_settings_rounded, color: Color(0xFFDC2626)),
       ],
     ),
 

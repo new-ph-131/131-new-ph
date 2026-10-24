@@ -10,7 +10,8 @@ import 'salt_master_view.dart';
 import 'drug_type_master_view.dart';
 import 'batch_master_view.dart';
 // --- NAYA IMPORT ZAROORI HAI ---
-import 'administration/ca_profile_view.dart'; 
+import 'administration/ca_profile_view.dart';
+import 'administration/user_control_master_view.dart'; 
 
 class MasterHubView extends StatelessWidget {
   const MasterHubView({super.key});
@@ -64,6 +65,14 @@ class MasterHubView extends StatelessWidget {
                   icon: Icons.assignment_ind_rounded, 
                   color: Colors.orange.shade900, 
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const CaProfileView()))
+                ),
+                
+                // --- USER CONTROL & DEVELOPER SECURITY BUTTON ---
+                ActionIconBtn(
+                  title: "User Control", 
+                  icon: Icons.admin_panel_settings_rounded, 
+                  color: const Color(0xFF991B1B), 
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const UserControlMasterView()))
                 ),
                 
                 ActionIconBtn(

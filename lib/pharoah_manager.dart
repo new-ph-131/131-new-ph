@@ -173,6 +173,7 @@ class PharoahManager with ChangeNotifier {
     ModuleAction(title: "Items", icon: Icons.medication, color: Colors.purple, navModule: "GO_M_ITEM"),
     ModuleAction(title: "Series", icon: Icons.format_list_numbered, color: Colors.blue, navModule: "GO_M_SERIES"),
     ModuleAction(title: "Staff", icon: Icons.admin_panel_settings, color: Colors.red, navModule: "GO_M_STAFF"),
+    ModuleAction(title: "User Control", icon: Icons.security_rounded, color: Colors.red.shade900, navModule: "GO_USER_CONTROL"),
     ModuleAction(title: "Batches", icon: Icons.layers, color: Colors.blueGrey, navModule: "GO_M_BATCH"),
     ModuleAction(title: "CA Profile", icon: Icons.assignment_ind_rounded, color: Colors.orange.shade900, navModule: "GO_CA_PROFILE"),
     ModuleAction(title: "Routes", icon: Icons.map, color: Colors.teal, navModule: "GO_M_ROUTE"),
@@ -1303,14 +1304,33 @@ void registerBatchActivity({
     double netMonthlySale = grossSaleQty - returnedQty;
     return netMonthlySale < 0 ? 0 : netMonthlySale;
   }
-  void adjustBatchStock({required String medId, required String batchNo, required double adjQty, required String reason}) {
+  void adjustBatchStock({
+    required String medId,
+    required String batchNo,
+    required double adjQty,
+    required String reason,
+    String adjustedBy = "User",
+  }) {
     if (batchHistory.containsKey(medId)) {
       try {
         var b = batchHistory[medId]!.firstWhere((x) => x.batch == batchNo);
+        double prev = b.qty;
         b.adjustmentQty += adjQty;
         b.adjReason = reason;
         b.version += 1;
         b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+        final rec = BatchAdjustmentRecord(
+          id: "ADJ_${DateTime.now().millisecondsSinceEpoch}_${b.adjustmentHistory.length + 1}",
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          previousQty: prev,
+          adjustmentQty: adjQty,
+          newQty: prev + adjQty,
+          reason: reason,
+          adjustedBy: adjustedBy,
+        );
+        b.adjustmentHistory.add(rec);
+
         if (activeCompany != null && activeCompany!.id.isNotEmpty) {
           BatchSyncModule.onBatchSaved(
             batch: b,

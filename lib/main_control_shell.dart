@@ -42,7 +42,8 @@ import 'modifications/modify_hub_view.dart';
 import 'compliance/compliance_hub.dart';   
 import 'administration/series_master_view.dart'; 
 import 'administration/app_settings_view.dart'; 
-import 'administration/ca_profile_view.dart'; // <--- NAYA IMPORT ADDED
+import 'administration/ca_profile_view.dart';
+import 'administration/user_control_master_view.dart'; // <--- NAYA IMPORT ADDED
 import 'sale_summary_view.dart'; 
 import 'purchase/purchase_summary_view.dart'; 
 import 'payment_receipt_history.dart';
@@ -230,7 +231,8 @@ class _MainControlShellState extends State<MainControlShell> {
         case "GO_GST_RECON": target = const GSTReconciliationView(); break;
         case "GO_STITCHER_WIZARD": target = const ChallanStitcherWizard(); break;
         case "GO_DATA_HUB": target = const DataExchangeView(); break; 
-        case "GO_CA_PROFILE": target = const CaProfileView(); break; // <--- NAYA CASE ADDED
+        case "GO_CA_PROFILE": target = const CaProfileView(); break;
+        case "GO_USER_CONTROL": target = const UserControlMasterView(); break; // <--- NAYA CASE ADDED
       }
 
       if (target != null) Navigator.push(context, MaterialPageRoute(builder: (c) => target!));

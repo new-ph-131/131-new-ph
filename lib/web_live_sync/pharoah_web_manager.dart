@@ -2750,6 +2750,7 @@ class PharoahWebManager with ChangeNotifier {
     required String batchNo,
     required double adjQty,
     required String reason,
+    String adjustedBy = "User",
   }) {
     String resolvedKey = medId.trim();
     if (!batchHistory.containsKey(resolvedKey)) {
@@ -2769,10 +2770,22 @@ class PharoahWebManager with ChangeNotifier {
       final idx = batchHistory[resolvedKey]!.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
       if (idx != -1) {
         final b = batchHistory[resolvedKey]![idx];
+        double prev = b.qty;
         b.adjustmentQty += adjQty;
         b.adjReason = reason;
         b.version += 1;
         b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+        final rec = BatchAdjustmentRecord(
+          id: "ADJ_${DateTime.now().millisecondsSinceEpoch}_${b.adjustmentHistory.length + 1}",
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+          previousQty: prev,
+          adjustmentQty: adjQty,
+          newQty: prev + adjQty,
+          reason: reason,
+          adjustedBy: adjustedBy,
+        );
+        b.adjustmentHistory.add(rec);
 
         if (activeStoreToken.isNotEmpty) {
           BatchSyncModule.onBatchSaved(
