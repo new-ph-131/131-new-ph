@@ -1,6 +1,3 @@
-import '../../../logic/batch_cascade_engine.dart';
-import '../../../sync_core/modules/batch_sync_module.dart';
-import '../../../app_date_logic.dart';
 import 'dart:ui' show PointerDeviceKind;
 // FILE: lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
 // Live Revision: #PH-REV-745 (ADVANCED-STOCK-TRACEABILITY-AND-BATCH-LEDGER)
@@ -10,6 +7,9 @@ import 'package:provider/provider.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 import 'package:pharoah_erp/web_live_sync/web_models.dart';
 
+import 'package:pharoah_erp/logic/batch_cascade_engine.dart';
+import 'package:pharoah_erp/sync_core/modules/batch_sync_module.dart';
+import 'package:pharoah_erp/app_date_logic.dart';
 class ProductBatchTraceabilityScreen extends StatefulWidget {
   final Medicine medicine;
   final VoidCallback onBack;
@@ -623,19 +623,11 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
               webPh.batchHistory[medKey]!.add(newBatch);
 
               // 2-Way Live Sync Outbox enqueue
-              BatchSyncModule.enqueueBatchMutation(
-                medicineId: med.id,
-                systemId: med.systemId,
-                batchNo: bNo,
-                expiry: exp,
-                mrp: m,
-                purRate: pur,
-                rateA: rA,
-                rateB: rB,
-                rateC: rC,
-                qty: q,
-                status: "Active",
-                isDeleted: false,
+              BatchSyncModule.onBatchSaved(
+                batch: newBatch,
+                medIdentityKey: medKey,
+                storeToken: webPh.activeStoreToken,
+                isDelete: false,
               );
 
               webPh.rebuildInventory();
@@ -775,47 +767,34 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
               final double newRb = double.tryParse(rateBC.text) ?? b.rateB;
               final double newRc = double.tryParse(rateCC.text) ?? b.rateC;
 
-              final cascadeResult = BatchCascadeEngine.cascadeBatchRenameAndModify(
+              final mutatedCount = BatchCascadeEngine.cascadeBatchUpdate(
                 medicine: med,
                 oldBatchNo: oldBatchNo,
                 newBatchNo: newBatchNo,
-                newExpiry: newExp,
+                newExp: newExp,
                 newMrp: newMrp,
                 newPurRate: newPur,
                 newRateA: newRa,
                 newRateB: newRb,
                 newRateC: newRc,
+                batchHistory: webPh.batchHistory,
                 sales: webPh.sales,
                 purchases: webPh.purchases,
                 saleChallans: webPh.saleChallans,
                 purchaseChallans: webPh.purchaseChallans,
                 saleReturns: webPh.saleReturns,
                 purchaseReturns: webPh.purchaseReturns,
-                batchHistory: webPh.batchHistory,
                 medicines: webPh.medicines,
-                onRebuildStock: () => webPh.rebuildInventory(),
+                storeToken: webPh.activeStoreToken,
+                companyId: webPh.activeStoreToken,
               );
 
-              BatchSyncModule.enqueueBatchMutation(
-                medicineId: med.id,
-                systemId: med.systemId,
-                batchNo: newBatchNo,
-                expiry: newExp,
-                mrp: newMrp,
-                purRate: newPur,
-                rateA: newRa,
-                rateB: newRb,
-                rateC: newRc,
-                qty: b.qty,
-                status: b.status,
-                isDeleted: false,
-              );
-
+              webPh.rebuildInventory();
               Navigator.pop(c);
               setState(() {});
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text("Modified batch '$oldBatchNo' -> '$newBatchNo' across ${cascadeResult.totalVouchersUpdated} vouchers."),
+                  content: Text("Modified batch '$oldBatchNo' -> '$newBatchNo' across $mutatedCount voucher item(s)."),
                   backgroundColor: const Color(0xFF10B981),
                 ),
               );
@@ -990,46 +969,31 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
             icon: const Icon(Icons.delete_forever_rounded, size: 16),
             label: const Text("PERMANENTLY DELETE BATCH", style: TextStyle(fontWeight: FontWeight.bold)),
             onPressed: () {
-              final result = BatchCascadeEngine.safeDeleteBatchWithTombstone(
+              final result = BatchCascadeEngine.deleteBatchSafe(
                 medicine: med,
                 batchNo: b.batch,
                 activeFY: activeFY,
+                batchHistory: webPh.batchHistory,
                 sales: webPh.sales,
                 purchases: webPh.purchases,
                 saleChallans: webPh.saleChallans,
                 purchaseChallans: webPh.purchaseChallans,
                 saleReturns: webPh.saleReturns,
                 purchaseReturns: webPh.purchaseReturns,
-                batchHistory: webPh.batchHistory,
                 medicines: webPh.medicines,
-                onRebuildStock: () => webPh.rebuildInventory(),
+                storeToken: webPh.activeStoreToken,
+                companyId: webPh.activeStoreToken,
               );
 
-              if (result.success) {
-                BatchSyncModule.enqueueBatchMutation(
-                  medicineId: med.id,
-                  systemId: med.systemId,
-                  batchNo: b.batch,
-                  expiry: b.exp,
-                  mrp: b.mrp,
-                  purRate: b.purRate,
-                  rateA: b.rateA,
-                  rateB: b.rateB,
-                  rateC: b.rateC,
-                  qty: 0,
-                  status: "Deleted",
-                  isDeleted: true,
-                );
-
-                Navigator.pop(c);
-                setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(result.message),
-                    backgroundColor: const Color(0xFF10B981),
-                  ),
-                );
-              }
+              webPh.rebuildInventory();
+              Navigator.pop(c);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(result.message),
+                  backgroundColor: result.success ? const Color(0xFF10B981) : Colors.redAccent,
+                ),
+              );
             },
           ),
         ],
