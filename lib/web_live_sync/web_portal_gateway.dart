@@ -68,13 +68,14 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       currentViewTitle = hubTitle;
     });
 
-    if (hubId == "HOME" && _homeScrollOffset > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_homeScrollController.hasClients) {
-          _homeScrollController.jumpTo(_homeScrollOffset);
-        }
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_homeScrollController.hasClients) return;
+      if (hubId == "HOME") {
+        _homeScrollController.jumpTo(_homeScrollOffset > 0 ? _homeScrollOffset : 0.0);
+      } else {
+        _homeScrollController.jumpTo(0.0);
+      }
+    });
   }
 
   void _handleActionTap(String actionTitle, IconData icon, String navKey) {
@@ -162,17 +163,21 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
               onClearAll: _clearAllRecents,
             ),
 
-          // Full-screen workbenches (GO_SALE, GO_STOCK, GO_ITEM_LEDGER, GO_DUMP)
+          // Full-screen workbenches (GO_SALE, GO_STOCK, GO_ITEM_LEDGER, GO_DUMP, GO_M_BATCH, GO_M_USER_CONTROL, GO_CHALLAN_SALE, GO_CHALLAN_PUR)
           // bypass outer SingleChildScrollView to guarantee finite bounded viewport height
           // and prevent RenderFlex infinite height exceptions (#PH-REV-742)
           Expanded(
             child: (currentView == "GO_SALE" ||
                     currentView == "GO_STOCK" ||
                     currentView == "GO_ITEM_LEDGER" ||
-                    currentView == "GO_DUMP")
+                    currentView == "GO_DUMP" ||
+                    currentView == "GO_M_BATCH" ||
+                    currentView == "GO_M_USER_CONTROL" ||
+                    currentView == "GO_CHALLAN_SALE" ||
+                    currentView == "GO_CHALLAN_PUR")
                 ? _buildCurrentView(webPh)
                 : SingleChildScrollView(
-                    key: const PageStorageKey("web_portal_home_scroll"),
+                    key: PageStorageKey("web_portal_scroll_$currentView"),
                     controller: _homeScrollController,
                     padding: EdgeInsets.symmetric(
                       horizontal: screenWidth > 600 ? 18.0 : 10.0,

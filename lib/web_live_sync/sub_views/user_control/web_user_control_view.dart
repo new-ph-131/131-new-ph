@@ -175,81 +175,94 @@ class _WebUserControlViewState extends State<WebUserControlView> {
       _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
     }
 
-    return Container(
-      color: const Color(0xFF0F172A),
-      child: Column(
-        children: [
-          // 🏆 TOP HEADER BAR
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1E293B),
-              border: Border(bottom: BorderSide(color: Colors.white10)),
-            ),
-            child: Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double screenH = MediaQuery.of(context).size.height;
+        final double boundedHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : (screenH - 104.0).clamp(580.0, 1400.0);
+
+        return SizedBox(
+          width: double.infinity,
+          height: boundedHeight,
+          child: Container(
+            color: const Color(0xFF0F172A),
+            child: Column(
               children: [
-                IconButton(
-                  onPressed: widget.onBack,
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                  tooltip: "Back to Business Masters",
-                ),
-                const SizedBox(width: 12),
+                // 🏆 TOP HEADER BAR
                 Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1E293B),
+                    border: Border(bottom: BorderSide(color: Colors.white10)),
                   ),
-                  child: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFFF87171), size: 22),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        "User Control & Developer Security",
-                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      IconButton(
+                        onPressed: widget.onBack,
+                        icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                        tooltip: "Back to Business Masters",
                       ),
-                      SizedBox(height: 2),
-                      Text(
-                        "Configure Role Permissions, Master Password & Batch History Delegation",
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      const SizedBox(width: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDC2626).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFFF87171), size: 22),
                       ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "User Control & Developer Security",
+                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "Configure Role Permissions, Master Password & Batch History Delegation",
+                              style: TextStyle(color: Colors.white54, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (authenticatedRole != null)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white12,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          onPressed: () => setState(() {
+                            authenticatedRole = null;
+                            authPassController.clear();
+                          }),
+                          icon: const Icon(Icons.lock_rounded, size: 16),
+                          label: const Text("LOCK SESSION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                        ),
                     ],
                   ),
                 ),
-                if (authenticatedRole != null)
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white12,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () => setState(() {
-                      authenticatedRole = null;
-                      authPassController.clear();
-                    }),
-                    icon: const Icon(Icons.lock_rounded, size: 16),
-                    label: const Text("LOCK SESSION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+
+                // BODY
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(28),
+                    child: authenticatedRole == null
+                        ? _buildWebAuthCard(webPh)
+                        : authenticatedRole == "DEV"
+                            ? _buildWebDeveloperPanel(webPh)
+                            : _buildWebUserPanel(webPh),
                   ),
+                ),
               ],
             ),
           ),
-
-          // BODY
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(28),
-              child: authenticatedRole == null
-                  ? _buildWebAuthCard(webPh)
-                  : authenticatedRole == "DEV"
-                      ? _buildWebDeveloperPanel(webPh)
-                      : _buildWebUserPanel(webPh),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

@@ -1332,49 +1332,64 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
       }
     }).toList();
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // --- TOP BREADCRUMB & CONTROLS ---
-          _buildTopBar(webPh, activeFY, filteredBatches),
-          const SizedBox(height: 16),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double screenH = MediaQuery.of(context).size.height;
+        final double boundedHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : (screenH - 104.0).clamp(580.0, 1400.0);
 
-          // --- VALUATION KPI STRIP ---
-          _buildKpiStrip(
-            totalBatches: allBatches.length,
-            totalStockUnits: totalStockUnits,
-            totalValuation: totalValuation,
-            expiryRiskValuation: expiryRiskValuation,
-            nearExpiryCount: nearExpiryCount,
+        return SizedBox(
+          width: double.infinity,
+          height: boundedHeight,
+          child: Container(
+            width: double.infinity,
+            height: boundedHeight,
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // --- TOP BREADCRUMB & CONTROLS ---
+                _buildTopBar(webPh, activeFY, filteredBatches),
+                const SizedBox(height: 14),
+
+                // --- VALUATION KPI STRIP ---
+                _buildKpiStrip(
+                  totalBatches: allBatches.length,
+                  totalStockUnits: totalStockUnits,
+                  totalValuation: totalValuation,
+                  expiryRiskValuation: expiryRiskValuation,
+                  nearExpiryCount: nearExpiryCount,
+                ),
+                const SizedBox(height: 14),
+
+                // --- TOOLBAR (SEARCH + DUAL MODE SWITCH + FILTER TABS) ---
+                _buildFilterToolbar(webPh, filteredBatches, matchingMeds),
+                const SizedBox(height: 14),
+
+                // --- PRODUCT FOCUS BANNER (IF IN DRILL-DOWN MODE) ---
+                if (!isGlobalExplorer && selectedMed != null) ...[
+                  _buildProductFocusBanner(webPh, selectedMed!),
+                  const SizedBox(height: 10),
+                ],
+
+                // --- MAIN DATA TABLE OR EMPTY STATE ---
+                Expanded(
+                  child: filteredBatches.isEmpty
+                      ? _buildEmptyState(webPh)
+                      : _buildBatchesTable(webPh, filteredBatches, activeFY),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 16),
-
-          // --- TOOLBAR (SEARCH + DUAL MODE SWITCH + FILTER TABS) ---
-          _buildFilterToolbar(webPh, filteredBatches, matchingMeds),
-          const SizedBox(height: 16),
-
-          // --- PRODUCT FOCUS BANNER (IF IN DRILL-DOWN MODE) ---
-          if (!isGlobalExplorer && selectedMed != null) ...[
-            _buildProductFocusBanner(webPh, selectedMed!),
-            const SizedBox(height: 12),
-          ],
-
-          // --- MAIN DATA TABLE OR EMPTY STATE ---
-          Expanded(
-            child: filteredBatches.isEmpty
-                ? _buildEmptyState(webPh)
-                : _buildBatchesTable(webPh, filteredBatches, activeFY),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -2012,9 +2027,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
-        child: ListView(
+        child: Column(
           children: [
-            // Table Header
+            // Sticky Table Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               color: const Color(0xFF0F172A),
@@ -2036,8 +2051,12 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
             ),
             const Divider(color: Colors.white12, height: 1),
 
-            // Rows
-            ...items.map((item) {
+            // Virtualized Rows
+            Expanded(
+              child: ListView.builder(
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
               final m = item.medicine;
               final b = item.batch;
 
@@ -2333,7 +2352,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   ],
                 ),
               );
-            }),
+                },
+              ),
+            ),
           ],
         ),
       ),
