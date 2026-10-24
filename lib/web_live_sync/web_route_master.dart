@@ -61,22 +61,26 @@ class _WebRouteMasterViewState extends State<WebRouteMasterView> {
   }
 
   double _getPartyLiveBalance(PharoahWebManager webPh, Party p) {
-    double bal = p.opBal;
-    for (final s in webPh.sales) {
-      if (s.partyId == p.id && s.paymentMode.toUpperCase() == "CREDIT") {
-        bal += s.netTotal;
-      }
-    }
-    for (final v in webPh.vouchers) {
-      if (v.partyId == p.id) {
-        if (v.type.toUpperCase() == "RECEIPT") {
-          bal -= v.amount;
-        } else if (v.type.toUpperCase() == "PAYMENT") {
-          bal += v.amount;
+    try {
+      return webPh.calculatePartyBalance(p);
+    } catch (_) {
+      double bal = p.opBal;
+      for (final s in webPh.sales) {
+        if (s.partyId == p.id && s.paymentMode.toUpperCase() == "CREDIT") {
+          bal += s.totalAmount;
         }
       }
+      for (final v in webPh.vouchers) {
+        if (v.partyId == p.id) {
+          if (v.type.toUpperCase() == "RECEIPT") {
+            bal -= v.amount;
+          } else if (v.type.toUpperCase() == "PAYMENT") {
+            bal += v.amount;
+          }
+        }
+      }
+      return bal;
     }
-    return bal;
   }
 
   double _calcRouteReceivables(PharoahWebManager webPh, List<Party> parties) {
