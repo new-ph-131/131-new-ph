@@ -28,6 +28,9 @@ import 'web_product_master.dart';
 import 'web_party_master.dart';
 import 'web_batch_master.dart';
 import 'web_aux_masters.dart';
+import 'web_company_master.dart';
+import 'web_salt_master.dart';
+import 'web_route_master.dart';
 import 'web_challan_view.dart';
 import 'web_ca_profile_view.dart';
 import 'sub_views/user_control/web_user_control_view.dart';
@@ -172,6 +175,9 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
                     currentView == "GO_ITEM_LEDGER" ||
                     currentView == "GO_DUMP" ||
                     currentView == "GO_M_BATCH" ||
+                    currentView == "GO_M_COMP" ||
+                    currentView == "GO_M_SALT" ||
+                    currentView == "GO_M_ROUTE" ||
                     currentView == "GO_M_USER_CONTROL" ||
                     currentView == "GO_CHALLAN_SALE" ||
                     currentView == "GO_CHALLAN_PUR")
@@ -293,12 +299,27 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
       return WebUserControlView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));
     }
 
-    // --- AUX MASTERS ---
-    if (currentView == "GO_M_COMP" || currentView == "GO_M_SALT" || currentView == "GO_M_ROUTE") {
-      int tabIdx = 0;
-      if (currentView == "GO_M_SALT") tabIdx = 1;
-      if (currentView == "GO_M_ROUTE") tabIdx = 2;
-      return WebAuxMastersView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"), initialTabIndex: tabIdx);
+    // --- STANDALONE ENTERPRISE MASTERS (COMPANY, SALT, ROUTE) ---
+    if (currentView == "GO_M_COMP") {
+      return WebCompanyMasterView(
+        manager: webPh,
+        onNavigate: (_) => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
+        isDark: true,
+      );
+    }
+    if (currentView == "GO_M_SALT") {
+      return WebSaltMasterView(
+        manager: webPh,
+        onNavigate: (_) => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
+        isDark: true,
+      );
+    }
+    if (currentView == "GO_M_ROUTE") {
+      return WebRouteMasterView(
+        manager: webPh,
+        onNavigate: (_) => _navigateToHub("MASTERS", "BUSINESS MASTERS"),
+        isDark: true,
+      );
     }
 
     // --- DEFAULT GRID (HOME) ---

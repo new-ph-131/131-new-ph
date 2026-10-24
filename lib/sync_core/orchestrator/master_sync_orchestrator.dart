@@ -15,6 +15,9 @@ import '../modules/voucher_sync_module.dart';
 import '../modules/party_sync_module.dart';
 import '../modules/medicine_sync_module.dart';
 import '../modules/batch_sync_module.dart';
+import '../modules/company_sync_module.dart';
+import '../modules/salt_sync_module.dart';
+import '../modules/route_sync_module.dart';
 import '../../inventory_logic_center.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
@@ -308,6 +311,79 @@ class MasterSyncOrchestrator {
             phApp.notifyListeners();
           }
           break;
+        case 'COMPANY':
+          final String cName = (envelope.billData['name'] ?? '').toString().trim().toUpperCase();
+          final String cKey = cName.isNotEmpty ? "COMP_${CompanySyncModule.cleanString(cName)}" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, cKey);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (cKey.isNotEmpty) cKey]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, cKey);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: cKey);
+            }
+          }
+          mutated = CompanySyncModule.mergeIncomingCompanyEnvelope(
+            phApp.companies,
+            envelope,
+            medicines: phApp.medicines,
+            shortages: phApp.shortages,
+          );
+          if (mutated) {
+            phApp.save();
+            phApp.notifyListeners();
+          }
+          break;
+        case 'SALT':
+          final String sName = (envelope.billData['name'] ?? '').toString().trim().toUpperCase();
+          final String sKey = sName.isNotEmpty ? "SALT_${SaltSyncModule.cleanString(sName)}" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sKey);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (sKey.isNotEmpty) sKey]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, sKey);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: sKey);
+            }
+          }
+          mutated = SaltSyncModule.mergeIncomingSaltEnvelope(
+            phApp.salts,
+            envelope,
+            medicines: phApp.medicines,
+          );
+          if (mutated) {
+            phApp.save();
+            phApp.notifyListeners();
+          }
+          break;
+        case 'ROUTE':
+          final String rName = (envelope.billData['name'] ?? '').toString().trim().toUpperCase();
+          final String rKey = rName.isNotEmpty ? "ROUTE_${RouteSyncModule.cleanString(rName)}" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, rKey);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (rKey.isNotEmpty) rKey]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, rKey);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: rKey);
+            }
+          }
+          mutated = RouteSyncModule.mergeIncomingRouteEnvelope(
+            phApp.routes,
+            envelope,
+            parties: phApp.parties,
+          );
+          if (mutated) {
+            phApp.save();
+            phApp.notifyListeners();
+          }
+          break;
         default:
           debugPrint("⚠ [MasterSyncOrchestrator] Unknown document type: $docType");
       }
@@ -541,6 +617,64 @@ class MasterSyncOrchestrator {
               incomingCfg.version >= phWeb.appConfig.version) {
             phWeb.appConfig = incomingCfg;
             mutated = true;
+            phWeb.notifyListeners();
+          }
+          break;
+        case 'COMPANY':
+          final String cName = (envelope.billData['name'] ?? '').toString().trim().toUpperCase();
+          final String cKey = cName.isNotEmpty ? "COMP_${CompanySyncModule.cleanString(cName)}" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, cKey);
+            phWeb.purgeDeletedIds([envelope.syncId, if (cKey.isNotEmpty) cKey]);
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, cKey);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: cKey);
+          }
+          mutated = CompanySyncModule.mergeIncomingCompanyEnvelope(
+            phWeb.companies,
+            envelope,
+            medicines: phWeb.medicines,
+            shortages: phWeb.shortages,
+          );
+          if (mutated) {
+            phWeb.notifyListeners();
+          }
+          break;
+        case 'SALT':
+          final String sName = (envelope.billData['name'] ?? '').toString().trim().toUpperCase();
+          final String sKey = sName.isNotEmpty ? "SALT_${SaltSyncModule.cleanString(sName)}" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sKey);
+            phWeb.purgeDeletedIds([envelope.syncId, if (sKey.isNotEmpty) sKey]);
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, sKey);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: sKey);
+          }
+          mutated = SaltSyncModule.mergeIncomingSaltEnvelope(
+            phWeb.salts,
+            envelope,
+            medicines: phWeb.medicines,
+          );
+          if (mutated) {
+            phWeb.notifyListeners();
+          }
+          break;
+        case 'ROUTE':
+          final String rName = (envelope.billData['name'] ?? '').toString().trim().toUpperCase();
+          final String rKey = rName.isNotEmpty ? "ROUTE_${RouteSyncModule.cleanString(rName)}" : "";
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, rKey);
+            phWeb.purgeDeletedIds([envelope.syncId, if (rKey.isNotEmpty) rKey]);
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, rKey);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: rKey);
+          }
+          mutated = RouteSyncModule.mergeIncomingRouteEnvelope(
+            phWeb.routes,
+            envelope,
+            parties: phWeb.parties,
+          );
+          if (mutated) {
             phWeb.notifyListeners();
           }
           break;

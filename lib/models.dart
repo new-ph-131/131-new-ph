@@ -63,24 +63,99 @@ class ChallanSignature {
 // ===========================================================================
 
 class RouteArea { 
-  String id, name; 
-  RouteArea({required this.id, required this.name}); 
-  Map<String, dynamic> toMap() => {'id': id, 'name': name}; 
-  factory RouteArea.fromMap(Map<String, dynamic> map) => RouteArea(id: map['id'] ?? "", name: map['name'] ?? ""); 
+  String id, name;
+  int updatedAt;
+  int version;
+  int isDeleted;
+
+  RouteArea({
+    required this.id,
+    required this.name,
+    this.updatedAt = 0,
+    this.version = 1,
+    this.isDeleted = 0,
+  }); 
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'updatedAt': updatedAt,
+    'version': version,
+    'isDeleted': isDeleted,
+  }; 
+
+  factory RouteArea.fromMap(Map<String, dynamic> map) => RouteArea(
+    id: (map['id'] ?? "").toString(),
+    name: (map['name'] ?? "").toString(),
+    updatedAt: int.tryParse(map['updatedAt']?.toString() ?? map['updated_at']?.toString() ?? '0') ?? 0,
+    version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
+    isDeleted: int.tryParse(map['isDeleted']?.toString() ?? map['is_deleted']?.toString() ?? '0') ?? 0,
+  ); 
 }
 
 class Company { 
-  String id, name; 
-  Company({required this.id, required this.name}); 
-  Map<String, dynamic> toMap() => {'id': id, 'name': name}; 
-  factory Company.fromMap(Map<String, dynamic> map) => Company(id: map['id'] ?? "", name: map['name'] ?? ""); 
+  String id, name;
+  int updatedAt;
+  int version;
+  int isDeleted;
+
+  Company({
+    required this.id,
+    required this.name,
+    this.updatedAt = 0,
+    this.version = 1,
+    this.isDeleted = 0,
+  }); 
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'updatedAt': updatedAt,
+    'version': version,
+    'isDeleted': isDeleted,
+  }; 
+
+  factory Company.fromMap(Map<String, dynamic> map) => Company(
+    id: (map['id'] ?? "").toString(),
+    name: (map['name'] ?? "").toString(),
+    updatedAt: int.tryParse(map['updatedAt']?.toString() ?? map['updated_at']?.toString() ?? '0') ?? 0,
+    version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
+    isDeleted: int.tryParse(map['isDeleted']?.toString() ?? map['is_deleted']?.toString() ?? '0') ?? 0,
+  ); 
 }
 
 class Salt { 
-  String id, name, type; 
-  Salt({required this.id, required this.name, this.type = "Mono"}); 
-  Map<String, dynamic> toMap() => {'id': id, 'name': name, 'type': type}; 
-  factory Salt.fromMap(Map<String, dynamic> map) => Salt(id: map['id'] ?? "", name: map['name'] ?? "", type: map['type'] ?? "Mono"); 
+  String id, name, type;
+  int updatedAt;
+  int version;
+  int isDeleted;
+
+  Salt({
+    required this.id,
+    required this.name,
+    this.type = "Mono",
+    this.updatedAt = 0,
+    this.version = 1,
+    this.isDeleted = 0,
+  }); 
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'type': type,
+    'updatedAt': updatedAt,
+    'version': version,
+    'isDeleted': isDeleted,
+  }; 
+
+  factory Salt.fromMap(Map<String, dynamic> map) => Salt(
+    id: (map['id'] ?? "").toString(),
+    name: (map['name'] ?? "").toString(),
+    type: (map['type'] ?? "Mono").toString(),
+    updatedAt: int.tryParse(map['updatedAt']?.toString() ?? map['updated_at']?.toString() ?? '0') ?? 0,
+    version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
+    isDeleted: int.tryParse(map['isDeleted']?.toString() ?? map['is_deleted']?.toString() ?? '0') ?? 0,
+  ); 
 }
 
 class DrugType { 

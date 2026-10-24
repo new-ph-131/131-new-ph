@@ -227,6 +227,27 @@ class TombstoneEngine {
       final delTime = vNo.isNotEmpty ? registry[vNo] : null;
       return delTime != null && delTime >= (e.toMap()['updatedAt'] ?? 0);
     });
+
+    ph.companies.removeWhere((c) {
+      if (registry.containsKey(c.id) || registry.containsKey(c.id.toUpperCase())) return true;
+      final cleanKey = "COMP_${c.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
+      final delTime = registry[cleanKey];
+      return delTime != null && (c.updatedAt == 0 || delTime >= c.updatedAt);
+    });
+
+    ph.salts.removeWhere((s) {
+      if (registry.containsKey(s.id) || registry.containsKey(s.id.toUpperCase())) return true;
+      final cleanKey = "SALT_${s.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
+      final delTime = registry[cleanKey];
+      return delTime != null && (s.updatedAt == 0 || delTime >= s.updatedAt);
+    });
+
+    ph.routes.removeWhere((r) {
+      if (registry.containsKey(r.id) || registry.containsKey(r.id.toUpperCase())) return true;
+      final cleanKey = "ROUTE_${r.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
+      final delTime = registry[cleanKey];
+      return delTime != null && (r.updatedAt == 0 || delTime >= r.updatedAt);
+    });
   }
 
   /// 🛡️ Multi-Key Anti-Zombie Purge:
@@ -334,6 +355,21 @@ class TombstoneEngine {
         if (delTime != null) return delTime >= (e.toMap()['updatedAt'] ?? 0);
       }
       return true;
+    });
+
+    ph.companies.removeWhere((c) {
+      final cleanKey = "COMP_${c.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
+      return allTombstones.contains(c.id) || upperTombstones.contains(c.id.toUpperCase()) || upperTombstones.contains(cleanKey);
+    });
+
+    ph.salts.removeWhere((s) {
+      final cleanKey = "SALT_${s.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
+      return allTombstones.contains(s.id) || upperTombstones.contains(s.id.toUpperCase()) || upperTombstones.contains(cleanKey);
+    });
+
+    ph.routes.removeWhere((r) {
+      final cleanKey = "ROUTE_${r.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
+      return allTombstones.contains(r.id) || upperTombstones.contains(r.id.toUpperCase()) || upperTombstones.contains(cleanKey);
     });
   }
 }

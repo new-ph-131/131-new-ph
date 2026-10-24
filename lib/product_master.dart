@@ -137,10 +137,14 @@ class _ProductMasterViewState extends State<ProductMasterView> {
          } catch(e) { saltName = pf['salt'].toString().toUpperCase(); }
        }
     } else if (med != null) {
-       try {
-         if(companyId != null) companyName = ph.companies.firstWhere((c) => c.id == companyId).name;
-         if(saltId != null) saltName = ph.salts.firstWhere((s) => s.id == saltId).name;
-       } catch(e) {}
+       if (companyId != null && companyId!.trim().isNotEmpty) {
+         final rComp = ph.resolveCompanyName(companyId!);
+         if (rComp != "N/A") companyName = rComp;
+       }
+       if (saltId != null && saltId!.trim().isNotEmpty) {
+         final rSalt = ph.resolveSaltName(saltId!);
+         if (rSalt != "N/A") saltName = rSalt;
+       }
     }
 
     if (!mounted) return;
@@ -265,7 +269,8 @@ class _ProductMasterViewState extends State<ProductMasterView> {
             return Card(elevation: 1, margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5), child: ListTile(
                 leading: CircleAvatar(backgroundColor: Colors.purple.shade50, child: Text(m.systemId.replaceAll("PH-", ""), style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.purple))),
                 title: Text("${m.name} (${m.packing})", style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text("Stock: ${m.stock} | MRP: ₹${m.mrp}"),
+                subtitle: Text("Mfg: ${ph.resolveCompanyName(m.companyId)} • Salt: ${ph.resolveSaltName(m.saltId)}\nStock: ${m.stock} | MRP: ₹${m.mrp}"),
+                isThreeLine: true,
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [

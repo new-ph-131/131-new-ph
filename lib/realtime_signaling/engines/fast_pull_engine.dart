@@ -392,6 +392,10 @@ class FastPullEngine {
 
         await _w('meds.json', ph.medicines);
         await _w('parts.json', ph.parties);
+        await _w('comps.json', ph.companies);
+        await _w('salts.json', ph.salts);
+        await _w('routs.json', ph.routes);
+        await _w('shortage.json', ph.shortages);
         await _w('sales.json', ph.sales);
         await _w('purc.json', ph.purchases);
         await _w('vouc.json', ph.vouchers);

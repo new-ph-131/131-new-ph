@@ -1,6 +1,9 @@
 import '../../logic/app_settings_model.dart';
 import '../../sync_core/modules/batch_delta_merge_module.dart';
 import "../../sync_core/modules/medicine_sync_module.dart";
+import "../../sync_core/modules/company_sync_module.dart";
+import "../../sync_core/modules/salt_sync_module.dart";
+import "../../sync_core/modules/route_sync_module.dart";
 import "../../../sync_core/modules/party_sync_module.dart";
 import "../../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/sync_protocol/delta_merge_engine.dart
@@ -370,7 +373,28 @@ class DeltaMergeEngine {
       } catch (_) {}
     }
 
-    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig;
+    // 🛡️ Merge Company, Salt & Route Masters with LWW & Cascade Updates (#PH-REV-768)
+    bool cComps = CompanySyncModule.mergeCompanyList(
+      cloudCompanyList: decodeJson("comps.json"),
+      localCompanyList: ph.companies,
+      tombstoneRegistry: tombstoneRegistry,
+      medicines: ph.medicines,
+      shortages: ph.shortages,
+    );
+    bool cSalts = SaltSyncModule.mergeSaltList(
+      cloudSaltList: decodeJson("salts.json"),
+      localSaltList: ph.salts,
+      tombstoneRegistry: tombstoneRegistry,
+      medicines: ph.medicines,
+    );
+    bool cRouts = RouteSyncModule.mergeRouteList(
+      cloudRouteList: decodeJson("routs.json"),
+      localRouteList: ph.routes,
+      tombstoneRegistry: tombstoneRegistry,
+      parties: ph.parties,
+    );
+
+    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cComps || cSalts || cRouts;
     if (anyChanged) {
       try {
         ph.autoHydrateBatchHistoryFromTransactions();

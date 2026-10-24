@@ -332,4 +332,187 @@ class MasterCascadeService {
 
     return mutatedRecords;
   }
+
+  /// 🔄 3. CASCADE COMPANY / BRAND MASTER UPDATES TO PRODUCTS & SHORTAGES (#PH-REV-768)
+  /// Ensures renaming e.g. CIPLA -> PIPLA automatically updates all linked products & shortages everywhere!
+  static int cascadeCompanyUpdate({
+    required Company updatedCompany,
+    String? previousName,
+    required List<Medicine> medicines,
+    List<ShortageItem>? shortages,
+    void Function(Medicine)? onMedicineMutated,
+  }) {
+    int mutatedCount = 0;
+    final cleanCompId = updatedCompany.id.trim().toUpperCase();
+    final cleanNewName = clean(updatedCompany.name);
+    final cleanOldName = previousName != null ? clean(previousName) : "";
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    for (var m in medicines) {
+      final rawCid = m.companyId.trim();
+      if (rawCid.isEmpty) continue;
+      final cleanMedComp = clean(rawCid);
+      final bool matched =
+          (cleanCompId.isNotEmpty && rawCid.toUpperCase() == cleanCompId) ||
+          (cleanOldName.isNotEmpty && cleanMedComp == cleanOldName) ||
+          (cleanNewName.isNotEmpty && cleanMedComp == cleanNewName);
+
+      if (matched) {
+        bool changed = m.companyId != updatedCompany.id;
+        m.companyId = updatedCompany.id;
+        m.updatedAt = nowTs;
+        m.version += 1;
+        mutatedCount++;
+        if (changed || previousName != null) {
+          onMedicineMutated?.call(m);
+        }
+      }
+    }
+
+    if (shortages != null) {
+      for (var s in shortages) {
+        final rawSc = s.companyName.trim();
+        if (rawSc.isEmpty) continue;
+        final cleanSc = clean(rawSc);
+        final bool matched =
+            (cleanCompId.isNotEmpty && rawSc.toUpperCase() == cleanCompId) ||
+            (cleanOldName.isNotEmpty && cleanSc == cleanOldName) ||
+            (cleanNewName.isNotEmpty && cleanSc == cleanNewName);
+        if (matched) {
+          s.companyName = updatedCompany.name.trim().toUpperCase();
+          mutatedCount++;
+        }
+      }
+    }
+
+    return mutatedCount;
+  }
+
+  /// 🔄 4. CASCADE SALT / COMPOSITION MASTER UPDATES TO PRODUCTS (#PH-REV-768)
+  static int cascadeSaltUpdate({
+    required Salt updatedSalt,
+    String? previousName,
+    required List<Medicine> medicines,
+    void Function(Medicine)? onMedicineMutated,
+  }) {
+    int mutatedCount = 0;
+    final cleanSaltId = updatedSalt.id.trim().toUpperCase();
+    final cleanNewName = clean(updatedSalt.name);
+    final cleanOldName = previousName != null ? clean(previousName) : "";
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    for (var m in medicines) {
+      final rawSid = m.saltId.trim();
+      if (rawSid.isEmpty) continue;
+      final cleanMedSalt = clean(rawSid);
+      final bool matched =
+          (cleanSaltId.isNotEmpty && rawSid.toUpperCase() == cleanSaltId) ||
+          (cleanOldName.isNotEmpty && cleanMedSalt == cleanOldName) ||
+          (cleanNewName.isNotEmpty && cleanMedSalt == cleanNewName);
+
+      if (matched) {
+        bool changed = m.saltId != updatedSalt.id;
+        m.saltId = updatedSalt.id;
+        m.updatedAt = nowTs;
+        m.version += 1;
+        mutatedCount++;
+        if (changed || previousName != null) {
+          onMedicineMutated?.call(m);
+        }
+      }
+    }
+
+    return mutatedCount;
+  }
+
+  /// 🔄 5. CASCADE ROUTE / AREA MASTER UPDATES TO ALL PARTIES (#PH-REV-768)
+  static int cascadeRouteUpdate({
+    required RouteArea updatedRoute,
+    String? previousName,
+    required List<Party> parties,
+    void Function(Party)? onPartyMutated,
+  }) {
+    int mutatedCount = 0;
+    final cleanRouteId = updatedRoute.id.trim().toUpperCase();
+    final cleanNewName = clean(updatedRoute.name);
+    final cleanOldName = previousName != null ? clean(previousName) : "";
+    final targetRouteName = updatedRoute.name.trim().toUpperCase();
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    for (var p in parties) {
+      final rawRoute = p.route.trim();
+      if (rawRoute.isEmpty) continue;
+      final cleanPartyRoute = clean(rawRoute);
+      final bool matched =
+          (cleanRouteId.isNotEmpty && rawRoute.toUpperCase() == cleanRouteId) ||
+          (cleanOldName.isNotEmpty && cleanPartyRoute == cleanOldName) ||
+          (cleanNewName.isNotEmpty && cleanPartyRoute == cleanNewName);
+
+      if (matched) {
+        bool changed = p.route.trim().toUpperCase() != targetRouteName;
+        p.route = targetRouteName;
+        if (changed || previousName != null) {
+          p.updatedAt = nowTs;
+          p.version += 1;
+          onPartyMutated?.call(p);
+        }
+        mutatedCount++;
+      }
+    }
+
+    return mutatedCount;
+  }
+
+  /// 🔍 UNIVERSAL HELPER: Resolve Company Name from ID or literal string
+  static String resolveCompanyName(String idOrName, List<Company> companies, {String fallback = "N/A"}) {
+    final raw = idOrName.trim();
+    if (raw.isEmpty) return fallback;
+    final upper = raw.toUpperCase();
+    final cl = clean(raw);
+    for (final c in companies) {
+      if (c.id.trim().toUpperCase() == upper) return c.name;
+      if (cl.isNotEmpty && clean(c.name) == cl) return c.name;
+    }
+    return raw;
+  }
+
+  /// 🔍 UNIVERSAL HELPER: Resolve Salt Name from ID or literal string
+  static String resolveSaltName(String idOrName, List<Salt> salts, {String fallback = "N/A"}) {
+    final raw = idOrName.trim();
+    if (raw.isEmpty) return fallback;
+    final upper = raw.toUpperCase();
+    final cl = clean(raw);
+    for (final s in salts) {
+      if (s.id.trim().toUpperCase() == upper) return s.name;
+      if (cl.isNotEmpty && clean(s.name) == cl) return s.name;
+    }
+    return raw;
+  }
+
+  /// 🔍 UNIVERSAL HELPER: Check if Medicine belongs to Company
+  static bool belongsToCompany(Medicine m, Company c) {
+    final raw = m.companyId.trim();
+    if (raw.isEmpty) return false;
+    if (c.id.trim().isNotEmpty && raw.toUpperCase() == c.id.trim().toUpperCase()) return true;
+    final clComp = clean(c.name);
+    return clComp.isNotEmpty && clean(raw) == clComp;
+  }
+
+  /// 🔍 UNIVERSAL HELPER: Check if Medicine belongs to Salt
+  static bool belongsToSalt(Medicine m, Salt s) {
+    final raw = m.saltId.trim();
+    if (raw.isEmpty) return false;
+    if (s.id.trim().isNotEmpty && raw.toUpperCase() == s.id.trim().toUpperCase()) return true;
+    final clSalt = clean(s.name);
+    return clSalt.isNotEmpty && clean(raw) == clSalt;
+  }
+
+  /// 🔍 UNIVERSAL HELPER: Check if Party belongs to RouteArea
+  static bool belongsToRoute(Party p, RouteArea r) {
+    final raw = p.route.trim();
+    if (raw.isEmpty) return false;
+    if (r.id.trim().isNotEmpty && raw.toUpperCase() == r.id.trim().toUpperCase()) return true;
+    final clRoute = clean(r.name);
+    return clRoute.isNotEmpty && clean(raw) == clRoute;
+  }
 }

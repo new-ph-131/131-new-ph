@@ -220,6 +220,10 @@ class AppSyncEngine {
         await File('$workingDir/purc.json').writeAsString(jsonEncode(ph.purchases.map((e) => e.toMap()).toList()));
         await File('$workingDir/parts.json').writeAsString(jsonEncode(ph.parties.map((e) => e.toMap()).toList()));
         await File('$workingDir/meds.json').writeAsString(jsonEncode(ph.medicines.map((e) => e.toMap()).toList()));
+        await File('$workingDir/comps.json').writeAsString(jsonEncode(ph.companies.map((e) => e.toMap()).toList()));
+        await File('$workingDir/salts.json').writeAsString(jsonEncode(ph.salts.map((e) => e.toMap()).toList()));
+        await File('$workingDir/routs.json').writeAsString(jsonEncode(ph.routes.map((e) => e.toMap()).toList()));
+        await File('$workingDir/shortage.json').writeAsString(jsonEncode(ph.shortages.map((e) => e.toMap()).toList()));
         await File('$workingDir/vouc.json').writeAsString(jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()));
         await File('$workingDir/s_challan.json').writeAsString(jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()));
         await File('$workingDir/p_challan.json').writeAsString(jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()));

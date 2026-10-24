@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'pharoah_manager.dart';
 import 'models.dart';
+import 'logic/master_cascade_service.dart';
 
 class RouteMasterView extends StatefulWidget {
   const RouteMasterView({super.key});
@@ -11,18 +12,22 @@ class RouteMasterView extends StatefulWidget {
 }
 
 class _RouteMasterViewState extends State<RouteMasterView> {
-  final TextEditingController _routeController = TextEditingController();
   String _searchQuery = "";
 
-  // --- Naya Route jodne ke liye dialog ---
-  void _showAddRouteDialog(BuildContext context, PharoahManager ph) {
+  void _showRouteDialog(BuildContext context, PharoahManager ph, {RouteArea? route}) {
+    final ctrl = TextEditingController(text: route?.name);
+    final String? oldName = route?.name;
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: const Text("Add New Route / Area", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          route == null ? "Add New Route / Area" : "Edit Route / Area",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: TextField(
-          controller: _routeController,
+          controller: ctrl,
           autofocus: true,
           textCapitalization: TextCapitalization.characters,
           decoration: const InputDecoration(
@@ -33,29 +38,29 @@ class _RouteMasterViewState extends State<RouteMasterView> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              _routeController.clear();
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
             onPressed: () {
-              if (_routeController.text.trim().isNotEmpty) {
-                final newRoute = RouteArea(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  name: _routeController.text.trim().toUpperCase(),
-                );
-                ph.addRoute(newRoute);
-                _routeController.clear();
+              final clean = ctrl.text.trim().toUpperCase();
+              if (clean.isNotEmpty) {
+                if (route == null) {
+                  ph.saveOrUpdateRoute(RouteArea(id: "", name: clean));
+                } else {
+                  ph.saveOrUpdateRoute(
+                    RouteArea(id: route.id, name: clean, version: route.version, updatedAt: route.updatedAt),
+                    previousName: oldName,
+                  );
+                }
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Route Added Successfully!")),
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text(route == null ? "Route Added Successfully!" : "Route Updated & Cascaded to Parties!")),
                 );
               }
             },
-            child: const Text("ADD ROUTE", style: TextStyle(color: Colors.white)),
+            child: Text(route == null ? "ADD ROUTE" : "SAVE ROUTE", style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -65,11 +70,7 @@ class _RouteMasterViewState extends State<RouteMasterView> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
-
-    // Filtered list for search
-    final filteredRoutes = ph.routes.where((r) => 
-      r.name.toLowerCase().contains(_searchQuery.toLowerCase())
-    ).toList();
+    final filteredRoutes = ph.routes.where((r) => r.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6F9),
@@ -81,7 +82,6 @@ class _RouteMasterViewState extends State<RouteMasterView> {
       ),
       body: Column(
         children: [
-          // --- SEARCH BAR ---
           Container(
             padding: const EdgeInsets.all(15),
             color: Colors.teal.shade50,
@@ -100,8 +100,6 @@ class _RouteMasterViewState extends State<RouteMasterView> {
               onChanged: (v) => setState(() => _searchQuery = v),
             ),
           ),
-
-          // --- ROUTE LIST ---
           Expanded(
             child: filteredRoutes.isEmpty
                 ? Center(
@@ -119,6 +117,7 @@ class _RouteMasterViewState extends State<RouteMasterView> {
                     itemCount: filteredRoutes.length,
                     itemBuilder: (context, index) {
                       final route = filteredRoutes[index];
+                      final partyCount = ph.parties.where((p) => MasterCascadeService.belongsToRoute(p, route)).length;
                       return Card(
                         elevation: 2,
                         margin: const EdgeInsets.only(bottom: 10),
@@ -136,9 +135,19 @@ class _RouteMasterViewState extends State<RouteMasterView> {
                             route.name,
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red),
-                            onPressed: () => _confirmDelete(ph, route),
+                          subtitle: Text("$partyCount Linked Party(s)"),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.teal),
+                                onPressed: () => _showRouteDialog(context, ph, route: route),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                onPressed: () => _confirmDelete(ph, route),
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -148,7 +157,7 @@ class _RouteMasterViewState extends State<RouteMasterView> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddRouteDialog(context, ph),
+        onPressed: () => _showRouteDialog(context, ph),
         backgroundColor: Colors.teal,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text("CREATE NEW ROUTE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -157,11 +166,16 @@ class _RouteMasterViewState extends State<RouteMasterView> {
   }
 
   void _confirmDelete(PharoahManager ph, RouteArea route) {
+    final partyCount = ph.parties.where((p) => MasterCascadeService.belongsToRoute(p, route)).length;
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
         title: const Text("Delete Route?"),
-        content: Text("Are you sure you want to delete '${route.name}'? This will not affect existing parties but will remove it from the master list."),
+        content: Text(
+          partyCount > 0
+              ? "Are you sure you want to delete '${route.name}'? $partyCount mapped party(s) will have their route cleared."
+              : "Are you sure you want to delete '${route.name}'?",
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("NO")),
           ElevatedButton(
@@ -169,7 +183,7 @@ class _RouteMasterViewState extends State<RouteMasterView> {
             onPressed: () {
               ph.deleteRoute(route.id);
               Navigator.pop(c);
-            }, 
+            },
             child: const Text("YES, DELETE", style: TextStyle(color: Colors.white)),
           ),
         ],

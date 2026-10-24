@@ -262,6 +262,7 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
     final filteredList = webPh.parties.where((p) =>
         p.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
         p.city.toLowerCase().contains(searchQuery.toLowerCase()) ||
+        p.route.toLowerCase().contains(searchQuery.toLowerCase()) ||
         p.group.toLowerCase().contains(searchQuery.toLowerCase()) ||
         p.phone.toLowerCase().contains(searchQuery.toLowerCase()) ||
         p.gst.toLowerCase().contains(searchQuery.toLowerCase())).toList();
@@ -371,7 +372,7 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
                             children: [
                               _th("GROUP"),
                               _th("PARTY / FIRM NAME", isLeft: true),
-                              _th("CITY"),
+                              _th("CITY / ROUTE"),
                               _th("PHONE"),
                               _th("GSTIN"),
                               _th("BALANCE"),
@@ -384,7 +385,7 @@ class _WebPartyMasterViewState extends State<WebPartyMasterView> {
                               children: [
                                 _tdGroupBadge(p.group),
                                 _td(p.name, isLeft: true, isBold: true),
-                                _td(p.city),
+                                _td(p.route.trim().isNotEmpty ? "${p.city} • ${p.route}" : p.city, color: p.route.trim().isNotEmpty ? const Color(0xFF38BDF8) : Colors.white),
                                 _td(p.phone.isEmpty ? "-" : p.phone),
                                 _td(p.gst),
                                 _td("₹${p.opBal.toStringAsFixed(2)}", isBold: true, color: p.opBal > 0 ? Colors.greenAccent : (p.opBal < 0 ? Colors.redAccent : Colors.white70)),

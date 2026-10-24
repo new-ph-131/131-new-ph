@@ -112,6 +112,7 @@ class _PartyMasterViewState extends State<PartyMasterView> {
     if (!accountGroups.contains(selectedGroup)) selectedGroup = "Sundry Debtors";
     String selectedState = party?.state ?? pf?['state'] ?? "Rajasthan";
     String selectedSeriesId = party?.defaultSeriesId ?? "";
+    String selectedRoute = party?.route ?? "";
 
     // PAN Auto-extraction logic (Original)
     gstC.addListener(() {
@@ -210,6 +211,11 @@ class _PartyMasterViewState extends State<PartyMasterView> {
                   dl: dlC.text.trim().toUpperCase(),
                   dlExp: dlExpC.text.trim(),
                   opBal: double.tryParse(opBalC.text) ?? 0.0,
+                  creditLimit: party?.creditLimit ?? 0.0,
+                  creditDays: party?.creditDays ?? 30,
+                  priceLevel: party?.priceLevel ?? "Rate A",
+                  route: selectedRoute,
+                  transport: party?.transport ?? "",
                   defaultSeriesId: selectedSeriesId,
                   updatedAt: DateTime.now().millisecondsSinceEpoch,
                   version: (party?.version ?? 0) + 1,

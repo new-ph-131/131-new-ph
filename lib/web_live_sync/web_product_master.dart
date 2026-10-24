@@ -235,6 +235,54 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: (companyId != null && webPh.companies.any((c) => c.id == companyId))
+                                ? companyId
+                                : (companyId != null && webPh.companies.any((c) => c.name.trim().toUpperCase() == companyId!.trim().toUpperCase())
+                                    ? webPh.companies.firstWhere((c) => c.name.trim().toUpperCase() == companyId!.trim().toUpperCase()).id
+                                    : null),
+                            dropdownColor: const Color(0xFF1E293B),
+                            isExpanded: true,
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            decoration: _dropdownDecor("COMPANY / MANUFACTURER"),
+                            hint: const Text("Select Company", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                            items: webPh.companies
+                                .map((comp) => DropdownMenuItem<String>(
+                                      value: comp.id,
+                                      child: Text(comp.name, overflow: TextOverflow.ellipsis),
+                                    ))
+                                .toList(),
+                            onChanged: (v) => setDialogState(() => companyId = v),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: (saltId != null && webPh.salts.any((s) => s.id == saltId))
+                                ? saltId
+                                : (saltId != null && webPh.salts.any((s) => s.name.trim().toUpperCase() == saltId!.trim().toUpperCase())
+                                    ? webPh.salts.firstWhere((s) => s.name.trim().toUpperCase() == saltId!.trim().toUpperCase()).id
+                                    : null),
+                            dropdownColor: const Color(0xFF1E293B),
+                            isExpanded: true,
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            decoration: _dropdownDecor("SALT / COMPOSITION"),
+                            hint: const Text("Select Salt", style: TextStyle(color: Colors.white38, fontSize: 11)),
+                            items: webPh.salts
+                                .map((s) => DropdownMenuItem<String>(
+                                      value: s.id,
+                                      child: Text("${s.name} (${s.type})", overflow: TextOverflow.ellipsis),
+                                    ))
+                                .toList(),
+                            onChanged: (v) => setDialogState(() => saltId = v),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
                         Expanded(child: _inputField("RACK NO", rackC, Icons.grid_3x3, isCaps: true)),
                         const SizedBox(width: 10),
                         Expanded(child: _inputField("MIN. REORDER QTY", reorderC, Icons.warning_amber, isNum: true)),
@@ -333,10 +381,17 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
     ProductIntegrityService.deduplicateMedicineList(webPh.medicines);
-    final filteredList = webPh.medicines.where((m) =>
-        m.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-        m.systemId.toLowerCase().contains(searchQuery.toLowerCase()) ||
-        m.hsnCode.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+    final filteredList = webPh.medicines.where((m) {
+      final q = searchQuery.toLowerCase();
+      if (q.isEmpty) return true;
+      final compName = webPh.resolveCompanyName(m.companyId).toLowerCase();
+      final saltName = webPh.resolveSaltName(m.saltId).toLowerCase();
+      return m.name.toLowerCase().contains(q) ||
+          m.systemId.toLowerCase().contains(q) ||
+          m.hsnCode.toLowerCase().contains(q) ||
+          compName.contains(q) ||
+          saltName.contains(q);
+    }).toList();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -440,15 +495,16 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                       constraints: const BoxConstraints(minWidth: 800),
                       child: Table(
                         columnWidths: const {
-                          0: FixedColumnWidth(90),
-                          1: FlexColumnWidth(3),
-                          2: FixedColumnWidth(90),
-                          3: FixedColumnWidth(80),
-                          4: FixedColumnWidth(80),
-                          5: FixedColumnWidth(80),
-                          6: FixedColumnWidth(80),
-                          7: FixedColumnWidth(90),
-                          8: FixedColumnWidth(90),
+                          0: FixedColumnWidth(85),
+                          1: FlexColumnWidth(2.6),
+                          2: FlexColumnWidth(1.8),
+                          3: FixedColumnWidth(85),
+                          4: FixedColumnWidth(65),
+                          5: FixedColumnWidth(75),
+                          6: FixedColumnWidth(75),
+                          7: FixedColumnWidth(65),
+                          8: FixedColumnWidth(85),
+                          9: FixedColumnWidth(85),
                         },
                         children: [
                           TableRow(
@@ -456,6 +512,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                             children: [
                               _th("ID"),
                               _th("PRODUCT NAME", isLeft: true),
+                              _th("COMPANY / SALT", isLeft: true),
                               _th("PACK"),
                               _th("FORM"),
                               _th("MRP"),
@@ -471,6 +528,11 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                               children: [
                                 _td(m.systemId, isBold: true, color: Colors.cyanAccent),
                                 _td(m.name, isLeft: true, isBold: true),
+                                _td(
+                                  "${webPh.resolveCompanyName(m.companyId)}${webPh.resolveSaltName(m.saltId) != 'N/A' ? ' • ${webPh.resolveSaltName(m.saltId)}' : ''}",
+                                  isLeft: true,
+                                  color: const Color(0xFFFBBF24),
+                                ),
                                 _td(m.packing, color: m.packing.startsWith("1*") ? Colors.greenAccent : Colors.orangeAccent, isBold: true),
                                 _td(m.drugForm),
                                 _td("₹${m.mrp.toStringAsFixed(2)}"),

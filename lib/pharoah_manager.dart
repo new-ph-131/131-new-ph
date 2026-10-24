@@ -4,6 +4,9 @@ import 'logic/master_cascade_service.dart';
 import 'logic/product_integrity_service.dart';
 import 'logic/party_integrity_service.dart';
 import 'sync_core/modules/party_sync_module.dart';
+import 'sync_core/modules/company_sync_module.dart';
+import 'sync_core/modules/salt_sync_module.dart';
+import 'sync_core/modules/route_sync_module.dart';
 import 'sync_core/modules/medicine_sync_module.dart';
 import "sync_core/d1_sales_ledger_service.dart";
 import "sync_core/outbox/sync_queue_manager.dart";
@@ -1533,8 +1536,50 @@ void registerBatchActivity({
   // 8. MASTERS CRUD (ADD/UPDATE/DELETE)
   // ===========================================================================
 
-  String getOrCreateCompany(String n) { try { return companies.firstWhere((c) => c.name.toUpperCase() == n.trim().toUpperCase()).id; } catch (e) { String id = "CP-${1000 + companies.length + 1}"; companies.add(Company(id: id, name: n.trim().toUpperCase())); save(); return id; } }
-  String getOrCreateSalt(String n) { try { return salts.firstWhere((s) => s.name.toUpperCase() == n.trim().toUpperCase()).id; } catch (e) { String id = "SL-${1000 + salts.length + 1}"; salts.add(Salt(id: id, name: n.trim().toUpperCase())); save(); return id; } }
+  String resolveCompanyName(String idOrName) => MasterCascadeService.resolveCompanyName(idOrName, companies);
+  String resolveSaltName(String idOrName) => MasterCascadeService.resolveSaltName(idOrName, salts);
+
+  String getOrCreateCompany(String n) {
+    final cleanTarget = CompanySyncModule.cleanString(n);
+    if (cleanTarget.isEmpty) return "";
+    try {
+      return companies.firstWhere((c) => CompanySyncModule.cleanString(c.name) == cleanTarget || c.id.trim().toUpperCase() == n.trim().toUpperCase()).id;
+    } catch (_) {
+      final nowTs = DateTime.now().millisecondsSinceEpoch;
+      String id = "CP-${1000 + companies.length + 1}-${nowTs % 10000}";
+      final newComp = Company(id: id, name: n.trim().toUpperCase(), updatedAt: nowTs, version: 1);
+      saveOrUpdateCompany(newComp);
+      return id;
+    }
+  }
+
+  String getOrCreateSalt(String n) {
+    final cleanTarget = SaltSyncModule.cleanString(n);
+    if (cleanTarget.isEmpty) return "";
+    try {
+      return salts.firstWhere((s) => SaltSyncModule.cleanString(s.name) == cleanTarget || s.id.trim().toUpperCase() == n.trim().toUpperCase()).id;
+    } catch (_) {
+      final nowTs = DateTime.now().millisecondsSinceEpoch;
+      String id = "SL-${1000 + salts.length + 1}-${nowTs % 10000}";
+      final newSalt = Salt(id: id, name: n.trim().toUpperCase(), type: "Mono", updatedAt: nowTs, version: 1);
+      saveOrUpdateSalt(newSalt);
+      return id;
+    }
+  }
+
+  String getOrCreateRoute(String n) {
+    final cleanTarget = RouteSyncModule.cleanString(n);
+    if (cleanTarget.isEmpty) return "";
+    try {
+      return routes.firstWhere((r) => RouteSyncModule.cleanString(r.name) == cleanTarget || r.id.trim().toUpperCase() == n.trim().toUpperCase()).name;
+    } catch (_) {
+      final nowTs = DateTime.now().millisecondsSinceEpoch;
+      String id = "RT-${1000 + routes.length + 1}-${nowTs % 10000}";
+      final newRoute = RouteArea(id: id, name: n.trim().toUpperCase(), updatedAt: nowTs, version: 1);
+      saveOrUpdateRoute(newRoute);
+      return newRoute.name;
+    }
+  }
 
   
   void addSalesman(Salesman s) { salesmen.add(s); save(); notifyListeners(); }
@@ -1631,9 +1676,313 @@ void registerBatchActivity({
     }
     return false;
   }
-  void addRoute(RouteArea r) { routes.add(r); save(); }
-  void addCompany(Company c) { companies.add(c); save(); }
-  void addSalt(Salt s) { salts.add(s); save(); }
+  void addRoute(RouteArea r) => saveOrUpdateRoute(r);
+  void addCompany(Company c) => saveOrUpdateCompany(c);
+  void addSalt(Salt s) => saveOrUpdateSalt(s);
+
+  void saveOrUpdateCompany(Company comp, {String? previousName}) {
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+    final cleanName = comp.name.trim().toUpperCase();
+    final cleanKey = CompanySyncModule.cleanString(cleanName);
+    if (cleanKey.isEmpty) return;
+
+    int idx = companies.indexWhere((c) =>
+        (comp.id.isNotEmpty && c.id.trim().toUpperCase() == comp.id.trim().toUpperCase()) ||
+        CompanySyncModule.cleanString(c.name) == cleanKey);
+
+    String? oldName = previousName;
+    late Company savedComp;
+
+    if (idx != -1) {
+      final existing = companies[idx];
+      oldName ??= existing.name;
+      savedComp = Company(
+        id: existing.id,
+        name: cleanName,
+        version: existing.version + 1,
+        updatedAt: nowTs,
+      );
+      companies[idx] = savedComp;
+    } else {
+      final newId = (comp.id.trim().isEmpty || comp.id.contains(" "))
+          ? "CP-${1000 + companies.length + 1}-${nowTs % 10000}"
+          : comp.id.trim();
+      savedComp = Company(
+        id: newId,
+        name: cleanName,
+        version: comp.version > 0 ? comp.version : 1,
+        updatedAt: nowTs,
+      );
+      companies.add(savedComp);
+    }
+
+    final cTombKey = "COMP_$cleanKey";
+    D1SalesLedgerService.unmarkPermanentlyDeleted(savedComp.id, cTombKey);
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: savedComp.id, secondaryKey: cTombKey);
+    }
+
+    final List<Medicine> mutatedMeds = [];
+    MasterCascadeService.cascadeCompanyUpdate(
+      updatedCompany: savedComp,
+      previousName: oldName,
+      medicines: medicines,
+      shortages: shortages,
+      onMedicineMutated: (m) => mutatedMeds.add(m),
+    );
+
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          CompanySyncModule.onCompanySaved(savedComp, t, previousName: oldName);
+          for (final m in mutatedMeds) {
+            MedicineSyncModule.onMedicineSaved(m, t);
+          }
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "COMPANY_SAVED",
+        entityId: savedComp.id,
+        unmarkedIds: [savedComp.id, cTombKey],
+      );
+    }
+  }
+
+  bool deleteCompany(String id, {String? reassignToCompanyId}) {
+    final idx = companies.indexWhere((c) => c.id == id);
+    if (idx == -1) return false;
+    final target = companies[idx];
+    final cleanKey = "COMP_${CompanySyncModule.cleanString(target.name)}";
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    final List<Medicine> mutatedMeds = [];
+    for (var m in medicines) {
+      if (MasterCascadeService.belongsToCompany(m, target)) {
+        m.companyId = reassignToCompanyId ?? "";
+        m.version += 1;
+        m.updatedAt = nowTs;
+        mutatedMeds.add(m);
+      }
+    }
+
+    companies.removeAt(idx);
+    D1SalesLedgerService.markPermanentlyDeleted(target.id, cleanKey);
+    if (activeCompany != null) {
+      TombstoneEngine.recordBatchTombstones(activeCompany!.id, [target.id, cleanKey]);
+    }
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          CompanySyncModule.onCompanySaved(target, t, isDelete: true);
+          for (final m in mutatedMeds) {
+            MedicineSyncModule.onMedicineSaved(m, t);
+          }
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "COMPANY_DELETED",
+        entityId: target.id,
+        deletedIds: [target.id, cleanKey],
+      );
+    }
+    return true;
+  }
+
+  void saveOrUpdateSalt(Salt salt, {String? previousName}) {
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+    final cleanName = salt.name.trim().toUpperCase();
+    final cleanKey = SaltSyncModule.cleanString(cleanName);
+    if (cleanKey.isEmpty) return;
+
+    int idx = salts.indexWhere((s) =>
+        (salt.id.isNotEmpty && s.id.trim().toUpperCase() == salt.id.trim().toUpperCase()) ||
+        SaltSyncModule.cleanString(s.name) == cleanKey);
+
+    String? oldName = previousName;
+    late Salt savedSalt;
+
+    if (idx != -1) {
+      final existing = salts[idx];
+      oldName ??= existing.name;
+      savedSalt = Salt(
+        id: existing.id,
+        name: cleanName,
+        type: salt.type.isNotEmpty ? salt.type : existing.type,
+        version: existing.version + 1,
+        updatedAt: nowTs,
+      );
+      salts[idx] = savedSalt;
+    } else {
+      final newId = (salt.id.trim().isEmpty || salt.id.contains(" "))
+          ? "SL-${1000 + salts.length + 1}-${nowTs % 10000}"
+          : salt.id.trim();
+      savedSalt = Salt(
+        id: newId,
+        name: cleanName,
+        type: salt.type.isNotEmpty ? salt.type : "Mono",
+        version: salt.version > 0 ? salt.version : 1,
+        updatedAt: nowTs,
+      );
+      salts.add(savedSalt);
+    }
+
+    final sTombKey = "SALT_$cleanKey";
+    D1SalesLedgerService.unmarkPermanentlyDeleted(savedSalt.id, sTombKey);
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: savedSalt.id, secondaryKey: sTombKey);
+    }
+
+    final List<Medicine> mutatedMeds = [];
+    MasterCascadeService.cascadeSaltUpdate(
+      updatedSalt: savedSalt,
+      previousName: oldName,
+      medicines: medicines,
+      onMedicineMutated: (m) => mutatedMeds.add(m),
+    );
+
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          SaltSyncModule.onSaltSaved(savedSalt, t, previousName: oldName);
+          for (final m in mutatedMeds) {
+            MedicineSyncModule.onMedicineSaved(m, t);
+          }
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "SALT_SAVED",
+        entityId: savedSalt.id,
+        unmarkedIds: [savedSalt.id, sTombKey],
+      );
+    }
+  }
+
+  bool deleteSalt(String id, {String? reassignToSaltId}) {
+    final idx = salts.indexWhere((s) => s.id == id);
+    if (idx == -1) return false;
+    final target = salts[idx];
+    final cleanKey = "SALT_${SaltSyncModule.cleanString(target.name)}";
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    final List<Medicine> mutatedMeds = [];
+    for (var m in medicines) {
+      if (MasterCascadeService.belongsToSalt(m, target)) {
+        m.saltId = reassignToSaltId ?? "";
+        m.version += 1;
+        m.updatedAt = nowTs;
+        mutatedMeds.add(m);
+      }
+    }
+
+    salts.removeAt(idx);
+    D1SalesLedgerService.markPermanentlyDeleted(target.id, cleanKey);
+    if (activeCompany != null) {
+      TombstoneEngine.recordBatchTombstones(activeCompany!.id, [target.id, cleanKey]);
+    }
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          SaltSyncModule.onSaltSaved(target, t, isDelete: true);
+          for (final m in mutatedMeds) {
+            MedicineSyncModule.onMedicineSaved(m, t);
+          }
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "SALT_DELETED",
+        entityId: target.id,
+        deletedIds: [target.id, cleanKey],
+      );
+    }
+    return true;
+  }
+
+  void saveOrUpdateRoute(RouteArea route, {String? previousName}) {
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+    final cleanName = route.name.trim().toUpperCase();
+    final cleanKey = RouteSyncModule.cleanString(cleanName);
+    if (cleanKey.isEmpty) return;
+
+    int idx = routes.indexWhere((r) =>
+        (route.id.isNotEmpty && r.id.trim().toUpperCase() == route.id.trim().toUpperCase()) ||
+        RouteSyncModule.cleanString(r.name) == cleanKey);
+
+    String? oldName = previousName;
+    late RouteArea savedRoute;
+
+    if (idx != -1) {
+      final existing = routes[idx];
+      oldName ??= existing.name;
+      savedRoute = RouteArea(
+        id: existing.id,
+        name: cleanName,
+        version: existing.version + 1,
+        updatedAt: nowTs,
+      );
+      routes[idx] = savedRoute;
+    } else {
+      final newId = (route.id.trim().isEmpty || route.id.contains(" "))
+          ? "RT-${1000 + routes.length + 1}-${nowTs % 10000}"
+          : route.id.trim();
+      savedRoute = RouteArea(
+        id: newId,
+        name: cleanName,
+        version: route.version > 0 ? route.version : 1,
+        updatedAt: nowTs,
+      );
+      routes.add(savedRoute);
+    }
+
+    final rTombKey = "ROUTE_$cleanKey";
+    D1SalesLedgerService.unmarkPermanentlyDeleted(savedRoute.id, rTombKey);
+    if (activeCompany != null) {
+      TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: savedRoute.id, secondaryKey: rTombKey);
+    }
+
+    final List<Party> mutatedParties = [];
+    MasterCascadeService.cascadeRouteUpdate(
+      updatedRoute: savedRoute,
+      previousName: oldName,
+      parties: parties,
+      onPartyMutated: (p) => mutatedParties.add(p),
+    );
+
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          RouteSyncModule.onRouteSaved(savedRoute, t, previousName: oldName);
+          for (final p in mutatedParties) {
+            PartySyncModule.onPartySaved(p, t);
+          }
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "ROUTE_SAVED",
+        entityId: savedRoute.id,
+        unmarkedIds: [savedRoute.id, rTombKey],
+      );
+    }
+  }
   void addDrugType(DrugType d) { drugTypes.add(d); save(); }
   void addSystemUser(SystemUser u) { systemUsers.add(u); save(); }
   void addNumberingSeries(NumberingSeries ns) { numberingSeries.add(ns); save(); }
@@ -2186,7 +2535,48 @@ void registerBatchActivity({
       );
     }
   }
-  void deleteRoute(String id) { routes.removeWhere((r) => r.id == id); save(); }
+  void deleteRoute(String id, {String? reassignToRouteName}) {
+    final idx = routes.indexWhere((r) => r.id == id);
+    if (idx == -1) return;
+    final target = routes[idx];
+    final cleanKey = "ROUTE_${RouteSyncModule.cleanString(target.name)}";
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+
+    final List<Party> mutatedParties = [];
+    for (var p in parties) {
+      if (MasterCascadeService.belongsToRoute(p, target)) {
+        p.route = reassignToRouteName?.trim().toUpperCase() ?? "";
+        p.version += 1;
+        p.updatedAt = nowTs;
+        mutatedParties.add(p);
+      }
+    }
+
+    routes.removeAt(idx);
+    D1SalesLedgerService.markPermanentlyDeleted(target.id, cleanKey);
+    if (activeCompany != null) {
+      TombstoneEngine.recordBatchTombstones(activeCompany!.id, [target.id, cleanKey]);
+    }
+    save();
+    notifyListeners();
+
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          RouteSyncModule.onRouteSaved(target, t, isDelete: true);
+          for (final p in mutatedParties) {
+            PartySyncModule.onPartySaved(p, t);
+          }
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "ROUTE_DELETED",
+        entityId: target.id,
+        deletedIds: [target.id, cleanKey],
+      );
+    }
+  }
   void deleteSystemUser(String id) { systemUsers.removeWhere((x) => x.id == id); save(); }
   void deleteShortage(String id) { shortages.removeWhere((s) => s.id == id); save(); }
   void deleteBank(String id) { banks.removeWhere((b) => b.id == id); save(); }
