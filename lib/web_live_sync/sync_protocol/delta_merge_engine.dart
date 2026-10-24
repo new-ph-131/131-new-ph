@@ -1,3 +1,4 @@
+import '../../sync_core/modules/batch_delta_merge_module.dart';
 import "../../sync_core/modules/medicine_sync_module.dart";
 import "../../../sync_core/modules/party_sync_module.dart";
 import "../../../sync_core/d1_sales_ledger_service.dart";
@@ -324,7 +325,24 @@ class DeltaMergeEngine {
       (e) => e.toMap()
     );
 
-    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet;
+        // 🛡️ Upgraded Batch History Delta Merge with Tombstone Filtering (#PH-REV-762)
+    bool cBats = false;
+    final rawBatsJson = cloudFiles['bats.json'];
+    if (rawBatsJson != null) {
+      final sanitizedBats = BatchDeltaMergeModule.filterTombstonedBatchJson(
+        rawBatsJson.toString(),
+        tombstones: localTombstones,
+        registry: localRegistry,
+      );
+      cBats = BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
+        targetBatchHistory: ph.batchHistory,
+        incomingJson: sanitizedBats,
+        tombstones: localTombstones,
+        registry: localRegistry,
+      );
+    }
+
+    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats;
     if (anyChanged) {
       try {
         ph.autoHydrateBatchHistoryFromTransactions();
