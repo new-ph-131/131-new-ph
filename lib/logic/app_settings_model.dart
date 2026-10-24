@@ -41,7 +41,9 @@ class AppConfig {
   String developerPassword;
   String userMasterPin;
   bool developerAllowBatchHistoryToUser;
-  bool userEnableBatchHistory; 
+  bool userEnableBatchHistory;
+  int version;
+  int updatedAt;
 
   AppConfig({
     this.salePrefix = "INV-",
@@ -129,6 +131,8 @@ class AppConfig {
       'userMasterPin': userMasterPin,
       'developerAllowBatchHistoryToUser': developerAllowBatchHistoryToUser,
       'userEnableBatchHistory': userEnableBatchHistory,
+      'version': version,
+      'updatedAt': updatedAt,
     };
   }
 
@@ -174,6 +178,8 @@ class AppConfig {
       userMasterPin: map['userMasterPin'] ?? "1234",
       developerAllowBatchHistoryToUser: map['developerAllowBatchHistoryToUser'] ?? false,
       userEnableBatchHistory: map['userEnableBatchHistory'] ?? true,
+      version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
+      updatedAt: int.tryParse(map['updatedAt']?.toString() ?? '0') ?? 0,
     );
   }
 }

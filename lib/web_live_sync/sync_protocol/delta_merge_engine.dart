@@ -357,9 +357,9 @@ class DeltaMergeEngine {
               incomingCfg.userMasterPin != localCfg.userMasterPin ||
               incomingCfg.developerAllowBatchHistoryToUser != localCfg.developerAllowBatchHistoryToUser ||
               incomingCfg.userEnableBatchHistory != localCfg.userEnableBatchHistory ||
-              incomingCfg.billFormat != localCfg.billFormat ||
-              incomingCfg.defaultPrintSize != localCfg.defaultPrintSize ||
-              incomingCfg.invoiceTerms != localCfg.invoiceTerms;
+              incomingCfg.printFormat != localCfg.printFormat ||
+              incomingCfg.isArchitectMode != localCfg.isArchitectMode ||
+              incomingCfg.termsAndConditions != localCfg.termsAndConditions;
           if (incomingCfg.updatedAt > localCfg.updatedAt ||
               incomingCfg.version > localCfg.version ||
               (localCfg.updatedAt == 0 && isDiff)) {
