@@ -325,20 +325,20 @@ class DeltaMergeEngine {
       (e) => e.toMap()
     );
 
-        // 🛡️ Upgraded Batch History Delta Merge with Tombstone Filtering (#PH-REV-762)
+        // 🛡️ Upgraded Batch History Delta Merge with Tombstone Filtering (#PH-REV-764)
     bool cBats = false;
     final rawBatsJson = cloudFiles['bats.json'];
     if (rawBatsJson != null) {
       final sanitizedBats = BatchDeltaMergeModule.filterTombstonedBatchJson(
         rawBatsJson.toString(),
-        tombstones: localTombstones,
-        registry: localRegistry,
+        tombstones: tombstoneRegistry.keys,
+        registry: tombstoneRegistry,
       );
       cBats = BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
         targetBatchHistory: ph.batchHistory,
         incomingJson: sanitizedBats,
-        tombstones: localTombstones,
-        registry: localRegistry,
+        tombstones: tombstoneRegistry.keys,
+        registry: tombstoneRegistry,
       );
     }
 
