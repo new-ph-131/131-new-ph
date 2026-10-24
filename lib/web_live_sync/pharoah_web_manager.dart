@@ -2751,10 +2751,24 @@ class PharoahWebManager with ChangeNotifier {
     required double adjQty,
     required String reason,
   }) {
-    if (batchHistory.containsKey(medId)) {
-      final idx = batchHistory[medId]!.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
+    String resolvedKey = medId.trim();
+    if (!batchHistory.containsKey(resolvedKey)) {
+      try {
+        final m = medicines.firstWhere((m) =>
+            m.id == medId ||
+            m.identityKey == medId ||
+            m.name.trim().toUpperCase() == medId.trim().toUpperCase());
+        if (batchHistory.containsKey(m.identityKey)) {
+          resolvedKey = m.identityKey;
+        } else if (batchHistory.containsKey(m.id)) {
+          resolvedKey = m.id;
+        }
+      } catch (_) {}
+    }
+    if (batchHistory.containsKey(resolvedKey)) {
+      final idx = batchHistory[resolvedKey]!.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
       if (idx != -1) {
-        final b = batchHistory[medId]![idx];
+        final b = batchHistory[resolvedKey]![idx];
         b.adjustmentQty += adjQty;
         b.adjReason = reason;
         b.version += 1;
@@ -2763,12 +2777,12 @@ class PharoahWebManager with ChangeNotifier {
         if (activeStoreToken.isNotEmpty) {
           BatchSyncModule.onBatchSaved(
             batch: b,
-            medIdentityKey: medId,
+            medIdentityKey: resolvedKey,
             storeToken: activeStoreToken,
             isDelete: false,
           );
         }
-        final syncId = BatchSyncModule.getBatchSyncId(medId, batchNo);
+        final syncId = BatchSyncModule.getBatchSyncId(resolvedKey, batchNo);
         _autoSyncService.triggerAutoSync(
           action: 'BATCH_ADJUSTED',
           entityId: syncId,

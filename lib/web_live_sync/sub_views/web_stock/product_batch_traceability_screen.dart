@@ -295,6 +295,22 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                                           ),
                                           const SizedBox(width: 6),
 
+                                          // ⚡ ADJUST BUTTON (Direct Action Parity with App)
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFFF59E0B),
+                                              foregroundColor: Colors.black,
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                            onPressed: () => _showAdjustmentDialog(context, webPh, widget.medicine, b),
+                                            icon: const Icon(Icons.exposure_rounded, size: 14),
+                                            label: const Text("ADJUST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ),
+                                          const SizedBox(width: 6),
+
                                           // DELETE BUTTON
                                           ElevatedButton.icon(
                                             style: ElevatedButton.styleFrom(
@@ -986,6 +1002,162 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
           ),
         ),
       ],
+    );
+  }
+
+
+  // ===========================================================================
+  // 4. STOCK ADJUSTMENT DIALOG (DIRECT PARITY WITH APP)
+  // ===========================================================================
+  void _showAdjustmentDialog(BuildContext context, PharoahWebManager webPh, Medicine med, BatchInfo b) {
+    final qtyC = TextEditingController();
+    String reason = "Stock Correction";
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final double inputQty = double.tryParse(qtyC.text.trim()) ?? 0.0;
+          final double previewQty = b.qty + inputQty;
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Colors.white12),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.exposure_rounded, color: Color(0xFFF59E0B), size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  "ADJUST STOCK • ${b.batch}",
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text("CURRENT LIVE STOCK", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text("${b.qty.toInt()} Qty", style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const Icon(Icons.arrow_forward_rounded, color: Colors.white38, size: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            const Text("NEW PROJECTED STOCK", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 2),
+                            Text(
+                              "${previewQty.toInt()} Qty",
+                              style: TextStyle(
+                                color: previewQty >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171),
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "QTY CHANGE (+ TO ADD, - TO REDUCE)",
+                        style: TextStyle(color: Colors.white70, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      ),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: qtyC,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        onChanged: (_) => setDialogState(() {}),
+                        decoration: InputDecoration(
+                          hintText: "e.g. +10 or -5",
+                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+                          filled: true,
+                          fillColor: Colors.black26,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: reason,
+                    dropdownColor: const Color(0xFF1E293B),
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    decoration: InputDecoration(
+                      labelText: "REASON FOR ADJUSTMENT",
+                      labelStyle: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    ),
+                    items: ["Stock Correction", "Breakage", "Shortage", "Sample", "Expiry Damage"]
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                    onChanged: (v) => setDialogState(() => reason = v!),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF59E0B),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () {
+                  double val = double.tryParse(qtyC.text.trim()) ?? 0.0;
+                  if (val != 0) {
+                    webPh.adjustBatchStock(
+                      medId: med.identityKey,
+                      batchNo: b.batch,
+                      adjQty: val,
+                      reason: reason,
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Adjusted '${b.batch}' stock by ${val > 0 ? '+$val' : val} ($reason). Synced!"),
+                        backgroundColor: const Color(0xFF10B981),
+                      ),
+                    );
+                  }
+                  Navigator.pop(c);
+                  setState(() {});
+                },
+                child: const Text("APPLY ADJUSTMENT", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

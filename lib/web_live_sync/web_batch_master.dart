@@ -1121,6 +1121,12 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       adjQty: val,
                       reason: reason,
                     );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Adjusted stock for '${b.batch}' by ${val > 0 ? '+$val' : val} ($reason). Synced!"),
+                        backgroundColor: const Color(0xFF059669),
+                      ),
+                    );
                   }
                   Navigator.pop(c);
                   setState(() {});
@@ -2024,7 +2030,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   const Expanded(flex: 2, child: Text("LIVE STOCK", style: _thStyle)),
                   const Expanded(flex: 2, child: Text("PHARMA STATUS", style: _thStyle)),
                   const Expanded(flex: 3, child: Text("FY AUDIT STATUS", style: _thStyle)),
-                  const Expanded(flex: 4, child: Text("ACTIONS", style: _thStyle)),
+                  const Expanded(flex: 5, child: Text("ACTIONS", style: _thStyle)),
                 ],
               ),
             ),
@@ -2261,9 +2267,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       ),
                     ),
 
-                    // Actions (Prominent Modify, Delete & Quick Hub)
+                    // Actions (Prominent Modify, Adjust, Delete & Quick Hub)
                     Expanded(
-                      flex: 4,
+                      flex: 5,
                       child: Row(
                         children: [
                           // MODIFY BUTTON
@@ -2282,6 +2288,21 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                           ),
                           const SizedBox(width: 6),
 
+                          // ⚡ ADJUST BUTTON (Direct Action Parity with App)
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF59E0B),
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            onPressed: () => _showAdjustmentDialog(webPh, m, b),
+                            icon: const Icon(Icons.exposure_rounded, size: 14),
+                            label: const Text("ADJUST", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 5),
                           // DELETE BUTTON
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
