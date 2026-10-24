@@ -1,3 +1,6 @@
+import '../../../logic/batch_cascade_engine.dart';
+import '../../../sync_core/modules/batch_sync_module.dart';
+import '../../../app_date_logic.dart';
 import 'dart:ui' show PointerDeviceKind;
 // FILE: lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
 // Live Revision: #PH-REV-745 (ADVANCED-STOCK-TRACEABILITY-AND-BATCH-LEDGER)
@@ -114,6 +117,18 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                     ],
                   ),
                 ),
+                const SizedBox(width: 16),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () => _showAddBatchDialog(context, webPh, widget.medicine),
+                  icon: const Icon(Icons.add_box_rounded, size: 16),
+                  label: const Text("NEW BATCH", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                ),
               ],
             ),
           ),
@@ -209,7 +224,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                               DataColumn(label: Text("RATE A ₹", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12))),
                               DataColumn(label: Text("VALUATION ₹", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12))),
                               DataColumn(label: Text("STATUS", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12))),
-                              DataColumn(label: Text("TRACEABILITY", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12))),
+                              DataColumn(label: Text("ACTIONS & TRAIL", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 12))),
                             ],
                             rows: filteredBatches.map((b) {
                               bool isExpired = _checkExpired(b.exp);
@@ -244,19 +259,77 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                                     ),
                                   )),
                                   DataCell(
-                                    OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: const Color(0xFF60A5FA),
-                                        side: const BorderSide(color: Color(0xFF3B82F6)),
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
-                                      onPressed: () {
-                                        _showBatchMovementModal(context, webPh, widget.medicine, b);
-                                      },
-                                      icon: const Icon(Icons.timeline_rounded, size: 14),
-                                      label: const Text("Trail & Ledger", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                    ),
+                                    Builder(builder: (c) {
+                                      final activeFY = webPh.financialYear.isNotEmpty
+                                          ? webPh.financialYear
+                                          : AppDateLogic.getCurrentFYString();
+                                      final lockingRecords = BatchCascadeEngine.checkActiveFYUsage(
+                                        medicine: widget.medicine,
+                                        batchNo: b.batch,
+                                        activeFY: activeFY,
+                                        sales: webPh.sales,
+                                        purchases: webPh.purchases,
+                                        saleChallans: webPh.saleChallans,
+                                        purchaseChallans: webPh.purchaseChallans,
+                                        saleReturns: webPh.saleReturns,
+                                        purchaseReturns: webPh.purchaseReturns,
+                                      );
+                                      final bool isLockedByFY = lockingRecords.isNotEmpty;
+
+                                      return Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // MODIFY BUTTON
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFF2563EB),
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                            onPressed: () => _showCascadeEditDialog(context, webPh, widget.medicine, b),
+                                            icon: const Icon(Icons.edit_note_rounded, size: 14),
+                                            label: const Text("MODIFY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ),
+                                          const SizedBox(width: 6),
+
+                                          // DELETE BUTTON
+                                          ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: isLockedByFY ? const Color(0xFF7F1D1D) : const Color(0xFFDC2626),
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                            onPressed: () => _showDeleteBatchDialog(context, webPh, widget.medicine, b),
+                                            icon: Icon(isLockedByFY ? Icons.lock_outline_rounded : Icons.delete_outline_rounded, size: 12),
+                                            label: Text(isLockedByFY ? "LOCKED" : "DELETE", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ),
+                                          const SizedBox(width: 6),
+
+                                          // TRAIL & LEDGER BUTTON
+                                          OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: const Color(0xFF60A5FA),
+                                              side: const BorderSide(color: Color(0xFF3B82F6)),
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            onPressed: () {
+                                              _showBatchMovementModal(context, webPh, widget.medicine, b);
+                                            },
+                                            icon: const Icon(Icons.timeline_rounded, size: 13),
+                                            label: const Text("Trail & Ledger", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                      );
+                                    }),
                                   ),
                                 ],
                               );
@@ -423,4 +496,567 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
       ],
     );
   }
+
+  // ===========================================================================
+  // 1. REGISTER NEW BATCH DIALOG (WITH D1 SYNC)
+  // ===========================================================================
+  void _showAddBatchDialog(BuildContext context, PharoahWebManager webPh, Medicine med) {
+    final batchNoC = TextEditingController();
+    final expC = TextEditingController();
+    final mrpC = TextEditingController(text: med.mrp.toStringAsFixed(2));
+    final purRateC = TextEditingController(text: med.purRate.toStringAsFixed(2));
+    final rateAC = TextEditingController(text: med.rateA.toStringAsFixed(2));
+    final rateBC = TextEditingController(text: med.rateB.toStringAsFixed(2));
+    final rateCC = TextEditingController(text: med.rateC.toStringAsFixed(2));
+    final openingQtyC = TextEditingController(text: "0");
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.add_box_rounded, color: Color(0xFF38BDF8), size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "REGISTER NEW BATCH • ${med.name}",
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _inputField("BATCH NUMBER (CASE-SENSITIVE) *", batchNoC, isCaps: true),
+                const SizedBox(height: 12),
+                _inputField("EXPIRY (MM/YY) *", expC, isNum: true),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _inputField("MRP ₹", mrpC, isNum: true)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _inputField("PUR. RATE ₹", purRateC, isNum: true)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _inputField("RATE A ₹", rateAC, isNum: true)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _inputField("RATE B ₹", rateBC, isNum: true)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _inputField("RATE C ₹", rateCC, isNum: true)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _inputField("INITIAL OPENING STOCK QTY", openingQtyC, isNum: true),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              final bNo = batchNoC.text.trim();
+              final exp = expC.text.trim();
+              if (bNo.isEmpty || exp.isEmpty) return;
+
+              final medKey = med.identityKey;
+              if (!webPh.batchHistory.containsKey(medKey)) {
+                webPh.batchHistory[medKey] = [];
+              }
+
+              bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim() == bNo);
+              if (exists) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Batch '$bNo' already exists for ${med.name}"),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              double q = double.tryParse(openingQtyC.text) ?? 0.0;
+              double pur = double.tryParse(purRateC.text) ?? 0.0;
+              double m = double.tryParse(mrpC.text) ?? 0.0;
+              double rA = double.tryParse(rateAC.text) ?? 0.0;
+              double rB = double.tryParse(rateBC.text) ?? 0.0;
+              double rC = double.tryParse(rateCC.text) ?? 0.0;
+
+              final newBatch = BatchInfo(
+                batch: bNo,
+                exp: exp,
+                qty: q,
+                mrp: m,
+                rate: pur,
+                purRate: pur,
+                rateA: rA,
+                rateB: rB,
+                rateC: rC,
+                packing: med.packing,
+                status: "Active",
+                isShell: false,
+              );
+
+              webPh.batchHistory[medKey]!.add(newBatch);
+
+              // 2-Way Live Sync Outbox enqueue
+              BatchSyncModule.enqueueBatchMutation(
+                medicineId: med.id,
+                systemId: med.systemId,
+                batchNo: bNo,
+                expiry: exp,
+                mrp: m,
+                purRate: pur,
+                rateA: rA,
+                rateB: rB,
+                rateC: rC,
+                qty: q,
+                status: "Active",
+                isDeleted: false,
+              );
+
+              webPh.rebuildInventory();
+              Navigator.pop(c);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Batch '$bNo' registered & mirrored to cloud."),
+                  backgroundColor: const Color(0xFF10B981),
+                ),
+              );
+            },
+            child: const Text("REGISTER & SYNC"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 2. CASCADE RENAME & EDIT BATCH DIALOG
+  // ===========================================================================
+  void _showCascadeEditDialog(BuildContext context, PharoahWebManager webPh, Medicine med, BatchInfo b) {
+    final oldBatchNo = b.batch;
+    final batchNoC = TextEditingController(text: b.batch);
+    final expC = TextEditingController(text: b.exp);
+    final mrpC = TextEditingController(text: b.mrp.toStringAsFixed(2));
+    final purRateC = TextEditingController(text: b.purRate.toStringAsFixed(2));
+    final rateAC = TextEditingController(text: b.rateA.toStringAsFixed(2));
+    final rateBC = TextEditingController(text: b.rateB.toStringAsFixed(2));
+    final rateCC = TextEditingController(text: b.rateC.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.edit_note_rounded, color: Color(0xFF60A5FA), size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "MODIFY BATCH • $oldBatchNo",
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    "${med.name} • Cascade Rename & Rate Modification Engine",
+                    style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF60A5FA).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF60A5FA).withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.info_outline, color: Color(0xFF60A5FA), size: 18),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "Renaming or modifying this batch will cascade across all historical Sales, Purchases, Challans, and Returns, recalculating live stock automatically.",
+                          style: TextStyle(color: Color(0xFFBAE6FD), fontSize: 11, height: 1.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _inputField("BATCH NUMBER (RENAME)", batchNoC, isCaps: true),
+                const SizedBox(height: 12),
+                _inputField("EXPIRY (MM/YY)", expC, isNum: true),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _inputField("MRP ₹", mrpC, isNum: true)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _inputField("PUR. RATE ₹", purRateC, isNum: true)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _inputField("RATE A ₹", rateAC, isNum: true)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _inputField("RATE B ₹", rateBC, isNum: true)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _inputField("RATE C ₹", rateCC, isNum: true)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.done_all_rounded, size: 16),
+            label: const Text("SAVE & CASCADE MODIFY", style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () async {
+              final newBatchNo = batchNoC.text.trim();
+              final newExp = expC.text.trim();
+              if (newBatchNo.isEmpty || newExp.isEmpty) return;
+
+              final double newMrp = double.tryParse(mrpC.text) ?? b.mrp;
+              final double newPur = double.tryParse(purRateC.text) ?? b.purRate;
+              final double newRa = double.tryParse(rateAC.text) ?? b.rateA;
+              final double newRb = double.tryParse(rateBC.text) ?? b.rateB;
+              final double newRc = double.tryParse(rateCC.text) ?? b.rateC;
+
+              final cascadeResult = BatchCascadeEngine.cascadeBatchRenameAndModify(
+                medicine: med,
+                oldBatchNo: oldBatchNo,
+                newBatchNo: newBatchNo,
+                newExpiry: newExp,
+                newMrp: newMrp,
+                newPurRate: newPur,
+                newRateA: newRa,
+                newRateB: newRb,
+                newRateC: newRc,
+                sales: webPh.sales,
+                purchases: webPh.purchases,
+                saleChallans: webPh.saleChallans,
+                purchaseChallans: webPh.purchaseChallans,
+                saleReturns: webPh.saleReturns,
+                purchaseReturns: webPh.purchaseReturns,
+                batchHistory: webPh.batchHistory,
+                medicines: webPh.medicines,
+                onRebuildStock: () => webPh.rebuildInventory(),
+              );
+
+              BatchSyncModule.enqueueBatchMutation(
+                medicineId: med.id,
+                systemId: med.systemId,
+                batchNo: newBatchNo,
+                expiry: newExp,
+                mrp: newMrp,
+                purRate: newPur,
+                rateA: newRa,
+                rateB: newRb,
+                rateC: newRc,
+                qty: b.qty,
+                status: b.status,
+                isDeleted: false,
+              );
+
+              Navigator.pop(c);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Modified batch '$oldBatchNo' -> '$newBatchNo' across ${cascadeResult.totalVouchersUpdated} vouchers."),
+                  backgroundColor: const Color(0xFF10B981),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 3. SAFE BATCH DELETION WITH FINANCIAL YEAR GUARD
+  // ===========================================================================
+  void _showDeleteBatchDialog(BuildContext context, PharoahWebManager webPh, Medicine med, BatchInfo b) {
+    final activeFY = webPh.financialYear.isNotEmpty
+        ? webPh.financialYear
+        : AppDateLogic.getCurrentFYString();
+
+    final lockingRecords = BatchCascadeEngine.checkActiveFYUsage(
+      medicine: med,
+      batchNo: b.batch,
+      activeFY: activeFY,
+      sales: webPh.sales,
+      purchases: webPh.purchases,
+      saleChallans: webPh.saleChallans,
+      purchaseChallans: webPh.purchaseChallans,
+      saleReturns: webPh.saleReturns,
+      purchaseReturns: webPh.purchaseReturns,
+    );
+
+    if (lockingRecords.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (c) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.lock_rounded, color: Color(0xFFEF4444), size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "DELETION LOCKED • ACTIVE FY $activeFY",
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 600,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Batch '${b.batch}' cannot be deleted because it is recorded in ${lockingRecords.length} active transaction(s) in Financial Year $activeFY.",
+                  style: const TextStyle(color: Color(0xFFFCA5A5), fontSize: 12, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  "AUDIT LOCK BREAKDOWN:",
+                  style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 240),
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: lockingRecords.length,
+                    separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                    itemBuilder: (_, i) {
+                      final rec = lockingRecords[i];
+                      return ListTile(
+                        dense: true,
+                        leading: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            rec.documentType,
+                            style: const TextStyle(color: Color(0xFFF87171), fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        title: Text(
+                          "Bill #${rec.billNo} • ${rec.partyName}",
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${rec.qty.toInt()} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
+                          style: const TextStyle(color: Colors.white54, fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF334155),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(c),
+              child: const Text("ACKNOWLEDGE & CLOSE"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 22),
+            const SizedBox(width: 8),
+            Text(
+              "DELETE BATCH • ${b.batch}",
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Zero transactions found for batch '${b.batch}' in active Financial Year $activeFY.",
+                style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                "Are you sure you want to permanently delete this batch? A persistent tombstone will be recorded to prevent cloud resurrection.",
+                style: TextStyle(color: Colors.white70, fontSize: 11, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            icon: const Icon(Icons.delete_forever_rounded, size: 16),
+            label: const Text("PERMANENTLY DELETE BATCH", style: TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () {
+              final result = BatchCascadeEngine.safeDeleteBatchWithTombstone(
+                medicine: med,
+                batchNo: b.batch,
+                activeFY: activeFY,
+                sales: webPh.sales,
+                purchases: webPh.purchases,
+                saleChallans: webPh.saleChallans,
+                purchaseChallans: webPh.purchaseChallans,
+                saleReturns: webPh.saleReturns,
+                purchaseReturns: webPh.purchaseReturns,
+                batchHistory: webPh.batchHistory,
+                medicines: webPh.medicines,
+                onRebuildStock: () => webPh.rebuildInventory(),
+              );
+
+              if (result.success) {
+                BatchSyncModule.enqueueBatchMutation(
+                  medicineId: med.id,
+                  systemId: med.systemId,
+                  batchNo: b.batch,
+                  expiry: b.exp,
+                  mrp: b.mrp,
+                  purRate: b.purRate,
+                  rateA: b.rateA,
+                  rateB: b.rateB,
+                  rateC: b.rateC,
+                  qty: 0,
+                  status: "Deleted",
+                  isDeleted: true,
+                );
+
+                Navigator.pop(c);
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result.message),
+                    backgroundColor: const Color(0xFF10B981),
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _inputField(String label, TextEditingController c, {bool isNum = false, bool isCaps = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: c,
+          keyboardType: isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+          textCapitalization: isCaps ? TextCapitalization.characters : TextCapitalization.none,
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: Colors.black26,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+          ),
+        ),
+      ],
+    );
+  }
+
 }
