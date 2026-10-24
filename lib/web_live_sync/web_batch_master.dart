@@ -1,13 +1,24 @@
-import "sub_views/web_stock/product_batch_traceability_screen.dart";
-// FILE: lib/web_live_sync/web_batch_master.dart
+import "dart:convert";
+import "dart:typed_data";
+import "package:flutter/material.dart";
+import "package:provider/provider.dart";
+import "package:intl/intl.dart";
+import "package:csv/csv.dart";
+import "package:file_saver/file_saver.dart";
 
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'web_models.dart';
-import 'pharoah_web_manager.dart';
-import '../logic/batch_cascade_engine.dart';
-import '../sync_core/modules/batch_sync_module.dart';
-import '../app_date_logic.dart';
+import "sub_views/web_stock/product_batch_traceability_screen.dart";
+import "web_models.dart";
+import "pharoah_web_manager.dart";
+import "../logic/batch_cascade_engine.dart";
+import "../sync_core/modules/batch_sync_module.dart";
+import "../app_date_logic.dart";
+
+class GlobalBatchItem {
+  final Medicine medicine;
+  final BatchInfo batch;
+
+  GlobalBatchItem({required this.medicine, required this.batch});
+}
 
 class WebBatchMasterView extends StatefulWidget {
   final VoidCallback onBack;
@@ -24,165 +35,394 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   Medicine? selectedMed;
   String searchQuery = "";
 
+  // Dual Mode Navigation
+  bool isGlobalExplorer = true; // true: All-Batch Explorer, false: Product Drill-down
+
+  // Filter: ALL, IN_STOCK, ZERO_STOCK, EXPIRING, EXPIRED, HOLD_BLOCKED, FY_LOCKED
+  String activeFilter = "ALL";
+
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
   }
 
+  // --- EXPIRY UTILITIES ---
+  bool _isNearExpiry(String expStr) {
+    try {
+      final parts = expStr.split('/');
+      if (parts.length != 2) return false;
+      int m = int.parse(parts[0]);
+      int y = 2000 + int.parse(parts[1]);
+      DateTime lastDay = DateTime(y, m + 1, 0);
+      DateTime today = DateTime.now();
+      int days = lastDay.difference(today).inDays;
+      return days >= 0 && days <= 90;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _isExpired(String expStr) {
+    try {
+      final parts = expStr.split('/');
+      if (parts.length != 2) return false;
+      int m = int.parse(parts[0]);
+      int y = 2000 + int.parse(parts[1]);
+      DateTime lastDay = DateTime(y, m + 1, 0);
+      return lastDay.isBefore(DateTime.now());
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ===========================================================================
   // 1. REGISTER NEW BATCH DIALOG (WITH D1 SYNC)
   // ===========================================================================
-  void _showAddBatchDialog(PharoahWebManager webPh, Medicine med) {
+  void _showAddBatchDialog(PharoahWebManager webPh, [Medicine? defaultMed]) {
+    Medicine? targetMed = defaultMed ?? selectedMed;
+    if (targetMed == null && webPh.medicines.isNotEmpty) {
+      targetMed = webPh.medicines.first;
+    }
+    if (targetMed == null) return;
+
+    Medicine chosenMed = targetMed;
     final batchNoC = TextEditingController();
     final expC = TextEditingController();
-    final mrpC = TextEditingController(text: med.mrp.toStringAsFixed(2));
-    final purRateC = TextEditingController(text: med.purRate.toStringAsFixed(2));
-    final rateAC = TextEditingController(text: med.rateA.toStringAsFixed(2));
-    final rateBC = TextEditingController(text: med.rateB.toStringAsFixed(2));
-    final rateCC = TextEditingController(text: med.rateC.toStringAsFixed(2));
+    final mrpC = TextEditingController(text: chosenMed.mrp.toStringAsFixed(2));
+    final purRateC = TextEditingController(text: chosenMed.purRate.toStringAsFixed(2));
+    final rateAC = TextEditingController(text: chosenMed.rateA.toStringAsFixed(2));
+    final rateBC = TextEditingController(text: chosenMed.rateB.toStringAsFixed(2));
+    final rateCC = TextEditingController(text: chosenMed.rateC.toStringAsFixed(2));
     final openingQtyC = TextEditingController(text: "0");
 
     showDialog(
       context: context,
-      builder: (c) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.white12),
-        ),
-        title: Row(
-          children: [
-            const Icon(Icons.add_box_rounded, color: Color(0xFF38BDF8), size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                "REGISTER NEW BATCH • ${med.name}",
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
+      builder: (c) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.add_box_rounded, color: Color(0xFF38BDF8), size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "REGISTER NEW BATCH • ${chosenMed.name}",
+                  style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
+            ],
+          ),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (defaultMed == null) ...[
+                    DropdownButtonFormField<Medicine>(
+                      value: chosenMed,
+                      dropdownColor: const Color(0xFF0F172A),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      decoration: InputDecoration(
+                        labelText: "SELECT PRODUCT *",
+                        labelStyle: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                        filled: true,
+                        fillColor: Colors.black26,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                      ),
+                      items: webPh.medicines.map((m) => DropdownMenuItem(
+                        value: m,
+                        child: Text("${m.name} (${m.systemId})", overflow: TextOverflow.ellipsis),
+                      )).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            chosenMed = val;
+                            mrpC.text = val.mrp.toStringAsFixed(2);
+                            purRateC.text = val.purRate.toStringAsFixed(2);
+                            rateAC.text = val.rateA.toStringAsFixed(2);
+                            rateBC.text = val.rateB.toStringAsFixed(2);
+                            rateCC.text = val.rateC.toStringAsFixed(2);
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  _inputField("BATCH NUMBER (CASE-SENSITIVE) *", batchNoC, isCaps: true),
+                  const SizedBox(height: 12),
+                  _inputField("EXPIRY (MM/YY) *", expC, isNum: true),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _inputField("MRP ₹", mrpC, isNum: true)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _inputField("PUR. RATE ₹", purRateC, isNum: true)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: _inputField("RATE A ₹", rateAC, isNum: true)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _inputField("RATE B ₹", rateBC, isNum: true)),
+                      const SizedBox(width: 8),
+                      Expanded(child: _inputField("RATE C ₹", rateCC, isNum: true)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _inputField("INITIAL OPENING STOCK QTY", openingQtyC, isNum: true),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () {
+                final bNo = batchNoC.text.trim();
+                final exp = expC.text.trim();
+                if (bNo.isEmpty || exp.isEmpty) return;
+
+                final medKey = chosenMed.identityKey;
+                if (!webPh.batchHistory.containsKey(medKey)) {
+                  webPh.batchHistory[medKey] = [];
+                }
+
+                bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim() == bNo);
+                if (exists) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Batch '$bNo' already exists for ${chosenMed.name}"),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                double q = double.tryParse(openingQtyC.text) ?? 0.0;
+                double pur = double.tryParse(purRateC.text) ?? 0.0;
+                double mrp = double.tryParse(mrpC.text) ?? 0.0;
+                double a = double.tryParse(rateAC.text) ?? (mrp > 0 ? mrp : pur);
+                double b = double.tryParse(rateBC.text) ?? (a * 0.95);
+                double rateCVal = double.tryParse(rateCC.text) ?? (a * 0.92);
+
+                final newBatch = BatchInfo(
+                  batch: bNo,
+                  exp: exp,
+                  packing: chosenMed.packing,
+                  mrp: mrp,
+                  rate: pur,
+                  purRate: pur,
+                  rateA: a,
+                  rateB: b,
+                  rateC: rateCVal,
+                  openingQty: q,
+                  qty: q,
+                  isShell: false,
+                  status: "Active",
+                );
+
+                webPh.batchHistory[medKey]!.add(newBatch);
+
+                // 📤 Enqueue D1 mutation
+                BatchSyncModule.onBatchSaved(
+                  batch: newBatch,
+                  medIdentityKey: medKey,
+                  storeToken: webPh.activeStoreToken,
+                  isDelete: false,
+                );
+
+                webPh.rebuildInventory();
+                Navigator.pop(c);
+                setState(() {});
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Batch '$bNo' registered and synced!"),
+                    backgroundColor: const Color(0xFF059669),
+                  ),
+                );
+              },
+              child: const Text("SAVE & SYNC BATCH", style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _inputField("BATCH NUMBER (CASE-SENSITIVE) *", batchNoC, isCaps: true),
-                const SizedBox(height: 12),
-                _inputField("EXPIRY (MM/YY) *", expC, isNum: true),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: _inputField("MRP ₹", mrpC, isNum: true)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _inputField("PUR. RATE ₹", purRateC, isNum: true)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: _inputField("RATE A ₹", rateAC, isNum: true)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _inputField("RATE B ₹", rateBC, isNum: true)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _inputField("RATE C ₹", rateCC, isNum: true)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _inputField("INITIAL OPENING STOCK QTY", openingQtyC, isNum: true),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () {
-              final bNo = batchNoC.text.trim();
-              final exp = expC.text.trim();
-              if (bNo.isEmpty || exp.isEmpty) return;
-
-              final medKey = med.identityKey;
-              if (!webPh.batchHistory.containsKey(medKey)) {
-                webPh.batchHistory[medKey] = [];
-              }
-
-              bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim() == bNo);
-              if (exists) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("Batch '$bNo' already exists for ${med.name}"),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-                return;
-              }
-
-              double q = double.tryParse(openingQtyC.text) ?? 0.0;
-              double pur = double.tryParse(purRateC.text) ?? 0.0;
-              double mrp = double.tryParse(mrpC.text) ?? 0.0;
-              double a = double.tryParse(rateAC.text) ?? (mrp > 0 ? mrp : pur);
-              double b = double.tryParse(rateBC.text) ?? (a * 0.95);
-              double rateCVal = double.tryParse(rateCC.text) ?? (a * 0.92);
-
-              final newBatch = BatchInfo(
-                batch: bNo,
-                exp: exp,
-                packing: med.packing,
-                mrp: mrp,
-                rate: pur,
-                purRate: pur,
-                rateA: a,
-                rateB: b,
-                rateC: rateCVal,
-                openingQty: q,
-                qty: q,
-                isShell: false,
-                status: "Active",
-              );
-
-              webPh.batchHistory[medKey]!.add(newBatch);
-
-              // 📤 Enqueue D1 mutation
-              BatchSyncModule.onBatchSaved(
-                batch: newBatch,
-                medIdentityKey: medKey,
-                storeToken: webPh.activeStoreToken,
-                isDelete: false,
-              );
-
-              webPh.rebuildInventory();
-              Navigator.pop(c);
-              setState(() {});
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("Batch '$bNo' registered and synced!"),
-                  backgroundColor: const Color(0xFF059669),
-                ),
-              );
-            },
-            child: const Text("SAVE & SYNC BATCH", style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
 
   // ===========================================================================
-  // 2. CASCADE RENAME & EDIT BATCH DIALOG
+  // 2. PHARMA COMPLIANCE STATUS TOGGLE DIALOG
+  // ===========================================================================
+  void _showPharmaStatusDialog(PharoahWebManager webPh, Medicine med, BatchInfo b) {
+    String currentStatus = b.status.isNotEmpty ? b.status : "Active";
+
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.verified_user_rounded, color: Color(0xFF38BDF8), size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "PHARMA COMPLIANCE STATUS • ${b.batch}",
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Product: ${med.name} (${med.systemId})",
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                "REGULATORY STATUS:",
+                style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.8),
+              ),
+              const SizedBox(height: 8),
+              _buildStatusOption(
+                status: "Active",
+                label: "ACTIVE (DISPENSABLE)",
+                desc: "Batch is compliant and available for Sale and Billing.",
+                color: const Color(0xFF10B981),
+                isSelected: currentStatus == "Active",
+                onSelect: () => setDialogState(() => currentStatus = "Active"),
+              ),
+              const SizedBox(height: 8),
+              _buildStatusOption(
+                status: "Hold",
+                label: "HOLD / QUARANTINE",
+                desc: "Under inspection or sample testing. Blocked from billing.",
+                color: const Color(0xFFF59E0B),
+                isSelected: currentStatus == "Hold",
+                onSelect: () => setDialogState(() => currentStatus = "Hold"),
+              ),
+              const SizedBox(height: 8),
+              _buildStatusOption(
+                status: "Blocked",
+                label: "BLOCKED / RECALLED",
+                desc: "Defective or recalled batch. Strictly blocked from distribution.",
+                color: const Color(0xFFEF4444),
+                isSelected: currentStatus == "Blocked",
+                onSelect: () => setDialogState(() => currentStatus = "Blocked"),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: const Text("CANCEL", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () {
+                b.status = currentStatus;
+
+                // 📤 Enqueue D1 mutation
+                BatchSyncModule.onBatchSaved(
+                  batch: b,
+                  medIdentityKey: med.identityKey,
+                  storeToken: webPh.activeStoreToken,
+                  isDelete: false,
+                );
+
+                webPh.rebuildInventory();
+                Navigator.pop(c);
+                setState(() {});
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Batch '${b.batch}' status updated to $currentStatus!"),
+                    backgroundColor: const Color(0xFF059669),
+                  ),
+                );
+              },
+              child: const Text("APPLY STATUS", style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusOption({
+    required String status,
+    required String label,
+    required String desc,
+    required Color color,
+    required bool isSelected,
+    required VoidCallback onSelect,
+  }) {
+    return InkWell(
+      onTap: onSelect,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withOpacity(0.15) : Colors.black26,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isSelected ? color : Colors.white12, width: isSelected ? 1.5 : 1),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: isSelected ? color : Colors.white38,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(desc, style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 3. CASCADE RENAME & EDIT BATCH DIALOG
   // ===========================================================================
   void _showCascadeEditDialog(PharoahWebManager webPh, Medicine med, BatchInfo b) {
     final oldBatchNo = b.batch;
@@ -331,7 +571,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // ===========================================================================
-  // 3. SAFE BATCH DELETION WITH FINANCIAL YEAR INTEGRITY CHECK
+  // 4. SAFE BATCH DELETION WITH FINANCIAL YEAR INTEGRITY CHECK
   // ===========================================================================
   void _showDeleteBatchDialog(PharoahWebManager webPh, Medicine med, BatchInfo b) {
     final activeFY = webPh.financialYear.isNotEmpty
@@ -351,7 +591,6 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
     );
 
     if (lockingRecords.isNotEmpty) {
-      // 🔒 DELETION BLOCKED: SHOW DETAILED AUDIT MODAL
       showDialog(
         context: context,
         builder: (c) => AlertDialog(
@@ -445,7 +684,6 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
       return;
     }
 
-    // 🟢 ZERO RECORDS IN ACTIVE FY: SAFE DELETION CONFIRMATION
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -529,7 +767,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // ===========================================================================
-  // 4. STOCK ADJUSTMENT DIALOG
+  // 5. STOCK ADJUSTMENT DIALOG
   // ===========================================================================
   void _showAdjustmentDialog(PharoahWebManager webPh, Medicine med, BatchInfo b) {
     final qtyC = TextEditingController();
@@ -621,7 +859,97 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // ===========================================================================
-  // 5. MAIN BUILD
+  // 6. EXCEL / CSV EXPORT ENGINE
+  // ===========================================================================
+  Future<void> _exportBatchesCsv(PharoahWebManager webPh, List<GlobalBatchItem> items, String activeFY) async {
+    final List<List<dynamic>> rows = [];
+    final shopName = (webPh.companyProfile['name'] ?? webPh.companyName ?? 'PHAROAH STORE').toString().toUpperCase();
+    final dateStr = DateFormat('dd/MM/yyyy HH:mm').format(DateTime.now());
+
+    rows.add(["STORE:", shopName, "", "EXPORT DATE:", dateStr, "", "ACTIVE FY:", activeFY]);
+    rows.add(["REPORT:", "CENTRAL BATCH MASTER INVENTORY AUDIT", "", "FILTER:", activeFilter, "", "TOTAL BATCHES:", items.length]);
+    rows.add([]); // empty row
+
+    // Headers
+    rows.add([
+      "SR NO",
+      "ITEM CODE",
+      "PRODUCT NAME",
+      "PACKING",
+      "BATCH NO",
+      "EXPIRY",
+      "STATUS",
+      "PUR. RATE (RS)",
+      "MRP (RS)",
+      "RATE A (RS)",
+      "RATE B (RS)",
+      "RATE C (RS)",
+      "LIVE STOCK QTY",
+      "VALUATION (RS)",
+      "FY AUDIT STATUS"
+    ]);
+
+    int sr = 1;
+    for (var it in items) {
+      final m = it.medicine;
+      final b = it.batch;
+      final purRate = b.purRate > 0 ? b.purRate : b.rate;
+      final valuation = b.qty > 0 ? (purRate * b.qty) : 0.0;
+
+      final locking = BatchCascadeEngine.checkActiveFYUsage(
+        medicine: m,
+        batchNo: b.batch,
+        activeFY: activeFY,
+        sales: webPh.sales,
+        purchases: webPh.purchases,
+        saleChallans: webPh.saleChallans,
+        purchaseChallans: webPh.purchaseChallans,
+        saleReturns: webPh.saleReturns,
+        purchaseReturns: webPh.purchaseReturns,
+      );
+
+      final fyStatus = locking.isNotEmpty ? "LOCKED (${locking.length} TXN)" : "DELETABLE ORPHAN";
+
+      rows.add([
+        sr++,
+        m.systemId.isNotEmpty ? m.systemId : m.id,
+        m.name.toUpperCase(),
+        m.packing,
+        b.batch,
+        b.exp,
+        b.status.isNotEmpty ? b.status.toUpperCase() : "ACTIVE",
+        purRate.toStringAsFixed(2),
+        b.mrp.toStringAsFixed(2),
+        b.rateA.toStringAsFixed(2),
+        b.rateB.toStringAsFixed(2),
+        b.rateC.toStringAsFixed(2),
+        b.qty.toInt(),
+        valuation.toStringAsFixed(2),
+        fyStatus,
+      ]);
+    }
+
+    final csv = const ListToCsvConverter().convert(rows);
+    final bytes = Uint8List.fromList(utf8.encode(csv));
+    final fileDate = DateFormat('ddMMMyy_HHmm').format(DateTime.now());
+
+    await FileSaver.instance.saveFile(
+      name: "Batch_Master_Audit_${activeFilter}_$fileDate",
+      bytes: bytes,
+      ext: "csv",
+      mimeType: MimeType.csv,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Exported ${items.length} batches to Excel CSV successfully!"),
+        backgroundColor: const Color(0xFF059669),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 7. MAIN BUILD
   // ===========================================================================
   @override
   Widget build(BuildContext context) {
@@ -635,17 +963,83 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
       );
     }
 
-    final query = searchQuery.trim().toLowerCase();
-    final matchingMeds = query.isEmpty
-        ? <Medicine>[]
-        : webPh.medicines.where((m) =>
-            m.name.toLowerCase().contains(query) ||
-            m.systemId.toLowerCase().contains(query)).take(8).toList();
+    // 1. Gather all batches across the entire inventory
+    final List<GlobalBatchItem> allBatches = [];
+    double totalStockUnits = 0.0;
+    double totalValuation = 0.0;
+    double expiryRiskValuation = 0.0;
+    int nearExpiryCount = 0;
 
-    List<BatchInfo> batches = [];
-    if (selectedMed != null) {
-      batches = webPh.batchHistory[selectedMed!.identityKey] ?? [];
+    for (var m in webPh.medicines) {
+      final list = webPh.batchHistory[m.identityKey];
+      if (list != null && list.isNotEmpty) {
+        for (var b in list) {
+          allBatches.add(GlobalBatchItem(medicine: m, batch: b));
+          if (b.qty > 0) {
+            totalStockUnits += b.qty;
+            final double val = (b.purRate > 0 ? b.purRate : b.rate) * b.qty;
+            totalValuation += val;
+            if (_isNearExpiry(b.exp) || _isExpired(b.exp)) {
+              nearExpiryCount++;
+              expiryRiskValuation += val;
+            }
+          }
+        }
+      }
     }
+
+    // 2. Filter batches based on Search Query and Active Filter Tab
+    final query = searchQuery.trim().toLowerCase();
+    List<GlobalBatchItem> filteredBatches = allBatches.where((item) {
+      final m = item.medicine;
+      final b = item.batch;
+
+      // Search match
+      if (query.isNotEmpty) {
+        final matchesName = m.name.toLowerCase().contains(query);
+        final matchesId = m.systemId.toLowerCase().contains(query);
+        final matchesBatch = b.batch.toLowerCase().contains(query);
+        final matchesExp = b.exp.toLowerCase().contains(query);
+        if (!matchesName && !matchesId && !matchesBatch && !matchesExp) {
+          return false;
+        }
+      }
+
+      // If Product Drill-down mode is active, filter only for selected medicine
+      if (!isGlobalExplorer && selectedMed != null) {
+        if (m.identityKey != selectedMed!.identityKey) return false;
+      }
+
+      // Filter tabs
+      switch (activeFilter) {
+        case "IN_STOCK":
+          return b.qty > 0;
+        case "ZERO_STOCK":
+          return b.qty <= 0;
+        case "EXPIRING":
+          return _isNearExpiry(b.exp);
+        case "EXPIRED":
+          return _isExpired(b.exp);
+        case "HOLD_BLOCKED":
+          return b.status == "Hold" || b.status == "Blocked";
+        case "FY_LOCKED":
+          final lockings = BatchCascadeEngine.checkActiveFYUsage(
+            medicine: m,
+            batchNo: b.batch,
+            activeFY: activeFY,
+            sales: webPh.sales,
+            purchases: webPh.purchases,
+            saleChallans: webPh.saleChallans,
+            purchaseChallans: webPh.purchaseChallans,
+            saleReturns: webPh.saleReturns,
+            purchaseReturns: webPh.purchaseReturns,
+          );
+          return lockings.isNotEmpty;
+        case "ALL":
+        default:
+          return true;
+      }
+    }).toList();
 
     return Container(
       width: double.infinity,
@@ -658,198 +1052,35 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // --- HEADER & BREADCRUMBS ---
-          Row(
-            children: [
-              IconButton(
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70, size: 20),
-                tooltip: "Back to Hub",
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        "CENTRAL BATCH MASTER",
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2563EB).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF2563EB).withOpacity(0.4)),
-                        ),
-                        child: Text(
-                          "ACTIVE FY: $activeFY",
-                          style: const TextStyle(color: Color(0xFF60A5FA), fontSize: 10, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    "Autonomous batch mirroring, cascade editing across all transactions, and FY integrity shielding.",
-                    style: TextStyle(color: Colors.white38, fontSize: 11),
-                  ),
-                ],
-              ),
-            ],
+          // --- TOP BREADCRUMB & CONTROLS ---
+          _buildTopBar(webPh, activeFY, filteredBatches),
+          const SizedBox(height: 16),
+
+          // --- VALUATION KPI STRIP ---
+          _buildKpiStrip(
+            totalBatches: allBatches.length,
+            totalStockUnits: totalStockUnits,
+            totalValuation: totalValuation,
+            expiryRiskValuation: expiryRiskValuation,
+            nearExpiryCount: nearExpiryCount,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
-          // --- PRODUCT SEARCH SECTION ---
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: searchController,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText: "Type product name or system ID to manage batches...",
-                          hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, color: Color(0xFF38BDF8), size: 18),
-                          suffixIcon: searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear, color: Colors.white54, size: 16),
-                                  onPressed: () {
-                                    searchController.clear();
-                                    setState(() => searchQuery = "");
-                                  },
-                                )
-                              : null,
-                          filled: true,
-                          fillColor: Colors.black26,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                        ),
-                        onChanged: (v) => setState(() => searchQuery = v),
-                      ),
-                    ),
-                    if (selectedMed != null) ...[
-                      const SizedBox(width: 12),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: () => _showAddBatchDialog(webPh, selectedMed!),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text("NEW BATCH", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF38BDF8),
-                          side: const BorderSide(color: Color(0xFF38BDF8)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: () => setState(() => _viewingTraceabilityMed = selectedMed),
-                        icon: const Icon(Icons.timeline_rounded, size: 18),
-                        label: const Text("TRACEABILITY", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
-                    ],
-                  ],
-                ),
+          // --- TOOLBAR (SEARCH + DUAL MODE SWITCH + FILTER TABS) ---
+          _buildFilterToolbar(webPh, filteredBatches),
+          const SizedBox(height: 16),
 
-                // Search Results Dropdown
-                if (matchingMeds.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: matchingMeds.length,
-                      separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
-                      itemBuilder: (c, i) {
-                        final m = matchingMeds[i];
-                        return ListTile(
-                          dense: true,
-                          title: Text(m.name, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                          subtitle: Text("ID: ${m.systemId} • Pack: ${m.packing} • Stock: ${m.stock.toInt()}", style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                          trailing: const Icon(Icons.chevron_right, color: Colors.white38, size: 16),
-                          onTap: () {
-                            setState(() {
-                              selectedMed = m;
-                              searchQuery = "";
-                              searchController.text = m.name;
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  ),
+          // --- PRODUCT FOCUS BANNER (IF IN DRILL-DOWN MODE) ---
+          if (!isGlobalExplorer && selectedMed != null) ...[
+            _buildProductFocusBanner(webPh, selectedMed!),
+            const SizedBox(height: 12),
+          ],
 
-                // Selected Product Summary Strip
-                if (selectedMed != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF2563EB).withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.medication_rounded, color: Color(0xFF38BDF8), size: 20),
-                          const SizedBox(width: 10),
-                          Text(
-                            selectedMed!.name,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                          const SizedBox(width: 16),
-                          Text(
-                            "PACK: ${selectedMed!.packing} • HSN: ${selectedMed!.hsnCode} • TOTAL STOCK: ${selectedMed!.stock.toInt()}",
-                            style: const TextStyle(color: Colors.white54, fontSize: 11),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white38, size: 16),
-                            onPressed: () {
-                              setState(() {
-                                selectedMed = null;
-                                searchController.clear();
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // --- BATCHES TABLE OR EMPTY STATE ---
+          // --- MAIN DATA TABLE OR EMPTY STATE ---
           Expanded(
-            child: selectedMed == null
-                ? _buildEmptyState()
-                : batches.isEmpty
-                    ? _buildNoBatchesState(webPh, selectedMed!)
-                    : _buildBatchesTable(webPh, selectedMed!, batches, activeFY),
+            child: filteredBatches.isEmpty
+                ? _buildEmptyState(webPh)
+                : _buildBatchesTable(webPh, filteredBatches, activeFY),
           ),
         ],
       ),
@@ -857,42 +1088,467 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // ===========================================================================
-  // 6. BATCHES DATA TABLE (ENTERPRISE SLATE)
+  // 8. TOP BAR & BREADCRUMBS
   // ===========================================================================
-  Widget _buildBatchesTable(PharoahWebManager webPh, Medicine med, List<BatchInfo> batches, String activeFY) {
+  Widget _buildTopBar(PharoahWebManager webPh, String activeFY, List<GlobalBatchItem> currentItems) {
+    return Row(
+      children: [
+        IconButton(
+          onPressed: widget.onBack,
+          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white70, size: 20),
+          tooltip: "Back to Masters Hub",
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  "CENTRAL BATCH COMMAND CENTER",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF2563EB).withOpacity(0.4)),
+                  ),
+                  child: Text(
+                    "ACTIVE FY: $activeFY",
+                    style: const TextStyle(color: Color(0xFF60A5FA), fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const Text(
+              "Autonomous batch mirroring, cascade editing across all transactions, pharma compliance, and FY integrity shielding.",
+              style: TextStyle(color: Colors.white38, fontSize: 11),
+            ),
+          ],
+        ),
+        const Spacer(),
+
+        // Export Button
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF34D399),
+            side: const BorderSide(color: Color(0xFF34D399)),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onPressed: () => _exportBatchesCsv(webPh, currentItems, activeFY),
+          icon: const Icon(Icons.download_rounded, size: 16),
+          label: const Text("EXPORT EXCEL (CSV)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        ),
+        const SizedBox(width: 10),
+
+        // New Batch Button
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2563EB),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onPressed: () => _showAddBatchDialog(webPh),
+          icon: const Icon(Icons.add, size: 16),
+          label: const Text("NEW BATCH", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // 9. VALUATION KPI STRIP
+  // ===========================================================================
+  Widget _buildKpiStrip({
+    required int totalBatches,
+    required double totalStockUnits,
+    required double totalValuation,
+    required double expiryRiskValuation,
+    required int nearExpiryCount,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: _kpiCard(
+            title: "TOTAL BATCHES",
+            value: NumberFormat("#,##0").format(totalBatches),
+            subtitle: "Across entire catalog",
+            icon: Icons.layers_outlined,
+            color: const Color(0xFF38BDF8),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _kpiCard(
+            title: "LIVE STOCK UNITS",
+            value: NumberFormat("#,##0").format(totalStockUnits),
+            subtitle: "Dispensable units",
+            icon: Icons.inventory_2_outlined,
+            color: const Color(0xFF34D399),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _kpiCard(
+            title: "TOTAL VALUATION",
+            value: "₹${NumberFormat("#,##,##0.00").format(totalValuation)}",
+            subtitle: "At Purchase Rate",
+            icon: Icons.account_balance_wallet_outlined,
+            color: const Color(0xFF60A5FA),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _kpiCard(
+            title: "EXPIRY RISK (≤90D)",
+            value: "₹${NumberFormat("#,##,##0.00").format(expiryRiskValuation)}",
+            subtitle: "$nearExpiryCount batch lots at risk",
+            icon: Icons.warning_amber_rounded,
+            color: nearExpiryCount > 0 ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _kpiCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Colors.white38, fontSize: 9),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 10. FILTER TOOLBAR & DUAL MODE SWITCH
+  // ===========================================================================
+  Widget _buildFilterToolbar(PharoahWebManager webPh, List<GlobalBatchItem> currentItems) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Search Input
+              Expanded(
+                child: TextField(
+                  controller: searchController,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: InputDecoration(
+                    hintText: isGlobalExplorer
+                        ? "Search by Batch No, Medicine Name, or System ID..."
+                        : "Search batches of '${selectedMed?.name ?? "selected product"}'...",
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                    prefixIcon: const Icon(Icons.search, color: Color(0xFF38BDF8), size: 16),
+                    suffixIcon: searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white54, size: 14),
+                            onPressed: () {
+                              searchController.clear();
+                              setState(() => searchQuery = "");
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: Colors.black26,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                  ),
+                  onChanged: (v) => setState(() => searchQuery = v),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Mode Toggle (Global Explorer vs Product Focus)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _modeButton(
+                      label: "GLOBAL EXPLORER",
+                      icon: Icons.public_rounded,
+                      isActive: isGlobalExplorer,
+                      onTap: () => setState(() {
+                        isGlobalExplorer = true;
+                      }),
+                    ),
+                    _modeButton(
+                      label: "PRODUCT FOCUS",
+                      icon: Icons.filter_center_focus_rounded,
+                      isActive: !isGlobalExplorer,
+                      onTap: () {
+                        if (selectedMed == null && webPh.medicines.isNotEmpty) {
+                          selectedMed = webPh.medicines.first;
+                        }
+                        setState(() {
+                          isGlobalExplorer = false;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Filter Chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip("ALL", "ALL BATCHES"),
+                _filterChip("IN_STOCK", "IN STOCK (>0)"),
+                _filterChip("ZERO_STOCK", "ZERO / SHORT (≤0)"),
+                _filterChip("EXPIRING", "EXPIRING SOON (≤90D)"),
+                _filterChip("EXPIRED", "EXPIRED"),
+                _filterChip("HOLD_BLOCKED", "HOLD / BLOCKED"),
+                _filterChip("FY_LOCKED", "FY-LOCKED (PROTECTED)"),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeButton({
+    required String label,
+    required IconData icon,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF2563EB) : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: isActive ? Colors.white : Colors.white54),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.white54,
+                fontSize: 10.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _filterChip(String filterKey, String label) {
+    final bool isSelected = activeFilter == filterKey;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: () => setState(() => activeFilter = filterKey),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF38BDF8).withOpacity(0.2) : Colors.black12,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: isSelected ? const Color(0xFF38BDF8) : Colors.white12),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? const Color(0xFF38BDF8) : Colors.white54,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 11. PRODUCT FOCUS BANNER (WHEN IN DRILL-DOWN MODE)
+  // ===========================================================================
+  Widget _buildProductFocusBanner(PharoahWebManager webPh, Medicine med) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2563EB).withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.medication_rounded, color: Color(0xFF38BDF8), size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      med.name,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        "ID: ${med.systemId}",
+                        style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  "PACK: ${med.packing} • CONV: ${med.conversion} • HSN: ${med.hsnCode} • TOTAL STOCK: ${med.stock.toInt()} Units",
+                  style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF38BDF8),
+              side: const BorderSide(color: Color(0xFF38BDF8)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () => setState(() => _viewingTraceabilityMed = med),
+            icon: const Icon(Icons.timeline_rounded, size: 14),
+            label: const Text("TRACEABILITY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 18),
+            tooltip: "Return to Global Explorer",
+            onPressed: () => setState(() {
+              isGlobalExplorer = true;
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // 12. BATCHES DATA TABLE (ENTERPRISE SLATE)
+  // ===========================================================================
+  Widget _buildBatchesTable(PharoahWebManager webPh, List<GlobalBatchItem> items, String activeFY) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white10),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: ListView(
           children: [
             // Table Header
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               color: const Color(0xFF0F172A),
               child: Row(
-                children: const [
-                  Expanded(flex: 3, child: Text("BATCH NUMBER", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("EXPIRY", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("PUR. RATE ₹", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("MRP ₹", style: _thStyle)),
-                  Expanded(flex: 3, child: Text("RATE A / B / C", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("LIVE STOCK", style: _thStyle)),
-                  Expanded(flex: 3, child: Text("FY AUDIT STATUS", style: _thStyle)),
-                  Expanded(flex: 3, child: Text("ACTIONS", style: _thStyle)),
+                children: [
+                  if (isGlobalExplorer)
+                    const Expanded(flex: 4, child: Text("PRODUCT NAME & ID", style: _thStyle)),
+                  const Expanded(flex: 3, child: Text("BATCH NO", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("EXPIRY", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("PUR. RATE ₹", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("MRP ₹", style: _thStyle)),
+                  const Expanded(flex: 3, child: Text("RATE A / B / C", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("LIVE STOCK", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("PHARMA STATUS", style: _thStyle)),
+                  const Expanded(flex: 3, child: Text("FY AUDIT STATUS", style: _thStyle)),
+                  const Expanded(flex: 3, child: Text("ACTIONS", style: _thStyle)),
                 ],
               ),
             ),
             const Divider(color: Colors.white12, height: 1),
 
             // Rows
-            ...batches.map((b) {
+            ...items.map((item) {
+              final m = item.medicine;
+              final b = item.batch;
+
               final lockingRecords = BatchCascadeEngine.checkActiveFYUsage(
-                medicine: med,
+                medicine: m,
                 batchNo: b.batch,
                 activeFY: activeFY,
                 sales: webPh.sales,
@@ -904,14 +1560,48 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               );
 
               final bool isLockedByFY = lockingRecords.isNotEmpty;
+              final bool nearExp = _isNearExpiry(b.exp);
+              final bool exp = _isExpired(b.exp);
+
+              Color statusColor = const Color(0xFF10B981);
+              if (b.status == "Hold") statusColor = const Color(0xFFF59E0B);
+              if (b.status == "Blocked") statusColor = const Color(0xFFEF4444);
 
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: const BoxDecoration(
                   border: Border(bottom: BorderSide(color: Colors.white10)),
                 ),
                 child: Row(
                   children: [
+                    // Product Column (in Global Explorer mode)
+                    if (isGlobalExplorer)
+                      Expanded(
+                        flex: 4,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              selectedMed = m;
+                              isGlobalExplorer = false;
+                            });
+                          },
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                m.name,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                "ID: ${m.systemId} • ${m.packing}",
+                                style: const TextStyle(color: Color(0xFF60A5FA), fontSize: 9.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
                     // Batch No
                     Expanded(
                       flex: 3,
@@ -922,14 +1612,16 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                             b.batch,
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
                           ),
-                          Text(
-                            b.status,
-                            style: TextStyle(
-                              color: b.status == "Active" ? const Color(0xFF34D399) : Colors.orangeAccent,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
+                          if (nearExp)
+                            const Text(
+                              "NEAR EXPIRY",
+                              style: TextStyle(color: Color(0xFFFBBF24), fontSize: 8.5, fontWeight: FontWeight.bold),
+                            )
+                          else if (exp)
+                            const Text(
+                              "EXPIRED",
+                              style: TextStyle(color: Color(0xFFF87171), fontSize: 8.5, fontWeight: FontWeight.bold),
                             ),
-                          ),
                         ],
                       ),
                     ),
@@ -939,7 +1631,11 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       flex: 2,
                       child: Text(
                         b.exp,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: exp ? const Color(0xFFF87171) : (nearExp ? const Color(0xFFFBBF24) : Colors.white70),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
 
@@ -947,8 +1643,8 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     Expanded(
                       flex: 2,
                       child: Text(
-                        "₹${b.purRate.toStringAsFixed(2)}",
-                        style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
+                        "₹${(b.purRate > 0 ? b.purRate : b.rate).toStringAsFixed(2)}",
+                        style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontFamily: 'monospace'),
                       ),
                     ),
 
@@ -957,7 +1653,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       flex: 2,
                       child: Text(
                         "₹${b.mrp.toStringAsFixed(2)}",
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
                       ),
                     ),
 
@@ -966,7 +1662,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       flex: 3,
                       child: Text(
                         "A: ${b.rateA.toStringAsFixed(1)} | B: ${b.rateB.toStringAsFixed(1)} | C: ${b.rateC.toStringAsFixed(1)}",
-                        style: const TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace'),
+                        style: const TextStyle(color: Colors.white54, fontSize: 9.5, fontFamily: 'monospace'),
                       ),
                     ),
 
@@ -974,7 +1670,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     Expanded(
                       flex: 2,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
                           color: b.qty > 0 ? const Color(0xFF059669).withOpacity(0.2) : Colors.red.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(6),
@@ -984,8 +1680,39 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                           style: TextStyle(
                             color: b.qty > 0 ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
                             fontWeight: FontWeight.w900,
-                            fontSize: 12,
+                            fontSize: 11.5,
                             fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Pharma Status (Clickable to switch)
+                    Expanded(
+                      flex: 2,
+                      child: InkWell(
+                        onTap: () => _showPharmaStatusDialog(webPh, m, b),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: statusColor.withOpacity(0.4)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(radius: 3, backgroundColor: statusColor),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  b.status.isNotEmpty ? b.status.toUpperCase() : "ACTIVE",
+                                  style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -995,9 +1722,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     Expanded(
                       flex: 3,
                       child: InkWell(
-                        onTap: () => _showDeleteBatchDialog(webPh, med, b),
+                        onTap: () => _showDeleteBatchDialog(webPh, m, b),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                           decoration: BoxDecoration(
                             color: isLockedByFY
                                 ? const Color(0xFFF59E0B).withOpacity(0.15)
@@ -1015,7 +1742,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                               Icon(
                                 isLockedByFY ? Icons.lock_rounded : Icons.check_circle_outline,
                                 color: isLockedByFY ? const Color(0xFFFBBF24) : const Color(0xFF34D399),
-                                size: 12,
+                                size: 11,
                               ),
                               const SizedBox(width: 4),
                               Flexible(
@@ -1023,7 +1750,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                                   isLockedByFY ? "LOCKED • ${lockingRecords.length} TXN" : "DELETABLE",
                                   style: TextStyle(
                                     color: isLockedByFY ? const Color(0xFFFBBF24) : const Color(0xFF34D399),
-                                    fontSize: 9.5,
+                                    fontSize: 9,
                                     fontWeight: FontWeight.bold,
                                   ),
                                   overflow: TextOverflow.ellipsis,
@@ -1041,19 +1768,19 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       child: Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.sync_alt_rounded, color: Color(0xFF60A5FA), size: 18),
-                            tooltip: "Cascade Rename & Edit",
-                            onPressed: () => _showCascadeEditDialog(webPh, med, b),
+                            icon: const Icon(Icons.sync_alt_rounded, color: Color(0xFF60A5FA), size: 16),
+                            tooltip: "Cascade Rename & Edit Rates",
+                            onPressed: () => _showCascadeEditDialog(webPh, m, b),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.exposure_rounded, color: Color(0xFFFBBF24), size: 18),
+                            icon: const Icon(Icons.exposure_rounded, color: Color(0xFFFBBF24), size: 16),
                             tooltip: "Stock Adjustment",
-                            onPressed: () => _showAdjustmentDialog(webPh, med, b),
+                            onPressed: () => _showAdjustmentDialog(webPh, m, b),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171), size: 18),
-                            tooltip: "Delete Batch (FY Protected)",
-                            onPressed: () => _showDeleteBatchDialog(webPh, med, b),
+                            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171), size: 16),
+                            tooltip: "Delete Batch (FY Guarded)",
+                            onPressed: () => _showDeleteBatchDialog(webPh, m, b),
                           ),
                         ],
                       ),
@@ -1069,44 +1796,39 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // ===========================================================================
-  // 7. EMPTY STATES & HELPERS
+  // 13. EMPTY STATE & INPUT HELPER
   // ===========================================================================
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          Icon(Icons.inventory_2_outlined, color: Colors.white24, size: 54),
-          SizedBox(height: 12),
-          Text(
-            "Select or search a medicine above to inspect and manage its batches.",
-            style: TextStyle(color: Colors.white38, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoBatchesState(PharoahWebManager webPh, Medicine med) {
+  Widget _buildEmptyState(PharoahWebManager webPh) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.layers_clear_outlined, color: Colors.white24, size: 48),
-          const SizedBox(height: 10),
-          Text(
-            "No active batches found for '${med.name}'",
-            style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
-          ),
+          const Icon(Icons.search_off_rounded, color: Colors.white24, size: 52),
           const SizedBox(height: 12),
+          Text(
+            "No batches match '$searchQuery' under filter '$activeFilter'",
+            style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            "Try selecting a different filter tab or clear your search term.",
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+          const SizedBox(height: 14),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2563EB),
               foregroundColor: Colors.white,
             ),
-            onPressed: () => _showAddBatchDialog(webPh, med),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text("REGISTER FIRST BATCH"),
+            onPressed: () {
+              setState(() {
+                searchQuery = "";
+                searchController.clear();
+                activeFilter = "ALL";
+              });
+            },
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text("RESET FILTERS"),
           ),
         ],
       ),
@@ -1140,7 +1862,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
 
   static const _thStyle = TextStyle(
     color: Colors.white54,
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: FontWeight.bold,
     letterSpacing: 0.5,
   );
