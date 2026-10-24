@@ -258,3 +258,5 @@ class BatchDeltaMergeModule {
     }
   }
 }
+
+// fix trigger
