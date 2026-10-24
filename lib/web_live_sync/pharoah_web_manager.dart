@@ -1,3 +1,4 @@
+import '../sync_core/outbox/sync_queue_manager.dart';
 import 'sub_views/web_accounts/services/web_voucher_d1_sync_service.dart';
 import 'sub_views/web_accounts/services/web_accounts_calculator.dart';
 import "../logic/master_cascade_service.dart";
@@ -917,7 +918,12 @@ class PharoahWebManager with ChangeNotifier {
 
     var cData = decodeJson('config.json');
     if (cData != null && cData is Map<String, dynamic>) {
-      appConfig = AppConfig.fromMap(cData);
+      final incomingCfg = AppConfig.fromMap(cData);
+      if (appConfig.updatedAt == 0 ||
+          incomingCfg.updatedAt >= appConfig.updatedAt ||
+          incomingCfg.version > appConfig.version) {
+        appConfig = incomingCfg;
+      }
     }
 
     // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-764): Never wipe in-flight local batch edits!
@@ -2806,6 +2812,28 @@ class PharoahWebManager with ChangeNotifier {
         pushUpdatedDataToCloud();
       }
     }
+  }
+
+  void updateAppConfig(AppConfig c) {
+    c.version += 1;
+    c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    appConfig = c;
+    if (activeStoreToken.isNotEmpty) {
+      SyncQueueManager.enqueueMutation(
+        syncId: 'APP_CONFIG_MASTER',
+        storeToken: activeStoreToken.trim().toUpperCase(),
+        docType: 'CONFIG',
+        currentVersion: c.version,
+        isDelete: false,
+        rawPayload: c.toMap(),
+      );
+    }
+    _autoSyncService.triggerAutoSync(
+      action: 'CONFIG_UPDATED',
+      entityId: 'APP_CONFIG_MASTER',
+    );
+    notifyListeners();
+    pushUpdatedDataToCloud();
   }
 
   void changeBatchStatus({

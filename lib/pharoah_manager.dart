@@ -1804,7 +1804,28 @@ void registerBatchActivity({
 
   void updateSystemUser(SystemUser u) { int i = systemUsers.indexWhere((x) => x.id == u.id); if(i != -1) { systemUsers[i] = u; save(); } }
   void updateNumberingSeries(NumberingSeries ns) { int i = numberingSeries.indexWhere((x) => x.id == ns.id); if(i != -1) { numberingSeries[i] = ns; save(); } }
-  void updateAppConfig(AppConfig c) { config = c; save(); notifyListeners(); }
+  void updateAppConfig(AppConfig c) {
+    c.version += 1;
+    c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    config = c;
+    if (activeCompany != null && activeCompany!.id.isNotEmpty) {
+      SyncQueueManager.enqueueMutation(
+        syncId: 'APP_CONFIG_MASTER',
+        storeToken: activeCompany!.id.trim().toUpperCase(),
+        docType: 'CONFIG',
+        currentVersion: c.version,
+        isDelete: false,
+        rawPayload: c.toMap(),
+      );
+    }
+    save();
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: 'CONFIG_UPDATED',
+      entityId: 'APP_CONFIG_MASTER',
+    );
+    notifyListeners();
+  }
   void updateChequeStatus(String id, String s, String r) { int i = cheques.indexWhere((c) => c.id == id); if(i != -1) { cheques[i].status = s; cheques[i].remark = r; save(); } }
   
   void cancelReturn(String id, bool isSaleReturn) {

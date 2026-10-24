@@ -20,10 +20,14 @@ class _BatchMasterViewState extends State<BatchMasterView> {
   Medicine? selectedMed;
   String searchQuery = "";
   final TextEditingController searchController = TextEditingController();
+  final TextEditingController batchFilterController = TextEditingController();
+  String batchSearchQuery = "";
+  String selectedBatchQuickFilter = "ALL"; // ALL, ACTIVE, ZERO, ADJUSTED
 
   @override
   void dispose() {
     searchController.dispose();
+    batchFilterController.dispose();
     super.dispose();
   }
 
@@ -31,14 +35,16 @@ class _BatchMasterViewState extends State<BatchMasterView> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (c) => Scaffold(
-          body: SafeArea(
-            child: BatchAuditWorkbench(
-              medicine: med,
-              batches: ph.batchHistory[med.identityKey] ?? [],
-              initialBatchNo: batchNo,
-              onBack: () => Navigator.pop(c),
-              isWebTheme: false,
+        builder: (c) => Consumer<PharoahManager>(
+          builder: (ctx, livePh, _) => Scaffold(
+            body: SafeArea(
+              child: BatchAuditWorkbench(
+                medicine: med,
+                batches: livePh.batchHistory[med.identityKey] ?? [],
+                initialBatchNo: batchNo,
+                onBack: () => Navigator.pop(c),
+                isWebTheme: false,
+              ),
             ),
           ),
         ),
@@ -842,9 +848,9 @@ class _BatchMasterViewState extends State<BatchMasterView> {
   }
 
   Widget _buildBatchList(PharoahManager ph, Medicine med, String activeFY) {
-    List<BatchInfo> batches = ph.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> allBatches = ph.batchHistory[med.identityKey] ?? [];
 
-    if (batches.isEmpty) {
+    if (allBatches.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -864,11 +870,108 @@ class _BatchMasterViewState extends State<BatchMasterView> {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: batches.length,
-      itemBuilder: (c, i) {
-        final b = batches[i];
+    final List<BatchInfo> batches = allBatches.where((b) {
+      if (selectedBatchQuickFilter == "ACTIVE" && b.qty <= 0) return false;
+      if (selectedBatchQuickFilter == "ZERO" && b.qty != 0) return false;
+      if (selectedBatchQuickFilter == "ADJUSTED" && b.adjustmentHistory.isEmpty && b.adjustmentQty == 0) return false;
+      if (batchSearchQuery.isNotEmpty) {
+        final q = batchSearchQuery.toLowerCase();
+        final match = b.batch.toLowerCase().contains(q) ||
+            b.exp.toLowerCase().contains(q) ||
+            b.mrp.toStringAsFixed(2).contains(q) ||
+            b.purRate.toStringAsFixed(2).contains(q);
+        if (!match) return false;
+      }
+      return true;
+    }).toList();
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+          ),
+          child: Column(
+            children: [
+              SizedBox(
+                height: 38,
+                child: TextField(
+                  controller: batchFilterController,
+                  onChanged: (v) => setState(() => batchSearchQuery = v.trim()),
+                  decoration: InputDecoration(
+                    hintText: "Search batch no, expiry (MM/YY) or MRP...",
+                    hintStyle: const TextStyle(fontSize: 12),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Colors.indigo),
+                    suffixIcon: batchSearchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () {
+                              batchFilterController.clear();
+                              setState(() => batchSearchQuery = "");
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _batchFilterChip("ALL", "All Batches (${allBatches.length})"),
+                    const SizedBox(width: 6),
+                    _batchFilterChip("ACTIVE", "In Stock (${allBatches.where((b) => b.qty > 0).length})"),
+                    const SizedBox(width: 6),
+                    _batchFilterChip("ZERO", "Zero Stock (${allBatches.where((b) => b.qty <= 0).length})"),
+                    const SizedBox(width: 6),
+                    _batchFilterChip("ADJUSTED", "Adjusted (${allBatches.where((b) => b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0).length})"),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: batches.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.search_off_rounded, color: Colors.grey.shade400, size: 42),
+                      const SizedBox(height: 6),
+                      Text("No batches match your filter", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                      TextButton(
+                        onPressed: () {
+                          batchFilterController.clear();
+                          setState(() {
+                            batchSearchQuery = "";
+                            selectedBatchQuickFilter = "ALL";
+                          });
+                        },
+                        child: const Text("RESET BATCH FILTER"),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: batches.length,
+                  itemBuilder: (c, i) {
+                    final b = batches[i];
         final lockingRecords = BatchCascadeEngine.checkActiveFYUsage(
           medicine: med,
           batchNo: b.batch,
@@ -965,7 +1068,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                     _actionBtn("ADJUST", Icons.exposure, Colors.orange.shade800, () => _showAdjustmentDialog(ph, med, b)),
                     if (ph.config.developerAllowBatchHistoryToUser && ph.config.userEnableBatchHistory) ...[
                       const SizedBox(width: 8),
-                      _actionBtn("AUDIT", Icons.table_chart_rounded, const Color(0xFF0F766E), () => _openAuditWorkbench(ph, med, b.batch)),
+                      _actionBtn(b.adjustmentHistory.isNotEmpty ? "AUDIT (${b.adjustmentHistory.length})" : "AUDIT", Icons.table_chart_rounded, const Color(0xFF0F766E), () => _openAuditWorkbench(ph, med, b.batch)),
                     ],
                     const SizedBox(width: 8),
                     _actionBtn("DELETE", Icons.delete_outline, Colors.red.shade700, () => _showDeleteBatchDialog(ph, med, b)),
@@ -976,6 +1079,33 @@ class _BatchMasterViewState extends State<BatchMasterView> {
           ),
         );
       },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _batchFilterChip(String key, String label) {
+    final bool isSel = selectedBatchQuickFilter == key;
+    return InkWell(
+      onTap: () => setState(() => selectedBatchQuickFilter = key),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSel ? Colors.indigo.shade900 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: isSel ? Colors.indigo.shade900 : Colors.grey.shade300),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSel ? Colors.white : Colors.black87,
+            fontSize: 10.5,
+            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 

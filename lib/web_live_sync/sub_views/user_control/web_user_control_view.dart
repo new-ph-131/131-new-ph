@@ -27,6 +27,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
 
   bool allowBatchHistoryToUser = false;
   bool userEnableBatchHistory = true;
+  int _lastSyncedVersion = -1;
+  int _lastSyncedUpdatedAt = -1;
 
   @override
   void initState() {
@@ -35,6 +37,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     allowBatchHistoryToUser = webPh.appConfig.developerAllowBatchHistoryToUser;
     userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
     userPinController.text = webPh.appConfig.userMasterPin;
+    _lastSyncedVersion = webPh.appConfig.version;
+    _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
   }
 
   @override
@@ -86,8 +90,9 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     if (userPinController.text.trim().isNotEmpty) {
       webPh.appConfig.userMasterPin = userPinController.text.trim();
     }
-    webPh.pushUpdatedDataToCloud();
-    webPh.notifyListeners();
+    webPh.updateAppConfig(webPh.appConfig);
+    _lastSyncedVersion = webPh.appConfig.version;
+    _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -126,8 +131,9 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     }
 
     webPh.appConfig.developerPassword = n;
-    webPh.pushUpdatedDataToCloud();
-    webPh.notifyListeners();
+    webPh.updateAppConfig(webPh.appConfig);
+    _lastSyncedVersion = webPh.appConfig.version;
+    _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
 
     currentDevPassController.clear();
     newDevPassController.clear();
@@ -147,8 +153,9 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     if (userPinController.text.trim().isNotEmpty) {
       webPh.appConfig.userMasterPin = userPinController.text.trim();
     }
-    webPh.pushUpdatedDataToCloud();
-    webPh.notifyListeners();
+    webPh.updateAppConfig(webPh.appConfig);
+    _lastSyncedVersion = webPh.appConfig.version;
+    _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -161,6 +168,12 @@ class _WebUserControlViewState extends State<WebUserControlView> {
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
+    if (webPh.appConfig.version != _lastSyncedVersion || webPh.appConfig.updatedAt != _lastSyncedUpdatedAt) {
+      allowBatchHistoryToUser = webPh.appConfig.developerAllowBatchHistoryToUser;
+      userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
+      _lastSyncedVersion = webPh.appConfig.version;
+      _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+    }
 
     return Container(
       color: const Color(0xFF0F172A),
@@ -468,7 +481,13 @@ class _WebUserControlViewState extends State<WebUserControlView> {
                     ),
                     value: allowBatchHistoryToUser,
                     activeColor: const Color(0xFF10B981),
-                    onChanged: (val) => setState(() => allowBatchHistoryToUser = val),
+                    onChanged: (val) {
+                        setState(() => allowBatchHistoryToUser = val);
+                        webPh.appConfig.developerAllowBatchHistoryToUser = val;
+                        webPh.updateAppConfig(webPh.appConfig);
+                        _lastSyncedVersion = webPh.appConfig.version;
+                        _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+                      },
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
@@ -798,7 +817,13 @@ class _WebUserControlViewState extends State<WebUserControlView> {
                       ),
                       value: userEnableBatchHistory,
                       activeColor: const Color(0xFF10B981),
-                      onChanged: (val) => setState(() => userEnableBatchHistory = val),
+                      onChanged: (val) {
+                          setState(() => userEnableBatchHistory = val);
+                          webPh.appConfig.userEnableBatchHistory = val;
+                          webPh.updateAppConfig(webPh.appConfig);
+                          _lastSyncedVersion = webPh.appConfig.version;
+                          _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+                        },
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(

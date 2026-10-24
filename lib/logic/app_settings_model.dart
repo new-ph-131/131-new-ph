@@ -85,6 +85,8 @@ class AppConfig {
     this.userMasterPin = "1234",
     this.developerAllowBatchHistoryToUser = false,
     this.userEnableBatchHistory = true,
+    this.version = 1,
+    this.updatedAt = 0,
   });
 
   Map<String, dynamic> toMap() {

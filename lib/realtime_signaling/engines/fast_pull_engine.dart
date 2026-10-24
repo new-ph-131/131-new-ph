@@ -402,6 +402,9 @@ class FastPullEngine {
         await File('$workingDir/bats.json').writeAsString(
           jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
         );
+        await File('$workingDir/config.json').writeAsString(
+          jsonEncode(ph.config.toMap()),
+        );
 
         await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
         await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);

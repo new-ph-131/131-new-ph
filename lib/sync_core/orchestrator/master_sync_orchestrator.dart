@@ -1,3 +1,4 @@
+import '../../logic/app_settings_model.dart';
 // FILE: lib/sync_core/orchestrator/master_sync_orchestrator.dart
 import 'package:flutter/foundation.dart';
 import '../d1_sales_ledger_service.dart';
@@ -295,6 +296,18 @@ class MasterSyncOrchestrator {
             phApp.notifyListeners();
           }
           break;
+        case 'CONFIG':
+        case 'APP_CONFIG':
+          final incomingCfg = AppConfig.fromMap(envelope.billData);
+          if (phApp.config.updatedAt == 0 ||
+              incomingCfg.updatedAt >= phApp.config.updatedAt ||
+              incomingCfg.version >= phApp.config.version) {
+            phApp.config = incomingCfg;
+            mutated = true;
+            phApp.save();
+            phApp.notifyListeners();
+          }
+          break;
         default:
           debugPrint("⚠ [MasterSyncOrchestrator] Unknown document type: $docType");
       }
@@ -517,6 +530,17 @@ class MasterSyncOrchestrator {
           }
           if (mutated) {
             phWeb.rebuildInventory();
+            phWeb.notifyListeners();
+          }
+          break;
+        case 'CONFIG':
+        case 'APP_CONFIG':
+          final incomingCfg = AppConfig.fromMap(envelope.billData);
+          if (phWeb.appConfig.updatedAt == 0 ||
+              incomingCfg.updatedAt >= phWeb.appConfig.updatedAt ||
+              incomingCfg.version >= phWeb.appConfig.version) {
+            phWeb.appConfig = incomingCfg;
+            mutated = true;
             phWeb.notifyListeners();
           }
           break;

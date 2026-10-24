@@ -26,9 +26,17 @@ class ProductBatchTraceabilityScreen extends StatefulWidget {
 }
 
 class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilityScreen> {
-  String selectedFilter = 'ALL'; // ALL, ACTIVE, EXPIRED, ZERO
+  String selectedFilter = 'ALL'; // ALL, ACTIVE, ZERO, ADJUSTED
   bool _isViewingAuditHistory = false;
   String? _targetAuditBatchNo;
+  final TextEditingController _batchSearchCtrl = TextEditingController();
+  String _batchSearchQuery = '';
+
+  @override
+  void dispose() {
+    _batchSearchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,10 +49,19 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
     double totalPurVal = batches.fold(0.0, (sum, b) => sum + (b.qty * b.purRate));
     double totalMrpVal = batches.fold(0.0, (sum, b) => sum + (b.qty * b.mrp));
 
-    // Filtered batches
+    // Filtered batches (with Batch Search & Adjusted Filter)
     final filteredBatches = batches.where((b) {
-      if (selectedFilter == 'ACTIVE') return b.qty > 0;
-      if (selectedFilter == 'ZERO') return b.qty == 0;
+      if (selectedFilter == 'ACTIVE' && b.qty <= 0) return false;
+      if (selectedFilter == 'ZERO' && b.qty != 0) return false;
+      if (selectedFilter == 'ADJUSTED' && b.adjustmentHistory.isEmpty && b.adjustmentQty == 0) return false;
+      if (_batchSearchQuery.isNotEmpty) {
+        final q = _batchSearchQuery.toLowerCase();
+        final match = b.batch.toLowerCase().contains(q) ||
+            b.exp.toLowerCase().contains(q) ||
+            b.mrp.toStringAsFixed(2).contains(q) ||
+            b.purRate.toStringAsFixed(2).contains(q);
+        if (!match) return false;
+      }
       return true;
     }).toList();
 
@@ -63,9 +80,17 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
       );
     }
 
-    return Container(
-      color: const Color(0xFF0F172A),
-      child: Column(
+    return LayoutBuilder(
+      builder: (context, outerConstraints) {
+        final double boundedHeight = outerConstraints.hasBoundedHeight
+            ? outerConstraints.maxHeight
+            : (MediaQuery.of(context).size.height - 135.0).clamp(540.0, 1100.0);
+        return SizedBox(
+          width: double.infinity,
+          height: boundedHeight,
+          child: Container(
+            color: const Color(0xFF0F172A),
+            child: Column(
         children: [
           // 🏆 TOP HEADER BAR
           Container(
@@ -182,24 +207,66 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                 const SizedBox(width: 16),
                 _metricCard("Active Batches", "${batches.where((b) => b.qty > 0).length} / ${batches.length}", Icons.qr_code_rounded, const Color(0xFF8B5CF6)),
                 const Spacer(),
+                SizedBox(
+                  width: 230,
+                  height: 34,
+                  child: TextField(
+                    controller: _batchSearchCtrl,
+                    onChanged: (v) => setState(() => _batchSearchQuery = v.trim()),
+                    style: const TextStyle(color: Colors.white, fontSize: 11.5),
+                    decoration: InputDecoration(
+                      hintText: "Search Batch No, Expiry, MRP...",
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 11),
+                      prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF38BDF8), size: 16),
+                      suffixIcon: _batchSearchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, color: Colors.white54, size: 14),
+                              onPressed: () {
+                                _batchSearchCtrl.clear();
+                                setState(() => _batchSearchQuery = "");
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: const Color(0xFF0F172A),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 ToggleButtons(
-                  isSelected: [selectedFilter == 'ALL', selectedFilter == 'ACTIVE', selectedFilter == 'ZERO'],
+                  isSelected: [
+                    selectedFilter == 'ALL',
+                    selectedFilter == 'ACTIVE',
+                    selectedFilter == 'ZERO',
+                    selectedFilter == 'ADJUSTED',
+                  ],
                   onPressed: (idx) {
                     setState(() {
                       if (idx == 0) selectedFilter = 'ALL';
                       else if (idx == 1) selectedFilter = 'ACTIVE';
-                      else selectedFilter = 'ZERO';
+                      else if (idx == 2) selectedFilter = 'ZERO';
+                      else selectedFilter = 'ADJUSTED';
                     });
                   },
                   color: Colors.white60,
                   selectedColor: Colors.white,
                   fillColor: const Color(0xFF2563EB),
                   borderRadius: BorderRadius.circular(8),
-                  constraints: const BoxConstraints(minHeight: 32, minWidth: 70),
+                  constraints: const BoxConstraints(minHeight: 32, minWidth: 66),
                   children: const [
                     Text("All", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                     Text("Active > 0", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    Text("Zero Stock", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    Text("Zero", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    Text("Adjusted", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ],
@@ -377,7 +444,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                                                 _targetAuditBatchNo = b.batch;
                                               }),
                                               icon: const Icon(Icons.history_edu_rounded, size: 12),
-                                              label: const Text("AUDIT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                              label: Text(b.adjustmentHistory.isNotEmpty ? "AUDIT (${b.adjustmentHistory.length})" : "AUDIT", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                                             ),
                                             const SizedBox(width: 6),
                                           ],
@@ -414,6 +481,9 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
           ),
         ],
       ),
+          ),
+        );
+      },
     );
   }
 

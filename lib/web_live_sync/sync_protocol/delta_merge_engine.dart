@@ -1,3 +1,4 @@
+import '../../logic/app_settings_model.dart';
 import '../../sync_core/modules/batch_delta_merge_module.dart';
 import "../../sync_core/modules/medicine_sync_module.dart";
 import "../../../sync_core/modules/party_sync_module.dart";
@@ -342,7 +343,34 @@ class DeltaMergeEngine {
       );
     }
 
-    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats;
+    // 🛡️ Merge AppConfig (config.json) with LWW & Field Diffing (#PH-REV-765)
+    bool cConfig = false;
+    final rawConfigJson = cloudFiles['config.json'];
+    if (rawConfigJson != null) {
+      try {
+        final dynamic decodedCfg = rawConfigJson is String ? jsonDecode(rawConfigJson) : rawConfigJson;
+        if (decodedCfg is Map) {
+          final incomingCfg = AppConfig.fromMap(Map<String, dynamic>.from(decodedCfg));
+          final localCfg = ph.config;
+          final bool isDiff =
+              incomingCfg.developerPassword != localCfg.developerPassword ||
+              incomingCfg.userMasterPin != localCfg.userMasterPin ||
+              incomingCfg.developerAllowBatchHistoryToUser != localCfg.developerAllowBatchHistoryToUser ||
+              incomingCfg.userEnableBatchHistory != localCfg.userEnableBatchHistory ||
+              incomingCfg.billFormat != localCfg.billFormat ||
+              incomingCfg.defaultPrintSize != localCfg.defaultPrintSize ||
+              incomingCfg.invoiceTerms != localCfg.invoiceTerms;
+          if (incomingCfg.updatedAt > localCfg.updatedAt ||
+              incomingCfg.version > localCfg.version ||
+              (localCfg.updatedAt == 0 && isDiff)) {
+            ph.config = incomingCfg;
+            cConfig = true;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig;
     if (anyChanged) {
       try {
         ph.autoHydrateBatchHistoryFromTransactions();

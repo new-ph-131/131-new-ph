@@ -29,6 +29,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
   // Working local state
   bool allowBatchHistoryToUser = false;
   bool userEnableBatchHistory = true;
+  int _lastSyncedVersion = -1;
+  int _lastSyncedUpdatedAt = -1;
 
   @override
   void initState() {
@@ -37,6 +39,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
     allowBatchHistoryToUser = ph.config.developerAllowBatchHistoryToUser;
     userEnableBatchHistory = ph.config.userEnableBatchHistory;
     userPinController.text = ph.config.userMasterPin;
+    _lastSyncedVersion = ph.config.version;
+    _lastSyncedUpdatedAt = ph.config.updatedAt;
   }
 
   @override
@@ -89,6 +93,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
       ph.config.userMasterPin = userPinController.text.trim();
     }
     ph.updateAppConfig(ph.config);
+    _lastSyncedVersion = ph.config.version;
+    _lastSyncedUpdatedAt = ph.config.updatedAt;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -128,6 +134,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
 
     ph.config.developerPassword = n;
     ph.updateAppConfig(ph.config);
+    _lastSyncedVersion = ph.config.version;
+    _lastSyncedUpdatedAt = ph.config.updatedAt;
 
     currentDevPassController.clear();
     newDevPassController.clear();
@@ -148,6 +156,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
       ph.config.userMasterPin = userPinController.text.trim();
     }
     ph.updateAppConfig(ph.config);
+    _lastSyncedVersion = ph.config.version;
+    _lastSyncedUpdatedAt = ph.config.updatedAt;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -160,6 +170,12 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
+    if (ph.config.version != _lastSyncedVersion || ph.config.updatedAt != _lastSyncedUpdatedAt) {
+      allowBatchHistoryToUser = ph.config.developerAllowBatchHistoryToUser;
+      userEnableBatchHistory = ph.config.userEnableBatchHistory;
+      _lastSyncedVersion = ph.config.version;
+      _lastSyncedUpdatedAt = ph.config.updatedAt;
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
@@ -399,7 +415,13 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
                       ),
                       value: allowBatchHistoryToUser,
                       activeColor: const Color(0xFF059669),
-                      onChanged: (val) => setState(() => allowBatchHistoryToUser = val),
+                      onChanged: (val) {
+                        setState(() => allowBatchHistoryToUser = val);
+                        ph.config.developerAllowBatchHistoryToUser = val;
+                        ph.updateAppConfig(ph.config);
+                        _lastSyncedVersion = ph.config.version;
+                        _lastSyncedUpdatedAt = ph.config.updatedAt;
+                      },
                     ),
                     const SizedBox(height: 10),
                     ElevatedButton.icon(
@@ -710,7 +732,13 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
                         ),
                         value: userEnableBatchHistory,
                         activeColor: const Color(0xFF059669),
-                        onChanged: (val) => setState(() => userEnableBatchHistory = val),
+                        onChanged: (val) {
+                          setState(() => userEnableBatchHistory = val);
+                          ph.config.userEnableBatchHistory = val;
+                          ph.updateAppConfig(ph.config);
+                          _lastSyncedVersion = ph.config.version;
+                          _lastSyncedUpdatedAt = ph.config.updatedAt;
+                        },
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton.icon(
