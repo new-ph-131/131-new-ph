@@ -118,6 +118,8 @@ class BatchInfo {
   double rateCFormula;
   String appliedRateType;
   String status; // 'Active', 'Hold', 'Blocked'
+  int version;
+  int updatedAt;
 
   BatchInfo({
     required this.batch, 
@@ -139,6 +141,8 @@ class BatchInfo {
     this.rateCFormula = 0.0,
     this.appliedRateType = "A",
     this.status = "Active",
+    this.version = 1,
+    this.updatedAt = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -161,6 +165,8 @@ class BatchInfo {
     'rateCFormula': rateCFormula,
     'appliedRateType': appliedRateType,
     'status': status,
+    'version': version,
+    'updatedAt': updatedAt,
   };
 
   factory BatchInfo.fromMap(Map<String, dynamic> map) => BatchInfo(
@@ -183,6 +189,8 @@ class BatchInfo {
     rateCFormula: (map['rateCFormula'] ?? 0.0).toDouble(),
     appliedRateType: map['appliedRateType'] ?? "A",
     status: map['status'] ?? "Active",
+    version: map['version'] is int ? map['version'] : (int.tryParse(map['version']?.toString() ?? "1") ?? 1),
+    updatedAt: map['updatedAt'] is int ? map['updatedAt'] : (int.tryParse(map['updatedAt']?.toString() ?? "0") ?? 0),
   ); 
 }
 

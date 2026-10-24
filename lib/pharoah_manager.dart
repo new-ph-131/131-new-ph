@@ -16,6 +16,8 @@ import 'sync_core/modules/voucher_sync_module.dart';
 import 'sync_core/modules/returns_sync_module.dart';
 import 'sync_core/modules/credit_note_sync_module.dart';
 import 'sync_core/modules/debit_note_sync_module.dart';
+import 'sync_core/modules/batch_sync_module.dart';
+import 'sync_core/modules/batch_delta_merge_module.dart';
 import 'event_sync_lab/workflow/lab_sync_orchestrator.dart';
 // FILE: lib/pharoah_manager.dart (FULLY INTEGRATED, COMPILE-SAFE VERSION)
 
@@ -1301,8 +1303,50 @@ void registerBatchActivity({
     double netMonthlySale = grossSaleQty - returnedQty;
     return netMonthlySale < 0 ? 0 : netMonthlySale;
   }
-  void adjustBatchStock({required String medId, required String batchNo, required double adjQty, required String reason}) { if (batchHistory.containsKey(medId)) { try { var b = batchHistory[medId]!.firstWhere((x) => x.batch == batchNo); b.adjustmentQty += adjQty; b.adjReason = reason; save().then((_) => loadAllData()); } catch (e) {} } }
-  void updateBatchMetadata({required String medId, required String batchNo, required String newExp, required double newMrp, required double newRate}) { if (batchHistory.containsKey(medId)) { try { var b = batchHistory[medId]!.firstWhere((x) => x.batch == batchNo); b.exp = newExp; b.mrp = newMrp; b.rate = newRate; save().then((_) => loadAllData()); } catch (e) {} } }
+  void adjustBatchStock({required String medId, required String batchNo, required double adjQty, required String reason}) {
+    if (batchHistory.containsKey(medId)) {
+      try {
+        var b = batchHistory[medId]!.firstWhere((x) => x.batch == batchNo);
+        b.adjustmentQty += adjQty;
+        b.adjReason = reason;
+        b.version += 1;
+        b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+        if (activeCompany != null && activeCompany!.id.isNotEmpty) {
+          BatchSyncModule.onBatchSaved(
+            batch: b,
+            medIdentityKey: medId,
+            storeToken: activeCompany!.id,
+            isDelete: false,
+          );
+        }
+        rebuildInventory();
+        save().then((_) => loadAllData());
+      } catch (e) {}
+    }
+  }
+
+  void updateBatchMetadata({required String medId, required String batchNo, required String newExp, required double newMrp, required double newRate}) {
+    if (batchHistory.containsKey(medId)) {
+      try {
+        var b = batchHistory[medId]!.firstWhere((x) => x.batch == batchNo);
+        b.exp = newExp;
+        b.mrp = newMrp;
+        b.rate = newRate;
+        b.version += 1;
+        b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+        if (activeCompany != null && activeCompany!.id.isNotEmpty) {
+          BatchSyncModule.onBatchSaved(
+            batch: b,
+            medIdentityKey: medId,
+            storeToken: activeCompany!.id,
+            isDelete: false,
+          );
+        }
+        rebuildInventory();
+        save().then((_) => loadAllData());
+      } catch (e) {}
+    }
+  }
   
   // ===========================================================================
   // 💹 ADVANCED ACCOUNTING & VOUCHER ENGINE

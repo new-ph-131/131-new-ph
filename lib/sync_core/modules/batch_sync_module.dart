@@ -6,7 +6,7 @@ import '../models/sync_envelope.dart';
 import '../outbox/sync_queue_manager.dart';
 import '../d1_sales_ledger_service.dart';
 
-/// 🛡️ BATCH MASTER SYNC MODULE (#PH-REV-756)
+/// 🛡️ BATCH MASTER SYNC MODULE (#PH-REV-764)
 /// Handles autonomous batch mirroring, LWW monotonic versioning,
 /// D1 Outbox integration, and Tombstone deletion shielding across App & Web.
 class BatchSyncModule {
@@ -31,12 +31,13 @@ class BatchSyncModule {
     if (storeToken.trim().isEmpty || medIdentityKey.trim().isEmpty || batch.batch.trim().isEmpty) return;
 
     final syncId = getBatchSyncId(medIdentityKey, batch.batch);
+    final int versionToPush = batch.version > 0 ? batch.version : 1;
 
     SyncQueueManager.enqueueMutation(
       syncId: syncId,
       storeToken: storeToken.trim().toUpperCase(),
       docType: 'BATCH',
-      currentVersion: 1,
+      currentVersion: versionToPush,
       isDelete: isDelete,
       rawPayload: {
         'medKey': medIdentityKey.trim(),
@@ -46,7 +47,7 @@ class BatchSyncModule {
     );
   }
 
-  /// 📥 2. MERGE INCOMING ENVELOPE FROM D1 BATCH
+  /// 📥 2. MERGE INCOMING ENVELOPE FROM D1 BATCH WITH LWW MONOTONIC VERSIONING
   static bool mergeIncomingBatchEnvelope(
     Map<String, List<BatchInfo>> batchHistory,
     SyncEnvelope envelope, [
@@ -55,6 +56,7 @@ class BatchSyncModule {
     final Map<String, dynamic> rawData = envelope.billData;
     final String medKey = (rawData['medKey'] ?? "").toString().trim();
     final dynamic rawBatch = rawData['batch'];
+
     if (medKey.isEmpty || rawBatch == null) return false;
 
     final Map<String, dynamic> batchMap = rawBatch is Map<String, dynamic>
@@ -66,6 +68,8 @@ class BatchSyncModule {
 
     final syncId = getBatchSyncId(medKey, batchNo);
     bool isDel = envelope.isDeleted == 1 || envelope.action == "DELETE";
+    final int incomingVersion = envelope.version > 0 ? envelope.version : 1;
+    final int incomingTimestamp = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
 
     // Check Permanent Tombstones
     if (D1SalesLedgerService.isBillDeleted(syncId, batchNo, medKey) ||
@@ -99,8 +103,20 @@ class BatchSyncModule {
     }
 
     final incomingBatch = BatchInfo.fromMap(batchMap);
+    incomingBatch.version = incomingVersion;
+    incomingBatch.updatedAt = incomingTimestamp;
+
     if (existingIdx != -1) {
       final existing = list[existingIdx];
+
+      // LWW Conflict Resolution Guard: Ignore older mutations
+      if (incomingVersion < existing.version) {
+        return false;
+      }
+      if (incomingVersion == existing.version && incomingTimestamp < existing.updatedAt) {
+        return false;
+      }
+
       existing.exp = incomingBatch.exp;
       existing.mrp = incomingBatch.mrp;
       existing.rate = incomingBatch.rate;
@@ -111,6 +127,8 @@ class BatchSyncModule {
       existing.rateCFormula = incomingBatch.rateCFormula;
       existing.appliedRateType = incomingBatch.appliedRateType;
       existing.status = incomingBatch.status;
+      existing.version = incomingVersion;
+      existing.updatedAt = incomingTimestamp;
       if (incomingBatch.openingQty != 0.0) {
         existing.openingQty = incomingBatch.openingQty;
       }

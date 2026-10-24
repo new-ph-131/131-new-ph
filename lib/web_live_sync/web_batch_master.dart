@@ -396,17 +396,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   status: "Active",
                 );
 
-                webPh.batchHistory[medKey]!.add(newBatch);
-
-                // 📤 Enqueue D1 mutation
-                BatchSyncModule.onBatchSaved(
-                  batch: newBatch,
-                  medIdentityKey: medKey,
-                  storeToken: webPh.activeStoreToken,
-                  isDelete: false,
-                );
-
-                webPh.rebuildInventory();
+                webPh.addBatch(chosenMed, newBatch);
                 Navigator.pop(c);
                 setState(() {});
 
@@ -506,17 +496,11 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: () {
-                b.status = currentStatus;
-
-                // 📤 Enqueue D1 mutation
-                BatchSyncModule.onBatchSaved(
-                  batch: b,
-                  medIdentityKey: med.identityKey,
-                  storeToken: webPh.activeStoreToken,
-                  isDelete: false,
+                webPh.changeBatchStatus(
+                  medId: med.identityKey,
+                  batchNo: b.batch,
+                  status: currentStatus,
                 );
-
-                webPh.rebuildInventory();
                 Navigator.pop(c);
                 setState(() {});
 
@@ -696,8 +680,8 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               final double newB = double.tryParse(rateBC.text) ?? b.rateB;
               final double newC = double.tryParse(rateCC.text) ?? b.rateC;
 
-              final mutatedCount = BatchCascadeEngine.cascadeBatchUpdate(
-                medicine: med,
+              final mutatedCount = webPh.updateBatchCascade(
+                med: med,
                 oldBatchNo: oldBatchNo,
                 newBatchNo: newBatchNo,
                 newExp: newExp,
@@ -706,19 +690,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 newRateA: newA,
                 newRateB: newB,
                 newRateC: newC,
-                batchHistory: webPh.batchHistory,
-                sales: webPh.sales,
-                purchases: webPh.purchases,
-                saleChallans: webPh.saleChallans,
-                purchaseChallans: webPh.purchaseChallans,
-                saleReturns: webPh.saleReturns,
-                purchaseReturns: webPh.purchaseReturns,
-                medicines: webPh.medicines,
-                storeToken: webPh.activeStoreToken,
-                companyId: webPh.activeStoreToken,
               );
-
-              webPh.rebuildInventory();
               Navigator.pop(c);
               setState(() {});
 
@@ -898,23 +870,11 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              final result = BatchCascadeEngine.deleteBatchSafe(
-                medicine: med,
+              final result = webPh.deleteBatchSafe(
+                med: med,
                 batchNo: b.batch,
                 activeFY: activeFY,
-                batchHistory: webPh.batchHistory,
-                sales: webPh.sales,
-                purchases: webPh.purchases,
-                saleChallans: webPh.saleChallans,
-                purchaseChallans: webPh.purchaseChallans,
-                saleReturns: webPh.saleReturns,
-                purchaseReturns: webPh.purchaseReturns,
-                medicines: webPh.medicines,
-                storeToken: webPh.activeStoreToken,
-                companyId: webPh.activeStoreToken,
               );
-
-              webPh.rebuildInventory();
               Navigator.pop(c);
               setState(() {});
 
@@ -1155,18 +1115,12 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 onPressed: () {
                   double val = double.tryParse(qtyC.text) ?? 0.0;
                   if (val != 0) {
-                    b.adjustmentQty += val;
-                    b.adjReason = reason;
-
-                    // 📤 Enqueue D1 mutation
-                    BatchSyncModule.onBatchSaved(
-                      batch: b,
-                      medIdentityKey: med.identityKey,
-                      storeToken: webPh.activeStoreToken,
-                      isDelete: false,
+                    webPh.adjustBatchStock(
+                      medId: med.identityKey,
+                      batchNo: b.batch,
+                      adjQty: val,
+                      reason: reason,
                     );
-
-                    webPh.rebuildInventory();
                   }
                   Navigator.pop(c);
                   setState(() {});
@@ -2182,12 +2136,23 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       ),
                     ),
 
-                    // MRP
+                    // MRP & Margin Intel
                     Expanded(
                       flex: 2,
-                      child: Text(
-                        "₹${b.mrp.toStringAsFixed(2)}",
-                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "₹${b.mrp.toStringAsFixed(2)}",
+                            style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                          ),
+                          if (b.mrp > 0 && (b.purRate > 0 || b.rate > 0)) ...[
+                            Text(
+                              "+${(((b.mrp - (b.purRate > 0 ? b.purRate : b.rate)) / b.mrp) * 100).clamp(0, 999).toStringAsFixed(0)}% mrgn",
+                              style: const TextStyle(color: Color(0xFF34D399), fontSize: 8.5, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
 

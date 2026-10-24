@@ -620,17 +620,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                 isShell: false,
               );
 
-              webPh.batchHistory[medKey]!.add(newBatch);
-
-              // 2-Way Live Sync Outbox enqueue
-              BatchSyncModule.onBatchSaved(
-                batch: newBatch,
-                medIdentityKey: medKey,
-                storeToken: webPh.activeStoreToken,
-                isDelete: false,
-              );
-
-              webPh.rebuildInventory();
+              webPh.addBatch(med, newBatch);
               Navigator.pop(c);
               setState(() {});
               ScaffoldMessenger.of(context).showSnackBar(
@@ -767,8 +757,8 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
               final double newRb = double.tryParse(rateBC.text) ?? b.rateB;
               final double newRc = double.tryParse(rateCC.text) ?? b.rateC;
 
-              final mutatedCount = BatchCascadeEngine.cascadeBatchUpdate(
-                medicine: med,
+              final mutatedCount = webPh.updateBatchCascade(
+                med: med,
                 oldBatchNo: oldBatchNo,
                 newBatchNo: newBatchNo,
                 newExp: newExp,
@@ -777,19 +767,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                 newRateA: newRa,
                 newRateB: newRb,
                 newRateC: newRc,
-                batchHistory: webPh.batchHistory,
-                sales: webPh.sales,
-                purchases: webPh.purchases,
-                saleChallans: webPh.saleChallans,
-                purchaseChallans: webPh.purchaseChallans,
-                saleReturns: webPh.saleReturns,
-                purchaseReturns: webPh.purchaseReturns,
-                medicines: webPh.medicines,
-                storeToken: webPh.activeStoreToken,
-                companyId: webPh.activeStoreToken,
               );
-
-              webPh.rebuildInventory();
               Navigator.pop(c);
               setState(() {});
               ScaffoldMessenger.of(context).showSnackBar(
@@ -969,23 +947,11 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
             icon: const Icon(Icons.delete_forever_rounded, size: 16),
             label: const Text("PERMANENTLY DELETE BATCH", style: TextStyle(fontWeight: FontWeight.bold)),
             onPressed: () {
-              final result = BatchCascadeEngine.deleteBatchSafe(
-                medicine: med,
+              final result = webPh.deleteBatchSafe(
+                med: med,
                 batchNo: b.batch,
                 activeFY: activeFY,
-                batchHistory: webPh.batchHistory,
-                sales: webPh.sales,
-                purchases: webPh.purchases,
-                saleChallans: webPh.saleChallans,
-                purchaseChallans: webPh.purchaseChallans,
-                saleReturns: webPh.saleReturns,
-                purchaseReturns: webPh.purchaseReturns,
-                medicines: webPh.medicines,
-                storeToken: webPh.activeStoreToken,
-                companyId: webPh.activeStoreToken,
               );
-
-              webPh.rebuildInventory();
               Navigator.pop(c);
               setState(() {});
               ScaffoldMessenger.of(context).showSnackBar(

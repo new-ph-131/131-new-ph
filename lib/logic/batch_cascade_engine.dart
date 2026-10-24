@@ -208,6 +208,8 @@ class BatchCascadeEngine {
         b.rateA = newRateA > 0 ? newRateA : newMrp;
         b.rateB = newRateB > 0 ? newRateB : (b.rateA * 0.95);
         b.rateC = newRateC > 0 ? newRateC : (b.rateA * 0.92);
+        b.version += 1;
+        b.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
         // If batch was renamed, tombstone old batch sync ID so it doesn't resurrect
         if (cleanOld != cleanNew) {

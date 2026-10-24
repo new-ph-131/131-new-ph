@@ -46,22 +46,24 @@ class BatchSyncEngine {
     double finalRateC = rateC == 0.0 ? (rateA == 0.0 ? mrp * 0.92 : rateA * 0.92) : rateC;
 
     if (existingIdx != -1) {
-      // 🔄 SCENARIO C: UPDATE METADATA (Usi batch me edit)
-      history[existingIdx].exp = exp;
-      history[existingIdx].mrp = mrp;
-      history[existingIdx].rate = rate; // purchase rate
-      history[existingIdx].packing = packing;
-      
-      // Syncing new Marg-style pricing fields
-      history[existingIdx].purRate = rate;
-      history[existingIdx].rateA = finalRateA;
-      history[existingIdx].rateB = finalRateB;
-      history[existingIdx].rateC = finalRateC;
-      history[existingIdx].rateCFormula = rateCFormula;
-      history[existingIdx].appliedRateType = appliedRateType;
-      history[existingIdx].status = status;
+      final existing = history[existingIdx];
+      // 🛡️ LWW Protection: If batch was already configured in Master (version > 1),
+      // preserve its master pricing & expiry from being overwritten by older invoices.
+      if (existing.version <= 1) {
+        existing.exp = exp;
+        existing.mrp = mrp;
+        existing.rate = rate;
+        existing.packing = packing;
+        existing.purRate = rate;
+        existing.rateA = finalRateA;
+        existing.rateB = finalRateB;
+        existing.rateC = finalRateC;
+        existing.rateCFormula = rateCFormula;
+        existing.appliedRateType = appliedRateType;
+        existing.status = status;
+      }
       if (qtyChange != 0.0) {
-        history[existingIdx].qty += qtyChange;
+        existing.qty += qtyChange;
       }
     } else {
       // 🆕 SCENARIO B: CREATE NEW BATCH (Manual Entry or Inward)

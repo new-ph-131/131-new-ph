@@ -295,33 +295,6 @@ class MasterSyncOrchestrator {
             phApp.notifyListeners();
           }
           break;
-        case 'BATCH':
-          final bData = envelope.billData;
-          final String medKey = (bData['medKey'] ?? '').toString().trim();
-          final dynamic rawBatch = bData['batch'];
-          final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
-          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
-            if (phApp.activeCompany != null) {
-              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (bNo.isNotEmpty) bNo]);
-            }
-            if (phApp.batchHistory.containsKey(medKey)) {
-              final beforeLen = phApp.batchHistory[medKey]!.length;
-              phApp.batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
-              mutated = phApp.batchHistory[medKey]!.length != beforeLen;
-            }
-          } else {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey);
-            if (phApp.activeCompany != null) {
-              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: bNo);
-            }
-            mutated = BatchSyncModule.mergeIncomingBatchEnvelope(phApp.batchHistory, envelope);
-          }
-          if (mutated) {
-            phApp.save();
-            phApp.notifyListeners();
-          }
-          break;
         default:
           debugPrint("⚠ [MasterSyncOrchestrator] Unknown document type: $docType");
       }
@@ -521,29 +494,6 @@ class MasterSyncOrchestrator {
             mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phWeb.vouchers, envelope);
           }
           if (mutated) {
-            phWeb.notifyListeners();
-          }
-          break;
-        case 'BATCH':
-          final bData = envelope.billData;
-          final String medKey = (bData['medKey'] ?? '').toString().trim();
-          final dynamic rawBatch = bData['batch'];
-          final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
-          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
-            phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
-            if (phWeb.batchHistory.containsKey(medKey)) {
-              final beforeLen = phWeb.batchHistory[medKey]!.length;
-              phWeb.batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
-              mutated = phWeb.batchHistory[medKey]!.length != beforeLen;
-            }
-          } else {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey);
-            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
-            mutated = BatchSyncModule.mergeIncomingBatchEnvelope(phWeb.batchHistory, envelope);
-          }
-          if (mutated) {
-            phWeb.rebuildInventory();
             phWeb.notifyListeners();
           }
           break;

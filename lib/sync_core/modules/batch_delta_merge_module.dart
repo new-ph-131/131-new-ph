@@ -153,6 +153,13 @@ class BatchDeltaMergeModule {
         if (idx != -1) {
           // Merge metadata
           final existing = existingList[idx];
+          // 🛡️ LWW Version Guard: If local has in-flight edits with higher version/timestamp, do NOT overwrite!
+          if (existing.version > incomingBatch.version && existing.version > 1) {
+            continue;
+          }
+          if (existing.version == incomingBatch.version && existing.updatedAt > incomingBatch.updatedAt && existing.updatedAt > 0) {
+            continue;
+          }
           bool fieldChanged = false;
 
           if (incomingBatch.exp.isNotEmpty && existing.exp != incomingBatch.exp) {

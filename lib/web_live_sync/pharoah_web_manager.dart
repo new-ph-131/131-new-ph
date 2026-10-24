@@ -15,6 +15,9 @@ import '../sync_core/modules/sale_challan_sync_module.dart';
 import '../sync_core/modules/purchase_challan_sync_module.dart';
 import '../sync_core/modules/challan_sync_module.dart';
 import '../sync_core/modules/voucher_sync_module.dart';
+import '../sync_core/modules/batch_sync_module.dart';
+import '../sync_core/modules/batch_delta_merge_module.dart';
+import '../logic/batch_cascade_engine.dart';
 // FILE: lib/web_live_sync/pharoah_web_manager.dart
 
 import 'dart:convert';
@@ -917,14 +920,21 @@ class PharoahWebManager with ChangeNotifier {
       appConfig = AppConfig.fromMap(cData);
     }
 
+    // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-764): Never wipe in-flight local batch edits!
     var bData = decodeJson('bats.json');
-    batchHistory.clear();
-    if (bData != null && bData is Map) {
-      bData.forEach((k, v) {
-        if (v is List) {
-          batchHistory[k.toString()] = v.map((b) => BatchInfo.fromMap(b as Map<String, dynamic>)).toList();
-        }
-      });
+    if (bData != null) {
+      BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
+        targetBatchHistory: batchHistory,
+        incomingJson: bData,
+        tombstones: deletedRecordIds,
+        registry: localTombstoneRegistry,
+      );
+    } else {
+      BatchDeltaMergeModule.purgeTombstonedBatches(
+        batchHistory,
+        tombstones: deletedRecordIds,
+        registry: localTombstoneRegistry,
+      );
     }
   }
 
@@ -966,19 +976,23 @@ class PharoahWebManager with ChangeNotifier {
     double finalRateC = rateC == 0.0 ? (rateA == 0.0 ? mrp * 0.92 : rateA * 0.92) : rateC;
 
     if (existingIdx != -1) {
-      history[existingIdx].exp = exp;
-      history[existingIdx].mrp = mrp;
-      history[existingIdx].rate = rate;
-      history[existingIdx].packing = packing;
-      history[existingIdx].purRate = rate;
-      history[existingIdx].rateA = finalRateA;
-      history[existingIdx].rateB = finalRateB;
-      history[existingIdx].rateC = finalRateC;
-      history[existingIdx].rateCFormula = rateCFormula;
-      history[existingIdx].appliedRateType = appliedRateType;
-      history[existingIdx].status = status;
+      final existing = history[existingIdx];
+      // 🛡️ LWW Protection: If batch was already configured in Master (version > 1), preserve its master pricing & expiry!
+      if (existing.version <= 1) {
+        existing.exp = exp;
+        existing.mrp = mrp;
+        existing.rate = rate;
+        existing.packing = packing;
+        existing.purRate = rate;
+        existing.rateA = finalRateA;
+        existing.rateB = finalRateB;
+        existing.rateC = finalRateC;
+        existing.rateCFormula = rateCFormula;
+        existing.appliedRateType = appliedRateType;
+        existing.status = status;
+      }
       if (qtyChange != 0.0) {
-        history[existingIdx].qty += qtyChange;
+        existing.qty += qtyChange;
       }
     } else {
       history.add(BatchInfo(
@@ -2585,6 +2599,219 @@ class PharoahWebManager with ChangeNotifier {
         entityId: realId,
         unmarkedIds: [realId, if (cleanVNo.isNotEmpty) cleanVNo],
       );
+    }
+  }
+
+
+  // ===========================================================================
+  // 🛡️ CENTRAL ENTERPRISE BATCH MASTER MANAGEMENT (#PH-REV-764)
+  // ===========================================================================
+
+  void addBatch(Medicine med, BatchInfo newBatch) {
+    final medKey = med.identityKey;
+    if (!batchHistory.containsKey(medKey)) {
+      batchHistory[medKey] = [];
+    }
+    newBatch.version = 1;
+    newBatch.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    batchHistory[medKey]!.add(newBatch);
+
+    final syncId = BatchSyncModule.getBatchSyncId(medKey, newBatch.batch);
+    unmarkDeletedId(syncId, referenceNo: newBatch.batch);
+
+    if (activeStoreToken.isNotEmpty) {
+      BatchSyncModule.onBatchSaved(
+        batch: newBatch,
+        medIdentityKey: medKey,
+        storeToken: activeStoreToken,
+        isDelete: false,
+      );
+    }
+    _autoSyncService.triggerAutoSync(
+      action: 'BATCH_REGISTERED',
+      entityId: syncId,
+      unmarkedIds: [syncId, newBatch.batch],
+    );
+    rebuildInventory();
+    notifyListeners();
+    pushUpdatedDataToCloud();
+  }
+
+  int updateBatchCascade({
+    required Medicine med,
+    required String oldBatchNo,
+    required String newBatchNo,
+    required String newExp,
+    required double newMrp,
+    required double newPurRate,
+    double newRateA = 0.0,
+    double newRateB = 0.0,
+    double newRateC = 0.0,
+  }) {
+    final medKey = med.identityKey;
+    final mutatedCount = BatchCascadeEngine.cascadeBatchUpdate(
+      medicine: med,
+      oldBatchNo: oldBatchNo,
+      newBatchNo: newBatchNo,
+      newExp: newExp,
+      newMrp: newMrp,
+      newPurRate: newPurRate,
+      newRateA: newRateA,
+      newRateB: newRateB,
+      newRateC: newRateC,
+      batchHistory: batchHistory,
+      sales: sales,
+      purchases: purchases,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      medicines: medicines,
+      storeToken: activeStoreToken,
+      companyId: activeStoreToken,
+    );
+
+    // Bump version and timestamp on updated batch
+    if (batchHistory.containsKey(medKey)) {
+      final cleanNew = newBatchNo.trim().toUpperCase();
+      final idx = batchHistory[medKey]!.indexWhere((b) => b.batch.trim().toUpperCase() == cleanNew);
+      if (idx != -1) {
+        final b = batchHistory[medKey]![idx];
+        b.version += 1;
+        b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+        if (activeStoreToken.isNotEmpty) {
+          BatchSyncModule.onBatchSaved(
+            batch: b,
+            medIdentityKey: medKey,
+            storeToken: activeStoreToken,
+            isDelete: false,
+          );
+        }
+      }
+    }
+
+    final newSyncId = BatchSyncModule.getBatchSyncId(medKey, newBatchNo);
+    _autoSyncService.triggerAutoSync(
+      action: 'BATCH_UPDATED',
+      entityId: newSyncId,
+      unmarkedIds: [newSyncId, newBatchNo],
+    );
+    rebuildInventory();
+    notifyListeners();
+    pushUpdatedDataToCloud();
+    return mutatedCount;
+  }
+
+  ({bool success, String message, List<BatchUsageAuditRecord> lockingRecords}) deleteBatchSafe({
+    required Medicine med,
+    required String batchNo,
+    required String activeFY,
+  }) {
+    final result = BatchCascadeEngine.deleteBatchSafe(
+      medicine: med,
+      batchNo: batchNo,
+      activeFY: activeFY,
+      batchHistory: batchHistory,
+      sales: sales,
+      purchases: purchases,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      medicines: medicines,
+      storeToken: activeStoreToken,
+      companyId: activeStoreToken,
+    );
+
+    if (result.success) {
+      final syncId = BatchSyncModule.getBatchSyncId(med.identityKey, batchNo);
+      final cleanBatch = batchNo.trim().toUpperCase();
+      deletedRecordIds.add(syncId);
+      deletedRecordIds.add(cleanBatch);
+      final nowTs = DateTime.now().millisecondsSinceEpoch;
+      localTombstoneRegistry[syncId] = nowTs;
+      localTombstoneRegistry[cleanBatch] = nowTs;
+      _saveLocalTombstones();
+
+      _autoSyncService.triggerAutoSync(
+        action: 'BATCH_DELETED',
+        entityId: syncId,
+        deletedIds: [syncId, cleanBatch],
+      );
+      rebuildInventory();
+      notifyListeners();
+      pushUpdatedDataToCloud();
+    }
+    return result;
+  }
+
+  void adjustBatchStock({
+    required String medId,
+    required String batchNo,
+    required double adjQty,
+    required String reason,
+  }) {
+    if (batchHistory.containsKey(medId)) {
+      final idx = batchHistory[medId]!.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
+      if (idx != -1) {
+        final b = batchHistory[medId]![idx];
+        b.adjustmentQty += adjQty;
+        b.adjReason = reason;
+        b.version += 1;
+        b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+        if (activeStoreToken.isNotEmpty) {
+          BatchSyncModule.onBatchSaved(
+            batch: b,
+            medIdentityKey: medId,
+            storeToken: activeStoreToken,
+            isDelete: false,
+          );
+        }
+        final syncId = BatchSyncModule.getBatchSyncId(medId, batchNo);
+        _autoSyncService.triggerAutoSync(
+          action: 'BATCH_ADJUSTED',
+          entityId: syncId,
+          unmarkedIds: [syncId, batchNo],
+        );
+        rebuildInventory();
+        notifyListeners();
+        pushUpdatedDataToCloud();
+      }
+    }
+  }
+
+  void changeBatchStatus({
+    required String medId,
+    required String batchNo,
+    required String status,
+  }) {
+    if (batchHistory.containsKey(medId)) {
+      final idx = batchHistory[medId]!.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
+      if (idx != -1) {
+        final b = batchHistory[medId]![idx];
+        b.status = status;
+        b.version += 1;
+        b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+        if (activeStoreToken.isNotEmpty) {
+          BatchSyncModule.onBatchSaved(
+            batch: b,
+            medIdentityKey: medId,
+            storeToken: activeStoreToken,
+            isDelete: false,
+          );
+        }
+        final syncId = BatchSyncModule.getBatchSyncId(medId, batchNo);
+        _autoSyncService.triggerAutoSync(
+          action: 'BATCH_STATUS_CHANGED',
+          entityId: syncId,
+          unmarkedIds: [syncId, batchNo],
+        );
+        rebuildInventory();
+        notifyListeners();
+        pushUpdatedDataToCloud();
+      }
     }
   }
 
