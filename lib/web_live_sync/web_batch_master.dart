@@ -601,12 +601,21 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
         ),
         title: Row(
           children: [
-            const Icon(Icons.sync_alt_rounded, color: Color(0xFFF59E0B), size: 20),
+            const Icon(Icons.edit_note_rounded, color: Color(0xFF60A5FA), size: 24),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                "CASCADE EDIT BATCH • $oldBatchNo",
-                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "MODIFY BATCH • $oldBatchNo",
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    "${med.name} • Cascade Rename & Rate Modification Engine",
+                    style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                  ),
+                ],
               ),
             ),
           ],
@@ -919,6 +928,162 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
             child: const Text("CONFIRM DELETE", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // QUICK ACTION HUB MODAL
+  // ===========================================================================
+  void _showBatchQuickActionSheet(PharoahWebManager webPh, Medicine med, BatchInfo b, bool isLockedByFY, int lockCount) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.inventory_2_rounded, color: Color(0xFF38BDF8), size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "BATCH ACTIONS • ${b.batch}",
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    "${med.name} (${med.systemId}) • Stock: ${b.qty.toInt()} • Expiry: ${b.exp}",
+                    style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white54, size: 18),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 480,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _quickActionTile(
+                icon: Icons.edit_note_rounded,
+                iconColor: const Color(0xFF60A5FA),
+                title: "MODIFY BATCH (CASCADE EDIT)",
+                subtitle: "Rename batch, update expiry date, MRP, and purchase/sales rates across all historical records.",
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showCascadeEditDialog(webPh, med, b);
+                },
+              ),
+              const SizedBox(height: 8),
+              _quickActionTile(
+                icon: isLockedByFY ? Icons.lock_outline_rounded : Icons.delete_outline_rounded,
+                iconColor: isLockedByFY ? const Color(0xFFFBBF24) : const Color(0xFFEF4444),
+                title: isLockedByFY ? "AUDIT FY LOCK (CANNOT DELETE)" : "DELETE BATCH (ACTIVE FY GUARD)",
+                subtitle: isLockedByFY
+                    ? "Recorded in $lockCount active transaction(s) in Financial Year. Click to view audit breakdown."
+                    : "Zero transactions in active Financial Year. Safe to permanently delete with tombstone.",
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showDeleteBatchDialog(webPh, med, b);
+                },
+              ),
+              const SizedBox(height: 8),
+              _quickActionTile(
+                icon: Icons.exposure_rounded,
+                iconColor: const Color(0xFFF59E0B),
+                title: "STOCK ADJUSTMENT",
+                subtitle: "Physical verification discrepancy correction (current stock: ${b.qty.toInt()}).",
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAdjustmentDialog(webPh, med, b);
+                },
+              ),
+              const SizedBox(height: 8),
+              _quickActionTile(
+                icon: Icons.verified_user_rounded,
+                iconColor: const Color(0xFF34D399),
+                title: "PHARMA COMPLIANCE STATUS",
+                subtitle: "Current: ${b.status.toUpperCase()} (Active / Quarantine Hold / Blocked Recall).",
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showPharmaStatusDialog(webPh, med, b);
+                },
+              ),
+              const SizedBox(height: 8),
+              _quickActionTile(
+                icon: Icons.timeline_rounded,
+                iconColor: const Color(0xFF38BDF8),
+                title: "BATCH TRACEABILITY",
+                subtitle: "Inspect audit timeline across Sales, Purchases, Challans, and Returns.",
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _viewingTraceabilityMed = med);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quickActionTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black26,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white54, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white38, size: 16),
+          ],
+        ),
       ),
     );
   }
@@ -1905,7 +2070,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   const Expanded(flex: 2, child: Text("LIVE STOCK", style: _thStyle)),
                   const Expanded(flex: 2, child: Text("PHARMA STATUS", style: _thStyle)),
                   const Expanded(flex: 3, child: Text("FY AUDIT STATUS", style: _thStyle)),
-                  const Expanded(flex: 3, child: Text("ACTIONS", style: _thStyle)),
+                  const Expanded(flex: 4, child: Text("ACTIONS", style: _thStyle)),
                 ],
               ),
             ),
@@ -2131,25 +2296,50 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       ),
                     ),
 
-                    // Actions
+                    // Actions (Prominent Modify, Delete & Quick Hub)
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: Row(
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.sync_alt_rounded, color: Color(0xFF60A5FA), size: 16),
-                            tooltip: "Cascade Rename & Edit Rates",
+                          // MODIFY BUTTON
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
                             onPressed: () => _showCascadeEditDialog(webPh, m, b),
+                            icon: const Icon(Icons.edit_note_rounded, size: 14),
+                            label: const Text("MODIFY", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.exposure_rounded, color: Color(0xFFFBBF24), size: 16),
-                            tooltip: "Stock Adjustment",
-                            onPressed: () => _showAdjustmentDialog(webPh, m, b),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171), size: 16),
-                            tooltip: "Delete Batch (FY Guarded)",
+                          const SizedBox(width: 6),
+
+                          // DELETE BUTTON
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isLockedByFY ? const Color(0xFF7F1D1D) : const Color(0xFFDC2626),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
                             onPressed: () => _showDeleteBatchDialog(webPh, m, b),
+                            icon: Icon(isLockedByFY ? Icons.lock_outline_rounded : Icons.delete_outline_rounded, size: 12),
+                            label: Text(isLockedByFY ? "LOCKED" : "DELETE", style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 4),
+
+                          // QUICK ACTION HUB BUTTON
+                          IconButton(
+                            icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 16),
+                            tooltip: "More Batch Actions (Adjust, Status, Trace)",
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                            onPressed: () => _showBatchQuickActionSheet(webPh, m, b, isLockedByFY, lockingRecords.length),
                           ),
                         ],
                       ),
