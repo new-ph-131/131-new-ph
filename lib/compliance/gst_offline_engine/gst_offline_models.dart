@@ -8,7 +8,7 @@ class Gstr1OfflinePayload {
   final String fp; // MMYYYY (e.g. "102026")
   final double gt; // Gross turnover previous FY
   final double curGt; // Current FY gross turnover
-  final String version; // "GST_3.1.4" or "GST_3.2.0"
+  final String version; // "GST_3.2.4" (Matches Release 3.2.4)
   final String hash;
   
   final List<GstB2bGroup> b2b;
@@ -24,7 +24,7 @@ class Gstr1OfflinePayload {
     required this.fp,
     this.gt = 0.0,
     this.curGt = 0.0,
-    this.version = "GST_3.1.4",
+    this.version = "GST_3.2.4",
     this.hash = "hash",
     required this.b2b,
     required this.b2cl,
@@ -39,11 +39,11 @@ class Gstr1OfflinePayload {
     final Map<String, dynamic> data = {
       "gstin": gstin,
       "fp": fp,
-      "gt": gt,
-      "cur_gt": curGt,
       "version": version,
       "hash": hash,
     };
+    if (gt > 0) data["gt"] = gt;
+    if (curGt > 0) data["cur_gt"] = curGt;
 
     if (b2b.isNotEmpty) {
       data["b2b"] = b2b.map((g) => g.toJson()).toList();

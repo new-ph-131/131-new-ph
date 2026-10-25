@@ -37,8 +37,10 @@ class GstOfflineExportService {
 
       final jsonStr = payload.toFormattedJson();
       final bytes = Uint8List.fromList(utf8.encode(jsonStr));
-      final cleanGstin = shop.gstin.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-      final fileName = "GSTR1_${cleanGstin.isNotEmpty ? cleanGstin : 'PORTAL'}_${payload.fp}";
+      // Official GSTN portal downloaded file name convention: returns_DDMMYYYY_R1_<GSTIN>_offline.json
+      // This pattern is strictly validated by GST Offline Tool (Card 2) and gst.gov.in portal.
+      final todayStr = DateFormat('ddMMyyyy').format(DateTime.now());
+      final fileName = "returns_${todayStr}_R1_${payload.gstin}_offline";
 
       await FileSaver.instance.saveFile(
         name: fileName,
