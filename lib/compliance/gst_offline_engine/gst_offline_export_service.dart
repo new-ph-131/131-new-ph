@@ -18,7 +18,7 @@ class GstOfflineExportService {
   /// Exports Official GSTR-1 JSON for direct portal upload
   static Future<bool> exportGstr1Json({
     required BuildContext context,
-    required List<Sale> sales,
+    List<Sale> sales = const [],
     required List<SaleReturn> returns,
     required List<Party> parties,
     required CompanyProfile shop,
@@ -90,7 +90,7 @@ class GstOfflineExportService {
     List<SaleReturn> returns = const [],
     List<Purchase> purchases = const [],
     List<PurchaseReturn> purchaseReturns = const [],
-    required List<Sale> sales,
+    List<Sale> sales = const [],
     required List<Party> parties,
     required CompanyProfile shop,
     required DateTime fromDate,
@@ -205,7 +205,7 @@ class GstOfflineExportService {
   /// Opens full pre-upload audit modal dialog
   static void showAuditModal({
     required BuildContext context,
-    required List<Sale> sales,
+    List<Sale> sales = const [],
     required List<SaleReturn> returns,
     required List<Party> parties,
     required CompanyProfile shop,
