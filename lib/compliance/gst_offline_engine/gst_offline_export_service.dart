@@ -84,7 +84,10 @@ class GstOfflineExportService {
   /// Exports official Government V2.2 CSVs (B2B, B2CS, HSN, DOCS)
   static Future<void> exportCsvSection({
     required BuildContext context,
-    required String section, // "B2B", "B2CS", "HSN", "DOCS"
+    required String section,
+    List<SaleReturn> returns = const [],
+    List<Purchase> purchases = const [],
+    List<PurchaseReturn> purchaseReturns = const [],
     required List<Sale> sales,
     required List<Party> parties,
     required CompanyProfile shop,
@@ -131,6 +134,36 @@ class GstOfflineExportService {
             toDate: toDate,
           );
           sectionName = "docs";
+          break;
+        case "CDNR":
+          csvContent = GstOfflineCsvBuilder.buildCdnrCsv(
+            returns: returns,
+            parties: parties,
+            shop: shop,
+            fromDate: fromDate,
+            toDate: toDate,
+          );
+          sectionName = "cdnr";
+          break;
+        case "GSTR2_INWARD":
+          csvContent = GstOfflineCsvBuilder.buildGstr2InwardCsv(
+            purchases: purchases,
+            parties: parties,
+            shop: shop,
+            fromDate: fromDate,
+            toDate: toDate,
+          );
+          sectionName = "gstr2_b2b";
+          break;
+        case "GSTR2_DEBIT":
+          csvContent = GstOfflineCsvBuilder.buildGstr2DebitNoteCsv(
+            returns: purchaseReturns,
+            parties: parties,
+            shop: shop,
+            fromDate: fromDate,
+            toDate: toDate,
+          );
+          sectionName = "gstr2_cdnr";
           break;
         default:
           return;
