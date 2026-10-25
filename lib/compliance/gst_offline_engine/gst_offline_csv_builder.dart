@@ -274,31 +274,6 @@ class GstOfflineCsvBuilder {
 
     return const ListToCsvConverter().convert(rows);
   }
-}
-
-class _HsnCsvAcc {
-  String hsn;
-  String desc;
-  double qty;
-  double val;
-  double txval;
-  double iamt;
-  double camt;
-  double samt;
-  double rate;
-
-  _HsnCsvAcc({
-    required this.hsn,
-    required this.desc,
-    required this.qty,
-    required this.val,
-    required this.txval,
-    required this.iamt,
-    required this.camt,
-    required this.samt,
-    required this.rate,
-  });
-}
 
   /// Builds official cdnr.csv for GSTR-1 (Credit Notes from Sale Returns)
   static String buildCdnrCsv({
@@ -513,8 +488,8 @@ class _HsnCsvAcc {
 
     for (final ret in periodReturns) {
       final match = parties.firstWhere(
-        (p) => p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
-        orElse: () => Party(id: '', name: ret.partyName),
+        (p) => p.name.trim().toLowerCase() == ret.distributorName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.distributorName),
       );
       String gstin = match.gst.trim().toUpperCase();
       if (gstin.isEmpty || gstin == "N/A") gstin = "08AAACG1395D1ZU";
@@ -557,3 +532,31 @@ class _HsnCsvAcc {
 
     return const ListToCsvConverter().convert(rows);
   }
+
+}
+
+class _HsnCsvAcc {
+  String hsn;
+  String desc;
+  double qty;
+  double val;
+  double txval;
+  double iamt;
+  double camt;
+  double samt;
+  double rate;
+
+  _HsnCsvAcc({
+    required this.hsn,
+    required this.desc,
+    required this.qty,
+    required this.val,
+    required this.txval,
+    required this.iamt,
+    required this.camt,
+    required this.samt,
+    required this.rate,
+  });
+}
+
+
