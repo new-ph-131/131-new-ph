@@ -281,7 +281,7 @@ class _WebGstr2ViewState extends State<WebGstr2View> with SingleTickerProviderSt
               children: [
                 _td(DateFormat('dd/MM/yy').format(pr.date)),
                 _td(pr.billNo, isBold: true),
-                _td(pr.partyName, isLeft: true),
+                _td(pr.distributorName, isLeft: true),
                 _td(pr.returnType, color: Colors.orangeAccent),
                 _td("₹${pr.totalAmount.toStringAsFixed(2)}", isRight: true, isBold: true, color: Colors.greenAccent),
               ],
