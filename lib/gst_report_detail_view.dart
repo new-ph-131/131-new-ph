@@ -1,12 +1,12 @@
-// FILE: lib/gst_report_detail_view.dart (FINAL STABLE VERSION)
-
+// FILE: lib/gst_report_detail_view.dart (FINAL STABLE VERSION WITH GOVT OFFLINE JSON ENGINE)
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'pharoah_manager.dart';
 import 'models.dart';
 import 'gst_report_service.dart';
-import 'pdf/pdf_router_service.dart'; 
+import 'pdf/pdf_router_service.dart';
+import 'compliance/gst_offline_engine/gst_offline_export_service.dart';
 
 class GSTReportDetailView extends StatefulWidget {
   final String reportType;
@@ -29,11 +29,10 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
   }
 
   // ===========================================================================
-  // 🛡️ UNIFIED GST ACTION HANDLER (FIXED FOR TYPE SAFETY)
+  // 🛡️ UNIFIED GST ACTION HANDLER (PDF & MAIL)
   // ===========================================================================
   void _handleGstPdfAction(PharoahManager ph, dynamic activeShop, bool isMail) {
     if (activeShop == null) return;
-
     String rangeLabel = "${DateFormat('dd/MM/yy').format(fromDate)} to ${DateFormat('dd/MM/yy').format(toDate)}";
     
     // Filtering Logic
@@ -50,17 +49,15 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
     ).toList();
 
     if (isMail) {
-      // --- 🎯 SMART CLEAN ROUTING ---
       String reportKey = "";
       dynamic payload;
-
       if (widget.reportType.contains("GSTR-1")) {
         reportKey = "GSTR-1";
         payload = allSales;
       } 
       else if (widget.reportType.contains("GSTR-3B")) {
         reportKey = "GSTR-3B";
-        payload = activeSales; // Pass outward sales for computation
+        payload = activeSales;
       } 
       else {
         reportKey = "GSTR-2";
@@ -70,12 +67,11 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
       PdfRouterService.emailDocument(
         context: context, 
         doc: payload, 
-        party: Party(id: 'internal', name: reportKey), // Strict Clean Name for Router
+        party: Party(id: 'internal', name: reportKey),
         ph: ph, 
-        type: "LEDGER" 
+        type: "LEDGER"
       );
     } else {
-      // Standard PDF Open Logic
       if (widget.reportType.contains("GSTR-1")) {
         GstReportService.generateGstr1Pdf(allSales, rangeLabel, activeShop);
       } 
@@ -88,6 +84,81 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
     }
   }
 
+  // ===========================================================================
+  // ⚡ GOVT OFFLINE EXPORT ACTION ROUTER
+  // ===========================================================================
+  void _handleGstOfflineAction(BuildContext ctx, PharoahManager ph, dynamic activeShop, String action) {
+    if (activeShop == null) return;
+    switch (action) {
+      case 'json':
+        GstOfflineExportService.exportGstr1Json(
+          context: ctx,
+          sales: ph.sales,
+          returns: ph.saleReturns,
+          parties: ph.parties,
+          shop: activeShop,
+          fromDate: fromDate,
+          toDate: toDate,
+        );
+        break;
+      case 'audit':
+        GstOfflineExportService.showAuditModal(
+          context: ctx,
+          sales: ph.sales,
+          returns: ph.saleReturns,
+          parties: ph.parties,
+          shop: activeShop,
+          fromDate: fromDate,
+          toDate: toDate,
+        );
+        break;
+      case 'b2b_csv':
+        GstOfflineExportService.exportCsvSection(
+          context: ctx,
+          section: "B2B",
+          sales: ph.sales,
+          parties: ph.parties,
+          shop: activeShop,
+          fromDate: fromDate,
+          toDate: toDate,
+        );
+        break;
+      case 'b2cs_csv':
+        GstOfflineExportService.exportCsvSection(
+          context: ctx,
+          section: "B2CS",
+          sales: ph.sales,
+          parties: ph.parties,
+          shop: activeShop,
+          fromDate: fromDate,
+          toDate: toDate,
+        );
+        break;
+      case 'hsn_csv':
+        GstOfflineExportService.exportCsvSection(
+          context: ctx,
+          section: "HSN",
+          sales: ph.sales,
+          parties: ph.parties,
+          shop: activeShop,
+          fromDate: fromDate,
+          toDate: toDate,
+        );
+        break;
+      case 'docs_csv':
+        GstOfflineExportService.exportCsvSection(
+          context: ctx,
+          section: "DOCS",
+          sales: ph.sales,
+          parties: ph.parties,
+          shop: activeShop,
+          fromDate: fromDate,
+          toDate: toDate,
+        );
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
@@ -97,11 +168,15 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
       s.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
       s.date.isBefore(toDate.add(const Duration(days: 1)))
     ).toList();
+    
     List<Sale> activeSales = allSales.where((s) => s.status == "Active").toList();
+
     List<Purchase> monthlyPurchases = ph.purchases.where((p) =>
       p.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
       p.date.isBefore(toDate.add(const Duration(days: 1)))
     ).toList();
+
+    final isGstr1 = widget.reportType.contains("GSTR-1");
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -110,7 +185,64 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
         backgroundColor: Colors.indigo.shade900,
         foregroundColor: Colors.white,
         actions: [
-          if (ph.config.isMailActive) // Show only if mail service is on
+          if (isGstr1 && activeShop != null)
+            PopupMenuButton<String>(
+              tooltip: "GST Offline Export (Govt Portal)",
+              icon: const Icon(Icons.cloud_download_rounded, color: Colors.greenAccent),
+              onSelected: (val) => _handleGstOfflineAction(context, ph, activeShop, val),
+              itemBuilder: (c) => [
+                const PopupMenuItem(
+                  value: 'json',
+                  child: Row(children: [
+                    Icon(Icons.bolt_rounded, color: Colors.green, size: 20),
+                    SizedBox(width: 10),
+                    Text("Export Govt Offline JSON", style: TextStyle(fontWeight: FontWeight.bold)),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'audit',
+                  child: Row(children: [
+                    Icon(Icons.fact_check_rounded, color: Colors.blue, size: 20),
+                    SizedBox(width: 10),
+                    Text("Pre-Upload Audit Check"),
+                  ]),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'b2b_csv',
+                  child: Row(children: [
+                    Icon(Icons.table_chart_rounded, color: Colors.teal, size: 18),
+                    SizedBox(width: 10),
+                    Text("Export B2B CSV (Govt)"),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'b2cs_csv',
+                  child: Row(children: [
+                    Icon(Icons.table_chart_rounded, color: Colors.teal, size: 18),
+                    SizedBox(width: 10),
+                    Text("Export B2CS CSV (Govt)"),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'hsn_csv',
+                  child: Row(children: [
+                    Icon(Icons.inventory_2_outlined, color: Colors.teal, size: 18),
+                    SizedBox(width: 10),
+                    Text("Export HSN CSV (Table 12)"),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'docs_csv',
+                  child: Row(children: [
+                    Icon(Icons.description_outlined, color: Colors.teal, size: 18),
+                    SizedBox(width: 10),
+                    Text("Export Docs CSV (Table 13)"),
+                  ]),
+                ),
+              ],
+            ),
+          if (ph.config.isMailActive)
             PopupMenuButton<String>(
               icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white),
               onSelected: (val) => _handleGstPdfAction(ph, activeShop, val == 'mail'),
@@ -129,12 +261,53 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
       body: Column(
         children: [
           _buildDateRangePicker(),
-          if (widget.reportType.contains("GSTR-1")) 
+          if (isGstr1 && activeShop != null)
+            _buildGstr1QuickActions(ph, activeShop),
+          if (isGstr1) 
             _buildGstr1Tabs(activeSales, allSales)
           else if (widget.reportType.contains("GSTR-2")) 
             _buildGstr2Preview(monthlyPurchases)
           else 
             _build3bPreview(activeSales, monthlyPurchases)
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGstr1QuickActions(PharoahManager ph, dynamic activeShop) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      color: Colors.indigo.shade50,
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F766E),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => _handleGstOfflineAction(context, ph, activeShop, 'json'),
+              icon: const Icon(Icons.bolt_rounded, size: 16),
+              label: const Text("GOVT OFFLINE JSON", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.indigo.shade900,
+                side: BorderSide(color: Colors.indigo.shade300),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => _handleGstOfflineAction(context, ph, activeShop, 'audit'),
+              icon: const Icon(Icons.fact_check_rounded, size: 16),
+              label: const Text("AUDIT PRE-CHECK", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+            ),
+          ),
         ],
       ),
     );
