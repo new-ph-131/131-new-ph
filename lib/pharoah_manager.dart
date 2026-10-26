@@ -35,6 +35,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // REQUIRED IMPORT
 
 import 'models.dart';
+import 'gst/gst_diary/gst_diary_models.dart';
 import 'administration/system_user_model.dart';
 import 'finance/bank_transaction_model.dart';
 import 'demo_data.dart';
@@ -84,7 +85,8 @@ class PharoahManager with ChangeNotifier {
   List<ChequeEntry> cheques = []; 
   List<ShortageItem> shortages = [];
   List<NumberingSeries> numberingSeries = []; 
-  List<Sale> sales = []; 
+  List<Sale> sales = [];
+  List<GstDiarySession> gstDiarySessions = []; 
   List<Purchase> purchases = [];
   List<SaleChallan> saleChallans = []; 
   List<PurchaseChallan> purchaseChallans = [];
@@ -346,6 +348,7 @@ class PharoahManager with ChangeNotifier {
     await _w('salts.json', salts); 
     await _w('dtypes.json', drugTypes); 
     await _w('banks.json', banks);
+    await _w('gst_sessions.json', gstDiarySessions);
     
     await File('$dir/bats.json').writeAsString(jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
     await File('$dir/config.json').writeAsString(jsonEncode(config.toMap()));
@@ -396,6 +399,7 @@ class PharoahManager with ChangeNotifier {
     logs = (load('logs.json') as List?)?.map((e) => LogEntry.fromMap(e)).toList() ?? [];
     routes = (load('routs.json') as List?)?.map((e) => RouteArea.fromMap(e)).toList() ?? [];
     banks = (load('banks.json') as List?)?.map((e) => Bank.fromMap(e)).toList() ?? [];
+    gstDiarySessions = (load('gst_sessions.json') as List?)?.map((e) => GstDiarySession.fromMap(e)).toList() ?? [];
     
     var sD = load('series.json'); if (sD!=null) numberingSeries = (sD as List).map((e)=>NumberingSeries.fromMap(e)).toList();
     var uD = load('sys_users.json'); if (uD!=null) systemUsers = (uD as List).map((e)=>SystemUser.fromMap(e)).toList();
@@ -1983,6 +1987,28 @@ void registerBatchActivity({
       );
     }
   }
+  
+  void createGstDiarySession(GstDiarySession s) {
+    gstDiarySessions.insert(0, s);
+    save();
+    notifyListeners();
+  }
+
+  void updateGstDiarySession(GstDiarySession s) {
+    int i = gstDiarySessions.indexWhere((x) => x.id == s.id);
+    if (i != -1) {
+      gstDiarySessions[i] = s;
+      save();
+      notifyListeners();
+    }
+  }
+
+  void deleteGstDiarySession(String id) {
+    gstDiarySessions.removeWhere((x) => x.id == id);
+    save();
+    notifyListeners();
+  }
+
   void addDrugType(DrugType d) { drugTypes.add(d); save(); }
   void addSystemUser(SystemUser u) { systemUsers.add(u); save(); }
   void addNumberingSeries(NumberingSeries ns) { numberingSeries.add(ns); save(); }

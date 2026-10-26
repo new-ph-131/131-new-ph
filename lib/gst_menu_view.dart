@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'widgets.dart';
 import 'gst_report_detail_view.dart';
 import 'eway_bill_management_view.dart';
+import 'package:provider/provider.dart';
+import 'pharoah_manager.dart';
+import 'gst/gst_diary/gst_diary_view.dart';
 import 'gst_reconciliation_view.dart';
 
 class GSTMenuView extends StatelessWidget {
@@ -9,6 +12,7 @@ class GSTMenuView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ph = Provider.of<PharoahManager>(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6F9),
       appBar: AppBar(
@@ -123,6 +127,32 @@ class GSTMenuView extends StatelessWidget {
               ],
             ),
 
+            if (ph.config.developerAllowGstDiaryToUser && ph.config.userEnableGstDiary) ...[
+              const SizedBox(height: 35),
+              _buildSectionTitle("INTERNAL AUDIT & TAX DIFFERENCE"),
+              const SizedBox(height: 15),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 3,
+                crossAxisSpacing: 15,
+                mainAxisSpacing: 15,
+                childAspectRatio: 0.9,
+                children: [
+                  ActionIconBtn(
+                    title: "GST Diary",
+                    icon: Icons.menu_book_rounded,
+                    color: const Color(0xFF8B5CF6),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (c) => const GstDiaryView(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 40),
 
             // --- USER GUIDANCE CARD ---

@@ -29,6 +29,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
   // Working local state
   bool allowBatchHistoryToUser = false;
   bool userEnableBatchHistory = true;
+  bool allowGstDiaryToUser = false;
+  bool userEnableGstDiary = true;
   int _lastSyncedVersion = -1;
   int _lastSyncedUpdatedAt = -1;
 
@@ -38,6 +40,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
     final ph = Provider.of<PharoahManager>(context, listen: false);
     allowBatchHistoryToUser = ph.config.developerAllowBatchHistoryToUser;
     userEnableBatchHistory = ph.config.userEnableBatchHistory;
+    allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
+    userEnableGstDiary = ph.config.userEnableGstDiary;
     userPinController.text = ph.config.userMasterPin;
     _lastSyncedVersion = ph.config.version;
     _lastSyncedUpdatedAt = ph.config.updatedAt;
@@ -89,6 +93,9 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
   void _saveDeveloperSettings(PharoahManager ph) {
     ph.config.developerAllowBatchHistoryToUser = allowBatchHistoryToUser;
     ph.config.userEnableBatchHistory = userEnableBatchHistory;
+    ph.config.userEnableGstDiary = userEnableGstDiary;
+    ph.config.developerAllowGstDiaryToUser = allowGstDiaryToUser;
+    ph.config.userEnableGstDiary = userEnableGstDiary;
     if (userPinController.text.trim().isNotEmpty) {
       ph.config.userMasterPin = userPinController.text.trim();
     }
@@ -423,6 +430,27 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
                         _lastSyncedUpdatedAt = ph.config.updatedAt;
                       },
                     ),
+                    const Divider(height: 20),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        "Allow GST Diary to User",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      subtitle: const Text(
+                        "When enabled, users will see the GST Diary button in the GST Menu to compare Purchase vs Sale tax differences.",
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                      value: allowGstDiaryToUser,
+                      activeColor: const Color(0xFF059669),
+                      onChanged: (val) {
+                        setState(() => allowGstDiaryToUser = val);
+                        ph.config.developerAllowGstDiaryToUser = val;
+                        ph.updateAppConfig(ph.config);
+                        _lastSyncedVersion = ph.config.version;
+                        _lastSyncedUpdatedAt = ph.config.updatedAt;
+                      },
+                    ),
                     const SizedBox(height: 10),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
@@ -735,6 +763,29 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
                         onChanged: (val) {
                           setState(() => userEnableBatchHistory = val);
                           ph.config.userEnableBatchHistory = val;
+                          ph.updateAppConfig(ph.config);
+                          _lastSyncedVersion = ph.config.version;
+                          _lastSyncedUpdatedAt = ph.config.updatedAt;
+                        },
+                      ),
+                    ],
+                    if (ph.config.developerAllowGstDiaryToUser) ...[
+                      const Divider(height: 24),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          "Display GST Diary in GST Menu",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                        subtitle: const Text(
+                          "Turn on to view the GST Diary button in your GST Menu.",
+                          style: TextStyle(fontSize: 11, color: Colors.black54),
+                        ),
+                        value: userEnableGstDiary,
+                        activeColor: const Color(0xFF059669),
+                        onChanged: (val) {
+                          setState(() => userEnableGstDiary = val);
+                          ph.config.userEnableGstDiary = val;
                           ph.updateAppConfig(ph.config);
                           _lastSyncedVersion = ph.config.version;
                           _lastSyncedUpdatedAt = ph.config.updatedAt;

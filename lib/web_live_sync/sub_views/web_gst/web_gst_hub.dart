@@ -8,6 +8,7 @@ import 'web_gstr3b_view.dart';
 import 'web_gstr2_view.dart';
 import 'web_gst_recon_view.dart';
 import 'web_eway_bill_view.dart';
+import 'web_gst_diary_view.dart';
 
 class WebGstHub extends StatefulWidget {
   final VoidCallback onBack;
@@ -35,6 +36,8 @@ class _WebGstHubState extends State<WebGstHub> {
       activeSubView = "RECON";
     } else if (widget.initialAction == "GO_EWAY") {
       activeSubView = "EWAY";
+    } else if (widget.initialAction == "GO_GST_DIARY") {
+      activeSubView = "GST_DIARY";
     } else {
       activeSubView = "HUB";
     }
@@ -59,6 +62,9 @@ class _WebGstHubState extends State<WebGstHub> {
     }
     if (activeSubView == "EWAY") {
       return _wrapSubView("E-WAY BILL & TRANSPORT MANAGEMENT", Icons.local_shipping_outlined, WebEwayBillView(webPh: webPh, onBack: () => setState(() => activeSubView = "HUB")));
+    }
+    if (activeSubView == "GST_DIARY") {
+      return _wrapSubView("GST DIARY (PRODUCT & PARTY TAX DIFFERENCE)", Icons.menu_book_rounded, WebGstDiaryView(webPh: webPh, onBack: () => setState(() => activeSubView = "HUB")));
     }
 
     // MAIN GST BUTTONS HUB
@@ -104,7 +110,7 @@ class _WebGstHubState extends State<WebGstHub> {
 
           LayoutBuilder(
             builder: (context, constraints) {
-              int crossAxisCount = constraints.maxWidth > 950 ? 5 : (constraints.maxWidth > 650 ? 3 : 2);
+              int crossAxisCount = constraints.maxWidth > 1150 ? 6 : (constraints.maxWidth > 950 ? 5 : (constraints.maxWidth > 650 ? 3 : 2));
               return GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -153,6 +159,15 @@ class _WebGstHubState extends State<WebGstHub> {
                     color: const Color(0xFF6366F1),
                     onTap: () => setState(() => activeSubView = "EWAY"),
                   ),
+                  if (webPh.appConfig.developerAllowGstDiaryToUser && webPh.appConfig.userEnableGstDiary)
+                    _gstBtn(
+                      title: "GST Diary",
+                      subtitle: "Product & Party Tax Difference",
+                      badgeText: "Diary",
+                      icon: Icons.menu_book_rounded,
+                      color: const Color(0xFF8B5CF6),
+                      onTap: () => setState(() => activeSubView = "GST_DIARY"),
+                    ),
                 ],
               );
             },

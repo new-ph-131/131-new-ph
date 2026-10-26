@@ -360,6 +360,8 @@ class DeltaMergeEngine {
               incomingCfg.userMasterPin != localCfg.userMasterPin ||
               incomingCfg.developerAllowBatchHistoryToUser != localCfg.developerAllowBatchHistoryToUser ||
               incomingCfg.userEnableBatchHistory != localCfg.userEnableBatchHistory ||
+              incomingCfg.developerAllowGstDiaryToUser != localCfg.developerAllowGstDiaryToUser ||
+              incomingCfg.userEnableGstDiary != localCfg.userEnableGstDiary ||
               incomingCfg.printFormat != localCfg.printFormat ||
               incomingCfg.isArchitectMode != localCfg.isArchitectMode ||
               incomingCfg.termsAndConditions != localCfg.termsAndConditions;

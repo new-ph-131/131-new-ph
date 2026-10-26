@@ -42,6 +42,8 @@ class AppConfig {
   String userMasterPin;
   bool developerAllowBatchHistoryToUser;
   bool userEnableBatchHistory;
+  bool developerAllowGstDiaryToUser;
+  bool userEnableGstDiary;
   int version;
   int updatedAt;
 
@@ -87,6 +89,8 @@ class AppConfig {
     this.userMasterPin = "1234",
     this.developerAllowBatchHistoryToUser = false,
     this.userEnableBatchHistory = true,
+    this.developerAllowGstDiaryToUser = false,
+    this.userEnableGstDiary = true,
     this.version = 1,
     this.updatedAt = 0,
   });
@@ -131,6 +135,8 @@ class AppConfig {
       'userMasterPin': userMasterPin,
       'developerAllowBatchHistoryToUser': developerAllowBatchHistoryToUser,
       'userEnableBatchHistory': userEnableBatchHistory,
+      'developerAllowGstDiaryToUser': developerAllowGstDiaryToUser,
+      'userEnableGstDiary': userEnableGstDiary,
       'version': version,
       'updatedAt': updatedAt,
     };
@@ -178,6 +184,8 @@ class AppConfig {
       userMasterPin: map['userMasterPin'] ?? "1234",
       developerAllowBatchHistoryToUser: map['developerAllowBatchHistoryToUser'] ?? false,
       userEnableBatchHistory: map['userEnableBatchHistory'] ?? true,
+      developerAllowGstDiaryToUser: map['developerAllowGstDiaryToUser'] ?? false,
+      userEnableGstDiary: map['userEnableGstDiary'] ?? true,
       version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
       updatedAt: int.tryParse(map['updatedAt']?.toString() ?? '0') ?? 0,
     );

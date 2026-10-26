@@ -147,6 +147,7 @@ class WebModulesRegistry {
         WebActionItem(key: "GO_GST_2", title: "GSTR-2", subtitle: "Purchase Register & ITC", icon: Icons.shopping_cart_checkout_rounded, color: Color(0xFFD97706)),
         WebActionItem(key: "GO_GST_RECON", title: "Portal Match", subtitle: "2A / 2B ITC Reconciliation", icon: Icons.fact_check_outlined, color: Color(0xFF0D9488)),
         WebActionItem(key: "GO_EWAY", title: "E-Way Bill", subtitle: ">= ₹50,000 JSON Download", icon: Icons.local_shipping_outlined, color: Color(0xFF6366F1)),
+        WebActionItem(key: "GO_GST_DIARY", title: "GST Diary", subtitle: "Product & Party Tax Difference", icon: Icons.menu_book_rounded, color: Color(0xFF8B5CF6)),
       ],
     ),
 

@@ -69,6 +69,7 @@ class PharoahWebManager with ChangeNotifier {
   List<Medicine> medicines = [];
   List<Party> parties = [];
   List<Sale> sales = [];
+  List<GstDiarySession> gstDiarySessions = [];
   List<Purchase> purchases = [];
   List<Voucher> vouchers = [];
   List<SaleChallan> saleChallans = [];
@@ -326,6 +327,10 @@ class PharoahWebManager with ChangeNotifier {
     }
 
     // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-737): Never wipe in-flight local medicine edits!
+    var rawSessions = decodeJson('gst_sessions.json') as List?;
+    if (rawSessions != null) {
+      gstDiarySessions = rawSessions.map((e) => GstDiarySession.fromMap(e)).toList();
+    }
     var rawMeds = decodeJson('meds.json') as List?;
     if (rawMeds != null) {
       MedicineSyncModule.mergeMedicineList(

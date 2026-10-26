@@ -27,6 +27,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
 
   bool allowBatchHistoryToUser = false;
   bool userEnableBatchHistory = true;
+  bool allowGstDiaryToUser = false;
+  bool userEnableGstDiary = true;
   int _lastSyncedVersion = -1;
   int _lastSyncedUpdatedAt = -1;
 
@@ -36,6 +38,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     final webPh = Provider.of<PharoahWebManager>(context, listen: false);
     allowBatchHistoryToUser = webPh.appConfig.developerAllowBatchHistoryToUser;
     userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
+    allowGstDiaryToUser = webPh.appConfig.developerAllowGstDiaryToUser;
+    userEnableGstDiary = webPh.appConfig.userEnableGstDiary;
     userPinController.text = webPh.appConfig.userMasterPin;
     _lastSyncedVersion = webPh.appConfig.version;
     _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
@@ -87,6 +91,9 @@ class _WebUserControlViewState extends State<WebUserControlView> {
   void _saveDeveloperSettings(PharoahWebManager webPh) {
     webPh.appConfig.developerAllowBatchHistoryToUser = allowBatchHistoryToUser;
     webPh.appConfig.userEnableBatchHistory = userEnableBatchHistory;
+    webPh.appConfig.userEnableGstDiary = userEnableGstDiary;
+    webPh.appConfig.developerAllowGstDiaryToUser = allowGstDiaryToUser;
+    webPh.appConfig.userEnableGstDiary = userEnableGstDiary;
     if (userPinController.text.trim().isNotEmpty) {
       webPh.appConfig.userMasterPin = userPinController.text.trim();
     }
@@ -502,6 +509,27 @@ class _WebUserControlViewState extends State<WebUserControlView> {
                         _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
                       },
                   ),
+                  const Divider(color: Colors.white10, height: 24),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      "Allow GST Diary to User",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      "When toggled ON, standard users will see the GST Diary button in the GST Menu to compare Purchase vs Sale tax differences.",
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    value: allowGstDiaryToUser,
+                    activeColor: const Color(0xFF10B981),
+                    onChanged: (val) {
+                      setState(() => allowGstDiaryToUser = val);
+                      webPh.appConfig.developerAllowGstDiaryToUser = val;
+                      webPh.updateAppConfig(webPh.appConfig);
+                      _lastSyncedVersion = webPh.appConfig.version;
+                      _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+                    },
+                  ),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -837,6 +865,29 @@ class _WebUserControlViewState extends State<WebUserControlView> {
                           _lastSyncedVersion = webPh.appConfig.version;
                           _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
                         },
+                    ),
+                  ],
+                  if (webPh.appConfig.developerAllowGstDiaryToUser) ...[
+                    const Divider(color: Colors.white10, height: 32),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        "Display GST Diary in GST Menu",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      subtitle: const Text(
+                        "Keep this toggled ON to see the GST Diary button inside the GST Reports Hub.",
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                      value: userEnableGstDiary,
+                      activeColor: const Color(0xFF10B981),
+                      onChanged: (val) {
+                        setState(() => userEnableGstDiary = val);
+                        webPh.appConfig.userEnableGstDiary = val;
+                        webPh.updateAppConfig(webPh.appConfig);
+                        _lastSyncedVersion = webPh.appConfig.version;
+                        _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+                      },
                     ),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(

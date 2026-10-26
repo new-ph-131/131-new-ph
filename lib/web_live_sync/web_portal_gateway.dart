@@ -206,7 +206,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
 
   Widget _buildCurrentView(PharoahWebManager webPh) {
         // --- GST COMPLIANCE (FIXED ROUTING - NO LONGER OPENS BILLING SALES) ---
-    if (currentView == "GO_GST_1" || currentView == "GO_GST_3B" || currentView == "GO_GST_2" || currentView == "GO_GST_RECON" || currentView == "GO_EWAY" || currentView == "GST") {
+    if (currentView == "GO_GST_1" || currentView == "GO_GST_3B" || currentView == "GO_GST_2" || currentView == "GO_GST_RECON" || currentView == "GO_EWAY" || currentView == "GO_GST_DIARY" || currentView == "GST") {
       return WebGstHub(
         onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"),
         initialAction: currentView,
