@@ -1,5 +1,6 @@
 // FILE: lib/web_live_sync/sub_views/web_gst/web_gst_diary_view.dart
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -32,6 +33,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   String activeTab = "PRODUCT"; // "PRODUCT", "PARTY", "BILL"
   String searchQuery = "";
   String deductionFilter = "ALL"; // "ALL", "PENDING", "DEDUCTED"
+  String narrowActiveView = "TABLE"; // "TABLE", "AUDIT", "SESSIONS", "ALL"
   String activePeriodLabel = "This Month";
 
   final Set<String> selectedPurchasePartyIds = {};
@@ -802,6 +804,8 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
 
   void _openSessionAuditHistoryModal() {
     final sessions = widget.webPh.gstDiarySessions;
+    final screenW = MediaQuery.of(context).size.width;
+    final screenH = MediaQuery.of(context).size.height;
     showDialog(
       context: context,
       builder: (ctx) {
@@ -809,9 +813,9 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
           backgroundColor: const Color(0xFF1E293B),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Container(
-            width: 760,
-            height: 600,
-            padding: const EdgeInsets.all(24),
+            width: math.min(screenW - 24, 780),
+            height: math.min(screenH - 48, 620),
+            padding: EdgeInsets.all(screenW < 600 ? 14 : 22),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1084,177 +1088,570 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
         final screenHeight = MediaQuery.of(context).size.height;
-        // On iPad landscape (1024px or 1080px) and desktops, maxWidth >= 950
-        final isWide = constraints.maxWidth >= 950;
-        final bool isBounded = constraints.hasBoundedHeight && constraints.maxHeight.isFinite;
-        
-        // Strict safe bounded height for the inner workbench container
-        // Prevents RenderFlex unbounded height exceptions (#PH-REV-782)
-        final double workbenchHeight = isBounded
-            ? (constraints.maxHeight - 155).clamp(420.0, 3000.0)
-            : (screenHeight - 240).clamp(460.0, 950.0);
+        final isWide = screenWidth >= 1150;
 
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0F172A),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white10),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 1. TOP HEADER BAR
-              _buildHeaderBar(calcResult),
-              const SizedBox(height: 12),
-              // 2. RESPONSIVE CONTROLS BAR (No horizontal overflow)
-              _buildControlsBar(calcResult),
-              const SizedBox(height: 12),
-              // 3. MAIN WORKBENCH SPLIT (Strictly bounded height)
-              SizedBox(
-                height: workbenchHeight,
-                child: isWide
-                    ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Left Grid (72%)
-                          Expanded(
-                            flex: 72,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF1E293B),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white12),
-                                    ),
-                                    child: _buildGridContent(calcResult),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                _buildBottomSummaryBar(calcResult),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          // Right Sessions & Audit Panel (28%)
-                          Expanded(
-                            flex: 28,
-                            child: _buildRightSidePanel(calcResult),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1E293B),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.white12),
-                              ),
-                              child: _buildGridContent(calcResult),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _buildBottomSummaryBar(calcResult),
-                        ],
-                      ),
-              ),
-              if (!isWide) ...[
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 1. TOP RESPONSIVE HEADER BAR
+                _buildHeaderBar(calcResult, screenWidth),
                 const SizedBox(height: 14),
-                // On narrow screens (portrait tablet / mobile), render the Right Panel right below the table!
-                SizedBox(
-                  height: 380,
-                  child: _buildRightSidePanel(calcResult),
-                ),
+
+                // 2. EXECUTIVE 4-CARD TOP KPI STRIP (ALWAYS VISIBLE - NEVER HIDDEN!)
+                _buildTopExecutiveKpiStrip(calcResult, isWide, screenWidth),
+                const SizedBox(height: 14),
+
+                // 3. RESPONSIVE CONTROLS & FILTER BAR
+                _buildControlsBar(calcResult),
+                const SizedBox(height: 14),
+
+                // 4. MAIN WORKBENCH
+                if (isWide) ...[
+                  // WIDE DESKTOP: Side-by-side Dual Pane
+                  SizedBox(
+                    height: (screenHeight - 340).clamp(520.0, 950.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Left Table + Summary (72%)
+                        Expanded(
+                          flex: 72,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.white12),
+                                  ),
+                                  child: _buildGridContent(calcResult),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _buildBottomSummaryBar(calcResult),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        // Right Audit & Sessions (28%)
+                        Expanded(
+                          flex: 28,
+                          child: _buildRightSidePanel(
+                            calcResult,
+                            height: (screenHeight - 340).clamp(520.0, 950.0),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // TABLET PORTRAIT & MOBILE: Responsive View Segmenter
+                  _buildResponsiveViewSegmenter(widget.webPh.gstDiarySessions.length),
+                  const SizedBox(height: 12),
+
+                  if (narrowActiveView == "TABLE") ...[
+                    // Table with bounded comfortable height
+                    Container(
+                      height: (screenHeight * 0.48).clamp(380.0, 560.0),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: _buildGridContent(calcResult),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildBottomSummaryBar(calcResult),
+                    const SizedBox(height: 14),
+                    // Quick-Glance Audit & Session Preview
+                    _buildAuditQuickGlanceBox(),
+                  ] else if (narrowActiveView == "AUDIT") ...[
+                    _buildRightSidePanel(calcResult),
+                  ] else if (narrowActiveView == "SESSIONS") ...[
+                    _buildRightSidePanel(calcResult),
+                  ] else ...[
+                    // "ALL" (STACKED)
+                    Container(
+                      height: (screenHeight * 0.45).clamp(360.0, 520.0),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: _buildGridContent(calcResult),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildBottomSummaryBar(calcResult),
+                    const SizedBox(height: 14),
+                    _buildRightSidePanel(calcResult),
+                  ],
+                ],
               ],
-            ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildHeaderBar(GstDiaryCalculationResult result) {
-    return Row(
-      children: [
-        InkWell(
-          onTap: widget.onBack,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white10),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.arrow_back_rounded, color: Colors.white70, size: 16),
-                SizedBox(width: 6),
-                Text("BACK TO GST HUB", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Container(
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: const Color(0xFF8B5CF6).withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(Icons.auto_stories_rounded, color: Color(0xFF8B5CF6), size: 18),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildHeaderBar(GstDiaryCalculationResult result, double screenWidth) {
+    final sessions = widget.webPh.gstDiarySessions;
+
+    return Container(
+      width: double.infinity,
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                "GST DIARY & TAX DIFFERENCE RECONCILIATION",
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+              InkWell(
+                onTap: widget.onBack,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.arrow_back_rounded, color: Colors.white70, size: 16),
+                      SizedBox(width: 6),
+                      Text("BACK TO GST HUB", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
               ),
-              Text(
-                "Active Period: $activePeriodLabel (${_df.format(fromDate)} - ${_df.format(toDate)}) · Multi-Party & Weighted-Avg ITC",
-                style: const TextStyle(color: Colors.white54, fontSize: 11),
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.auto_stories_rounded, color: Color(0xFF8B5CF6), size: 18),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    "GST DIARY & TAX DIFFERENCE RECONCILIATION",
+                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.3),
+                  ),
+                  Text(
+                    "Active Period: $activePeriodLabel (${_df.format(fromDate)} - ${_df.format(toDate)})",
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
               ),
             ],
           ),
-        ),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF10B981),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF8B5CF6),
+                  side: const BorderSide(color: Color(0xFF8B5CF6)),
+                  backgroundColor: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _openSessionAuditHistoryModal,
+                icon: const Icon(Icons.history_edu_rounded, size: 15),
+                label: Text(
+                  "AUDIT HISTORY (${sessions.length})",
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => _openCreateSessionModal(result),
+                icon: const Icon(Icons.add_task_rounded, size: 15),
+                label: const Text("CREATE SESSION", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => _exportCsv(result),
+                icon: const Icon(Icons.download_rounded, size: 15),
+                label: const Text("EXPORT CSV", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
           ),
-          onPressed: () => _openCreateSessionModal(result),
-          icon: const Icon(Icons.add_task_rounded, size: 16),
-          label: const Text("CREATE SESSION", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF2563EB),
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopExecutiveKpiStrip(GstDiaryCalculationResult result, bool isWide, double screenWidth) {
+    final net = result.netGstPayable;
+    final isPayable = net > 0;
+    final sessions = widget.webPh.gstDiarySessions;
+
+    final itcCard = _kpiCard(
+      title: "TOTAL PURCHASE ITC",
+      amount: "₹${result.totalPurchaseItc.toStringAsFixed(2)}",
+      badgeText: "INPUT CREDIT",
+      subtitle: "Eligible Input Tax Credit",
+      color: const Color(0xFF06B6D4),
+      icon: Icons.input_rounded,
+    );
+
+    final saleGstCard = _kpiCard(
+      title: "TOTAL SALE GST",
+      amount: "₹${result.totalSaleOutputGst.toStringAsFixed(2)}",
+      badgeText: "OUTPUT LIABILITY",
+      subtitle: "Tax Collected on Invoices",
+      color: const Color(0xFFF59E0B),
+      icon: Icons.output_rounded,
+    );
+
+    final netCard = _kpiCard(
+      title: isPayable ? "NET GST PAYABLE (TAX DUE)" : "NET SURPLUS CREDIT",
+      amount: "₹${net.abs().toStringAsFixed(2)}",
+      badgeText: isPayable ? "⚠️ TAX DUE" : "✅ SURPLUS",
+      subtitle: isPayable ? "Govt Tax Liability (शुद्ध कर देय)" : "Carry forward credit (अधिशेष)",
+      color: isPayable ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+      icon: isPayable ? Icons.payment_rounded : Icons.savings_rounded,
+      isHero: true,
+    );
+
+    final auditCard = _kpiCard(
+      title: "RECONCILIATION & AUDIT",
+      amount: "${result.totalDeductedBills} Locked · ${result.totalPendingBills} Open",
+      badgeText: "${sessions.length} SESSIONS",
+      subtitle: "Audit snapshots & session logs",
+      color: const Color(0xFF8B5CF6),
+      icon: Icons.history_edu_rounded,
+      onTap: _openSessionAuditHistoryModal,
+    );
+
+    if (isWide) {
+      return Row(
+        children: [
+          Expanded(child: itcCard),
+          const SizedBox(width: 10),
+          Expanded(child: saleGstCard),
+          const SizedBox(width: 10),
+          Expanded(child: netCard),
+          const SizedBox(width: 10),
+          Expanded(child: auditCard),
+        ],
+      );
+    }
+
+    if (screenWidth >= 620) {
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: itcCard),
+              const SizedBox(width: 10),
+              Expanded(child: saleGstCard),
+            ],
           ),
-          onPressed: () => _exportCsv(result),
-          icon: const Icon(Icons.download_rounded, size: 16),
-          label: const Text("EXPORT CSV", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-        ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(child: netCard),
+              const SizedBox(width: 10),
+              Expanded(child: auditCard),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        netCard,
+        const SizedBox(height: 8),
+        itcCard,
+        const SizedBox(height: 8),
+        saleGstCard,
+        const SizedBox(height: 8),
+        auditCard,
       ],
+    );
+  }
+
+  Widget _kpiCard({
+    required String title,
+    required String amount,
+    required String badgeText,
+    required String subtitle,
+    required Color color,
+    required IconData icon,
+    bool isHero = false,
+    VoidCallback? onTap,
+  }) {
+    Widget card = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isHero ? color.withOpacity(0.65) : color.withOpacity(0.25),
+          width: isHero ? 1.6 : 1.0,
+        ),
+        boxShadow: isHero
+            ? [
+                BoxShadow(
+                  color: color.withOpacity(0.12),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(icon, size: 14, color: color),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withOpacity(0.3), width: 0.8),
+                ),
+                child: Text(
+                  badgeText,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            amount,
+            style: TextStyle(
+              color: color,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 10,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onTap != null)
+                Icon(Icons.arrow_forward_ios_rounded, size: 10, color: color),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: card,
+      );
+    }
+    return card;
+  }
+
+  Widget _buildResponsiveViewSegmenter(int sessionCount) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _segmentBtn(
+              key: "TABLE",
+              title: "RECONCILIATION TABLE",
+              icon: Icons.table_chart_rounded,
+            ),
+            const SizedBox(width: 4),
+            _segmentBtn(
+              key: "AUDIT",
+              title: "AUDIT & HISTORY ($sessionCount)",
+              icon: Icons.history_edu_rounded,
+            ),
+            const SizedBox(width: 4),
+            _segmentBtn(
+              key: "SESSIONS",
+              title: "SETTLEMENT SESSIONS ($sessionCount)",
+              icon: Icons.bookmark_added_rounded,
+            ),
+            const SizedBox(width: 4),
+            _segmentBtn(
+              key: "ALL",
+              title: "ALL VIEW (STACKED)",
+              icon: Icons.view_agenda_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _segmentBtn({required String key, required String title, required IconData icon}) {
+    final bool isSelected = narrowActiveView == key;
+    return InkWell(
+      onTap: () => setState(() => narrowActiveView = key),
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF8B5CF6) : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: isSelected ? Colors.white : Colors.white60),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white70,
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAuditQuickGlanceBox() {
+    final sessions = widget.webPh.gstDiarySessions;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.history_edu_rounded, color: Color(0xFF8B5CF6), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "SETTLEMENT AUDIT & HISTORY (ऑडिट इतिहास)",
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    "${sessions.length} historical deduction sessions recorded",
+                    style: const TextStyle(color: Colors.white54, fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF8B5CF6),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _openSessionAuditHistoryModal,
+            icon: const Icon(Icons.visibility_rounded, size: 14),
+            label: const Text("View Details (विस्तार देखें)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1858,7 +2255,16 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text("Locked: ${result.totalDeductedBills} · Pending: ${result.totalPendingBills}", style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text("Locked: ${result.totalDeductedBills} · Pending: ${result.totalPendingBills}", style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                    InkWell(
+                      onTap: _openSessionAuditHistoryModal,
+                      child: const Text("Audit History Details →", style: TextStyle(color: Color(0xFF8B5CF6), fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
               ],
             );
           }
@@ -1898,16 +2304,42 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  "Locked: ${result.totalDeductedBills} · Pending: ${result.totalPendingBills}",
-                  style: const TextStyle(color: Colors.white70, fontSize: 11),
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      "Locked: ${result.totalDeductedBills} · Pending: ${result.totalPendingBills}",
+                      style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: _openSessionAuditHistoryModal,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8B5CF6).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.history_edu_rounded, size: 12, color: Color(0xFF8B5CF6)),
+                          SizedBox(width: 4),
+                          Text("History", style: TextStyle(color: Color(0xFF8B5CF6), fontSize: 10, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           );
@@ -1928,145 +2360,158 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     );
   }
 
-  Widget _buildRightSidePanel(GstDiaryCalculationResult result) {
+  Widget _buildRightSidePanel(GstDiaryCalculationResult result, {double? height}) {
     final sessions = widget.webPh.gstDiarySessions;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: height == null ? MainAxisSize.min : MainAxisSize.max,
+      children: [
+        // 1. TOP HISTORY & AUDIT BOX
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0F172A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.history_edu_rounded, color: Color(0xFF8B5CF6), size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        "AUDIT & HISTORY",
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      "${sessions.length} recorded",
+                      style: const TextStyle(color: Color(0xFF8B5CF6), fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: _openSessionAuditHistoryModal,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.visibility_rounded, size: 14, color: Color(0xFF8B5CF6)),
+                      SizedBox(width: 6),
+                      Text(
+                        "View History Details (इतिहास देखें)",
+                        style: TextStyle(color: Color(0xFF8B5CF6), fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(color: Colors.white12, height: 1),
+
+        // 2. ACTIVE SETTLEMENT SESSIONS HEADER
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.bookmark_added_rounded, color: Color(0xFF10B981), size: 15),
+                  SizedBox(width: 6),
+                  Text(
+                    "SETTLEMENT SESSIONS",
+                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              Text(
+                "${sessions.length}",
+                style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+
+        // 3. SESSION STREAM
+        if (height != null)
+          Expanded(
+            child: _buildSessionListView(sessions),
+          )
+        else
+          _buildSessionListView(sessions, shrinkWrap: true),
+      ],
+    );
 
     return Container(
+      height: height,
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.white12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. TOP HISTORY & AUDIT BOX
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.history_edu_rounded, color: Color(0xFF8B5CF6), size: 16),
-                        SizedBox(width: 8),
-                        Text(
-                          "AUDIT & HISTORY",
-                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF8B5CF6).withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        "${sessions.length} recorded",
-                        style: const TextStyle(color: Color(0xFF8B5CF6), fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: _openSessionAuditHistoryModal,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 7),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B5CF6).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.4)),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.visibility_rounded, size: 14, color: Color(0xFF8B5CF6)),
-                        SizedBox(width: 6),
-                        Text(
-                          "View History Details (इतिहास देखें)",
-                          style: TextStyle(color: Color(0xFF8B5CF6), fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(color: Colors.white12, height: 1),
+      child: content,
+    );
+  }
 
-          // 2. ACTIVE SETTLEMENT SESSIONS HEADER
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.bookmark_added_rounded, color: Color(0xFF10B981), size: 15),
-                    SizedBox(width: 6),
-                    Text(
-                      "SETTLEMENT SESSIONS",
-                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                Text(
-                  "${sessions.length}",
-                  style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
+  Widget _buildSessionListView(List<GstDiarySession> sessions, {bool shrinkWrap = false}) {
+    if (sessions.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.inventory_2_outlined, color: Colors.white.withOpacity(0.2), size: 36),
+              const SizedBox(height: 8),
+              const Text(
+                "No sessions created yet.",
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                "Click 'CREATE SESSION' above to snapshot current calculations.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white38, fontSize: 10),
+              ),
+            ],
           ),
-
-          // 3. SESSION STREAM
-          Expanded(
-            child: sessions.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.inventory_2_outlined, color: Colors.white.withOpacity(0.2), size: 40),
-                          const SizedBox(height: 10),
-                          const Text(
-                            "No sessions created yet.",
-                            style: TextStyle(color: Colors.white54, fontSize: 12),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            "Click 'CREATE SESSION' above to snapshot current calculations.",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.white38, fontSize: 10),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.all(10),
-                    itemCount: sessions.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, idx) {
-                      final s = sessions[idx];
-                      return _buildSessionSideCard(s);
-                    },
-                  ),
-          ),
-        ],
-      ),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(10),
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+      itemCount: sessions.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, idx) {
+        final s = sessions[idx];
+        return _buildSessionSideCard(s);
+      },
     );
   }
 
