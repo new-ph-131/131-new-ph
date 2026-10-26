@@ -3295,4 +3295,25 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
+
+  void createGstDiarySession(GstDiarySession s) {
+    gstDiarySessions.insert(0, s);
+    notifyListeners();
+    pushUpdatedDataToCloud();
+  }
+
+  void updateGstDiarySession(GstDiarySession s) {
+    int i = gstDiarySessions.indexWhere((x) => x.id == s.id);
+    if (i != -1) {
+      gstDiarySessions[i] = s;
+      notifyListeners();
+      pushUpdatedDataToCloud();
+    }
+  }
+
+  void deleteGstDiarySession(String id) {
+    gstDiarySessions.removeWhere((x) => x.id == id);
+    notifyListeners();
+    pushUpdatedDataToCloud();
+  }
 }

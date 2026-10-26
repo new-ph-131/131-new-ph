@@ -414,6 +414,8 @@ class _GstDiaryViewState extends State<GstDiaryView> with SingleTickerProviderSt
                   totalSaleOutputGst: result.totalSaleOutputGst,
                   netGstPayable: result.netGstPayable,
                   deductedAmount: double.tryParse(deductedAmountCtrl.text) ?? result.netGstPayable,
+                  includedBillIds: result.billRows.map((b) => b.billId).toList(),
+                  totalBillsCount: result.billRows.length,
                   status: "DEDUCTED",
                   remarks: remarkCtrl.text.trim(),
                 );
@@ -440,6 +442,7 @@ class _GstDiaryViewState extends State<GstDiaryView> with SingleTickerProviderSt
       toDate: toDate,
       selectedPurchasePartyIds: selectedPurchasePartyIds,
       selectedSalePartyIds: selectedSalePartyIds,
+      existingSessions: ph.gstDiarySessions,
     );
 
     return Scaffold(

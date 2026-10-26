@@ -14,6 +14,9 @@ class GstDiaryCalculationResult {
   final double netGstPayable; // positive = payable, negative = carry forward surplus
   final int totalPurchaseBills;
   final int totalSaleBills;
+  final int totalDeductedBills;
+  final int totalPendingBills;
+  final double totalDeductedTax;
 
   GstDiaryCalculationResult({
     required this.productRows,
@@ -26,6 +29,9 @@ class GstDiaryCalculationResult {
     required this.netGstPayable,
     required this.totalPurchaseBills,
     required this.totalSaleBills,
+    this.totalDeductedBills = 0,
+    this.totalPendingBills = 0,
+    this.totalDeductedTax = 0.0,
   });
 }
 
@@ -44,6 +50,8 @@ class GstDiaryCalculator {
     required DateTime toDate,
     Set<String> selectedPurchasePartyIds = const {},
     Set<String> selectedSalePartyIds = const {},
+    List<GstDiarySession> existingSessions = const [],
+    String deductionFilter = 'ALL', // 'ALL', 'PENDING', 'DEDUCTED'
   }) {
     // 0. Build Party Fast Lookup for GSTIN and ID matching
     final Map<String, String> partyGstLookup = {};
@@ -51,6 +59,16 @@ class GstDiaryCalculator {
       if (pt.id.isNotEmpty) partyGstLookup[pt.id] = pt.gst;
       if (pt.name.isNotEmpty) {
         partyGstLookup[pt.name.trim().toLowerCase()] = pt.gst;
+      }
+    }
+
+    // 0b. Build Map of already deducted bill IDs from existing sessions
+    final Map<String, GstDiarySession> deductedBillsMap = {};
+    for (var sess in existingSessions) {
+      if (sess.status == 'DEDUCTED' || sess.status == 'SETTLED') {
+        for (var bId in sess.includedBillIds) {
+          deductedBillsMap[bId] = sess;
+        }
       }
     }
 
@@ -63,6 +81,9 @@ class GstDiaryCalculator {
         final matchesName = selectedPurchasePartyIds.contains(p.distributorName);
         if (!matchesId && !matchesName) return false;
       }
+      final isDeducted = deductedBillsMap.containsKey(p.id);
+      if (deductionFilter == 'PENDING' && isDeducted) return false;
+      if (deductionFilter == 'DEDUCTED' && !isDeducted) return false;
       return true;
     }).toList();
 
@@ -75,6 +96,9 @@ class GstDiaryCalculator {
         final matchesName = selectedSalePartyIds.contains(s.partyName);
         if (!matchesId && !matchesName) return false;
       }
+      final isDeducted = deductedBillsMap.containsKey(s.id);
+      if (deductionFilter == 'PENDING' && isDeducted) return false;
+      if (deductionFilter == 'DEDUCTED' && !isDeducted) return false;
       return true;
     }).toList();
 
@@ -254,9 +278,13 @@ class GstDiaryCalculator {
     final partyRows = partyRowMap.values.toList();
     partyRows.sort((a, b) => b.totalGst.compareTo(a.totalGst));
 
-    // 5. Aggregate Bill-wise rows
+    // 5. Aggregate Bill-wise rows with Session Deduction Tracking
     final DateFormat formatter = DateFormat('dd/MM/yyyy');
     final List<GstBillDifferenceRow> billRows = [];
+    int deductedCount = 0;
+    int pendingCount = 0;
+    double deductedTax = 0.0;
+
     for (var s in filteredSales) {
       double gst = 0.0;
       double taxable = 0.0;
@@ -265,6 +293,15 @@ class GstDiaryCalculator {
         gst += (it.cgst + it.sgst + it.igst);
       }
       final sGstin = s.partyGstin.isNotEmpty ? s.partyGstin : (partyGstLookup[s.partyId] ?? '');
+      final sessionMatch = deductedBillsMap[s.id];
+      final isDeducted = sessionMatch != null;
+      if (isDeducted) {
+        deductedCount++;
+        deductedTax += gst;
+      } else {
+        pendingCount++;
+      }
+
       billRows.add(GstBillDifferenceRow(
         billId: s.id,
         billNo: s.billNo,
@@ -275,6 +312,9 @@ class GstDiaryCalculator {
         taxableAmount: taxable,
         gstAmount: gst,
         netBillAmount: s.totalAmount,
+        isDeducted: isDeducted,
+        deductedSessionName: sessionMatch?.title ?? '',
+        deductedSessionId: sessionMatch?.id ?? '',
       ));
     }
 
@@ -287,6 +327,15 @@ class GstDiaryCalculator {
         gst += (t * (it.gstRate / 100));
       }
       final purGstin = partyGstLookup[p.partyId] ?? partyGstLookup[p.distributorName.trim().toLowerCase()] ?? '';
+      final sessionMatch = deductedBillsMap[p.id];
+      final isDeducted = sessionMatch != null;
+      if (isDeducted) {
+        deductedCount++;
+        deductedTax += gst;
+      } else {
+        pendingCount++;
+      }
+
       billRows.add(GstBillDifferenceRow(
         billId: p.id,
         billNo: p.billNo,
@@ -297,6 +346,9 @@ class GstDiaryCalculator {
         taxableAmount: taxable,
         gstAmount: gst,
         netBillAmount: p.totalAmount,
+        isDeducted: isDeducted,
+        deductedSessionName: sessionMatch?.title ?? '',
+        deductedSessionId: sessionMatch?.id ?? '',
       ));
     }
 
@@ -315,6 +367,9 @@ class GstDiaryCalculator {
       netGstPayable: netPayable,
       totalPurchaseBills: filteredPurchases.length,
       totalSaleBills: filteredSales.length,
+      totalDeductedBills: deductedCount,
+      totalPendingBills: pendingCount,
+      totalDeductedTax: deductedTax,
     );
   }
 }

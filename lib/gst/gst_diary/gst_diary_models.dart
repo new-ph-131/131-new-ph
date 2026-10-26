@@ -1,6 +1,6 @@
 // FILE: lib/gst/gst_diary/gst_diary_models.dart
 
-/// Represents a persistent GST Settlement session with deduction tracking
+/// Represents a persistent GST Settlement session with deduction tracking and audit snapshot
 class GstDiarySession {
   final String id;
   final String title;
@@ -9,10 +9,16 @@ class GstDiarySession {
   final String toDate;
   final List<String> purchasePartyIds;
   final List<String> salePartyIds;
+  final List<String> purchasePartyNames;
+  final List<String> salePartyNames;
+  final List<String> includedBillIds;
+  final double totalPurchaseTaxable;
   final double totalPurchaseItc;
+  final double totalSaleTaxable;
   final double totalSaleOutputGst;
   final double netGstPayable;
   final double deductedAmount;
+  final int totalBillsCount;
   final String status; // 'DEDUCTED', 'SETTLED', 'OPEN'
   final String remarks;
   final String createdBy;
@@ -25,10 +31,16 @@ class GstDiarySession {
     required this.toDate,
     this.purchasePartyIds = const [],
     this.salePartyIds = const [],
+    this.purchasePartyNames = const [],
+    this.salePartyNames = const [],
+    this.includedBillIds = const [],
+    this.totalPurchaseTaxable = 0.0,
     required this.totalPurchaseItc,
+    this.totalSaleTaxable = 0.0,
     required this.totalSaleOutputGst,
     required this.netGstPayable,
     required this.deductedAmount,
+    this.totalBillsCount = 0,
     this.status = 'DEDUCTED',
     this.remarks = '',
     this.createdBy = 'Admin',
@@ -48,10 +60,16 @@ class GstDiarySession {
       toDate: toDate,
       purchasePartyIds: purchasePartyIds,
       salePartyIds: salePartyIds,
+      purchasePartyNames: purchasePartyNames,
+      salePartyNames: salePartyNames,
+      includedBillIds: includedBillIds,
+      totalPurchaseTaxable: totalPurchaseTaxable,
       totalPurchaseItc: totalPurchaseItc,
+      totalSaleTaxable: totalSaleTaxable,
       totalSaleOutputGst: totalSaleOutputGst,
       netGstPayable: netGstPayable,
       deductedAmount: deductedAmount ?? this.deductedAmount,
+      totalBillsCount: totalBillsCount,
       status: status ?? this.status,
       remarks: remarks ?? this.remarks,
       createdBy: createdBy,
@@ -66,10 +84,16 @@ class GstDiarySession {
     'toDate': toDate,
     'purchasePartyIds': purchasePartyIds,
     'salePartyIds': salePartyIds,
+    'purchasePartyNames': purchasePartyNames,
+    'salePartyNames': salePartyNames,
+    'includedBillIds': includedBillIds,
+    'totalPurchaseTaxable': totalPurchaseTaxable,
     'totalPurchaseItc': totalPurchaseItc,
+    'totalSaleTaxable': totalSaleTaxable,
     'totalSaleOutputGst': totalSaleOutputGst,
     'netGstPayable': netGstPayable,
     'deductedAmount': deductedAmount,
+    'totalBillsCount': totalBillsCount,
     'status': status,
     'remarks': remarks,
     'createdBy': createdBy,
@@ -89,10 +113,26 @@ class GstDiarySession {
             ?.map((e) => e.toString())
             .toList() ??
         [],
+    purchasePartyNames: (map['purchasePartyNames'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [],
+    salePartyNames: (map['salePartyNames'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [],
+    includedBillIds: (map['includedBillIds'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        [],
+    totalPurchaseTaxable: (map['totalPurchaseTaxable'] ?? 0.0).toDouble(),
     totalPurchaseItc: (map['totalPurchaseItc'] ?? 0.0).toDouble(),
+    totalSaleTaxable: (map['totalSaleTaxable'] ?? 0.0).toDouble(),
     totalSaleOutputGst: (map['totalSaleOutputGst'] ?? 0.0).toDouble(),
     netGstPayable: (map['netGstPayable'] ?? 0.0).toDouble(),
     deductedAmount: (map['deductedAmount'] ?? 0.0).toDouble(),
+    totalBillsCount: int.tryParse(map['totalBillsCount']?.toString() ?? '0') ??
+        ((map['includedBillIds'] as List<dynamic>?)?.length ?? 0),
     status: map['status']?.toString() ?? 'DEDUCTED',
     remarks: map['remarks']?.toString() ?? '',
     createdBy: map['createdBy']?.toString() ?? 'Admin',
@@ -161,7 +201,7 @@ class GstPartyDifferenceRow {
   });
 }
 
-/// Represents individual voucher / bill rows
+/// Represents individual voucher / bill rows with session deduction status
 class GstBillDifferenceRow {
   final String billId;
   final String billNo;
@@ -172,6 +212,9 @@ class GstBillDifferenceRow {
   final double taxableAmount;
   final double gstAmount;
   final double netBillAmount;
+  final bool isDeducted;
+  final String deductedSessionName;
+  final String deductedSessionId;
 
   GstBillDifferenceRow({
     required this.billId,
@@ -183,5 +226,8 @@ class GstBillDifferenceRow {
     required this.taxableAmount,
     required this.gstAmount,
     required this.netBillAmount,
+    this.isDeducted = false,
+    this.deductedSessionName = '',
+    this.deductedSessionId = '',
   });
 }
