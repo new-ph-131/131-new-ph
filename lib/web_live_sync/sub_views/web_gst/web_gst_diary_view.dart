@@ -33,7 +33,6 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   String activeTab = "PRODUCT"; // "PRODUCT", "PARTY", "BILL"
   String searchQuery = "";
   String deductionFilter = "ALL"; // "ALL", "PENDING", "DEDUCTED"
-  String narrowActiveView = "TABLE"; // "TABLE", "AUDIT", "SESSIONS", "ALL"
   String activePeriodLabel = "This Month";
 
   final Set<String> selectedPurchasePartyIds = {};
@@ -1072,6 +1071,30 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     );
   }
 
+  int _getFilteredRowCount(GstDiaryCalculationResult result) {
+    if (activeTab == "PRODUCT") {
+      return result.productRows.where((r) {
+        if (searchQuery.isEmpty) return true;
+        return r.productName.toLowerCase().contains(searchQuery) ||
+            r.packing.toLowerCase().contains(searchQuery) ||
+            r.hsn.toLowerCase().contains(searchQuery);
+      }).length;
+    } else if (activeTab == "PARTY") {
+      return result.partyRows.where((r) {
+        if (searchQuery.isEmpty) return true;
+        return r.partyName.toLowerCase().contains(searchQuery) ||
+            r.gstin.toLowerCase().contains(searchQuery);
+      }).length;
+    } else {
+      return result.billRows.where((r) {
+        if (searchQuery.isEmpty) return true;
+        return r.billNo.toLowerCase().contains(searchQuery) ||
+            r.partyName.toLowerCase().contains(searchQuery) ||
+            r.partyGstin.toLowerCase().contains(searchQuery);
+      }).length;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final calcResult = GstDiaryCalculator.compute(
@@ -1086,15 +1109,34 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       deductionFilter: deductionFilter,
     );
 
+    final int filteredRows = _getFilteredRowCount(calcResult);
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
-        final screenHeight = MediaQuery.of(context).size.height;
-        final isWide = screenWidth >= 1150;
+        final double screenWidth = constraints.maxWidth;
+        final double screenHeight = MediaQuery.of(context).size.height;
+        // Wide landscape mode (Desktop / iPad Landscape >= 980px)
+        final bool isWide = screenWidth >= 980;
+        // Tablet Portrait mode (600px .. 979px)
+        final bool isTabletPortrait = screenWidth >= 600 && screenWidth < 980;
+
+        // Smart auto-fitting table height based on actual row count:
+        // Eliminates the giant empty dark-blue void when there are only 1-3 rows,
+        // keeping Net Payable Summary Bar and Audit & History immediately visible!
+        final double naturalRowsHeight = filteredRows == 0
+            ? 170.0
+            : (54.0 + (filteredRows * 48.0));
+
+        final double portraitTableHeight = naturalRowsHeight.clamp(165.0, 360.0);
+        final double wideTableHeight = naturalRowsHeight.clamp(280.0, (screenHeight - 330).clamp(360.0, 560.0));
+        final double widePanelHeight = (wideTableHeight + 66.0).clamp(360.0, 640.0);
 
         return SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: screenWidth < 600 ? 8 : 14,
+            vertical: 10,
+          ),
           child: Container(
             width: double.infinity,
             decoration: BoxDecoration(
@@ -1102,111 +1144,293 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.white10),
             ),
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(screenWidth < 600 ? 12 : 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 1. TOP RESPONSIVE HEADER BAR
                 _buildHeaderBar(calcResult, screenWidth),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
 
-                // 2. EXECUTIVE 4-CARD TOP KPI STRIP (ALWAYS VISIBLE - NEVER HIDDEN!)
-                _buildTopExecutiveKpiStrip(calcResult, isWide, screenWidth),
-                const SizedBox(height: 14),
+                // 2. EXECUTIVE 4-CARD TOP KPI STRIP (AUTO-ADAPTIVE: 4x1 ON TABLET/DESKTOP, 2x2 ON MOBILE)
+                _buildTopExecutiveKpiStrip(calcResult, screenWidth),
+                const SizedBox(height: 12),
 
                 // 3. RESPONSIVE CONTROLS & FILTER BAR
                 _buildControlsBar(calcResult),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
 
-                // 4. MAIN WORKBENCH
+                // 4. 100% AUTOMATIC WORKBENCH (NO MANUAL SWITCH NEEDED!)
                 if (isWide) ...[
-                  // WIDE DESKTOP: Side-by-side Dual Pane
-                  SizedBox(
-                    height: (screenHeight - 340).clamp(520.0, 950.0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Left Table + Summary (72%)
-                        Expanded(
-                          flex: 72,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E293B),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.white12),
-                                  ),
-                                  child: _buildGridContent(calcResult),
-                                ),
+                  // LANDSCAPE / DESKTOP: Auto Side-by-Side (70% Left Table+Summary | 30% Right Audit+Sessions)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 70,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              height: wideTableHeight,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white12),
                               ),
-                              const SizedBox(height: 10),
-                              _buildBottomSummaryBar(calcResult),
-                            ],
-                          ),
+                              child: _buildGridContent(calcResult),
+                            ),
+                            const SizedBox(height: 10),
+                            _buildBottomSummaryBar(calcResult),
+                          ],
                         ),
-                        const SizedBox(width: 14),
-                        // Right Audit & Sessions (28%)
-                        Expanded(
-                          flex: 28,
-                          child: _buildRightSidePanel(
-                            calcResult,
-                            height: (screenHeight - 340).clamp(520.0, 950.0),
-                          ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        flex: 30,
+                        child: _buildRightSidePanel(
+                          calcResult,
+                          height: widePanelHeight,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ] else ...[
-                  // TABLET PORTRAIT & MOBILE: Responsive View Segmenter
-                  _buildResponsiveViewSegmenter(widget.webPh.gstDiarySessions.length),
+                  // PORTRAIT TABLET & MOBILE: Auto-Fitted Table + Immediate Net Payable Bar + Auto Audit & Sessions Panel
+                  Container(
+                    height: portraitTableHeight,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: _buildGridContent(calcResult),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Net Payable Bottom Summary Bar (Directly under table - Always visible!)
+                  _buildBottomSummaryBar(calcResult),
                   const SizedBox(height: 12),
 
-                  if (narrowActiveView == "TABLE") ...[
-                    // Table with bounded comfortable height
-                    Container(
-                      height: (screenHeight * 0.48).clamp(380.0, 560.0),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: _buildGridContent(calcResult),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildBottomSummaryBar(calcResult),
-                    const SizedBox(height: 14),
-                    // Quick-Glance Audit & Session Preview
-                    _buildAuditQuickGlanceBox(),
-                  ] else if (narrowActiveView == "AUDIT") ...[
-                    _buildRightSidePanel(calcResult),
-                  ] else if (narrowActiveView == "SESSIONS") ...[
-                    _buildRightSidePanel(calcResult),
-                  ] else ...[
-                    // "ALL" (STACKED)
-                    Container(
-                      height: (screenHeight * 0.45).clamp(360.0, 520.0),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: _buildGridContent(calcResult),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildBottomSummaryBar(calcResult),
-                    const SizedBox(height: 14),
-                    _buildRightSidePanel(calcResult),
-                  ],
+                  // Auto Audit & History + Settlement Sessions (Side-by-Side on Tablet Portrait, Stacked on Mobile)
+                  _buildAutoPortraitAuditAndSessions(calcResult, isTabletPortrait),
                 ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// Automatically renders Audit & History and Settlement Sessions on the same screen
+  /// in Portrait Tablet (2-column side-by-side) and Mobile (stacked) without any manual switch.
+  Widget _buildAutoPortraitAuditAndSessions(GstDiaryCalculationResult result, bool isTabletPortrait) {
+    final sessions = widget.webPh.gstDiarySessions;
+    final net = result.netGstPayable;
+    final isPayable = net > 0;
+
+    final Widget auditBox = Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.history_edu_rounded, color: Color(0xFF8B5CF6), size: 17),
+                  SizedBox(width: 8),
+                  Text(
+                    "AUDIT & HISTORY",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  "${sessions.length} recorded",
+                  style: const TextStyle(
+                    color: Color(0xFF8B5CF6),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPayable ? "NET GST PAYABLE" : "NET SURPLUS ITC",
+                      style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "₹${net.abs().toStringAsFixed(2)}",
+                      style: TextStyle(
+                        color: isPayable ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    const Text(
+                      "BILLS STATUS",
+                      style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "${result.totalDeductedBills} Locked · ${result.totalPendingBills} Pending",
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: _openSessionAuditHistoryModal,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFF8B5CF6).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.5)),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.visibility_rounded, size: 15, color: Color(0xFF8B5CF6)),
+                  SizedBox(width: 6),
+                  Text(
+                    "View History Details (इतिहास देखें)",
+                    style: TextStyle(
+                      color: Color(0xFF8B5CF6),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final Widget sessionsBox = Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.bookmark_added_rounded, color: Color(0xFF10B981), size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    "SETTLEMENT SESSIONS",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () => _openCreateSessionModal(result),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4)),
+                  ),
+                  child: const Text(
+                    "+ Snapshot Session",
+                    style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Divider(color: Colors.white12, height: 1),
+          const SizedBox(height: 8),
+          _buildSessionListView(sessions, shrinkWrap: true),
+        ],
+      ),
+    );
+
+    if (isTabletPortrait) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 44, child: auditBox),
+          const SizedBox(width: 12),
+          Expanded(flex: 56, child: sessionsBox),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        auditBox,
+        const SizedBox(height: 12),
+        sessionsBox,
+      ],
     );
   }
 
@@ -1263,15 +1487,16 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                     style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.3),
                   ),
                   Text(
-                    "Active Period: $activePeriodLabel (${_df.format(fromDate)} - ${_df.format(toDate)})",
+                    "Active Period: $activePeriodLabel (${_df.format(fromDate)} - ${_df.format(toDate)}) · Multi-Party & Weighted-Avg ITC",
                     style: const TextStyle(color: Colors.white54, fontSize: 11),
                   ),
                 ],
               ),
             ],
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
@@ -1284,11 +1509,10 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 onPressed: _openSessionAuditHistoryModal,
                 icon: const Icon(Icons.history_edu_rounded, size: 15),
                 label: Text(
-                  "AUDIT HISTORY (${sessions.length})",
+                  "AUDIT & HISTORY (${sessions.length})",
                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                 ),
               ),
-              const SizedBox(width: 8),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
@@ -1300,7 +1524,6 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 icon: const Icon(Icons.add_task_rounded, size: 15),
                 label: const Text("CREATE SESSION", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(width: 8),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2563EB),
@@ -1319,94 +1542,82 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     );
   }
 
-  Widget _buildTopExecutiveKpiStrip(GstDiaryCalculationResult result, bool isWide, double screenWidth) {
+  Widget _buildTopExecutiveKpiStrip(GstDiaryCalculationResult result, double screenWidth) {
     final net = result.netGstPayable;
     final isPayable = net > 0;
     final sessions = widget.webPh.gstDiarySessions;
 
     final itcCard = _kpiCard(
-      title: "TOTAL PURCHASE ITC",
+      title: "PURCHASE ITC (INPUT)",
       amount: "₹${result.totalPurchaseItc.toStringAsFixed(2)}",
-      badgeText: "INPUT CREDIT",
+      badgeText: "ITC CREDIT",
       subtitle: "Eligible Input Tax Credit",
       color: const Color(0xFF06B6D4),
       icon: Icons.input_rounded,
     );
 
     final saleGstCard = _kpiCard(
-      title: "TOTAL SALE GST",
+      title: "SALE GST (OUTPUT)",
       amount: "₹${result.totalSaleOutputGst.toStringAsFixed(2)}",
-      badgeText: "OUTPUT LIABILITY",
-      subtitle: "Tax Collected on Invoices",
+      badgeText: "OUTPUT TAX",
+      subtitle: "Tax Collected on Sales",
       color: const Color(0xFFF59E0B),
       icon: Icons.output_rounded,
     );
 
     final netCard = _kpiCard(
-      title: isPayable ? "NET GST PAYABLE (TAX DUE)" : "NET SURPLUS CREDIT",
+      title: isPayable ? "NET GST PAYABLE (DUE)" : "NET SURPLUS CREDIT",
       amount: "₹${net.abs().toStringAsFixed(2)}",
-      badgeText: isPayable ? "⚠️ TAX DUE" : "✅ SURPLUS",
-      subtitle: isPayable ? "Govt Tax Liability (शुद्ध कर देय)" : "Carry forward credit (अधिशेष)",
+      badgeText: isPayable ? "TAX DUE" : "SURPLUS",
+      subtitle: isPayable ? "Net Tax Payable (शुद्ध देय कर)" : "Carry Forward (अधिशेष क्रेडिट)",
       color: isPayable ? const Color(0xFFEF4444) : const Color(0xFF10B981),
-      icon: isPayable ? Icons.payment_rounded : Icons.savings_rounded,
+      icon: isPayable ? Icons.account_balance_wallet_rounded : Icons.savings_rounded,
       isHero: true,
     );
 
     final auditCard = _kpiCard(
-      title: "RECONCILIATION & AUDIT",
+      title: "AUDIT & SESSIONS",
       amount: "${result.totalDeductedBills} Locked · ${result.totalPendingBills} Open",
       badgeText: "${sessions.length} SESSIONS",
-      subtitle: "Audit snapshots & session logs",
+      subtitle: "Tap to open Audit History",
       color: const Color(0xFF8B5CF6),
       icon: Icons.history_edu_rounded,
       onTap: _openSessionAuditHistoryModal,
     );
 
-    if (isWide) {
+    // On Desktop & Tablet Portrait (>= 740px), show all 4 cards in a single compact row!
+    if (screenWidth >= 740) {
       return Row(
         children: [
           Expanded(child: itcCard),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(child: saleGstCard),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(child: netCard),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(child: auditCard),
         ],
       );
     }
 
-    if (screenWidth >= 620) {
-      return Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: itcCard),
-              const SizedBox(width: 10),
-              Expanded(child: saleGstCard),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: netCard),
-              const SizedBox(width: 10),
-              Expanded(child: auditCard),
-            ],
-          ),
-        ],
-      );
-    }
-
+    // On Mobile (< 740px), show compact 2x2 grid so all 4 cards are visible at a glance!
     return Column(
       children: [
-        netCard,
+        Row(
+          children: [
+            Expanded(child: itcCard),
+            const SizedBox(width: 8),
+            Expanded(child: saleGstCard),
+          ],
+        ),
         const SizedBox(height: 8),
-        itcCard,
-        const SizedBox(height: 8),
-        saleGstCard,
-        const SizedBox(height: 8),
-        auditCard,
+        Row(
+          children: [
+            Expanded(child: netCard),
+            const SizedBox(width: 8),
+            Expanded(child: auditCard),
+          ],
+        ),
       ],
     );
   }
@@ -1422,23 +1633,14 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     VoidCallback? onTap,
   }) {
     Widget card = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isHero ? color.withOpacity(0.65) : color.withOpacity(0.25),
-          width: isHero ? 1.6 : 1.0,
+          width: isHero ? 1.5 : 1.0,
         ),
-        boxShadow: isHero
-            ? [
-                BoxShadow(
-                  color: color.withOpacity(0.12),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ]
-            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1447,72 +1649,61 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(6),
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(icon, size: 13, color: color),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    child: Icon(icon, size: 14, color: color),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.4,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 4),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: color.withOpacity(0.3), width: 0.8),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   badgeText,
                   style: TextStyle(
                     color: color,
-                    fontSize: 9,
+                    fontSize: 8,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Text(
             amount,
             style: TextStyle(
               color: color,
-              fontSize: 17,
+              fontSize: 15,
               fontWeight: FontWeight.w900,
-              letterSpacing: 0.2,
             ),
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: Colors.white54,
-                    fontSize: 10,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (onTap != null)
-                Icon(Icons.arrow_forward_ios_rounded, size: 10, color: color),
-            ],
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 9.5,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -1521,138 +1712,11 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: card,
       );
     }
     return card;
-  }
-
-  Widget _buildResponsiveViewSegmenter(int sessionCount) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _segmentBtn(
-              key: "TABLE",
-              title: "RECONCILIATION TABLE",
-              icon: Icons.table_chart_rounded,
-            ),
-            const SizedBox(width: 4),
-            _segmentBtn(
-              key: "AUDIT",
-              title: "AUDIT & HISTORY ($sessionCount)",
-              icon: Icons.history_edu_rounded,
-            ),
-            const SizedBox(width: 4),
-            _segmentBtn(
-              key: "SESSIONS",
-              title: "SETTLEMENT SESSIONS ($sessionCount)",
-              icon: Icons.bookmark_added_rounded,
-            ),
-            const SizedBox(width: 4),
-            _segmentBtn(
-              key: "ALL",
-              title: "ALL VIEW (STACKED)",
-              icon: Icons.view_agenda_rounded,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _segmentBtn({required String key, required String title, required IconData icon}) {
-    final bool isSelected = narrowActiveView == key;
-    return InkWell(
-      onTap: () => setState(() => narrowActiveView = key),
-      borderRadius: BorderRadius.circular(7),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF8B5CF6) : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 13, color: isSelected ? Colors.white : Colors.white60),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.white70,
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAuditQuickGlanceBox() {
-    final sessions = widget.webPh.gstDiarySessions;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF8B5CF6).withOpacity(0.3)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.history_edu_rounded, color: Color(0xFF8B5CF6), size: 20),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "SETTLEMENT AUDIT & HISTORY (ऑडिट इतिहास)",
-                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    "${sessions.length} historical deduction sessions recorded",
-                    style: const TextStyle(color: Colors.white54, fontSize: 10),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF8B5CF6),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: _openSessionAuditHistoryModal,
-            icon: const Icon(Icons.visibility_rounded, size: 14),
-            label: const Text("View Details (विस्तार देखें)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildControlsBar(GstDiaryCalculationResult result) {
@@ -1897,7 +1961,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   Widget _buildProductTable(List<GstProductDifferenceRow> rows) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minTableWidth = 860.0;
+        final double minTableWidth = 650.0;
         final bool needHScroll = constraints.maxWidth < minTableWidth;
         
         Widget tableWidget = Column(
@@ -1989,7 +2053,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   Widget _buildPartyTable(List<GstPartyDifferenceRow> rows) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minTableWidth = 760.0;
+        final double minTableWidth = 620.0;
         final bool needHScroll = constraints.maxWidth < minTableWidth;
         
         Widget tableWidget = Column(
@@ -2092,7 +2156,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   Widget _buildBillTable(List<GstBillDifferenceRow> rows) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minTableWidth = 840.0;
+        final double minTableWidth = 650.0;
         final bool needHScroll = constraints.maxWidth < minTableWidth;
         
         Widget tableWidget = Column(
