@@ -1,5 +1,4 @@
 // FILE: lib/gst/gst_diary/gst_diary_calculator.dart
-
 import 'package:intl/intl.dart';
 import '../../models.dart';
 import 'gst_diary_models.dart';
@@ -31,30 +30,10 @@ class GstDiaryCalculationResult {
 }
 
 class GstDiaryCalculator {
-  static bool _isDateInRange(String dateStr, DateTime from, DateTime to) {
-    if (dateStr.trim().isEmpty) return false;
-    try {
-      DateTime? d;
-      if (dateStr.contains('-')) {
-        final parts = dateStr.split('-');
-        if (parts[0].length == 4) {
-          d = DateTime.tryParse(dateStr);
-        } else if (parts.length >= 3 && parts[2].length == 4) {
-          d = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
-        }
-      } else if (dateStr.contains('/')) {
-        final parts = dateStr.split('/');
-        if (parts.length >= 3 && parts[2].length == 4) {
-          d = DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]));
-        }
-      }
-      if (d == null) return false;
-      final start = DateTime(from.year, from.month, from.day);
-      final end = DateTime(to.year, to.month, to.day, 23, 59, 59);
-      return !d.isBefore(start) && !d.isAfter(end);
-    } catch (_) {
-      return false;
-    }
+  static bool _isDateInRange(DateTime d, DateTime from, DateTime to) {
+    final start = DateTime(from.year, from.month, from.day);
+    final end = DateTime(to.year, to.month, to.day, 23, 59, 59);
+    return !d.isBefore(start) && !d.isAfter(end);
   }
 
   static GstDiaryCalculationResult compute({
@@ -66,24 +45,35 @@ class GstDiaryCalculator {
     Set<String> selectedPurchasePartyIds = const {},
     Set<String> selectedSalePartyIds = const {},
   }) {
+    // 0. Build Party Fast Lookup for GSTIN and ID matching
+    final Map<String, String> partyGstLookup = {};
+    for (var pt in parties) {
+      if (pt.id.isNotEmpty) partyGstLookup[pt.id] = pt.gst;
+      if (pt.name.isNotEmpty) {
+        partyGstLookup[pt.name.trim().toLowerCase()] = pt.gst;
+      }
+    }
+
     // 1. Filter Purchases
     final filteredPurchases = purchases.where((p) {
-      if (p.isCancelled) return false;
+      if (p.isDeleted == 1 || p.gstStatus == 'Cancelled') return false;
       if (!_isDateInRange(p.date, fromDate, toDate)) return false;
-      if (selectedPurchasePartyIds.isNotEmpty &&
-          !selectedPurchasePartyIds.contains(p.distributorName)) {
-        return false;
+      if (selectedPurchasePartyIds.isNotEmpty) {
+        final matchesId = selectedPurchasePartyIds.contains(p.partyId);
+        final matchesName = selectedPurchasePartyIds.contains(p.distributorName);
+        if (!matchesId && !matchesName) return false;
       }
       return true;
     }).toList();
 
     // 2. Filter Sales
     final filteredSales = sales.where((s) {
-      if (s.status != 'Active') return false;
+      if (s.isDeleted == 1 || s.status == 'Cancelled') return false;
       if (!_isDateInRange(s.date, fromDate, toDate)) return false;
-      if (selectedSalePartyIds.isNotEmpty &&
-          !selectedSalePartyIds.contains(s.partyID)) {
-        return false;
+      if (selectedSalePartyIds.isNotEmpty) {
+        final matchesId = selectedSalePartyIds.contains(s.partyId);
+        final matchesName = selectedSalePartyIds.contains(s.partyName);
+        if (!matchesId && !matchesName) return false;
       }
       return true;
     }).toList();
@@ -168,7 +158,6 @@ class GstDiaryCalculator {
         gstDifference: diff,
       ));
     }
-
     productRows.sort((a, b) => b.saleGst.compareTo(a.saleGst));
 
     // 4. Aggregate Party-wise stats
@@ -176,7 +165,8 @@ class GstDiaryCalculator {
 
     // Purchase Suppliers
     for (var p in filteredPurchases) {
-      final pKey = 'PUR_${p.distributorName.trim().toLowerCase()}';
+      final pKey = 'PUR_${p.partyId.isNotEmpty ? p.partyId : p.distributorName.trim().toLowerCase()}';
+      final pGstLookup = partyGstLookup[p.partyId] ?? partyGstLookup[p.distributorName.trim().toLowerCase()] ?? '';
       double pTaxable = 0.0;
       double pGst = 0.0;
       for (var it in p.items) {
@@ -184,12 +174,13 @@ class GstDiaryCalculator {
         pTaxable += t;
         pGst += (t * (it.gstRate / 100));
       }
+
       final existing = partyRowMap[pKey];
       if (existing == null) {
         partyRowMap[pKey] = GstPartyDifferenceRow(
-          partyId: p.distributorName,
+          partyId: p.partyId.isNotEmpty ? p.partyId : p.distributorName,
           partyName: p.distributorName,
-          gstin: p.distributorGstin,
+          gstin: pGstLookup,
           type: 'PURCHASE_SUPPLIER',
           totalBills: 1,
           taxableAmount: pTaxable,
@@ -202,7 +193,7 @@ class GstDiaryCalculator {
         partyRowMap[pKey] = GstPartyDifferenceRow(
           partyId: existing.partyId,
           partyName: existing.partyName,
-          gstin: existing.gstin.isNotEmpty ? existing.gstin : p.distributorGstin,
+          gstin: existing.gstin.isNotEmpty ? existing.gstin : pGstLookup,
           type: 'PURCHASE_SUPPLIER',
           totalBills: existing.totalBills + 1,
           taxableAmount: existing.taxableAmount + pTaxable,
@@ -216,7 +207,8 @@ class GstDiaryCalculator {
 
     // Sale Customers
     for (var s in filteredSales) {
-      final sKey = 'SAL_${s.partyID.trim().toLowerCase()}';
+      final sKey = 'SAL_${s.partyId.isNotEmpty ? s.partyId : s.partyName.trim().toLowerCase()}';
+      final sGstin = s.partyGstin.isNotEmpty ? s.partyGstin : (partyGstLookup[s.partyId] ?? partyGstLookup[s.partyName.trim().toLowerCase()] ?? '');
       double sTaxable = 0.0;
       double sCgst = 0.0;
       double sSgst = 0.0;
@@ -228,12 +220,13 @@ class GstDiaryCalculator {
         sIgst += it.igst;
       }
       final totalGst = sCgst + sSgst + sIgst;
+
       final existing = partyRowMap[sKey];
       if (existing == null) {
         partyRowMap[sKey] = GstPartyDifferenceRow(
-          partyId: s.partyID,
+          partyId: s.partyId.isNotEmpty ? s.partyId : s.partyName,
           partyName: s.partyName,
-          gstin: s.partyGst,
+          gstin: sGstin,
           type: 'SALE_CUSTOMER',
           totalBills: 1,
           taxableAmount: sTaxable,
@@ -246,7 +239,7 @@ class GstDiaryCalculator {
         partyRowMap[sKey] = GstPartyDifferenceRow(
           partyId: existing.partyId,
           partyName: existing.partyName,
-          gstin: existing.gstin.isNotEmpty ? existing.gstin : s.partyGst,
+          gstin: existing.gstin.isNotEmpty ? existing.gstin : sGstin,
           type: 'SALE_CUSTOMER',
           totalBills: existing.totalBills + 1,
           taxableAmount: existing.taxableAmount + sTaxable,
@@ -262,6 +255,7 @@ class GstDiaryCalculator {
     partyRows.sort((a, b) => b.totalGst.compareTo(a.totalGst));
 
     // 5. Aggregate Bill-wise rows
+    final DateFormat formatter = DateFormat('dd/MM/yyyy');
     final List<GstBillDifferenceRow> billRows = [];
     for (var s in filteredSales) {
       double gst = 0.0;
@@ -270,18 +264,20 @@ class GstDiaryCalculator {
         taxable += (it.rate * it.qty) - it.discountRupees;
         gst += (it.cgst + it.sgst + it.igst);
       }
+      final sGstin = s.partyGstin.isNotEmpty ? s.partyGstin : (partyGstLookup[s.partyId] ?? '');
       billRows.add(GstBillDifferenceRow(
         billId: s.id,
         billNo: s.billNo,
-        date: s.date,
+        date: formatter.format(s.date),
         partyName: s.partyName,
-        partyGstin: s.partyGst,
+        partyGstin: sGstin,
         voucherType: 'SALE',
         taxableAmount: taxable,
         gstAmount: gst,
         netBillAmount: s.totalAmount,
       ));
     }
+
     for (var p in filteredPurchases) {
       double gst = 0.0;
       double taxable = 0.0;
@@ -290,12 +286,13 @@ class GstDiaryCalculator {
         taxable += t;
         gst += (t * (it.gstRate / 100));
       }
+      final purGstin = partyGstLookup[p.partyId] ?? partyGstLookup[p.distributorName.trim().toLowerCase()] ?? '';
       billRows.add(GstBillDifferenceRow(
         billId: p.id,
         billNo: p.billNo,
-        date: p.date,
+        date: formatter.format(p.date),
         partyName: p.distributorName,
-        partyGstin: p.distributorGstin,
+        partyGstin: purGstin,
         voucherType: 'PURCHASE',
         taxableAmount: taxable,
         gstAmount: gst,

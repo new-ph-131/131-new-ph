@@ -1,10 +1,10 @@
 // FILE: lib/universal_sync/universal_sync_switch.dart
-// Live Revision: #PH-REV-779 (WEB-PURCHASE-DUAL-SERIES-WPUR-PRO)
+// Live Revision: #PH-REV-780 (WEB-PURCHASE-DUAL-SERIES-WPUR-PRO)
 
 /// UniversalSyncSwitch: Safe Master Feature Toggle.
 /// Allows instant switching between the new Universal Track and Legacy Sync without deleting files.
 class UniversalSyncSwitch {
-  static const String revision = "#PH-REV-779 (WEB-PURCHASE-DUAL-SERIES-WPUR-PRO)";
+  static const String revision = "#PH-REV-780 (WEB-PURCHASE-DUAL-SERIES-WPUR-PRO)";
 
   /// Master switch: Set to false to revert back to legacy sale sync instantly
   static bool isUniversalSyncActive = true;
