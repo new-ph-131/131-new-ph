@@ -1915,6 +1915,19 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       ),
     );
   }
+
+  Widget _summaryBlock(String title, String val, Color valColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title, style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(val, style: TextStyle(color: valColor, fontSize: 14, fontWeight: FontWeight.w900)),
+      ],
+    );
+  }
+
   Widget _buildRightSidePanel(GstDiaryCalculationResult result) {
     final sessions = widget.webPh.gstDiarySessions;
 
