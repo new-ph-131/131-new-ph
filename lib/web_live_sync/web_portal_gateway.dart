@@ -180,7 +180,10 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
                     currentView == "GO_M_ROUTE" ||
                     currentView == "GO_M_USER_CONTROL" ||
                     currentView == "GO_CHALLAN_SALE" ||
-                    currentView == "GO_CHALLAN_PUR")
+                    currentView == "GO_CHALLAN_PUR" ||
+                    currentView == "GO_GST_DIARY" ||
+                    currentView == "GST" ||
+                    currentView.startsWith("GO_GST"))
                 ? _buildCurrentView(webPh)
                 : SingleChildScrollView(
                     key: PageStorageKey("web_portal_scroll_$currentView"),

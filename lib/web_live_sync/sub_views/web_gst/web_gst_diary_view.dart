@@ -1084,7 +1084,16 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 1150;
+        final screenHeight = MediaQuery.of(context).size.height;
+        // On iPad landscape (1024px or 1080px) and desktops, maxWidth >= 950
+        final isWide = constraints.maxWidth >= 950;
+        final bool isBounded = constraints.hasBoundedHeight && constraints.maxHeight.isFinite;
+        
+        // Strict safe bounded height for the inner workbench container
+        // Prevents RenderFlex unbounded height exceptions (#PH-REV-782)
+        final double workbenchHeight = isBounded
+            ? (constraints.maxHeight - 155).clamp(420.0, 3000.0)
+            : (screenHeight - 240).clamp(460.0, 950.0);
 
         return Container(
           width: double.infinity,
@@ -1096,25 +1105,26 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               // 1. TOP HEADER BAR
               _buildHeaderBar(calcResult),
               const SizedBox(height: 12),
-
               // 2. RESPONSIVE CONTROLS BAR (No horizontal overflow)
               _buildControlsBar(calcResult),
               const SizedBox(height: 12),
-
-              // 3. MAIN WORKBENCH SPLIT (Grid on left + Sessions & Audit on right)
-              Expanded(
+              // 3. MAIN WORKBENCH SPLIT (Strictly bounded height)
+              SizedBox(
+                height: workbenchHeight,
                 child: isWide
                     ? Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Left Grid (72%)
                           Expanded(
                             flex: 72,
                             child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Expanded(
                                   child: Container(
@@ -1140,6 +1150,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                         ],
                       )
                     : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(
                             child: Container(
@@ -1156,6 +1167,14 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                         ],
                       ),
               ),
+              if (!isWide) ...[
+                const SizedBox(height: 14),
+                // On narrow screens (portrait tablet / mobile), render the Right Panel right below the table!
+                SizedBox(
+                  height: 380,
+                  child: _buildRightSidePanel(calcResult),
+                ),
+              ],
             ],
           ),
         );
@@ -1479,326 +1498,406 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   }
 
   Widget _buildProductTable(List<GstProductDifferenceRow> rows) {
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0F172A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-          ),
-          child: const Row(
-            children: [
-              Expanded(flex: 3, child: Text("PRODUCT NAME", style: _thStyle)),
-              Expanded(flex: 1, child: Text("PACK", style: _thStyle)),
-              Expanded(flex: 1, child: Text("PUR QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
-              Expanded(flex: 1, child: Text("PUR ITC (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
-              Expanded(flex: 1, child: Text("AVG ITC/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
-              Expanded(flex: 1, child: Text("SALE QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
-              Expanded(flex: 1, child: Text("SALE GST (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
-              Expanded(flex: 1, child: Text("AVG SALE/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
-              Expanded(flex: 1, child: Text("ELIGIBLE ITC (₹)", textAlign: TextAlign.right, style: _thStyle)),
-              Expanded(flex: 1, child: Text("GST DIFF (₹)", textAlign: TextAlign.right, style: _thStyle)),
-            ],
-          ),
-        ),
-        const Divider(color: Colors.white12, height: 1),
-        // Rows
-        Expanded(
-          child: ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
-            itemBuilder: (context, idx) {
-              final r = rows[idx];
-              final diffColor = r.gstDifference >= 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minTableWidth = 860.0;
+        final bool needHScroll = constraints.maxWidth < minTableWidth;
+        
+        Widget tableWidget = Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: const Row(
+                children: [
+                  Expanded(flex: 3, child: Text("PRODUCT NAME", style: _thStyle)),
+                  Expanded(flex: 1, child: Text("PACK", style: _thStyle)),
+                  Expanded(flex: 1, child: Text("PUR QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 1, child: Text("PUR ITC (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 1, child: Text("AVG ITC/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 1, child: Text("SALE QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 1, child: Text("SALE GST (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 1, child: Text("AVG SALE/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 1, child: Text("ELIGIBLE ITC (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  Expanded(flex: 1, child: Text("GST DIFF (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            // Rows
+            Expanded(
+              child: ListView.separated(
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, idx) {
+                  final r = rows[idx];
+                  final diffColor = r.gstDifference >= 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            r.productName,
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Expanded(flex: 1, child: Text(r.packing, style: const TextStyle(color: Colors.white54, fontSize: 11), overflow: TextOverflow.ellipsis)),
+                        Expanded(flex: 1, child: Text(r.purchaseQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                        Expanded(flex: 1, child: Text(r.purchaseGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.w600))),
+                        Expanded(flex: 1, child: Text(r.avgPurchaseGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                        Expanded(flex: 1, child: Text(r.saleQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                        Expanded(flex: 1, child: Text(r.saleGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.w600))),
+                        Expanded(flex: 1, child: Text(r.avgSaleGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                        Expanded(flex: 1, child: Text(r.eligibleItcForSoldUnits.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                        Expanded(
+                          flex: 1,
+                          child: Text(
+                            "${r.gstDifference >= 0 ? "+" : ""}${r.gstDifference.toStringAsFixed(2)}",
+                            textAlign: TextAlign.right,
+                            style: TextStyle(color: diffColor, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
 
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        r.productName,
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Expanded(flex: 1, child: Text(r.packing, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                    Expanded(flex: 1, child: Text(r.purchaseQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                    Expanded(flex: 1, child: Text(r.purchaseGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 1, child: Text(r.avgPurchaseGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                    Expanded(flex: 1, child: Text(r.saleQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                    Expanded(flex: 1, child: Text(r.saleGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.w600))),
-                    Expanded(flex: 1, child: Text(r.avgSaleGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                    Expanded(flex: 1, child: Text(r.eligibleItcForSoldUnits.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                    Expanded(
-                      flex: 1,
-                      child: Text(
-                        "${r.gstDifference >= 0 ? '+' : ''}${r.gstDifference.toStringAsFixed(2)}",
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: diffColor, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+        if (needHScroll) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: minTableWidth,
+              height: constraints.maxHeight,
+              child: tableWidget,
+            ),
+          );
+        }
+        return tableWidget;
+      },
     );
   }
 
   Widget _buildPartyTable(List<GstPartyDifferenceRow> rows) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0F172A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-          ),
-          child: const Row(
-            children: [
-              Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
-              Expanded(flex: 2, child: Text("GSTIN", style: _thStyle)),
-              Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
-              Expanded(flex: 1, child: Text("BILLS", textAlign: TextAlign.right, style: _thStyle)),
-              Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
-              Expanded(flex: 2, child: Text("TOTAL GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
-            ],
-          ),
-        ),
-        const Divider(color: Colors.white12, height: 1),
-        Expanded(
-          child: ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
-            itemBuilder: (context, idx) {
-              final r = rows[idx];
-              final isSupplier = r.type == 'PURCHASE_SUPPLIER';
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minTableWidth = 760.0;
+        final bool needHScroll = constraints.maxWidth < minTableWidth;
+        
+        Widget tableWidget = Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: const Row(
+                children: [
+                  Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
+                  Expanded(flex: 2, child: Text("GSTIN", style: _thStyle)),
+                  Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
+                  Expanded(flex: 1, child: Text("BILLS", textAlign: TextAlign.right, style: _thStyle)),
+                  Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  Expanded(flex: 2, child: Text("TOTAL GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            Expanded(
+              child: ListView.separated(
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, idx) {
+                  final r = rows[idx];
+                  final isSupplier = r.type == "PURCHASE_SUPPLIER";
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            r.partyName,
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            r.gstin.isNotEmpty ? r.gstin : "UNREGISTERED",
+                            style: TextStyle(color: r.gstin.isNotEmpty ? Colors.white70 : Colors.white38, fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            isSupplier ? "Supplier (ITC)" : "Customer (Output)",
+                            style: TextStyle(
+                              color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Expanded(flex: 1, child: Text("${r.totalBills}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                        Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            r.totalGst.toStringAsFixed(2),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
 
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        r.partyName,
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        r.gstin.isNotEmpty ? r.gstin : "UNREGISTERED",
-                        style: TextStyle(color: r.gstin.isNotEmpty ? Colors.white70 : Colors.white38, fontSize: 11),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        isSupplier ? "Supplier (ITC)" : "Customer (Output)",
-                        style: TextStyle(
-                          color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    Expanded(flex: 1, child: Text("${r.totalBills}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                    Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        r.totalGst.toStringAsFixed(2),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+        if (needHScroll) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: minTableWidth,
+              height: constraints.maxHeight,
+              child: tableWidget,
+            ),
+          );
+        }
+        return tableWidget;
+      },
     );
   }
 
   Widget _buildBillTable(List<GstBillDifferenceRow> rows) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: Color(0xFF0F172A),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-          ),
-          child: const Row(
-            children: [
-              Expanded(flex: 2, child: Text("BILL NO", style: _thStyle)),
-              Expanded(flex: 2, child: Text("DATE", style: _thStyle)),
-              Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
-              Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
-              Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
-              Expanded(flex: 2, child: Text("GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
-              Expanded(flex: 2, child: Text("STATUS", textAlign: TextAlign.center, style: _thStyle)),
-            ],
-          ),
-        ),
-        const Divider(color: Colors.white12, height: 1),
-        Expanded(
-          child: ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
-            itemBuilder: (context, idx) {
-              final r = rows[idx];
-              final isPur = r.voucherType == 'PURCHASE';
-
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        r.billNo,
-                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Expanded(flex: 2, child: Text(r.date, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        r.partyName,
-                        style: const TextStyle(color: Colors.white70, fontSize: 11),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        isPur ? "PURCHASE" : "SALE",
-                        style: TextStyle(
-                          color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minTableWidth = 840.0;
+        final bool needHScroll = constraints.maxWidth < minTableWidth;
+        
+        Widget tableWidget = Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: const Row(
+                children: [
+                  Expanded(flex: 2, child: Text("BILL NO", style: _thStyle)),
+                  Expanded(flex: 2, child: Text("DATE", style: _thStyle)),
+                  Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
+                  Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
+                  Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  Expanded(flex: 2, child: Text("GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  Expanded(flex: 2, child: Text("STATUS", textAlign: TextAlign.center, style: _thStyle)),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1),
+            Expanded(
+              child: ListView.separated(
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, idx) {
+                  final r = rows[idx];
+                  final isPur = r.voucherType == "PURCHASE";
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            r.billNo,
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ),
-                    Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        r.gstAmount.toStringAsFixed(2),
-                        textAlign: TextAlign.right,
-                        style: TextStyle(
-                          color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                        Expanded(flex: 2, child: Text(r.date, style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            r.partyName,
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Center(
-                        child: r.isDeducted
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withOpacity(0.18),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFF10B981)),
-                                ),
-                                child: Text(
-                                  "DEDUCTED",
-                                  style: const TextStyle(
-                                    color: Color(0xFF10B981),
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.5,
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            isPur ? "PURCHASE" : "SALE",
+                            style: TextStyle(
+                              color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            r.gstAmount.toStringAsFixed(2),
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Center(
+                            child: r.isDeducted
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF10B981).withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFF10B981)),
+                                    ),
+                                    child: const Text(
+                                      "DEDUCTED",
+                                      style: TextStyle(
+                                        color: Color(0xFF10B981),
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.06),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: Colors.white12),
+                                    ),
+                                    child: const Text(
+                                      "OPEN",
+                                      style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                                    ),
                                   ),
-                                ),
-                              )
-                            : Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.06),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: Colors.white12),
-                                ),
-                                child: const Text(
-                                  "OPEN",
-                                  style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                      ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+
+        if (needHScroll) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: minTableWidth,
+              height: constraints.maxHeight,
+              child: tableWidget,
+            ),
+          );
+        }
+        return tableWidget;
+      },
     );
   }
 
   Widget _buildBottomSummaryBar(GstDiaryCalculationResult result) {
     final net = result.netGstPayable;
     final isPayable = net > 0;
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white12),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 620;
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _summaryBlock("PUR ITC", "₹${result.totalPurchaseItc.toStringAsFixed(2)}", const Color(0xFF06B6D4)),
+                    _summaryBlock("SALE GST", "₹${result.totalSaleOutputGst.toStringAsFixed(2)}", const Color(0xFFF59E0B)),
+                    _summaryBlock(isPayable ? "NET DUE" : "SURPLUS", "₹${net.abs().toStringAsFixed(2)}", isPayable ? const Color(0xFFEF4444) : const Color(0xFF10B981)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text("Locked: ${result.totalDeductedBills} · Pending: ${result.totalPendingBills}", style: const TextStyle(color: Colors.white54, fontSize: 10)),
+              ],
+            );
+          }
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _summaryBlock(
-                "TOTAL PURCHASE ITC (INPUT)",
-                "₹${result.totalPurchaseItc.toStringAsFixed(2)}",
-                const Color(0xFF06B6D4),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _summaryBlock(
+                        "TOTAL PURCHASE ITC (INPUT)",
+                        "₹${result.totalPurchaseItc.toStringAsFixed(2)}",
+                        const Color(0xFF06B6D4),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text("—", style: TextStyle(color: Colors.white24, fontSize: 18)),
+                      ),
+                      _summaryBlock(
+                        "TOTAL SALE GST (OUTPUT)",
+                        "₹${result.totalSaleOutputGst.toStringAsFixed(2)}",
+                        const Color(0xFFF59E0B),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text("=", style: TextStyle(color: Colors.white24, fontSize: 18)),
+                      ),
+                      _summaryBlock(
+                        isPayable ? "NET GST PAYABLE (TAX DUE)" : "NET SURPLUS CREDIT (CARRY FWD)",
+                        "₹${net.abs().toStringAsFixed(2)}",
+                        isPayable ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text("—", style: TextStyle(color: Colors.white24, fontSize: 20)),
-              ),
-              _summaryBlock(
-                "TOTAL SALE GST (OUTPUT)",
-                "₹${result.totalSaleOutputGst.toStringAsFixed(2)}",
-                const Color(0xFFF59E0B),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text("=", style: TextStyle(color: Colors.white24, fontSize: 20)),
-              ),
-              _summaryBlock(
-                isPayable ? "NET GST PAYABLE (TAX DUE)" : "NET SURPLUS CREDIT (CARRY FWD)",
-                "₹${net.abs().toStringAsFixed(2)}",
-                isPayable ? const Color(0xFFEF4444) : const Color(0xFF10B981),
-              ),
-            ],
-          ),
-          Row(
-            children: [
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -1811,23 +1910,11 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 ),
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
-
-  Widget _summaryBlock(String title, String val, Color valColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 2),
-        Text(val, style: TextStyle(color: valColor, fontSize: 15, fontWeight: FontWeight.w900)),
-      ],
-    );
-  }
-
   Widget _buildRightSidePanel(GstDiaryCalculationResult result) {
     final sessions = widget.webPh.gstDiarySessions;
 

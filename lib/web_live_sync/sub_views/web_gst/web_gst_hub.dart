@@ -64,7 +64,16 @@ class _WebGstHubState extends State<WebGstHub> {
       return _wrapSubView("E-WAY BILL & TRANSPORT MANAGEMENT", Icons.local_shipping_outlined, WebEwayBillView(webPh: webPh, onBack: () => setState(() => activeSubView = "HUB")));
     }
     if (activeSubView == "GST_DIARY") {
-      return _wrapSubView("GST DIARY (PRODUCT & PARTY TAX DIFFERENCE)", Icons.menu_book_rounded, WebGstDiaryView(webPh: webPh, onBack: () => setState(() => activeSubView = "HUB")));
+      return WebGstDiaryView(
+        webPh: webPh,
+        onBack: () {
+          if (widget.initialAction == "GO_GST_DIARY") {
+            widget.onBack();
+          } else {
+            setState(() => activeSubView = "HUB");
+          }
+        },
+      );
     }
 
     // MAIN GST BUTTONS HUB
