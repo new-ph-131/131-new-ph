@@ -884,7 +884,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                       ],
                     ),
                   ),
-                  if (ph.config.developerAllowBatchHistoryToUser && ph.config.userEnableBatchHistory) ...[
+                  if (true) ...[
                     IconButton(
                       icon: const Icon(Icons.table_chart_rounded, color: Color(0xFF0F766E)),
                       tooltip: "Batch Adjustment Audit History",
@@ -1123,7 +1123,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                     _actionBtn("CASCADE EDIT", Icons.sync_alt_rounded, Colors.indigo, () => _showCascadeEditDialog(ph, med, b)),
                     const SizedBox(width: 8),
                     _actionBtn("ADJUST", Icons.exposure, Colors.orange.shade800, () => _showAdjustmentDialog(ph, med, b)),
-                    if (ph.config.developerAllowBatchHistoryToUser && ph.config.userEnableBatchHistory) ...[
+                    if (true) ...[
                       const SizedBox(width: 8),
                       _actionBtn(b.adjustmentHistory.isNotEmpty ? "AUDIT (${b.adjustmentHistory.length})" : "AUDIT", Icons.table_chart_rounded, const Color(0xFF0F766E), () => _openAuditWorkbench(ph, med, b.batch)),
                     ],

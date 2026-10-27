@@ -87,7 +87,7 @@ class AppConfig {
     // Developer & User Access Control Defaults
     this.developerPassword = "Rawat@1122",
     this.userMasterPin = "1234",
-    this.developerAllowBatchHistoryToUser = false,
+    this.developerAllowBatchHistoryToUser = true,
     this.userEnableBatchHistory = true,
     this.developerAllowGstDiaryToUser = true,
     this.userEnableGstDiary = true,
@@ -182,7 +182,7 @@ class AppConfig {
 
       developerPassword: map['developerPassword'] ?? "Rawat@1122",
       userMasterPin: map['userMasterPin'] ?? "1234",
-      developerAllowBatchHistoryToUser: map['developerAllowBatchHistoryToUser'] ?? false,
+      developerAllowBatchHistoryToUser: map['developerAllowBatchHistoryToUser'] ?? true,
       userEnableBatchHistory: map['userEnableBatchHistory'] ?? true,
       developerAllowGstDiaryToUser: (int.tryParse(map['updatedAt']?.toString() ?? '0') ?? 0) == 0
           ? true

@@ -65,7 +65,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
       return true;
     }).toList();
 
-    final bool canViewAudit = webPh.appConfig.developerAllowBatchHistoryToUser && webPh.appConfig.userEnableBatchHistory;
+    final bool canViewAudit = true;
 
     if (_isViewingAuditHistory && canViewAudit) {
       return BatchAuditWorkbench(
@@ -1229,7 +1229,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                       ],
                     ),
                   ),
-                  if (b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0) ...[
+                  if (true) ...[
                     const SizedBox(height: 10),
                     InkWell(
                       onTap: () {

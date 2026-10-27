@@ -1096,7 +1096,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     "Current Live Stock: ${b.qty.toInt()} Qty",
                     style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
                   ),
-                  if (b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0) ...[
+                  if (true) ...[
                     const SizedBox(height: 10),
                     InkWell(
                       onTap: () {
@@ -1405,6 +1405,8 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
           return _isNearExpiry(b.exp);
         case "EXPIRED":
           return _isExpired(b.exp);
+        case "ADJUSTED":
+          return b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0;
         case "HOLD_BLOCKED":
           return b.status == "Hold" || b.status == "Blocked";
         case "FY_LOCKED":
@@ -1531,6 +1533,30 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
         ),
         const Spacer(),
 
+        // Audit History Button
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0D9488),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onPressed: () {
+            final targetMed = selectedMed ??
+                (currentItems.isNotEmpty
+                    ? currentItems.first.medicine
+                    : (webPh.medicines.isNotEmpty ? webPh.medicines.first : null));
+            if (targetMed != null) {
+              setState(() {
+                _viewingAuditMed = targetMed;
+                _viewingAuditBatchNo = null;
+              });
+            }
+          },
+          icon: const Icon(Icons.history_edu_rounded, size: 16),
+          label: const Text("AUDIT HISTORY", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+        ),
+        const SizedBox(width: 10),
         // Export Button
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
@@ -1937,6 +1963,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 _filterChip("ZERO_STOCK", "ZERO / SHORT (≤0)"),
                 _filterChip("EXPIRING", "EXPIRING SOON (≤90D)"),
                 _filterChip("EXPIRED", "EXPIRED"),
+                _filterChip("ADJUSTED", "ADJUSTED (AUDIT)"),
                 _filterChip("HOLD_BLOCKED", "HOLD / BLOCKED"),
                 _filterChip("FY_LOCKED", "FY-LOCKED (PROTECTED)"),
               ],
@@ -2085,6 +2112,21 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
             label: const Text("CHANGE PRODUCT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(width: 8),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0D9488),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            onPressed: () => setState(() {
+              _viewingAuditMed = med;
+              _viewingAuditBatchNo = null;
+            }),
+            icon: const Icon(Icons.history_edu_rounded, size: 14),
+            label: const Text("AUDIT HISTORY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 8),
           OutlinedButton.icon(
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF38BDF8),
@@ -2139,7 +2181,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   const Expanded(flex: 2, child: Text("LIVE STOCK", style: _thStyle)),
                   const Expanded(flex: 2, child: Text("PHARMA STATUS", style: _thStyle)),
                   const Expanded(flex: 3, child: Text("FY AUDIT STATUS", style: _thStyle)),
-                  const Expanded(flex: 5, child: Text("ACTIONS", style: _thStyle)),
+                  const Expanded(flex: 6, child: Text("ACTIONS", style: _thStyle)),
                 ],
               ),
             ),
@@ -2380,9 +2422,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                       ),
                     ),
 
-                    // Actions (Prominent Modify, Adjust, Delete & Quick Hub)
+                    // Actions (Prominent Modify, Adjust, Audit, Delete & Quick Hub)
                     Expanded(
-                      flex: 5,
+                      flex: 6,
                       child: Row(
                         children: [
                           // MODIFY BUTTON
@@ -2412,8 +2454,29 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                             ),
                             onPressed: () => _showAdjustmentDialog(webPh, m, b),
-                            icon: const Icon(Icons.exposure_rounded, size: 14),
-                            label: const Text("ADJUST", style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                            icon: const Icon(Icons.exposure_rounded, size: 13),
+                            label: const Text("ADJUST", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 5),
+                          // 📋 AUDIT BUTTON (Direct 1-Click to Modify / Cancel Adjustments)
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0D9488),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                            onPressed: () => setState(() {
+                              _viewingAuditMed = m;
+                              _viewingAuditBatchNo = b.batch;
+                            }),
+                            icon: const Icon(Icons.history_edu_rounded, size: 13),
+                            label: Text(
+                              b.adjustmentHistory.isNotEmpty ? "AUDIT (${b.adjustmentHistory.length})" : "AUDIT",
+                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
+                            ),
                           ),
                           const SizedBox(width: 5),
                           // DELETE BUTTON
