@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import '../app_date_logic.dart';
+import '../gateway/company_registry_model.dart';
 import '../models.dart';
 import '../pharoah_manager.dart';
 
