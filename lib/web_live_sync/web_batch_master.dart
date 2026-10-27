@@ -7,6 +7,7 @@ import "package:csv/csv.dart";
 import "package:file_saver/file_saver.dart";
 
 import "sub_views/web_stock/product_batch_traceability_screen.dart";
+import "sub_views/web_stock/batch_audit_workbench.dart";
 import "web_models.dart";
 import "pharoah_web_manager.dart";
 import "../logic/batch_cascade_engine.dart";
@@ -31,6 +32,8 @@ class WebBatchMasterView extends StatefulWidget {
 
 class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   Medicine? _viewingTraceabilityMed;
+  Medicine? _viewingAuditMed;
+  String? _viewingAuditBatchNo;
   final TextEditingController searchController = TextEditingController();
   Medicine? selectedMed;
   String searchQuery = "";
@@ -981,6 +984,20 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               ),
               const SizedBox(height: 8),
               _quickActionTile(
+                icon: Icons.history_edu_rounded,
+                iconColor: const Color(0xFF14B8A6),
+                title: "ADJUSTMENT AUDIT & MODIFY / CANCEL",
+                subtitle: "View, modify, or cancel/revert stock adjustments (${b.adjustmentHistory.length} recorded).",
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _viewingAuditMed = med;
+                    _viewingAuditBatchNo = b.batch;
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              _quickActionTile(
                 icon: Icons.timeline_rounded,
                 iconColor: const Color(0xFF38BDF8),
                 title: "BATCH TRACEABILITY",
@@ -1079,6 +1096,40 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     "Current Live Stock: ${b.qty.toInt()} Qty",
                     style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
                   ),
+                  if (b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0) ...[
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: () {
+                        Navigator.pop(c);
+                        setState(() {
+                          _viewingAuditMed = med;
+                          _viewingAuditBatchNo = b.batch;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D9488).withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.history_edu_rounded, color: Color(0xFF2DD4BF), size: 17),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty — Click to Modify / Cancel Entry",
+                                style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF2DD4BF), size: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 15),
                   _inputField("QTY CHANGE (+ TO ADD, - TO REDUCE)", qtyC, isNum: true),
                   const SizedBox(height: 12),
@@ -1237,6 +1288,49 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
     final activeFY = webPh.financialYear.isNotEmpty ? webPh.financialYear : AppDateLogic.getCurrentFYString();
+
+    if (_viewingAuditMed != null) {
+      final auditMed = _viewingAuditMed!;
+      final medBatches = webPh.batchHistory[auditMed.identityKey] ?? [];
+      return BatchAuditWorkbench(
+        medicine: auditMed,
+        batches: medBatches,
+        initialBatchNo: _viewingAuditBatchNo,
+        onBack: () => setState(() {
+          _viewingAuditMed = null;
+          _viewingAuditBatchNo = null;
+        }),
+        isWebTheme: true,
+        onModifyRecord: ({
+          required String batchNo,
+          required BatchAdjustmentRecord record,
+          required double newAdjQty,
+          required String newReason,
+          required String newNotes,
+        }) {
+          webPh.modifyBatchAdjustmentRecord(
+            medId: auditMed.identityKey,
+            batchNo: batchNo,
+            recordId: record.id,
+            newAdjQty: newAdjQty,
+            newReason: newReason,
+            newNotes: newNotes,
+          );
+          setState(() {});
+        },
+        onDeleteRecord: ({
+          required String batchNo,
+          required BatchAdjustmentRecord record,
+        }) {
+          webPh.deleteBatchAdjustmentRecord(
+            medId: auditMed.identityKey,
+            batchNo: batchNo,
+            recordId: record.id,
+          );
+          setState(() {});
+        },
+      );
+    }
 
     if (_viewingTraceabilityMed != null) {
       return ProductBatchTraceabilityScreen(

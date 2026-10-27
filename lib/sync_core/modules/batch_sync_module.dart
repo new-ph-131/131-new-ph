@@ -129,13 +129,12 @@ class BatchSyncModule {
       existing.status = incomingBatch.status;
       existing.version = incomingVersion;
       existing.updatedAt = incomingTimestamp;
-      if (incomingBatch.openingQty != 0.0) {
+      if (incomingBatch.openingQty != 0.0 || incomingVersion > existing.version) {
         existing.openingQty = incomingBatch.openingQty;
       }
-      if (incomingBatch.adjustmentQty != 0.0) {
-        existing.adjustmentQty = incomingBatch.adjustmentQty;
-        existing.adjReason = incomingBatch.adjReason;
-      }
+      existing.adjustmentQty = incomingBatch.adjustmentQty;
+      existing.adjReason = incomingBatch.adjReason;
+      existing.adjustmentHistory = List<BatchAdjustmentRecord>.from(incomingBatch.adjustmentHistory);
       return true;
     } else {
       list.add(incomingBatch);

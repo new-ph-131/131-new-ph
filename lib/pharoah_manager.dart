@@ -1354,10 +1354,24 @@ void registerBatchActivity({
     required double adjQty,
     required String reason,
     String adjustedBy = "User",
+    String notes = "",
   }) {
     if (batchHistory.containsKey(medId)) {
       try {
-        var b = batchHistory[medId]!.firstWhere((x) => x.batch == batchNo);
+        var b = batchHistory[medId]!.firstWhere((x) => x.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
+        if (b.adjustmentHistory.isEmpty && b.adjustmentQty != 0) {
+          b.adjustmentHistory.add(
+            BatchAdjustmentRecord(
+              id: "ADJ_LEGACY_${b.batch}",
+              timestamp: b.updatedAt > 0 ? b.updatedAt : DateTime.now().millisecondsSinceEpoch,
+              previousQty: b.qty - b.adjustmentQty,
+              adjustmentQty: b.adjustmentQty,
+              newQty: b.qty,
+              reason: b.adjReason.isNotEmpty ? b.adjReason : "Stock Correction",
+              adjustedBy: "User",
+            ),
+          );
+        }
         double prev = b.qty;
         b.adjustmentQty += adjQty;
         b.adjReason = reason;
@@ -1372,6 +1386,7 @@ void registerBatchActivity({
           newQty: prev + adjQty,
           reason: reason,
           adjustedBy: adjustedBy,
+          notes: notes,
         );
         b.adjustmentHistory.add(rec);
 
@@ -1386,6 +1401,171 @@ void registerBatchActivity({
         rebuildInventory();
         save().then((_) => loadAllData());
       } catch (e) {}
+    }
+  }
+
+  bool modifyBatchAdjustmentRecord({
+    required String medId,
+    required String batchNo,
+    required String recordId,
+    required double newAdjQty,
+    required String newReason,
+    String newNotes = "",
+    String adjustedBy = "User",
+  }) {
+    if (newAdjQty == 0) {
+      return deleteBatchAdjustmentRecord(
+        medId: medId,
+        batchNo: batchNo,
+        recordId: recordId,
+      );
+    }
+    if (!batchHistory.containsKey(medId)) return false;
+    try {
+      var b = batchHistory[medId]!.firstWhere(
+        (x) => x.batch.trim().toUpperCase() == batchNo.trim().toUpperCase(),
+      );
+      if (b.adjustmentHistory.isEmpty && b.adjustmentQty != 0) {
+        b.adjustmentHistory.add(
+          BatchAdjustmentRecord(
+            id: "LEGACY_${b.batch}",
+            timestamp: b.updatedAt > 0 ? b.updatedAt : DateTime.now().millisecondsSinceEpoch,
+            previousQty: b.qty - b.adjustmentQty,
+            adjustmentQty: b.adjustmentQty,
+            newQty: b.qty,
+            reason: b.adjReason.isNotEmpty ? b.adjReason : "Stock Correction",
+            adjustedBy: "User",
+          ),
+        );
+      }
+      int recIdx = b.adjustmentHistory.indexWhere((r) => r.id == recordId);
+      if (recIdx == -1 && recordId.startsWith("LEGACY_") && b.adjustmentHistory.length == 1) {
+        recIdx = 0;
+      }
+      if (recIdx == -1) return false;
+
+      final oldRec = b.adjustmentHistory[recIdx];
+      final double deltaDiff = newAdjQty - oldRec.adjustmentQty;
+
+      b.adjustmentHistory[recIdx] = BatchAdjustmentRecord(
+        id: oldRec.id.startsWith("LEGACY_")
+            ? "ADJ_${DateTime.now().millisecondsSinceEpoch}_1"
+            : oldRec.id,
+        timestamp: oldRec.timestamp,
+        previousQty: oldRec.previousQty,
+        adjustmentQty: newAdjQty,
+        newQty: oldRec.previousQty + newAdjQty,
+        reason: newReason,
+        adjustedBy: adjustedBy.isNotEmpty ? adjustedBy : oldRec.adjustedBy,
+        notes: newNotes,
+      );
+
+      for (int i = recIdx + 1; i < b.adjustmentHistory.length; i++) {
+        final cur = b.adjustmentHistory[i];
+        final updatedPrev = cur.previousQty + deltaDiff;
+        b.adjustmentHistory[i] = BatchAdjustmentRecord(
+          id: cur.id,
+          timestamp: cur.timestamp,
+          previousQty: updatedPrev,
+          adjustmentQty: cur.adjustmentQty,
+          newQty: updatedPrev + cur.adjustmentQty,
+          reason: cur.reason,
+          adjustedBy: cur.adjustedBy,
+          notes: cur.notes,
+        );
+      }
+
+      b.adjustmentQty += deltaDiff;
+      b.adjReason = b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.last.reason : "";
+      b.version += 1;
+      b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+      if (activeCompany != null && activeCompany!.id.isNotEmpty) {
+        BatchSyncModule.onBatchSaved(
+          batch: b,
+          medIdentityKey: medId,
+          storeToken: activeCompany!.id,
+          isDelete: false,
+        );
+      }
+      rebuildInventory();
+      save().then((_) => loadAllData());
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool deleteBatchAdjustmentRecord({
+    required String medId,
+    required String batchNo,
+    required String recordId,
+  }) {
+    if (!batchHistory.containsKey(medId)) return false;
+    try {
+      var b = batchHistory[medId]!.firstWhere(
+        (x) => x.batch.trim().toUpperCase() == batchNo.trim().toUpperCase(),
+      );
+      if (b.adjustmentHistory.isEmpty && b.adjustmentQty != 0) {
+        b.adjustmentHistory.add(
+          BatchAdjustmentRecord(
+            id: "LEGACY_${b.batch}",
+            timestamp: b.updatedAt > 0 ? b.updatedAt : DateTime.now().millisecondsSinceEpoch,
+            previousQty: b.qty - b.adjustmentQty,
+            adjustmentQty: b.adjustmentQty,
+            newQty: b.qty,
+            reason: b.adjReason.isNotEmpty ? b.adjReason : "Stock Correction",
+            adjustedBy: "User",
+          ),
+        );
+      }
+      int recIdx = b.adjustmentHistory.indexWhere((r) => r.id == recordId);
+      if (recIdx == -1 && recordId.startsWith("LEGACY_") && b.adjustmentHistory.length == 1) {
+        recIdx = 0;
+      }
+      if (recIdx == -1) return false;
+
+      final removed = b.adjustmentHistory.removeAt(recIdx);
+      final double removedDelta = removed.adjustmentQty;
+
+      for (int i = recIdx; i < b.adjustmentHistory.length; i++) {
+        final cur = b.adjustmentHistory[i];
+        final updatedPrev = cur.previousQty - removedDelta;
+        b.adjustmentHistory[i] = BatchAdjustmentRecord(
+          id: cur.id,
+          timestamp: cur.timestamp,
+          previousQty: updatedPrev,
+          adjustmentQty: cur.adjustmentQty,
+          newQty: updatedPrev + cur.adjustmentQty,
+          reason: cur.reason,
+          adjustedBy: cur.adjustedBy,
+          notes: cur.notes,
+        );
+      }
+
+      if (b.adjustmentHistory.isEmpty) {
+        b.adjustmentQty = 0.0;
+        b.adjReason = "";
+      } else {
+        b.adjustmentQty -= removedDelta;
+        b.adjReason = b.adjustmentHistory.last.reason;
+      }
+      b.version += 1;
+      b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+      if (activeCompany != null && activeCompany!.id.isNotEmpty) {
+        BatchSyncModule.onBatchSaved(
+          batch: b,
+          medIdentityKey: medId,
+          storeToken: activeCompany!.id,
+          isDelete: false,
+        );
+      }
+      rebuildInventory();
+      save().then((_) => loadAllData());
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -44,6 +44,32 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                 initialBatchNo: batchNo,
                 onBack: () => Navigator.pop(c),
                 isWebTheme: false,
+                onModifyRecord: ({
+                  required String batchNo,
+                  required BatchAdjustmentRecord record,
+                  required double newAdjQty,
+                  required String newReason,
+                  required String newNotes,
+                }) {
+                  livePh.modifyBatchAdjustmentRecord(
+                    medId: med.identityKey,
+                    batchNo: batchNo,
+                    recordId: record.id,
+                    newAdjQty: newAdjQty,
+                    newReason: newReason,
+                    newNotes: newNotes,
+                  );
+                },
+                onDeleteRecord: ({
+                  required String batchNo,
+                  required BatchAdjustmentRecord record,
+                }) {
+                  livePh.deleteBatchAdjustmentRecord(
+                    medId: med.identityKey,
+                    batchNo: batchNo,
+                    recordId: record.id,
+                  );
+                },
               ),
             ),
           ),
@@ -638,6 +664,38 @@ class _BatchMasterViewState extends State<BatchMasterView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Current Live Stock: ${b.qty.toInt()} Qty", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                if (b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () {
+                      Navigator.pop(c);
+                      _openAuditWorkbench(ph, med, b.batch);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F766E).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF0F766E).withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.edit_calendar_rounded, size: 16, color: Color(0xFF0F766E)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty
+Tap to Modify or Cancel previous adjustment entries",
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Color(0xFF0F766E)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextField(
                   controller: qtyC,

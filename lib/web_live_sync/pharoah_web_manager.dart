@@ -3492,13 +3492,7 @@ class PharoahWebManager with ChangeNotifier {
     return result;
   }
 
-  void adjustBatchStock({
-    required String medId,
-    required String batchNo,
-    required double adjQty,
-    required String reason,
-    String adjustedBy = "User",
-  }) {
+  String _resolveMedBatchKey(String medId) {
     String resolvedKey = medId.trim();
     if (!batchHistory.containsKey(resolvedKey)) {
       try {
@@ -3513,10 +3507,35 @@ class PharoahWebManager with ChangeNotifier {
         }
       } catch (_) {}
     }
+    return resolvedKey;
+  }
+
+  void adjustBatchStock({
+    required String medId,
+    required String batchNo,
+    required double adjQty,
+    required String reason,
+    String adjustedBy = "User",
+    String notes = "",
+  }) {
+    final String resolvedKey = _resolveMedBatchKey(medId);
     if (batchHistory.containsKey(resolvedKey)) {
       final idx = batchHistory[resolvedKey]!.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase());
       if (idx != -1) {
         final b = batchHistory[resolvedKey]![idx];
+        if (b.adjustmentHistory.isEmpty && b.adjustmentQty != 0) {
+          b.adjustmentHistory.add(
+            BatchAdjustmentRecord(
+              id: "ADJ_LEGACY_${b.batch}",
+              timestamp: b.updatedAt > 0 ? b.updatedAt : DateTime.now().millisecondsSinceEpoch,
+              previousQty: b.qty - b.adjustmentQty,
+              adjustmentQty: b.adjustmentQty,
+              newQty: b.qty,
+              reason: b.adjReason.isNotEmpty ? b.adjReason : "Stock Correction",
+              adjustedBy: "User",
+            ),
+          );
+        }
         double prev = b.qty;
         b.adjustmentQty += adjQty;
         b.adjReason = reason;
@@ -3531,6 +3550,7 @@ class PharoahWebManager with ChangeNotifier {
           newQty: prev + adjQty,
           reason: reason,
           adjustedBy: adjustedBy,
+          notes: notes,
         );
         b.adjustmentHistory.add(rec);
 
@@ -3553,6 +3573,185 @@ class PharoahWebManager with ChangeNotifier {
         pushUpdatedDataToCloud();
       }
     }
+  }
+
+  bool modifyBatchAdjustmentRecord({
+    required String medId,
+    required String batchNo,
+    required String recordId,
+    required double newAdjQty,
+    required String newReason,
+    String newNotes = "",
+    String adjustedBy = "User",
+  }) {
+    if (newAdjQty == 0) {
+      return deleteBatchAdjustmentRecord(
+        medId: medId,
+        batchNo: batchNo,
+        recordId: recordId,
+      );
+    }
+    final String resolvedKey = _resolveMedBatchKey(medId);
+    if (!batchHistory.containsKey(resolvedKey)) return false;
+    final idx = batchHistory[resolvedKey]!.indexWhere(
+      (b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase(),
+    );
+    if (idx == -1) return false;
+
+    final b = batchHistory[resolvedKey]![idx];
+    if (b.adjustmentHistory.isEmpty && b.adjustmentQty != 0) {
+      b.adjustmentHistory.add(
+        BatchAdjustmentRecord(
+          id: "LEGACY_${b.batch}",
+          timestamp: b.updatedAt > 0 ? b.updatedAt : DateTime.now().millisecondsSinceEpoch,
+          previousQty: b.qty - b.adjustmentQty,
+          adjustmentQty: b.adjustmentQty,
+          newQty: b.qty,
+          reason: b.adjReason.isNotEmpty ? b.adjReason : "Stock Correction",
+          adjustedBy: "User",
+        ),
+      );
+    }
+    int recIdx = b.adjustmentHistory.indexWhere((r) => r.id == recordId);
+    if (recIdx == -1 && recordId.startsWith("LEGACY_") && b.adjustmentHistory.length == 1) {
+      recIdx = 0;
+    }
+    if (recIdx == -1) return false;
+
+    final oldRec = b.adjustmentHistory[recIdx];
+    final double deltaDiff = newAdjQty - oldRec.adjustmentQty;
+
+    b.adjustmentHistory[recIdx] = BatchAdjustmentRecord(
+      id: oldRec.id.startsWith("LEGACY_")
+          ? "ADJ_${DateTime.now().millisecondsSinceEpoch}_1"
+          : oldRec.id,
+      timestamp: oldRec.timestamp,
+      previousQty: oldRec.previousQty,
+      adjustmentQty: newAdjQty,
+      newQty: oldRec.previousQty + newAdjQty,
+      reason: newReason,
+      adjustedBy: adjustedBy.isNotEmpty ? adjustedBy : oldRec.adjustedBy,
+      notes: newNotes,
+    );
+
+    for (int i = recIdx + 1; i < b.adjustmentHistory.length; i++) {
+      final cur = b.adjustmentHistory[i];
+      final updatedPrev = cur.previousQty + deltaDiff;
+      b.adjustmentHistory[i] = BatchAdjustmentRecord(
+        id: cur.id,
+        timestamp: cur.timestamp,
+        previousQty: updatedPrev,
+        adjustmentQty: cur.adjustmentQty,
+        newQty: updatedPrev + cur.adjustmentQty,
+        reason: cur.reason,
+        adjustedBy: cur.adjustedBy,
+        notes: cur.notes,
+      );
+    }
+
+    b.adjustmentQty += deltaDiff;
+    b.adjReason = b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.last.reason : "";
+    b.version += 1;
+    b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+    if (activeStoreToken.isNotEmpty) {
+      BatchSyncModule.onBatchSaved(
+        batch: b,
+        medIdentityKey: resolvedKey,
+        storeToken: activeStoreToken,
+        isDelete: false,
+      );
+    }
+    final syncId = BatchSyncModule.getBatchSyncId(resolvedKey, batchNo);
+    _autoSyncService.triggerAutoSync(
+      action: 'BATCH_ADJUSTMENT_MODIFIED',
+      entityId: syncId,
+      unmarkedIds: [syncId, batchNo],
+    );
+    rebuildInventory();
+    notifyListeners();
+    pushUpdatedDataToCloud();
+    return true;
+  }
+
+  bool deleteBatchAdjustmentRecord({
+    required String medId,
+    required String batchNo,
+    required String recordId,
+  }) {
+    final String resolvedKey = _resolveMedBatchKey(medId);
+    if (!batchHistory.containsKey(resolvedKey)) return false;
+    final idx = batchHistory[resolvedKey]!.indexWhere(
+      (b) => b.batch.trim().toUpperCase() == batchNo.trim().toUpperCase(),
+    );
+    if (idx == -1) return false;
+
+    final b = batchHistory[resolvedKey]![idx];
+    if (b.adjustmentHistory.isEmpty && b.adjustmentQty != 0) {
+      b.adjustmentHistory.add(
+        BatchAdjustmentRecord(
+          id: "LEGACY_${b.batch}",
+          timestamp: b.updatedAt > 0 ? b.updatedAt : DateTime.now().millisecondsSinceEpoch,
+          previousQty: b.qty - b.adjustmentQty,
+          adjustmentQty: b.adjustmentQty,
+          newQty: b.qty,
+          reason: b.adjReason.isNotEmpty ? b.adjReason : "Stock Correction",
+          adjustedBy: "User",
+        ),
+      );
+    }
+    int recIdx = b.adjustmentHistory.indexWhere((r) => r.id == recordId);
+    if (recIdx == -1 && recordId.startsWith("LEGACY_") && b.adjustmentHistory.length == 1) {
+      recIdx = 0;
+    }
+    if (recIdx == -1) return false;
+
+    final removed = b.adjustmentHistory.removeAt(recIdx);
+    final double removedDelta = removed.adjustmentQty;
+
+    for (int i = recIdx; i < b.adjustmentHistory.length; i++) {
+      final cur = b.adjustmentHistory[i];
+      final updatedPrev = cur.previousQty - removedDelta;
+      b.adjustmentHistory[i] = BatchAdjustmentRecord(
+        id: cur.id,
+        timestamp: cur.timestamp,
+        previousQty: updatedPrev,
+        adjustmentQty: cur.adjustmentQty,
+        newQty: updatedPrev + cur.adjustmentQty,
+        reason: cur.reason,
+        adjustedBy: cur.adjustedBy,
+        notes: cur.notes,
+      );
+    }
+
+    if (b.adjustmentHistory.isEmpty) {
+      b.adjustmentQty = 0.0;
+      b.adjReason = "";
+    } else {
+      b.adjustmentQty -= removedDelta;
+      b.adjReason = b.adjustmentHistory.last.reason;
+    }
+    b.version += 1;
+    b.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+    if (activeStoreToken.isNotEmpty) {
+      BatchSyncModule.onBatchSaved(
+        batch: b,
+        medIdentityKey: resolvedKey,
+        storeToken: activeStoreToken,
+        isDelete: false,
+      );
+    }
+    final syncId = BatchSyncModule.getBatchSyncId(resolvedKey, batchNo);
+    _autoSyncService.triggerAutoSync(
+      action: 'BATCH_ADJUSTMENT_DELETED',
+      entityId: syncId,
+      unmarkedIds: [syncId, batchNo],
+    );
+    rebuildInventory();
+    notifyListeners();
+    pushUpdatedDataToCloud();
+    return true;
   }
 
   void updateAppConfig(AppConfig c) {

@@ -24,6 +24,7 @@ enum BatchAuditColumnId {
   reason,
   adjustedBy,
   auditId,
+  actions,
 }
 
 class BatchAuditColumnDef {
@@ -86,6 +87,17 @@ class BatchAuditWorkbench extends StatefulWidget {
   final String? initialBatchNo;
   final VoidCallback onBack;
   final bool isWebTheme;
+  final void Function({
+    required String batchNo,
+    required BatchAdjustmentRecord record,
+    required double newAdjQty,
+    required String newReason,
+    required String newNotes,
+  })? onModifyRecord;
+  final void Function({
+    required String batchNo,
+    required BatchAdjustmentRecord record,
+  })? onDeleteRecord;
 
   const BatchAuditWorkbench({
     super.key,
@@ -94,6 +106,8 @@ class BatchAuditWorkbench extends StatefulWidget {
     this.initialBatchNo,
     required this.onBack,
     this.isWebTheme = true,
+    this.onModifyRecord,
+    this.onDeleteRecord,
   });
 
   @override
@@ -238,6 +252,13 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
         width: 150,
         portraitWidth: 130,
         isVisible: false,
+      ),
+      BatchAuditColumnId.actions: BatchAuditColumnDef(
+        id: BatchAuditColumnId.actions,
+        title: "ACTIONS (MODIFY / CANCEL)",
+        width: 175,
+        portraitWidth: 155,
+        isVisible: true,
       ),
     };
   }
@@ -457,6 +478,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
           cmp = a.record.adjustedBy.toLowerCase().compareTo(b.record.adjustedBy.toLowerCase());
           break;
         case BatchAuditColumnId.auditId:
+        case BatchAuditColumnId.actions:
           cmp = a.record.id.compareTo(b.record.id);
           break;
       }
@@ -1791,7 +1813,474 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
             overflow: TextOverflow.ellipsis,
           ),
         );
+      case BatchAuditColumnId.actions:
+        return _cellContainer(
+          width,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                ),
+                onPressed: widget.onModifyRecord == null
+                    ? null
+                    : () => _showModifyAdjustmentDialog(item),
+                icon: const Icon(Icons.edit_rounded, size: 12),
+                label: const Text(
+                  "MODIFY",
+                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 6),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                ),
+                onPressed: widget.onDeleteRecord == null
+                    ? null
+                    : () => _showDeleteAdjustmentDialog(item),
+                icon: const Icon(Icons.delete_forever_rounded, size: 12),
+                label: const Text(
+                  "CANCEL",
+                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+        );
     }
+  }
+
+  void _showModifyAdjustmentDialog(DisplayAuditItem item) {
+    final bool isDark = widget.isWebTheme;
+    final TextEditingController qtyC = TextEditingController(
+      text: item.record.adjustmentQty % 1 == 0
+          ? item.record.adjustmentQty.toInt().toString()
+          : item.record.adjustmentQty.toString(),
+    );
+    final TextEditingController notesC = TextEditingController(text: item.record.notes);
+    final List<String> reasons = [
+      "Stock Correction",
+      "Breakage",
+      "Shortage",
+      "Sample",
+      "Expiry Damage",
+    ];
+    String selectedReason = reasons.contains(item.record.reason)
+        ? item.record.reason
+        : "Stock Correction";
+
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final double newDelta = double.tryParse(qtyC.text.trim()) ?? 0.0;
+          final double deltaDiff = newDelta - item.record.adjustmentQty;
+          final double updatedEntryNewQty = item.record.previousQty + newDelta;
+          final double updatedLiveStock = item.currentBatchQty + deltaDiff;
+
+          return AlertDialog(
+            backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: isDark ? Colors.white12 : Colors.black12),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.edit_note_rounded, color: Color(0xFF38BDF8), size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "MODIFY BATCH ADJUSTMENT • ${item.batchNo}",
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        "${widget.medicine.name} • Recorded: ${DateFormat('dd/MM/yyyy hh:mm a').format(DateTime.fromMillisecondsSinceEpoch(item.record.timestamp))}",
+                        style: TextStyle(
+                          color: isDark ? Colors.white54 : Colors.grey.shade600,
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.black26 : Colors.indigo.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: isDark ? Colors.white12 : Colors.indigo.shade100),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _dialogStatCol(
+                                "PREV STOCK",
+                                "${item.record.previousQty.toInt()} Qty",
+                                isDark ? Colors.white70 : Colors.black87,
+                                isDark,
+                              ),
+                              _dialogStatCol(
+                                "OLD ADJ DELTA",
+                                "${item.record.adjustmentQty >= 0 ? '+' : ''}${item.record.adjustmentQty.toInt()} Qty",
+                                const Color(0xFFF59E0B),
+                                isDark,
+                              ),
+                              _dialogStatCol(
+                                "NEW ADJ DELTA",
+                                "${newDelta >= 0 ? '+' : ''}${newDelta.toInt()} Qty",
+                                newDelta >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                isDark,
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _dialogStatCol(
+                                "UPDATED ENTRY STOCK",
+                                "${updatedEntryNewQty.toInt()} Qty",
+                                isDark ? Colors.white : Colors.indigo.shade900,
+                                isDark,
+                              ),
+                              _dialogStatCol(
+                                "CURRENT LIVE STOCK",
+                                "${item.currentBatchQty.toInt()} Qty",
+                                const Color(0xFF38BDF8),
+                                isDark,
+                              ),
+                              _dialogStatCol(
+                                "NEW LIVE STOCK",
+                                "${updatedLiveStock.toInt()} Qty",
+                                updatedLiveStock >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                isDark,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      "NEW ADJUSTMENT QTY (+ TO ADD, - TO REDUCE, 0 TO CANCEL)",
+                      style: TextStyle(
+                        color: isDark ? Colors.white70 : Colors.black87,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    TextField(
+                      controller: qtyC,
+                      keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                      decoration: InputDecoration(
+                        hintText: "e.g. +10 or -5 (0 cancels this entry)",
+                        filled: true,
+                        fillColor: isDark ? Colors.black26 : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: selectedReason,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: "REASON FOR ADJUSTMENT",
+                        filled: true,
+                        fillColor: isDark ? Colors.black26 : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      items: reasons
+                          .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) setDialogState(() => selectedReason = v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesC,
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                        fontSize: 12,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: "AUDIT REMARK / NOTES (OPTIONAL)",
+                        filled: true,
+                        fillColor: isDark ? Colors.black26 : Colors.grey.shade100,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actionsAlignment: MainAxisAlignment.spaceBetween,
+            actions: [
+              if (widget.onDeleteRecord != null)
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.pop(c);
+                    _showDeleteAdjustmentDialog(item);
+                  },
+                  icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 16),
+                  label: const Text(
+                    "DELETE / CANCEL ENTRY",
+                    style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(c),
+                    child: Text(
+                      "CLOSE",
+                      style: TextStyle(color: isDark ? Colors.white54 : Colors.grey.shade700),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () {
+                      final double val = double.tryParse(qtyC.text.trim()) ?? 0.0;
+                      widget.onModifyRecord?.call(
+                        batchNo: item.batchNo,
+                        record: item.record,
+                        newAdjQty: val,
+                        newReason: selectedReason,
+                        newNotes: notesC.text.trim(),
+                      );
+                      Navigator.pop(c);
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            val == 0
+                                ? "🗑️ Adjustment entry canceled & stock reverted for Batch ${item.batchNo}!"
+                                : "✅ Updated adjustment for Batch ${item.batchNo} to ${val > 0 ? '+$val' : val} ($selectedReason). Synced!",
+                          ),
+                          backgroundColor: const Color(0xFF059669),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.check_circle_rounded, size: 16),
+                    label: const Text(
+                      "SAVE CHANGES",
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _dialogStatCol(String label, String val, Color valColor, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: isDark ? Colors.white54 : Colors.grey.shade600,
+            fontSize: 8.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          val,
+          style: TextStyle(
+            color: valColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showDeleteAdjustmentDialog(DisplayAuditItem item) {
+    final bool isDark = widget.isWebTheme;
+    final double revertedLiveStock = item.currentBatchQty - item.record.adjustmentQty;
+    final String sign = item.record.adjustmentQty >= 0 ? "+" : "";
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: isDark ? Colors.white12 : Colors.black12),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                "CANCEL / DELETE ADJUSTMENT • ${item.batchNo}",
+                style: TextStyle(
+                  color: isDark ? Colors.white : Colors.black87,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Kya aap is batch adjustment entry ko cancel/delete karna chahte hain? Iska stock impact turant reverse ho jayega aur App + Web dono me sync ho jayega:",
+                style: TextStyle(
+                  color: isDark ? Colors.white70 : Colors.black87,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFEF4444).withOpacity(0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "• Batch: ${item.batchNo} (${widget.medicine.name})",
+                      style: TextStyle(
+                        color: isDark ? Colors.white : Colors.black87,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "• Adjustment Entry: $sign${item.record.adjustmentQty.toInt()} Qty (${item.record.reason})",
+                      style: const TextStyle(
+                        color: Color(0xFFF87171),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "• Live Batch Stock: ${item.currentBatchQty.toInt()} Qty  ➔  After Cancel: ${revertedLiveStock.toInt()} Qty",
+                      style: const TextStyle(
+                        color: Color(0xFF34D399),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: Text(
+              "KEEP ENTRY",
+              style: TextStyle(color: isDark ? Colors.white54 : Colors.grey.shade700),
+            ),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              widget.onDeleteRecord?.call(
+                batchNo: item.batchNo,
+                record: item.record,
+              );
+              Navigator.pop(c);
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    "🗑️ Canceled adjustment ($sign${item.record.adjustmentQty.toInt()} Qty) for Batch ${item.batchNo}. Stock reverted & synced!",
+                  ),
+                  backgroundColor: const Color(0xFFDC2626),
+                ),
+              );
+            },
+            icon: const Icon(Icons.delete_forever_rounded, size: 16),
+            label: const Text(
+              "YES, CANCEL & REVERT STOCK",
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _cellContainer(double width, Widget child, {bool isRight = false}) {

@@ -70,13 +70,41 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
     if (_isViewingAuditHistory && canViewAudit) {
       return BatchAuditWorkbench(
         medicine: widget.medicine,
-        batches: batches,
+        batches: allBatches,
         initialBatchNo: _targetAuditBatchNo,
         onBack: () => setState(() {
           _isViewingAuditHistory = false;
           _targetAuditBatchNo = null;
         }),
         isWebTheme: true,
+        onModifyRecord: ({
+          required String batchNo,
+          required BatchAdjustmentRecord record,
+          required double newAdjQty,
+          required String newReason,
+          required String newNotes,
+        }) {
+          webPh.modifyBatchAdjustmentRecord(
+            medId: widget.medicine.identityKey,
+            batchNo: batchNo,
+            recordId: record.id,
+            newAdjQty: newAdjQty,
+            newReason: newReason,
+            newNotes: newNotes,
+          );
+          setState(() {});
+        },
+        onDeleteRecord: ({
+          required String batchNo,
+          required BatchAdjustmentRecord record,
+        }) {
+          webPh.deleteBatchAdjustmentRecord(
+            medId: widget.medicine.identityKey,
+            batchNo: batchNo,
+            recordId: record.id,
+          );
+          setState(() {});
+        },
       );
     }
 
@@ -1201,6 +1229,40 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                       ],
                     ),
                   ),
+                  if (b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0) ...[
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: () {
+                        Navigator.pop(c);
+                        setState(() {
+                          _isViewingAuditHistory = true;
+                          _targetAuditBatchNo = b.batch;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D9488).withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.5)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.history_edu_rounded, color: Color(0xFF2DD4BF), size: 17),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty — Click to Modify / Cancel Entry",
+                                style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF2DD4BF), size: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 15),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

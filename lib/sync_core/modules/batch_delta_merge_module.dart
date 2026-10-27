@@ -203,9 +203,35 @@ class BatchDeltaMergeModule {
             existing.openingQty = incomingBatch.openingQty;
             fieldChanged = true;
           }
-          if (incomingBatch.adjustmentQty != 0.0 && existing.adjustmentQty != incomingBatch.adjustmentQty) {
+          final bool isIncomingNewerOrEqual = incomingBatch.version > existing.version ||
+              (incomingBatch.version == existing.version && incomingBatch.updatedAt >= existing.updatedAt);
+          if (isIncomingNewerOrEqual) {
+            if (existing.adjustmentQty != incomingBatch.adjustmentQty ||
+                existing.adjReason != incomingBatch.adjReason) {
+              existing.adjustmentQty = incomingBatch.adjustmentQty;
+              existing.adjReason = incomingBatch.adjReason;
+              fieldChanged = true;
+            }
+            if (existing.adjustmentHistory.length != incomingBatch.adjustmentHistory.length ||
+                incomingBatch.version > existing.version ||
+                incomingBatch.updatedAt > existing.updatedAt) {
+              existing.adjustmentHistory = List<BatchAdjustmentRecord>.from(incomingBatch.adjustmentHistory);
+              fieldChanged = true;
+            }
+            if (incomingBatch.version > existing.version) {
+              existing.version = incomingBatch.version;
+              fieldChanged = true;
+            }
+            if (incomingBatch.updatedAt > existing.updatedAt) {
+              existing.updatedAt = incomingBatch.updatedAt;
+              fieldChanged = true;
+            }
+          } else if (incomingBatch.adjustmentQty != 0.0 && existing.adjustmentQty != incomingBatch.adjustmentQty) {
             existing.adjustmentQty = incomingBatch.adjustmentQty;
             existing.adjReason = incomingBatch.adjReason;
+            if (existing.adjustmentHistory.isEmpty && incomingBatch.adjustmentHistory.isNotEmpty) {
+              existing.adjustmentHistory = List<BatchAdjustmentRecord>.from(incomingBatch.adjustmentHistory);
+            }
             fieldChanged = true;
           }
 
