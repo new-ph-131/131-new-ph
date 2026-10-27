@@ -127,7 +127,7 @@ class GSTMenuView extends StatelessWidget {
               ],
             ),
 
-            if (ph.config.developerAllowGstDiaryToUser && ph.config.userEnableGstDiary) ...[
+            if (ph.isAdminAuthenticated || ph.isDeveloperMode || (ph.config.developerAllowGstDiaryToUser && ph.config.userEnableGstDiary)) ...[
               const SizedBox(height: 35),
               _buildSectionTitle("INTERNAL AUDIT & TAX DIFFERENCE"),
               const SizedBox(height: 15),

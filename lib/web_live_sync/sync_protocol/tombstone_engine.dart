@@ -248,6 +248,14 @@ class TombstoneEngine {
       final delTime = registry[cleanKey];
       return delTime != null && (r.updatedAt == 0 || delTime >= r.updatedAt);
     });
+
+    ph.gstDiarySessions.removeWhere((gs) {
+      if (registry.containsKey(gs.id) || registry.containsKey(gs.id.toUpperCase())) {
+        final delTime = registry[gs.id] ?? registry[gs.id.toUpperCase()];
+        return delTime == null || gs.updatedAt == 0 || delTime >= gs.updatedAt;
+      }
+      return false;
+    });
   }
 
   /// 🛡️ Multi-Key Anti-Zombie Purge:
@@ -370,6 +378,16 @@ class TombstoneEngine {
     ph.routes.removeWhere((r) {
       final cleanKey = "ROUTE_${r.name.replaceAll(RegExp(r'[^A-Z0-9]'), '').toUpperCase()}";
       return allTombstones.contains(r.id) || upperTombstones.contains(r.id.toUpperCase()) || upperTombstones.contains(cleanKey);
+    });
+
+    ph.gstDiarySessions.removeWhere((gs) {
+      final isTomb = allTombstones.contains(gs.id) || upperTombstones.contains(gs.id.toUpperCase());
+      if (!isTomb) return false;
+      if (registry != null) {
+        final delTime = registry[gs.id] ?? registry[gs.id.toUpperCase()];
+        if (delTime != null && gs.updatedAt > 0) return delTime >= gs.updatedAt;
+      }
+      return true;
     });
   }
 }

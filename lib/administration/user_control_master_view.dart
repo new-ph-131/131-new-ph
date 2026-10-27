@@ -73,6 +73,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
         authErrorMessage = null;
         allowBatchHistoryToUser = ph.config.developerAllowBatchHistoryToUser;
         userEnableBatchHistory = ph.config.userEnableBatchHistory;
+        allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
+        userEnableGstDiary = ph.config.userEnableGstDiary;
         userPinController.text = ph.config.userMasterPin;
       });
     } else if (input == userPin) {
@@ -81,6 +83,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
         authErrorMessage = null;
         allowBatchHistoryToUser = ph.config.developerAllowBatchHistoryToUser;
         userEnableBatchHistory = ph.config.userEnableBatchHistory;
+        allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
+        userEnableGstDiary = ph.config.userEnableGstDiary;
         userPinController.text = ph.config.userMasterPin;
       });
     } else {
@@ -159,6 +163,7 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
 
   void _saveUserSettings(PharoahManager ph) {
     ph.config.userEnableBatchHistory = userEnableBatchHistory;
+    ph.config.userEnableGstDiary = userEnableGstDiary;
     if (userPinController.text.trim().isNotEmpty) {
       ph.config.userMasterPin = userPinController.text.trim();
     }
@@ -180,6 +185,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
     if (ph.config.version != _lastSyncedVersion || ph.config.updatedAt != _lastSyncedUpdatedAt) {
       allowBatchHistoryToUser = ph.config.developerAllowBatchHistoryToUser;
       userEnableBatchHistory = ph.config.userEnableBatchHistory;
+      allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
+      userEnableGstDiary = ph.config.userEnableGstDiary;
       _lastSyncedVersion = ph.config.version;
       _lastSyncedUpdatedAt = ph.config.updatedAt;
     }

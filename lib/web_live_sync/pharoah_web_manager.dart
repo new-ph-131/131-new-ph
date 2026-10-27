@@ -1,3 +1,5 @@
+import '../gst/gst_diary/services/gst_diary_d1_sync_service.dart';
+import '../sync_core/modules/gst_diary_sync_module.dart';
 import '../sync_core/outbox/sync_queue_manager.dart';
 import 'sub_views/web_accounts/services/web_voucher_d1_sync_service.dart';
 import 'sub_views/web_accounts/services/web_accounts_calculator.dart';
@@ -186,6 +188,7 @@ class PharoahWebManager with ChangeNotifier {
       final vNo = v.voucherNo.trim().toUpperCase();
       return set.contains(v.id) || (vNo.isNotEmpty && (set.contains(vNo) || upperSet.contains(vNo)));
     });
+    gstDiarySessions.removeWhere((gs) => set.contains(gs.id) || upperSet.contains(gs.id.toUpperCase()));
 
     rebuildInventory();
     notifyListeners();
@@ -329,7 +332,12 @@ class PharoahWebManager with ChangeNotifier {
     // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-737): Never wipe in-flight local medicine edits!
     var rawSessions = decodeJson('gst_sessions.json') as List?;
     if (rawSessions != null) {
-      gstDiarySessions = rawSessions.map((e) => GstDiarySession.fromMap(e)).toList();
+      GstDiarySyncModule.mergeSessionList(
+        cloudSessionList: rawSessions,
+        localSessionList: gstDiarySessions,
+        tombstoneRegistry: localTombstoneRegistry,
+        deletedIds: deletedRecordIds,
+      );
     }
     var rawMeds = decodeJson('meds.json') as List?;
     if (rawMeds != null) {
@@ -616,6 +624,12 @@ class PharoahWebManager with ChangeNotifier {
           final bool sMut = D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents);
           final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents);
           final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents);
+          final bool gMut = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(gstDiarySessions, edgeEvents);
+          final bool cMut = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+            currentConfig: appConfig,
+            edgeEvents: edgeEvents,
+            onConfigMutated: (cfg) => appConfig = cfg,
+          );
           if (sMut) {
             Map<String, Sale> postD1Map = {};
             for (var s in sales) {
@@ -630,7 +644,7 @@ class PharoahWebManager with ChangeNotifier {
           if (sMut || pMut) {
             rebuildInventory();
           }
-          if (sMut || pMut || vMut) {
+          if (sMut || pMut || vMut || gMut || cMut) {
             notifyListeners();
           }
         }
@@ -1134,6 +1148,7 @@ class PharoahWebManager with ChangeNotifier {
         'routs.json': jsonEncode(routes.map((e) => e.toMap()).toList()),
         'banks.json': jsonEncode(banks.map((e) => e.toMap()).toList()),
         'series.json': jsonEncode(numberingSeries.map((e) => e.toMap()).toList()),
+        'gst_sessions.json': jsonEncode(gstDiarySessions.map((e) => e.toMap()).toList()),
         'config.json': jsonEncode(appConfig.toMap()),
         'bats.json': jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
         'tombstones.json': jsonEncode(deletedRecordIds.toList()),
@@ -3252,6 +3267,7 @@ class PharoahWebManager with ChangeNotifier {
         isDelete: false,
         rawPayload: c.toMap(),
       );
+      GstDiaryD1SyncService.onAppConfigSaved(c, activeStoreToken, clientSource: "WEB_PORTAL");
     }
     _autoSyncService.triggerAutoSync(
       action: 'CONFIG_UPDATED',
@@ -3297,7 +3313,21 @@ class PharoahWebManager with ChangeNotifier {
 
 
   void createGstDiarySession(GstDiarySession s) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    s.version = s.version <= 0 ? 1 : s.version;
+    s.updatedAt = now;
+    s.isDeleted = 0;
+    unmarkDeletedId(s.id);
+    gstDiarySessions.removeWhere((x) => x.id == s.id);
     gstDiarySessions.insert(0, s);
+    if (activeStoreToken.isNotEmpty) {
+      GstDiaryD1SyncService.onSessionSaved(s, activeStoreToken, clientSource: "WEB_PORTAL");
+    }
+    _autoSyncService.triggerAutoSync(
+      action: 'GST_SESSION_SAVED',
+      entityId: s.id,
+      unmarkedIds: [s.id],
+    );
     notifyListeners();
     pushUpdatedDataToCloud();
   }
@@ -3305,14 +3335,46 @@ class PharoahWebManager with ChangeNotifier {
   void updateGstDiarySession(GstDiarySession s) {
     int i = gstDiarySessions.indexWhere((x) => x.id == s.id);
     if (i != -1) {
+      s.version = gstDiarySessions[i].version + 1;
+      s.updatedAt = DateTime.now().millisecondsSinceEpoch;
+      s.isDeleted = 0;
+      unmarkDeletedId(s.id);
       gstDiarySessions[i] = s;
+      if (activeStoreToken.isNotEmpty) {
+        GstDiaryD1SyncService.onSessionSaved(s, activeStoreToken, clientSource: "WEB_PORTAL");
+      }
+      _autoSyncService.triggerAutoSync(
+        action: 'GST_SESSION_UPDATED',
+        entityId: s.id,
+        unmarkedIds: [s.id],
+      );
       notifyListeners();
       pushUpdatedDataToCloud();
     }
   }
 
   void deleteGstDiarySession(String id) {
+    String title = "";
+    try {
+      title = gstDiarySessions.firstWhere((x) => x.id == id).title;
+    } catch (_) {}
     gstDiarySessions.removeWhere((x) => x.id == id);
+    final int delTime = DateTime.now().millisecondsSinceEpoch;
+    localTombstoneRegistry[id] = delTime;
+    localTombstoneRegistry[id.toUpperCase()] = delTime;
+    deletedRecordIds.add(id);
+    deletedRecordIds.add(id.toUpperCase());
+    unmarkedRecordIds.remove(id);
+    unmarkedRecordIds.remove(id.toUpperCase());
+    _saveLocalTombstones();
+    if (activeStoreToken.isNotEmpty) {
+      GstDiaryD1SyncService.onSessionDeleted(id, activeStoreToken, sessionTitle: title, clientSource: "WEB_PORTAL");
+    }
+    _autoSyncService.triggerAutoSync(
+      action: 'DELETE_GST_SESSION',
+      entityId: id,
+      deletedIds: [id],
+    );
     notifyListeners();
     pushUpdatedDataToCloud();
   }

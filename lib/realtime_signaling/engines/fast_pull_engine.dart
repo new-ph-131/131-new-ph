@@ -1,4 +1,5 @@
 import "../../web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
+import "../../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
 import "../../logic/master_cascade_service.dart";
 import "../../logic/product_integrity_service.dart";
 import "../../sync_core/d1_sales_ledger_service.dart";
@@ -46,6 +47,12 @@ class FastPullEngine {
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
             bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
+            bool d1GstMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
+            bool d1CfgMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+              currentConfig: ph.config,
+              edgeEvents: edgeEvents,
+              onConfigMutated: (cfg) => ph.config = cfg,
+            );
             final List<String> newTombKeys = [];
             final List<String> newUnmarkKeys = [];
             for (final ev in edgeEvents) {
@@ -143,7 +150,7 @@ class FastPullEngine {
               }
               await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
             }
-            if (d1SalesMutated || d1PurcMutated || d1VoucMutated) {
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1GstMutated || d1CfgMutated) {
               if (d1SalesMutated || d1PurcMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
                   medicines: ph.medicines,
@@ -167,6 +174,16 @@ class FastPullEngine {
               if (d1VoucMutated) {
                 await File('$workingDir/vouc.json').writeAsString(
                   jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1GstMutated) {
+                await File('$workingDir/gst_sessions.json').writeAsString(
+                  jsonEncode(ph.gstDiarySessions.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1CfgMutated) {
+                await File('$workingDir/config.json').writeAsString(
+                  jsonEncode(ph.config.toMap()),
                 );
               }
               ph.notifyListeners();
@@ -338,6 +355,8 @@ class FastPullEngine {
       });
       sanitizeCloudFile("s_return.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("p_return.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+      applyUniversalD1Shield("gst_sessions.json", "GST_DIARY_SESSION", (m) => [(m["id"] ?? "").toString()]);
+      sanitizeCloudFile("gst_sessions.json", (m) => [(m["id"] ?? "").toString()]);
 
       // 5. Delta Merge Cloud Data into Memory
       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
@@ -403,6 +422,7 @@ class FastPullEngine {
         await _w('p_challan.json', ph.purchaseChallans);
         await _w('s_return.json', ph.saleReturns);
         await _w('p_return.json', ph.purchaseReturns);
+        await _w('gst_sessions.json', ph.gstDiarySessions);
         await File('$workingDir/bats.json').writeAsString(
           jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
         );

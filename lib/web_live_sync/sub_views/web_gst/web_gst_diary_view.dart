@@ -37,7 +37,81 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
 
   final Set<String> selectedPurchasePartyIds = {};
   final Set<String> selectedSalePartyIds = {};
+  Set<String>? customSelectedBillIds; // null = all matching bills ticked; non-null = only ticked billIds calculated
+  Set<String>? customSelectedProductKeys;
+  Set<String>? customSelectedPartyKeys;
   final TextEditingController _searchCtrl = TextEditingController();
+
+  void _resetCustomTicks() {
+    customSelectedBillIds = null;
+    customSelectedProductKeys = null;
+    customSelectedPartyKeys = null;
+  }
+
+  void _toggleBillTick(String billId, GstDiaryCalculationResult currentResult) {
+    setState(() {
+      final Set<String> next = customSelectedBillIds != null
+          ? Set<String>.from(customSelectedBillIds!)
+          : currentResult.billRows.map((b) => b.billId).toSet();
+      if (next.contains(billId)) {
+        next.remove(billId);
+      } else {
+        next.add(billId);
+      }
+      customSelectedBillIds = next;
+    });
+  }
+
+  void _selectAllBills(GstDiaryCalculationResult currentResult) {
+    setState(() {
+      customSelectedBillIds = currentResult.billRows.map((b) => b.billId).toSet();
+      customSelectedProductKeys = null;
+      customSelectedPartyKeys = null;
+    });
+  }
+
+  void _clearAllBillTicks() {
+    setState(() {
+      customSelectedBillIds = <String>{};
+    });
+  }
+
+  void _selectOnlyOpenBills(GstDiaryCalculationResult currentResult) {
+    setState(() {
+      customSelectedBillIds = currentResult.billRows
+          .where((b) => !b.isDeducted)
+          .map((b) => b.billId)
+          .toSet();
+    });
+  }
+
+  void _toggleProductTick(String productKey, List<GstProductDifferenceRow> rows) {
+    setState(() {
+      final Set<String> next = customSelectedProductKeys != null
+          ? Set<String>.from(customSelectedProductKeys!)
+          : rows.map((r) => r.selectionKey).toSet();
+      if (next.contains(productKey)) {
+        next.remove(productKey);
+      } else {
+        next.add(productKey);
+      }
+      customSelectedProductKeys = next;
+    });
+  }
+
+  void _togglePartyTick(String partyKey, List<GstPartyDifferenceRow> rows) {
+    setState(() {
+      final Set<String> next = customSelectedPartyKeys != null
+          ? Set<String>.from(customSelectedPartyKeys!)
+          : rows.map((r) => r.selectionKey).toSet();
+      if (next.contains(partyKey)) {
+        next.remove(partyKey);
+      } else {
+        next.add(partyKey);
+      }
+      customSelectedPartyKeys = next;
+    });
+  }
 
   int get activeFyStartYear {
     final now = DateTime.now();
@@ -66,6 +140,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       fromDate = start;
       toDate = end;
       activePeriodLabel = label;
+      _resetCustomTicks();
     });
   }
 
@@ -542,7 +617,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     final remarksCtrl = TextEditingController();
     String selectedStatus = 'DEDUCTED';
 
-    final includedBillIds = result.billRows.map((b) => b.billId).toList();
+    final includedBillIds = result.activeSelectedBillIds.toList();
     final purParties = result.partyRows
         .where((p) => p.type == 'PURCHASE_SUPPLIER')
         .map((p) => p.partyName)
@@ -630,7 +705,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                             children: [
                               const Text("Vouchers to Tag / Lock:", style: TextStyle(color: Colors.white70, fontSize: 12)),
                               Text(
-                                "${includedBillIds.length} bills (${result.totalPurchaseBills} Pur, ${result.totalSaleBills} Sal)",
+                                "${includedBillIds.length} ticked bills (${result.selectedPurchaseBillsCount} Pur, ${result.selectedSaleBillsCount} Sal)",
                                 style: const TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                             ],
@@ -1107,6 +1182,9 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       selectedSalePartyIds: selectedSalePartyIds,
       existingSessions: widget.webPh.gstDiarySessions,
       deductionFilter: deductionFilter,
+      customSelectedBillIds: customSelectedBillIds,
+      customSelectedProductKeys: customSelectedProductKeys,
+      customSelectedPartyKeys: customSelectedPartyKeys,
     );
 
     final int filteredRows = _getFilteredRowCount(calcResult);
@@ -1864,7 +1942,7 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
 
           // Search Box (adaptive width)
           SizedBox(
-            width: 170,
+            width: 165,
             height: 34,
             child: TextField(
               controller: _searchCtrl,
@@ -1879,6 +1957,88 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
               ),
+            ),
+          ),
+
+          // Tick-Mark Selection Live Status & Quick Controls
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: customSelectedBillIds != null
+                    ? const Color(0xFF8B5CF6).withOpacity(0.7)
+                    : Colors.white12,
+              ),
+            ),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_box_rounded, size: 14, color: Color(0xFF10B981)),
+                    const SizedBox(width: 5),
+                    Text(
+                      "Ticked: ${result.activeSelectedBillIds.length}/${result.billRows.length} Bills "
+                      "(${result.selectedPurchaseBillsCount} Pur · ${result.selectedSaleBillsCount} Sale)",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                InkWell(
+                  onTap: () => _selectAllBills(result),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      "Select All",
+                      style: TextStyle(color: Color(0xFF10B981), fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: _clearAllBillTicks,
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      "Clear All",
+                      style: TextStyle(color: Color(0xFFEF4444), fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => _selectOnlyOpenBills(result),
+                  borderRadius: BorderRadius.circular(4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      "Open Only",
+                      style: TextStyle(color: Color(0xFFC4B5FD), fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1926,9 +2086,8 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       }).toList();
 
       if (rows.isEmpty) {
-        return _emptyState("No products found for the selected period & party filters.");
+        return _emptyState("No products found for the selected period & ticked bills.");
       }
-
       return _buildProductTable(rows);
     } else if (activeTab == "PARTY") {
       final rows = result.partyRows.where((r) {
@@ -1938,9 +2097,8 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       }).toList();
 
       if (rows.isEmpty) {
-        return _emptyState("No party records found for the selected filters.");
+        return _emptyState("No party records found for the selected filters & ticked bills.");
       }
-
       return _buildPartyTable(rows);
     } else {
       final rows = result.billRows.where((r) {
@@ -1953,38 +2111,57 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
       if (rows.isEmpty) {
         return _emptyState("No bills found for the selected filters.");
       }
-
-      return _buildBillTable(rows);
+      return _buildBillTable(rows, result);
     }
   }
 
   Widget _buildProductTable(List<GstProductDifferenceRow> rows) {
+    final bool allProductTicked = customSelectedProductKeys == null ||
+        rows.every((r) => customSelectedProductKeys!.contains(r.selectionKey));
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minTableWidth = 650.0;
+        final double minTableWidth = 700.0;
         final bool needHScroll = constraints.maxWidth < minTableWidth;
-        
+
         Widget tableWidget = Column(
           children: [
             // Header
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: const BoxDecoration(
                 color: Color(0xFF0F172A),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Expanded(flex: 3, child: Text("PRODUCT NAME", style: _thStyle)),
-                  Expanded(flex: 1, child: Text("PACK", style: _thStyle)),
-                  Expanded(flex: 1, child: Text("PUR QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Text("PUR ITC (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Text("AVG ITC/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Text("SALE QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Text("SALE GST (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Text("AVG SALE/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Text("ELIGIBLE ITC (₹)", textAlign: TextAlign.right, style: _thStyle)),
-                  Expanded(flex: 1, child: Text("GST DIFF (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  SizedBox(
+                    width: 34,
+                    height: 24,
+                    child: Checkbox(
+                      value: allProductTicked,
+                      activeColor: const Color(0xFF8B5CF6),
+                      side: const BorderSide(color: Colors.white54, width: 1.5),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            customSelectedProductKeys = null;
+                          } else {
+                            customSelectedProductKeys = <String>{};
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  const Expanded(flex: 3, child: Text("PRODUCT NAME", style: _thStyle)),
+                  const Expanded(flex: 1, child: Text("PACK", style: _thStyle)),
+                  const Expanded(flex: 1, child: Text("PUR QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Text("PUR ITC (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Text("AVG ITC/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Text("SALE QTY", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Text("SALE GST (₹)", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Text("AVG SALE/U", textAlign: TextAlign.right, style: TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Text("ELIGIBLE ITC (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  const Expanded(flex: 1, child: Text("GST DIFF (₹)", textAlign: TextAlign.right, style: _thStyle)),
                 ],
               ),
             ),
@@ -1996,37 +2173,57 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
                 itemBuilder: (context, idx) {
                   final r = rows[idx];
+                  final bool isTicked = customSelectedProductKeys == null ||
+                      customSelectedProductKeys!.contains(r.selectionKey);
                   final diffColor = r.gstDifference >= 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981);
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Text(
-                            r.productName,
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                  return InkWell(
+                    onTap: () => _toggleProductTick(r.selectionKey, rows),
+                    child: Opacity(
+                      opacity: isTicked ? 1.0 : 0.45,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        color: isTicked
+                            ? (idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015))
+                            : Colors.black12,
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 34,
+                              height: 24,
+                              child: Checkbox(
+                                value: isTicked,
+                                activeColor: const Color(0xFF8B5CF6),
+                                side: const BorderSide(color: Colors.white38, width: 1.4),
+                                onChanged: (_) => _toggleProductTick(r.selectionKey, rows),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                r.productName,
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Expanded(flex: 1, child: Text(r.packing, style: const TextStyle(color: Colors.white54, fontSize: 11), overflow: TextOverflow.ellipsis)),
+                            Expanded(flex: 1, child: Text(r.purchaseQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                            Expanded(flex: 1, child: Text(r.purchaseGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.w600))),
+                            Expanded(flex: 1, child: Text(r.avgPurchaseGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                            Expanded(flex: 1, child: Text(r.saleQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                            Expanded(flex: 1, child: Text(r.saleGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.w600))),
+                            Expanded(flex: 1, child: Text(r.avgSaleGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                            Expanded(flex: 1, child: Text(r.eligibleItcForSoldUnits.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                            Expanded(
+                              flex: 1,
+                              child: Text(
+                                "${r.gstDifference >= 0 ? "+" : ""}${r.gstDifference.toStringAsFixed(2)}",
+                                textAlign: TextAlign.right,
+                                style: TextStyle(color: diffColor, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
                         ),
-                        Expanded(flex: 1, child: Text(r.packing, style: const TextStyle(color: Colors.white54, fontSize: 11), overflow: TextOverflow.ellipsis)),
-                        Expanded(flex: 1, child: Text(r.purchaseQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                        Expanded(flex: 1, child: Text(r.purchaseGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.w600))),
-                        Expanded(flex: 1, child: Text(r.avgPurchaseGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                        Expanded(flex: 1, child: Text(r.saleQty.toStringAsFixed(0), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                        Expanded(flex: 1, child: Text(r.saleGst.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 11, fontWeight: FontWeight.w600))),
-                        Expanded(flex: 1, child: Text(r.avgSaleGstPerUnit.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                        Expanded(flex: 1, child: Text(r.eligibleItcForSoldUnits.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                        Expanded(
-                          flex: 1,
-                          child: Text(
-                            "${r.gstDifference >= 0 ? "+" : ""}${r.gstDifference.toStringAsFixed(2)}",
-                            textAlign: TextAlign.right,
-                            style: TextStyle(color: diffColor, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   );
                 },
@@ -2051,27 +2248,47 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
   }
 
   Widget _buildPartyTable(List<GstPartyDifferenceRow> rows) {
+    final bool allPartyTicked = customSelectedPartyKeys == null ||
+        rows.every((r) => customSelectedPartyKeys!.contains(r.selectionKey));
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minTableWidth = 620.0;
+        final double minTableWidth = 650.0;
         final bool needHScroll = constraints.maxWidth < minTableWidth;
-        
+
         Widget tableWidget = Column(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: const BoxDecoration(
                 color: Color(0xFF0F172A),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("GSTIN", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
-                  Expanded(flex: 1, child: Text("BILLS", textAlign: TextAlign.right, style: _thStyle)),
-                  Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
-                  Expanded(flex: 2, child: Text("TOTAL GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  SizedBox(
+                    width: 34,
+                    height: 24,
+                    child: Checkbox(
+                      value: allPartyTicked,
+                      activeColor: const Color(0xFF8B5CF6),
+                      side: const BorderSide(color: Colors.white54, width: 1.5),
+                      onChanged: (val) {
+                        setState(() {
+                          if (val == true) {
+                            customSelectedPartyKeys = null;
+                          } else {
+                            customSelectedPartyKeys = <String>{};
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  const Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("GSTIN", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
+                  const Expanded(flex: 1, child: Text("BILLS", textAlign: TextAlign.right, style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("TOTAL GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
                 ],
               ),
             ),
@@ -2083,53 +2300,73 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 itemBuilder: (context, idx) {
                   final r = rows[idx];
                   final isSupplier = r.type == "PURCHASE_SUPPLIER";
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Text(
-                            r.partyName,
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            r.gstin.isNotEmpty ? r.gstin : "UNREGISTERED",
-                            style: TextStyle(color: r.gstin.isNotEmpty ? Colors.white70 : Colors.white38, fontSize: 11),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            isSupplier ? "Supplier (ITC)" : "Customer (Output)",
-                            style: TextStyle(
-                              color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                  final bool isTicked = customSelectedPartyKeys == null ||
+                      customSelectedPartyKeys!.contains(r.selectionKey);
+                  return InkWell(
+                    onTap: () => _togglePartyTick(r.selectionKey, rows),
+                    child: Opacity(
+                      opacity: isTicked ? 1.0 : 0.45,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        color: isTicked
+                            ? (idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015))
+                            : Colors.black12,
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 34,
+                              height: 24,
+                              child: Checkbox(
+                                value: isTicked,
+                                activeColor: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                                side: const BorderSide(color: Colors.white38, width: 1.4),
+                                onChanged: (_) => _togglePartyTick(r.selectionKey, rows),
+                              ),
                             ),
-                          ),
-                        ),
-                        Expanded(flex: 1, child: Text("${r.totalBills}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                        Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            r.totalGst.toStringAsFixed(2),
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                r.partyName,
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                r.gstin.isNotEmpty ? r.gstin : "UNREGISTERED",
+                                style: TextStyle(color: r.gstin.isNotEmpty ? Colors.white70 : Colors.white38, fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                isSupplier ? "Supplier (ITC)" : "Customer (Output)",
+                                style: TextStyle(
+                                  color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Expanded(flex: 1, child: Text("${r.totalBills}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                            Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                r.totalGst.toStringAsFixed(2),
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  color: isSupplier ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   );
                 },
@@ -2153,29 +2390,47 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
     );
   }
 
-  Widget _buildBillTable(List<GstBillDifferenceRow> rows) {
+  Widget _buildBillTable(List<GstBillDifferenceRow> rows, GstDiaryCalculationResult result) {
+    final bool allVisibleTicked = rows.isNotEmpty &&
+        rows.every((r) => result.activeSelectedBillIds.contains(r.billId));
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minTableWidth = 650.0;
+        final double minTableWidth = 680.0;
         final bool needHScroll = constraints.maxWidth < minTableWidth;
-        
+
         Widget tableWidget = Column(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: const BoxDecoration(
                 color: Color(0xFF0F172A),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Expanded(flex: 2, child: Text("BILL NO", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("DATE", style: _thStyle)),
-                  Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
-                  Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
-                  Expanded(flex: 2, child: Text("GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
-                  Expanded(flex: 2, child: Text("STATUS", textAlign: TextAlign.center, style: _thStyle)),
+                  SizedBox(
+                    width: 34,
+                    height: 24,
+                    child: Checkbox(
+                      value: allVisibleTicked,
+                      activeColor: const Color(0xFF10B981),
+                      side: const BorderSide(color: Colors.white54, width: 1.5),
+                      onChanged: (val) {
+                        if (val == true) {
+                          _selectAllBills(result);
+                        } else {
+                          _clearAllBillTicks();
+                        }
+                      },
+                    ),
+                  ),
+                  const Expanded(flex: 2, child: Text("BILL NO", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("DATE", style: _thStyle)),
+                  const Expanded(flex: 3, child: Text("PARTY NAME", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("TYPE", style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("TAXABLE (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("GST (₹)", textAlign: TextAlign.right, style: _thStyle)),
+                  const Expanded(flex: 2, child: Text("STATUS", textAlign: TextAlign.center, style: _thStyle)),
                 ],
               ),
             ),
@@ -2187,88 +2442,107 @@ class _WebGstDiaryViewState extends State<WebGstDiaryView> with SingleTickerProv
                 itemBuilder: (context, idx) {
                   final r = rows[idx];
                   final isPur = r.voucherType == "PURCHASE";
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                    color: idx % 2 == 0 ? Colors.transparent : Colors.white.withOpacity(0.015),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            r.billNo,
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Expanded(flex: 2, child: Text(r.date, style: const TextStyle(color: Colors.white54, fontSize: 11))),
-                        Expanded(
-                          flex: 3,
-                          child: Text(
-                            r.partyName,
-                            style: const TextStyle(color: Colors.white70, fontSize: 11),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            isPur ? "PURCHASE" : "SALE",
-                            style: TextStyle(
-                              color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                  final bool isTicked = result.activeSelectedBillIds.contains(r.billId);
+                  return InkWell(
+                    onTap: () => _toggleBillTick(r.billId, result),
+                    child: Opacity(
+                      opacity: isTicked ? 1.0 : 0.45,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        color: isTicked
+                            ? (const Color(0xFF8B5CF6).withOpacity(idx % 2 == 0 ? 0.06 : 0.10))
+                            : Colors.black12,
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 34,
+                              height: 24,
+                              child: Checkbox(
+                                value: isTicked,
+                                activeColor: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                                side: const BorderSide(color: Colors.white38, width: 1.4),
+                                onChanged: (_) => _toggleBillTick(r.billId, result),
+                              ),
                             ),
-                          ),
-                        ),
-                        Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            r.gstAmount.toStringAsFixed(2),
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                r.billNo,
+                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Center(
-                            child: r.isDeducted
-                                ? Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF10B981).withOpacity(0.18),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: const Color(0xFF10B981)),
-                                    ),
-                                    child: const Text(
-                                      "DEDUCTED",
-                                      style: TextStyle(
-                                        color: Color(0xFF10B981),
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.5,
+                            Expanded(flex: 2, child: Text(r.date, style: const TextStyle(color: Colors.white54, fontSize: 11))),
+                            Expanded(
+                              flex: 3,
+                              child: Text(
+                                r.partyName,
+                                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                isPur ? "PURCHASE" : "SALE",
+                                style: TextStyle(
+                                  color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Expanded(flex: 2, child: Text(r.taxableAmount.toStringAsFixed(2), textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                r.gstAmount.toStringAsFixed(2),
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  color: isPur ? const Color(0xFF06B6D4) : const Color(0xFFF59E0B),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: Center(
+                                child: r.isDeducted
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF10B981).withOpacity(0.18),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: const Color(0xFF10B981)),
+                                        ),
+                                        child: const Text(
+                                          "DEDUCTED",
+                                          style: TextStyle(
+                                            color: Color(0xFF10B981),
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      )
+                                    : Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withOpacity(0.06),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: Colors.white12),
+                                        ),
+                                        child: const Text(
+                                          "OPEN",
+                                          style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+                                        ),
                                       ),
-                                    ),
-                                  )
-                                : Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.06),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: Colors.white12),
-                                    ),
-                                    child: const Text(
-                                      "OPEN",
-                                      style: TextStyle(color: Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                          ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   );
                 },

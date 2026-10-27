@@ -4,6 +4,7 @@ import "../../sync_core/modules/medicine_sync_module.dart";
 import "../../sync_core/modules/company_sync_module.dart";
 import "../../sync_core/modules/salt_sync_module.dart";
 import "../../sync_core/modules/route_sync_module.dart";
+import "../../sync_core/modules/gst_diary_sync_module.dart";
 import "../../../sync_core/modules/party_sync_module.dart";
 import "../../../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/sync_protocol/delta_merge_engine.dart
@@ -395,8 +396,13 @@ class DeltaMergeEngine {
       tombstoneRegistry: tombstoneRegistry,
       parties: ph.parties,
     );
+    bool cGstSessions = GstDiarySyncModule.mergeSessionList(
+      cloudSessionList: decodeJson("gst_sessions.json"),
+      localSessionList: ph.gstDiarySessions,
+      tombstoneRegistry: tombstoneRegistry,
+    );
 
-    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cComps || cSalts || cRouts;
+    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cComps || cSalts || cRouts || cGstSessions;
     if (anyChanged) {
       try {
         ph.autoHydrateBatchHistoryFromTransactions();

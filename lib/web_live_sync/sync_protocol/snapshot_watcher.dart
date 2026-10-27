@@ -34,6 +34,7 @@ class SnapshotWatcher {
     checkDeletions('saleReturns', ph.saleReturns);
     checkDeletions('purchaseReturns', ph.purchaseReturns);
     checkDeletions('vouchers', ph.vouchers);
+    checkDeletions('gstDiarySessions', ph.gstDiarySessions);
 
     return newlyDeletedIds;
   }
@@ -58,6 +59,7 @@ class SnapshotWatcher {
       'saleReturns': ph.saleReturns.map((e) => e.id).toList(),
       'purchaseReturns': ph.purchaseReturns.map((e) => e.id).toList(),
       'vouchers': ph.vouchers.map((e) => e.id).toList(),
+      'gstDiarySessions': ph.gstDiarySessions.map((e) => e.id).toList(),
     };
     await prefs.setString('sync_snapshot_$companyId', jsonEncode(snapshot));
 
@@ -70,6 +72,7 @@ class SnapshotWatcher {
     for (var r in ph.saleReturns) hashes[r.id] = jsonEncode(r.toMap()).hashCode.toString();
     for (var r in ph.purchaseReturns) hashes[r.id] = jsonEncode(r.toMap()).hashCode.toString();
     for (var v in ph.vouchers) hashes[v.id] = jsonEncode(v.toMap()).hashCode.toString();
+    for (var gs in ph.gstDiarySessions) hashes[gs.id] = jsonEncode(gs.toMap()).hashCode.toString();
     await prefs.setString('sync_hashes_$companyId', jsonEncode(hashes));
   }
 }

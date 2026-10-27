@@ -1,3 +1,4 @@
+import 'gst/gst_diary/services/gst_diary_d1_sync_service.dart';
 import "web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import 'logic/app_accounts_calculator.dart';
 import 'logic/master_cascade_service.dart';
@@ -189,7 +190,11 @@ class PharoahManager with ChangeNotifier {
   List<ModuleAction> get gstActions => [
     ModuleAction(title: "GSTR-1", icon: Icons.assignment, color: Colors.green, navModule: "GO_GST_1"),
     ModuleAction(title: "GSTR-3B", icon: Icons.summarize, color: Colors.blue, navModule: "GO_GST_3B"),
+    ModuleAction(title: "GSTR-2", icon: Icons.shopping_cart_checkout_rounded, color: const Color(0xFFD97706), navModule: "GO_GST_2"),
     ModuleAction(title: "Portal", icon: Icons.fact_check, color: Colors.teal, navModule: "GO_GST_RECON"),
+    ModuleAction(title: "E-Way Bill", icon: Icons.local_shipping_outlined, color: const Color(0xFF6366F1), navModule: "GO_EWAY"),
+    if (config.developerAllowGstDiaryToUser && config.userEnableGstDiary)
+      ModuleAction(title: "GST Diary", icon: Icons.menu_book_rounded, color: const Color(0xFF8B5CF6), navModule: "GO_GST_DIARY"),
   ];
 
   // ===========================================================================
@@ -1989,24 +1994,79 @@ void registerBatchActivity({
   }
   
   void createGstDiarySession(GstDiarySession s) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    s.version = s.version <= 0 ? 1 : s.version;
+    s.updatedAt = now;
+    s.isDeleted = 0;
+    gstDiarySessions.removeWhere((x) => x.id == s.id);
     gstDiarySessions.insert(0, s);
     save();
     notifyListeners();
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          GstDiaryD1SyncService.onSessionSaved(s, t, clientSource: "MOBILE_APP");
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "GST_SESSION_SAVED",
+        entityId: s.id,
+        unmarkedIds: [s.id],
+      );
+    }
   }
 
   void updateGstDiarySession(GstDiarySession s) {
     int i = gstDiarySessions.indexWhere((x) => x.id == s.id);
     if (i != -1) {
+      s.version = gstDiarySessions[i].version + 1;
+      s.updatedAt = DateTime.now().millisecondsSinceEpoch;
+      s.isDeleted = 0;
       gstDiarySessions[i] = s;
       save();
       notifyListeners();
+      if (activeCompany != null) {
+        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+          if (t.isNotEmpty) {
+            GstDiaryD1SyncService.onSessionSaved(s, t, clientSource: "MOBILE_APP");
+          }
+        });
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: "GST_SESSION_UPDATED",
+          entityId: s.id,
+          unmarkedIds: [s.id],
+        );
+      }
     }
   }
 
   void deleteGstDiarySession(String id) {
+    String title = "";
+    try {
+      title = gstDiarySessions.firstWhere((x) => x.id == id).title;
+    } catch (_) {}
     gstDiarySessions.removeWhere((x) => x.id == id);
+    D1SalesLedgerService.markPermanentlyDeleted(id, title);
+    if (activeCompany != null) {
+      TombstoneEngine.recordBatchTombstones(activeCompany!.id, [id]);
+    }
     save();
     notifyListeners();
+    if (activeCompany != null) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          GstDiaryD1SyncService.onSessionDeleted(id, t, sessionTitle: title, clientSource: "MOBILE_APP");
+        }
+      });
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: "DELETE_GST_SESSION",
+        entityId: id,
+        deletedIds: [id],
+      );
+    }
   }
 
   void addDrugType(DrugType d) { drugTypes.add(d); save(); }
@@ -2183,23 +2243,28 @@ void registerBatchActivity({
     c.version += 1;
     c.updatedAt = DateTime.now().millisecondsSinceEpoch;
     config = c;
-    if (activeCompany != null && activeCompany!.id.isNotEmpty) {
-      SyncQueueManager.enqueueMutation(
-        syncId: 'APP_CONFIG_MASTER',
-        storeToken: activeCompany!.id.trim().toUpperCase(),
-        docType: 'CONFIG',
-        currentVersion: c.version,
-        isDelete: false,
-        rawPayload: c.toMap(),
-      );
-    }
     save();
+    notifyListeners();
+    if (activeCompany != null && activeCompany!.id.isNotEmpty) {
+      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        if (t.isNotEmpty) {
+          SyncQueueManager.enqueueMutation(
+            syncId: 'APP_CONFIG_MASTER',
+            storeToken: t.trim().toUpperCase(),
+            docType: 'CONFIG',
+            currentVersion: c.version,
+            isDelete: false,
+            rawPayload: c.toMap(),
+          );
+          GstDiaryD1SyncService.onAppConfigSaved(c, t, clientSource: "MOBILE_APP");
+        }
+      });
+    }
     AppRealtimeCoordinator.instance.notifyAppMutation(
       this,
       action: 'CONFIG_UPDATED',
       entityId: 'APP_CONFIG_MASTER',
     );
-    notifyListeners();
   }
   void updateChequeStatus(String id, String s, String r) { int i = cheques.indexWhere((c) => c.id == id); if(i != -1) { cheques[i].status = s; cheques[i].remark = r; save(); } }
   

@@ -6,14 +6,19 @@ import 'gst_diary_models.dart';
 class GstDiaryCalculationResult {
   final List<GstProductDifferenceRow> productRows;
   final List<GstPartyDifferenceRow> partyRows;
-  final List<GstBillDifferenceRow> billRows;
+  final List<GstBillDifferenceRow> billRows; // All bills matching period/party/status filter
+  final Set<String> activeSelectedBillIds; // Bills currently ticked (✓) for tax calculation
+
   final double totalPurchaseTaxable;
   final double totalPurchaseItc;
   final double totalSaleTaxable;
   final double totalSaleOutputGst;
   final double netGstPayable; // positive = payable, negative = carry forward surplus
+
   final int totalPurchaseBills;
   final int totalSaleBills;
+  final int selectedPurchaseBillsCount;
+  final int selectedSaleBillsCount;
   final int totalDeductedBills;
   final int totalPendingBills;
   final double totalDeductedTax;
@@ -22,6 +27,7 @@ class GstDiaryCalculationResult {
     required this.productRows,
     required this.partyRows,
     required this.billRows,
+    required this.activeSelectedBillIds,
     required this.totalPurchaseTaxable,
     required this.totalPurchaseItc,
     required this.totalSaleTaxable,
@@ -29,6 +35,8 @@ class GstDiaryCalculationResult {
     required this.netGstPayable,
     required this.totalPurchaseBills,
     required this.totalSaleBills,
+    this.selectedPurchaseBillsCount = 0,
+    this.selectedSaleBillsCount = 0,
     this.totalDeductedBills = 0,
     this.totalPendingBills = 0,
     this.totalDeductedTax = 0.0,
@@ -52,6 +60,9 @@ class GstDiaryCalculator {
     Set<String> selectedSalePartyIds = const {},
     List<GstDiarySession> existingSessions = const [],
     String deductionFilter = 'ALL', // 'ALL', 'PENDING', 'DEDUCTED'
+    Set<String>? customSelectedBillIds, // If non-null, ONLY ticked bills are calculated!
+    Set<String>? customSelectedProductKeys, // If non-null, ONLY ticked products are summed in Product tab
+    Set<String>? customSelectedPartyKeys, // If non-null, ONLY ticked parties are summed in Party tab
   }) {
     // 0. Build Party Fast Lookup for GSTIN and ID matching
     final Map<String, String> partyGstLookup = {};
@@ -65,6 +76,7 @@ class GstDiaryCalculator {
     // 0b. Build Map of already deducted bill IDs from existing sessions
     final Map<String, GstDiarySession> deductedBillsMap = {};
     for (var sess in existingSessions) {
+      if (sess.isDeleted == 1) continue;
       if (sess.status == 'DEDUCTED' || sess.status == 'SETTLED') {
         for (var bId in sess.includedBillIds) {
           deductedBillsMap[bId] = sess;
@@ -72,8 +84,8 @@ class GstDiaryCalculator {
       }
     }
 
-    // 1. Filter Purchases
-    final filteredPurchases = purchases.where((p) {
+    // 1. Filter Purchases matching period, party, and deduction status
+    final allMatchingPurchases = purchases.where((p) {
       if (p.isDeleted == 1 || p.gstStatus == 'Cancelled') return false;
       if (!_isDateInRange(p.date, fromDate, toDate)) return false;
       if (selectedPurchasePartyIds.isNotEmpty) {
@@ -87,8 +99,8 @@ class GstDiaryCalculator {
       return true;
     }).toList();
 
-    // 2. Filter Sales
-    final filteredSales = sales.where((s) {
+    // 2. Filter Sales matching period, party, and deduction status
+    final allMatchingSales = sales.where((s) {
       if (s.isDeleted == 1 || s.status == 'Cancelled') return false;
       if (!_isDateInRange(s.date, fromDate, toDate)) return false;
       if (selectedSalePartyIds.isNotEmpty) {
@@ -102,10 +114,100 @@ class GstDiaryCalculator {
       return true;
     }).toList();
 
-    // 3. Aggregate Product-wise stats
+    // 3. Build full Bill-wise rows (so Bill-wise table always displays all candidate bills with checkboxes)
+    final DateFormat formatter = DateFormat('dd/MM/yyyy');
+    final List<GstBillDifferenceRow> billRows = [];
+    final Set<String> allCandidateBillIds = {};
+    int deductedCount = 0;
+    int pendingCount = 0;
+    double deductedTax = 0.0;
+
+    for (var s in allMatchingSales) {
+      allCandidateBillIds.add(s.id);
+      double gst = 0.0;
+      double taxable = 0.0;
+      for (var it in s.items) {
+        taxable += (it.rate * it.qty) - it.discountRupees;
+        gst += (it.cgst + it.sgst + it.igst);
+      }
+      final sGstin = s.partyGstin.isNotEmpty ? s.partyGstin : (partyGstLookup[s.partyId] ?? '');
+      final sessionMatch = deductedBillsMap[s.id];
+      final isDeducted = sessionMatch != null;
+      if (isDeducted) {
+        deductedCount++;
+        deductedTax += gst;
+      } else {
+        pendingCount++;
+      }
+
+      billRows.add(GstBillDifferenceRow(
+        billId: s.id,
+        billNo: s.billNo,
+        date: formatter.format(s.date),
+        partyName: s.partyName,
+        partyGstin: sGstin,
+        voucherType: 'SALE',
+        taxableAmount: taxable,
+        gstAmount: gst,
+        netBillAmount: s.totalAmount,
+        isDeducted: isDeducted,
+        deductedSessionName: sessionMatch?.title ?? '',
+        deductedSessionId: sessionMatch?.id ?? '',
+      ));
+    }
+
+    for (var p in allMatchingPurchases) {
+      allCandidateBillIds.add(p.id);
+      double gst = 0.0;
+      double taxable = 0.0;
+      for (var it in p.items) {
+        final t = it.purchaseRate * it.qty;
+        taxable += t;
+        gst += (t * (it.gstRate / 100));
+      }
+      final purGstin = partyGstLookup[p.partyId] ?? partyGstLookup[p.distributorName.trim().toLowerCase()] ?? '';
+      final sessionMatch = deductedBillsMap[p.id];
+      final isDeducted = sessionMatch != null;
+      if (isDeducted) {
+        deductedCount++;
+        deductedTax += gst;
+      } else {
+        pendingCount++;
+      }
+
+      billRows.add(GstBillDifferenceRow(
+        billId: p.id,
+        billNo: p.billNo,
+        date: formatter.format(p.date),
+        partyName: p.distributorName,
+        partyGstin: purGstin,
+        voucherType: 'PURCHASE',
+        taxableAmount: taxable,
+        gstAmount: gst,
+        netBillAmount: p.totalAmount,
+        isDeducted: isDeducted,
+        deductedSessionName: sessionMatch?.title ?? '',
+        deductedSessionId: sessionMatch?.id ?? '',
+      ));
+    }
+
+    billRows.sort((a, b) => b.date.compareTo(a.date));
+
+    // 4. Determine which bills are actively ticked (✓) for tax calculation
+    final Set<String> effectiveSelectedBillIds = customSelectedBillIds != null
+        ? customSelectedBillIds.intersection(allCandidateBillIds)
+        : allCandidateBillIds;
+
+    final filteredPurchases = allMatchingPurchases
+        .where((p) => effectiveSelectedBillIds.contains(p.id))
+        .toList();
+    final filteredSales = allMatchingSales
+        .where((s) => effectiveSelectedBillIds.contains(s.id))
+        .toList();
+
+    // 5. Aggregate Product-wise stats strictly from ticked bills
     final Map<String, _ProductStat> productMap = {};
 
-    // Process Purchases
     for (var p in filteredPurchases) {
       for (var it in p.items) {
         final key = (it.medicineID.isNotEmpty ? it.medicineID : it.name.trim().toLowerCase());
@@ -125,7 +227,6 @@ class GstDiaryCalculator {
       }
     }
 
-    // Process Sales
     for (var s in filteredSales) {
       for (var it in s.items) {
         final key = (it.medicineID.isNotEmpty ? it.medicineID : it.name.trim().toLowerCase());
@@ -145,7 +246,6 @@ class GstDiaryCalculator {
       }
     }
 
-    // Convert productMap to List<GstProductDifferenceRow>
     final List<GstProductDifferenceRow> productRows = [];
     double totalPurTaxable = 0.0;
     double totalPurItc = 0.0;
@@ -155,17 +255,10 @@ class GstDiaryCalculator {
     for (var stat in productMap.values) {
       final avgPurGst = stat.purchaseQty > 0 ? (stat.purchaseGst / stat.purchaseQty) : 0.0;
       final avgSalGst = stat.saleQty > 0 ? (stat.saleGst / stat.saleQty) : 0.0;
-
-      // Weighted-average ITC eligible for units sold in this period
       final eligibleItc = avgPurGst * stat.saleQty;
       final diff = stat.saleGst - eligibleItc;
 
-      totalPurTaxable += stat.purchaseTaxable;
-      totalPurItc += stat.purchaseGst;
-      totalSalTaxable += stat.saleTaxable;
-      totalSalOutput += stat.saleGst;
-
-      productRows.add(GstProductDifferenceRow(
+      final row = GstProductDifferenceRow(
         productId: stat.id,
         productName: stat.name,
         packing: stat.packing,
@@ -180,14 +273,24 @@ class GstDiaryCalculator {
         avgSaleGstPerUnit: avgSalGst,
         eligibleItcForSoldUnits: eligibleItc,
         gstDifference: diff,
-      ));
+      );
+      productRows.add(row);
+
+      final bool isProductTicked = customSelectedProductKeys == null ||
+          customSelectedProductKeys.contains(row.selectionKey);
+      if (isProductTicked && customSelectedPartyKeys == null) {
+        totalPurTaxable += stat.purchaseTaxable;
+        totalPurItc += stat.purchaseGst;
+        totalSalTaxable += stat.saleTaxable;
+        totalSalOutput += stat.saleGst;
+      }
     }
+
     productRows.sort((a, b) => b.saleGst.compareTo(a.saleGst));
 
-    // 4. Aggregate Party-wise stats
+    // 6. Aggregate Party-wise stats strictly from ticked bills
     final Map<String, GstPartyDifferenceRow> partyRowMap = {};
 
-    // Purchase Suppliers
     for (var p in filteredPurchases) {
       final pKey = 'PUR_${p.partyId.isNotEmpty ? p.partyId : p.distributorName.trim().toLowerCase()}';
       final pGstLookup = partyGstLookup[p.partyId] ?? partyGstLookup[p.distributorName.trim().toLowerCase()] ?? '';
@@ -229,7 +332,6 @@ class GstDiaryCalculator {
       }
     }
 
-    // Sale Customers
     for (var s in filteredSales) {
       final sKey = 'SAL_${s.partyId.isNotEmpty ? s.partyId : s.partyName.trim().toLowerCase()}';
       final sGstin = s.partyGstin.isNotEmpty ? s.partyGstin : (partyGstLookup[s.partyId] ?? partyGstLookup[s.partyName.trim().toLowerCase()] ?? '');
@@ -278,81 +380,23 @@ class GstDiaryCalculator {
     final partyRows = partyRowMap.values.toList();
     partyRows.sort((a, b) => b.totalGst.compareTo(a.totalGst));
 
-    // 5. Aggregate Bill-wise rows with Session Deduction Tracking
-    final DateFormat formatter = DateFormat('dd/MM/yyyy');
-    final List<GstBillDifferenceRow> billRows = [];
-    int deductedCount = 0;
-    int pendingCount = 0;
-    double deductedTax = 0.0;
-
-    for (var s in filteredSales) {
-      double gst = 0.0;
-      double taxable = 0.0;
-      for (var it in s.items) {
-        taxable += (it.rate * it.qty) - it.discountRupees;
-        gst += (it.cgst + it.sgst + it.igst);
+    if (customSelectedPartyKeys != null) {
+      totalPurTaxable = 0.0;
+      totalPurItc = 0.0;
+      totalSalTaxable = 0.0;
+      totalSalOutput = 0.0;
+      for (var pr in partyRows) {
+        if (customSelectedPartyKeys.contains(pr.selectionKey)) {
+          if (pr.type == 'PURCHASE_SUPPLIER') {
+            totalPurTaxable += pr.taxableAmount;
+            totalPurItc += pr.totalGst;
+          } else {
+            totalSalTaxable += pr.taxableAmount;
+            totalSalOutput += pr.totalGst;
+          }
+        }
       }
-      final sGstin = s.partyGstin.isNotEmpty ? s.partyGstin : (partyGstLookup[s.partyId] ?? '');
-      final sessionMatch = deductedBillsMap[s.id];
-      final isDeducted = sessionMatch != null;
-      if (isDeducted) {
-        deductedCount++;
-        deductedTax += gst;
-      } else {
-        pendingCount++;
-      }
-
-      billRows.add(GstBillDifferenceRow(
-        billId: s.id,
-        billNo: s.billNo,
-        date: formatter.format(s.date),
-        partyName: s.partyName,
-        partyGstin: sGstin,
-        voucherType: 'SALE',
-        taxableAmount: taxable,
-        gstAmount: gst,
-        netBillAmount: s.totalAmount,
-        isDeducted: isDeducted,
-        deductedSessionName: sessionMatch?.title ?? '',
-        deductedSessionId: sessionMatch?.id ?? '',
-      ));
     }
-
-    for (var p in filteredPurchases) {
-      double gst = 0.0;
-      double taxable = 0.0;
-      for (var it in p.items) {
-        final t = it.purchaseRate * it.qty;
-        taxable += t;
-        gst += (t * (it.gstRate / 100));
-      }
-      final purGstin = partyGstLookup[p.partyId] ?? partyGstLookup[p.distributorName.trim().toLowerCase()] ?? '';
-      final sessionMatch = deductedBillsMap[p.id];
-      final isDeducted = sessionMatch != null;
-      if (isDeducted) {
-        deductedCount++;
-        deductedTax += gst;
-      } else {
-        pendingCount++;
-      }
-
-      billRows.add(GstBillDifferenceRow(
-        billId: p.id,
-        billNo: p.billNo,
-        date: formatter.format(p.date),
-        partyName: p.distributorName,
-        partyGstin: purGstin,
-        voucherType: 'PURCHASE',
-        taxableAmount: taxable,
-        gstAmount: gst,
-        netBillAmount: p.totalAmount,
-        isDeducted: isDeducted,
-        deductedSessionName: sessionMatch?.title ?? '',
-        deductedSessionId: sessionMatch?.id ?? '',
-      ));
-    }
-
-    billRows.sort((a, b) => b.date.compareTo(a.date));
 
     final netPayable = totalSalOutput - totalPurItc;
 
@@ -360,13 +404,16 @@ class GstDiaryCalculator {
       productRows: productRows,
       partyRows: partyRows,
       billRows: billRows,
+      activeSelectedBillIds: effectiveSelectedBillIds,
       totalPurchaseTaxable: totalPurTaxable,
       totalPurchaseItc: totalPurItc,
       totalSaleTaxable: totalSalTaxable,
       totalSaleOutputGst: totalSalOutput,
       netGstPayable: netPayable,
-      totalPurchaseBills: filteredPurchases.length,
-      totalSaleBills: filteredSales.length,
+      totalPurchaseBills: allMatchingPurchases.length,
+      totalSaleBills: allMatchingSales.length,
+      selectedPurchaseBillsCount: filteredPurchases.length,
+      selectedSaleBillsCount: filteredSales.length,
       totalDeductedBills: deductedCount,
       totalPendingBills: pendingCount,
       totalDeductedTax: deductedTax,
@@ -379,9 +426,11 @@ class _ProductStat {
   final String name;
   final String packing;
   final String hsn;
+
   double purchaseQty = 0.0;
   double purchaseTaxable = 0.0;
   double purchaseGst = 0.0;
+
   double saleQty = 0.0;
   double saleTaxable = 0.0;
   double saleGst = 0.0;

@@ -65,6 +65,9 @@ class AppRealtimeCoordinator {
             await File('$workingDir/bats.json').writeAsString(
               jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
             );
+            await File('$workingDir/gst_sessions.json').writeAsString(
+              jsonEncode(ph.gstDiarySessions.map((e) => e.toMap()).toList()),
+            );
             await File('$workingDir/config.json').writeAsString(
               jsonEncode(ph.config.toMap()),
             );

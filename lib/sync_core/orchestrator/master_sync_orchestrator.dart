@@ -18,6 +18,7 @@ import '../modules/batch_sync_module.dart';
 import '../modules/company_sync_module.dart';
 import '../modules/salt_sync_module.dart';
 import '../modules/route_sync_module.dart';
+import '../modules/gst_diary_sync_module.dart';
 import '../../inventory_logic_center.dart';
 import '../../pharoah_manager.dart';
 import '../../web_live_sync/pharoah_web_manager.dart';
@@ -384,6 +385,26 @@ class MasterSyncOrchestrator {
             phApp.notifyListeners();
           }
           break;
+        case 'GST_DIARY_SESSION':
+        case 'GST_SESSION':
+          final sId = (envelope.billData['id'] ?? envelope.syncId).toString().trim();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(sId, sId);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [sId]);
+            }
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(sId, sId);
+            if (phApp.activeCompany != null) {
+              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: sId);
+            }
+          }
+          mutated = GstDiarySyncModule.mergeIncomingSessionEnvelope(phApp.gstDiarySessions, envelope);
+          if (mutated) {
+            phApp.save();
+            phApp.notifyListeners();
+          }
+          break;
         default:
           debugPrint("⚠ [MasterSyncOrchestrator] Unknown document type: $docType");
       }
@@ -674,6 +695,21 @@ class MasterSyncOrchestrator {
             envelope,
             parties: phWeb.parties,
           );
+          if (mutated) {
+            phWeb.notifyListeners();
+          }
+          break;
+        case 'GST_DIARY_SESSION':
+        case 'GST_SESSION':
+          final sId = (envelope.billData['id'] ?? envelope.syncId).toString().trim();
+          if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+            D1SalesLedgerService.markPermanentlyDeleted(sId, sId);
+            phWeb.purgeDeletedIds([sId]);
+          } else {
+            D1SalesLedgerService.unmarkPermanentlyDeleted(sId, sId);
+            phWeb.unmarkDeletedId(sId);
+          }
+          mutated = GstDiarySyncModule.mergeIncomingSessionEnvelope(phWeb.gstDiarySessions, envelope);
           if (mutated) {
             phWeb.notifyListeners();
           }

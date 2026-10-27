@@ -1,4 +1,5 @@
 import "sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
+import "../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
 import "../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/app_sync_engine.dart
 
@@ -20,7 +21,8 @@ class AppSyncEngine {
     'meds.json', 'parts.json', 'sales.json', 'purc.json',
     'bats.json', 'vouc.json', 's_challan.json', 'p_challan.json',
     's_return.json', 'p_return.json', 'banks.json', 'config.json',
-    'series.json', 'shortage.json', 'routs.json', 'comps.json', 'salts.json'
+    'series.json', 'shortage.json', 'routs.json', 'comps.json', 'salts.json',
+    'gst_sessions.json'
   ];
 
   /// 🔄 1000-IQ BULLETPROOF 2-WAY SYNC ENGINE (STATE SNAPSHOT DIFFING & TOMBSTONE PROTOCOL)
@@ -104,7 +106,13 @@ class AppSyncEngine {
                 bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
                 bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
                 bool d1Vouc = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
-                if (d1Sales || d1Purc || d1Vouc) d1HasChanges = true;
+                bool d1Gst = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
+                bool d1Cfg = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+                  currentConfig: ph.config,
+                  edgeEvents: edgeEvents,
+                  onConfigMutated: (cfg) => ph.config = cfg,
+                );
+                if (d1Sales || d1Purc || d1Vouc || d1Gst || d1Cfg) d1HasChanges = true;
                 for (final ev in edgeEvents) {
                   final String action = (ev["action"] ?? "").toString().toUpperCase();
                   final String bId = (ev["bill_id"] ?? "").toString().trim();
@@ -232,6 +240,7 @@ class AppSyncEngine {
         await File('$workingDir/banks.json').writeAsString(jsonEncode(ph.banks.map((e) => e.toMap()).toList()));
         await File('$workingDir/series.json').writeAsString(jsonEncode(ph.numberingSeries.map((e) => e.toMap()).toList()));
         await File('$workingDir/bats.json').writeAsString(jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
+        await File('$workingDir/gst_sessions.json').writeAsString(jsonEncode(ph.gstDiarySessions.map((e) => e.toMap()).toList()));
         await File('$workingDir/config.json').writeAsString(jsonEncode(ph.config.toMap()));
       } catch (e) {
         debugPrint("Error flushing core sync files to disk: $e");
