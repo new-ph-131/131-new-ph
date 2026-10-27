@@ -15,6 +15,7 @@ import 'web_cloud_config.dart';
 import 'sync_protocol/snapshot_watcher.dart';
 import 'sync_protocol/tombstone_engine.dart';
 import 'sync_protocol/delta_merge_engine.dart';
+import '../sync_core/multi_fy_cloud_vault.dart';
 
 class AppSyncEngine {
   static const List<String> _coreFiles = [
@@ -196,8 +197,18 @@ class AppSyncEngine {
           TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
           TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
-          // STEP 4: DELTA MERGE (The Updater)
-          bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes) || d1HasChanges;
+          // STEP 3.5: SYNC OTHER FINANCIAL YEARS FROM CLOUD VAULT TO DISK & EXTRACT CURRENT FY FILES
+          await MultiFyCloudVault.syncVaultYearsToLocalDisk(ph: ph, cloudData: cloudData);
+          final Map<String, dynamic>? currentFyCloudFiles = MultiFyCloudVault.extractFyFilesForTargetYear(
+            cloudData: cloudData,
+            targetFy: ph.currentFY,
+          );
+
+          // STEP 4: DELTA MERGE (The Updater - Strictly Scoped to ph.currentFY)
+          bool hasChanges = (currentFyCloudFiles != null
+                  ? DeltaMergeEngine.processCloudData(ph, currentFyCloudFiles, localRegistry, localHashes)
+                  : false) ||
+              d1HasChanges;
 
           // Final post-merge tombstone sweep so nothing slips through
           TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
@@ -246,17 +257,13 @@ class AppSyncEngine {
         debugPrint("Error flushing core sync files to disk: $e");
       }
 
-      // STEP 5: PUSH TO CLOUD (The Rebirth)
-      Map<String, String> filesPayload = {};
-      for (var name in _coreFiles) {
-        final file = File('$workingDir/$name');
-        if (await file.exists()) {
-          filesPayload[name] = await file.readAsString();
-        }
-      }
-      
-      filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
-      filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
+      // STEP 5: PUSH TO CLOUD (Multi-FY Cloud Vault — All Financial Years Preserved!)
+      final vaultBundle = await MultiFyCloudVault.buildMultiFyCloudPayload(
+        ph: ph,
+        coreFiles: _coreFiles,
+        localTombstones: localTombstones,
+        localRegistry: localRegistry,
+      );
 
       final payload = {
         "action": WebCloudConfig.actionPushStore,
@@ -265,9 +272,10 @@ class AppSyncEngine {
         "companyName": ph.activeCompany!.name,
         "adminUser": ph.activeCompany!.adminUser,
         "adminPassword": ph.activeCompany!.password,
-        "fy": ph.currentFY,
+        "fy": vaultBundle.primaryFy,
+        "activeFy": ph.currentFY,
         "registryProfile": ph.activeCompany!.toMap(),
-        "files": filesPayload,
+        "files": vaultBundle.filesPayload,
         "syncedAt": DateTime.now().toIso8601String(),
       };
 

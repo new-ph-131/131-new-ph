@@ -15,6 +15,7 @@ import '../../web_live_sync/web_cloud_config.dart';
 import '../../web_live_sync/sync_protocol/snapshot_watcher.dart';
 import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
 import '../../web_live_sync/sync_protocol/delta_merge_engine.dart';
+import '../../sync_core/multi_fy_cloud_vault.dart';
 
 /// FastPullEngine: Dedicated high-speed pull & merge engine.
 /// Pulls cloud changes from Web and immediately updates App memory,
@@ -211,7 +212,19 @@ class FastPullEngine {
       if (cloudData['status'] != 'SUCCESS' || cloudData['files'] == null) {
         return false;
       }
-      final Map<String, dynamic> cloudFiles = cloudData['files'];
+      final bool registryUpdated = await MultiFyCloudVault.syncVaultYearsToLocalDisk(
+        ph: ph,
+        cloudData: cloudData,
+      );
+      final Map<String, dynamic>? extractedFyFiles = MultiFyCloudVault.extractFyFilesForTargetYear(
+        cloudData: cloudData,
+        targetFy: ph.currentFY,
+      );
+      if (extractedFyFiles == null) {
+        if (registryUpdated) ph.notifyListeners();
+        return registryUpdated;
+      }
+      final Map<String, dynamic> cloudFiles = extractedFyFiles;
 
       // 3. Process Cloud Tombstones & Monotonic Registry (Only IDs, drop sequence numbers)
       if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {

@@ -8,6 +8,8 @@ import '../../pharoah_manager.dart';
 import '../web_live_sync/weblivetoken.dart';
 import '../web_live_sync/web_cloud_config.dart';
 import '../web_live_sync/app_sync_engine.dart';
+import '../realtime_signaling/coordinators/app_realtime_coordinator.dart';
+import '../sync_bridge/engines/app_auto_sync_daemon.dart';
 
 class LiveWebView extends StatefulWidget {
   const LiveWebView({super.key});
@@ -40,8 +42,12 @@ class _LiveWebViewState extends State<LiveWebView> {
 
     String syncTime = await AppSyncEngine.getLastSyncFormattedTime();
 
+    final bool pausedByUser = prefs.getBool('is_cloud_sync_paused_by_user') ?? false;
+    if (!pausedByUser) {
+      await prefs.setBool('is_live_web_active', true);
+    }
     setState(() {
-      isLiveWebActive = prefs.getBool('is_live_web_active') ?? false;
+      isLiveWebActive = !pausedByUser;
       storeToken = token;
       lastSyncDisplay = syncTime;
       isLoading = false;
@@ -51,10 +57,16 @@ class _LiveWebViewState extends State<LiveWebView> {
   Future<void> _toggleLiveWeb(bool value, PharoahManager ph) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_live_web_active', value);
+    await prefs.setBool('is_cloud_sync_paused_by_user', !value);
     setState(() => isLiveWebActive = value);
 
     if (value) {
+      AppRealtimeCoordinator.instance.start(ph);
+      AppAutoSyncDaemon.instance.startHeartbeat(ph);
       _runManualSync(ph);
+    } else {
+      AppRealtimeCoordinator.instance.stop();
+      AppAutoSyncDaemon.instance.stop();
     }
 
     if (mounted) {
@@ -203,11 +215,13 @@ class _LiveWebViewState extends State<LiveWebView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("WEB LIVE WORKSTATION", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                const Text("AUTO CLOUD & WEB LIVE SYNC", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                 const SizedBox(height: 4),
                 Text(
-                  isLiveWebActive ? "Status: LIVE & BROADCASTING" : "Status: 100% OFFLINE (Local)",
-                  style: TextStyle(color: isLiveWebActive ? Colors.greenAccent : Colors.white38, fontSize: 10, fontWeight: FontWeight.bold),
+                  isLiveWebActive
+                      ? "Status: AUTO-ACTIVE & MULTI-FY VAULT SYNCING (No manual start needed)"
+                      : "Status: PAUSED BY USER (Offline Maintenance Mode)",
+                  style: TextStyle(color: isLiveWebActive ? Colors.greenAccent : Colors.amberAccent, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
               ],
             ),

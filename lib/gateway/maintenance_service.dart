@@ -45,9 +45,23 @@ class MaintenanceService {
       }
 
       // -----------------------------------------------------------------------
-      // PHASE 2: MEMORY REFRESH & SORTING (15% to 30%)
+      // PHASE 1.5: MULTI-YEAR CASCADE (BACK-YEAR TO CURRENT YEAR AUTO-HEAL)
       // -----------------------------------------------------------------------
-      onProgress(0.15, "Loading Database into Memory...");
+      if (ph.activeCompany != null && ph.activeCompany!.fYears.length > 1) {
+        onProgress(0.15, "Cascading Previous Financial Years (Opening Balances & Stock)...");
+        await ph.syncOpeningBalancesFromPreviousYear(
+          startYear: ph.activeCompany!.fYears.first,
+          onStepProgress: (p, s) {
+            onProgress(0.15 + (p * 0.10), s);
+          },
+          reloadActiveYearAtEnd: false,
+        );
+      }
+
+      // -----------------------------------------------------------------------
+      // PHASE 2: MEMORY REFRESH & SORTING (25% to 35%)
+      // -----------------------------------------------------------------------
+      onProgress(0.25, "Loading Database into Memory...");
       await ph.loadAllData();
       await Future.delayed(const Duration(milliseconds: 200));
 

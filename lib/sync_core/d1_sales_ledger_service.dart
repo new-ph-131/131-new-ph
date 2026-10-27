@@ -11,6 +11,34 @@ import '../web_live_sync/web_cloud_config.dart';
 class D1SalesLedgerService {
   /// 🎚️ MASTER SAFETY SWITCH: Toggle true for D1 Edge sync, false to safely fallback
   static const bool USE_D1_EDGE_LEDGER = true;
+  static String activeFinancialYear = "";
+
+  static String inferFyFromDate(DateTime dt) {
+    if (dt.month >= 4) {
+      return "${dt.year}-${(dt.year + 1).toString().substring(2)}";
+    } else {
+      return "${dt.year - 1}-${dt.year.toString().substring(2)}";
+    }
+  }
+
+  /// Strict Financial Year Isolation Guard:
+  /// Ensures D1 events from 2026-27 never pollute a fresh 2027-28 year or a 2025-26 back-year.
+  static bool doesEventBelongToActiveFY(dynamic rawPayload, DateTime? recordDate, [String? targetFy]) {
+    final String fy = (targetFy != null && targetFy.trim().isNotEmpty)
+        ? targetFy.trim()
+        : activeFinancialYear.trim();
+    if (fy.isEmpty) return true;
+    if (rawPayload is Map) {
+      final String payloadFy = (rawPayload["fy"] ?? "").toString().trim();
+      if (payloadFy.isNotEmpty) {
+        return payloadFy == fy;
+      }
+    }
+    if (recordDate != null) {
+      return inferFyFromDate(recordDate) == fy;
+    }
+    return true;
+  }
 
   /// 🛡️ PERMANENT GRAVESTONES: Once marked deleted in D1, Google Drive can NEVER resurrect
   static final Set<String> _permanentDeletedKeys = {};
@@ -188,6 +216,7 @@ class D1SalesLedgerService {
     try {
       final purMap = purchase.toMap();
       purMap["doc_type"] = "PURCHASE";
+      purMap["fy"] = activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(purchase.date);
       final String cleanParty = purchase.partyId.trim().toUpperCase();
       final String cleanBill = purchase.billNo.trim().toUpperCase();
       final String cleanInt = purchase.internalNo.trim().toUpperCase();
@@ -410,7 +439,10 @@ class D1SalesLedgerService {
           "action": isUpdate ? "UPDATE" : "INSERT",
           "status": sale.status,
           "client_source": clientSource,
-          "payload": sale.toMap(),
+          "payload": {
+            ...sale.toMap(),
+            "fy": activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(sale.date),
+          },
         },
       };
 
@@ -469,7 +501,10 @@ class D1SalesLedgerService {
           "action": "CANCEL",
           "status": "Cancelled",
           "client_source": clientSource,
-          "payload": sale.toMap(),
+          "payload": {
+            ...sale.toMap(),
+            "fy": activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(sale.date),
+          },
         },
       };
 
@@ -668,6 +703,10 @@ class D1SalesLedgerService {
               incomingSale.totalAmount <= 0) {
             continue;
           }
+          // Strict Financial Year Isolation Guard
+          if (!doesEventBelongToActiveFY(rawSale, incomingSale.date)) {
+            continue;
+          }
           unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo);
           int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
           if (existingIdx != -1) {
@@ -738,6 +777,9 @@ class D1SalesLedgerService {
         final incomingPur = Purchase.fromMap(rawData);
         if (billId.isNotEmpty) incomingPur.id = billId;
         incomingPur.version = version;
+        if (!doesEventBelongToActiveFY(rawData, incomingPur.date)) {
+          continue;
+        }
         unmarkPurchasePermanentlyDeleted(
           incomingPur.id,
           incomingPur.partyId,

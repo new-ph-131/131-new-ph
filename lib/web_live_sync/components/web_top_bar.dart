@@ -1,8 +1,8 @@
 import '../../event_sync_lab/ui/lab_sync_test_bench.dart';
 // FILE: lib/web_live_sync/components/web_top_bar.dart
-
 import 'package:flutter/material.dart';
 import '../pharoah_web_manager.dart';
+import 'web_fy_command_center_dialog.dart';
 
 class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
   final PharoahWebManager webPh;
@@ -22,13 +22,19 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
   @override
   Widget build(BuildContext context) {
     bool isTight = MediaQuery.of(context).size.width < 700;
+    final bool isBackYear = webPh.isBackYearActive;
 
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        border: Border(bottom: BorderSide(color: Colors.white10)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        border: Border(
+          bottom: BorderSide(
+            color: isBackYear ? const Color(0xFFF59E0B).withOpacity(0.6) : Colors.white10,
+            width: isBackYear ? 1.5 : 1.0,
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -55,14 +61,45 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
+              const SizedBox(height: 2),
               Row(
                 children: [
-                  Text(
-                    "FY: ${webPh.financialYear}",
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: Color(0xFF38BDF8),
-                      fontWeight: FontWeight.bold,
+                  InkWell(
+                    onTap: () => WebFyCommandCenterDialog.show(context, webPh),
+                    borderRadius: BorderRadius.circular(5),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isBackYear
+                            ? const Color(0xFFF59E0B).withOpacity(0.2)
+                            : const Color(0xFF38BDF8).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: isBackYear ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
+                          width: 0.7,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.calendar_month_rounded,
+                            size: 10,
+                            color: isBackYear ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isBackYear
+                                ? "FY: ${webPh.financialYear} (BACK YEAR) ▾"
+                                : "FY: ${webPh.financialYear} ▾",
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: isBackYear ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -74,7 +111,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-786 (GST-AUDIT-SCREEN-AND-GHOST-BILL-FIX)",
+                      "#PH-REV-787 (MARG-MULTI-FY-AUTO-CASCADE-AND-CLOUD-VAULT)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),
@@ -109,6 +146,15 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
           else
             const Spacer(),
           const SizedBox(width: 8),
+          IconButton(
+            icon: Icon(
+              Icons.calendar_month_rounded,
+              color: isBackYear ? const Color(0xFFFBBF24) : const Color(0xFF10B981),
+              size: 20,
+            ),
+            tooltip: "Financial Year Switcher, New FY & File Maintenance",
+            onPressed: () => WebFyCommandCenterDialog.show(context, webPh),
+          ),
           IconButton(
             icon: const Icon(Icons.science_rounded, color: Colors.cyanAccent, size: 20),
             tooltip: "Plan 1 Sync Lab Test",

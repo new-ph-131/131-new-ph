@@ -42,6 +42,7 @@ import 'finance/bank_transaction_model.dart';
 import 'demo_data.dart';
 import 'inventory_logic_center.dart';
 import 'fy_transfer_engine.dart';
+import 'sync_core/multi_fy_cloud_vault.dart';
 import 'gateway/company_registry_model.dart';
 import 'logic/app_settings_model.dart';
 import 'logic/pharoah_numbering_engine.dart';
@@ -357,15 +358,38 @@ class PharoahManager with ChangeNotifier {
     
     await File('$dir/bats.json').writeAsString(jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
     await File('$dir/config.json').writeAsString(jsonEncode(config.toMap()));
+    D1SalesLedgerService.activeFinancialYear = currentFY;
+
+    // 🏛️ MARG-STYLE AUTO-CASCADE ON BACK-YEAR EDIT:
+    // If user is editing a historical/back Financial Year (e.g. 2025-26), automatically cascade
+    // the updated closing balances & batch stocks forward to 2026-27 (and any newer years)!
+    if (activeCompany != null &&
+        activeCompany!.fYears.length > 1 &&
+        currentFY.isNotEmpty &&
+        currentFY != activeCompany!.fYears.last) {
+      await syncOpeningBalancesFromPreviousYear(
+        startYear: currentFY,
+        onStepProgress: (_, __) {},
+        reloadActiveYearAtEnd: false,
+      );
+    }
+
     notifyListeners();
     // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Single Unified Debounced Push via AppRealtimeCoordinator)
     AppRealtimeCoordinator.instance.notifyAppMutation(this);
-    LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-711)");
+    LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-787)");
   }
 
   Future<void> loadAllData() async {
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
+    D1SalesLedgerService.activeFinancialYear = currentFY;
+    SharedPreferences.getInstance().then((prefs) {
+      final bool pausedByUser = prefs.getBool('is_cloud_sync_paused_by_user') ?? false;
+      if (!pausedByUser) {
+        prefs.setBool('is_live_web_active', true);
+      }
+    });
     dynamic load(String n) { final f = File('$dir/$n'); return f.existsSync() ? jsonDecode(f.readAsStringSync()) : null; }
     
     var cData = load('config.json');
@@ -2712,19 +2736,28 @@ void registerBatchActivity({
       final String compId = profileData["id"]?.toString() ?? "COMP-${cleanToken.replaceAll(RegExp(r"[^A-Za-z0-9]"), "")}";
       final String compName = profileData["name"]?.toString() ?? res["companyName"]?.toString() ?? "CLOUD STORE";
       final String bType = profileData["businessType"]?.toString() ?? "WHOLESALE";
-      final String fy = (res["fy"] != null && res["fy"].toString().isNotEmpty)
-          ? res["fy"].toString()
-          : (profileData["fYears"] != null && (profileData["fYears"] as List).isNotEmpty
-              ? (profileData["fYears"] as List).last.toString()
-              : AppDateLogic.getCurrentFYString());
+      final Map<String, dynamic> rawCloudFilesForVault =
+          (res["files"] is Map) ? Map<String, dynamic>.from(res["files"]) : {};
+      final Map<String, Map<String, String>> cloudFyVault =
+          MultiFyCloudVault.parseFyVault(rawCloudFilesForVault);
 
-      final List<String> allFys = profileData["fYears"] != null && (profileData["fYears"] as List).isNotEmpty
-          ? List<String>.from(profileData["fYears"])
-          : [fy];
-
-      if (!allFys.contains(fy)) {
-        allFys.add(fy);
+      final Set<String> discoveredFys = {};
+      if (profileData["fYears"] is List) {
+        for (final y in (profileData["fYears"] as List)) {
+          final cy = y.toString().trim();
+          if (cy.isNotEmpty) discoveredFys.add(cy);
+        }
       }
+      for (final vy in cloudFyVault.keys) {
+        if (vy.trim().isNotEmpty) discoveredFys.add(vy.trim());
+      }
+      final String cloudTopFy = (res["fy"] != null && res["fy"].toString().trim().isNotEmpty)
+          ? res["fy"].toString().trim()
+          : AppDateLogic.getCurrentFYString();
+      discoveredFys.add(cloudTopFy);
+
+      final List<String> allFys = AppDateLogic.sortFYList(discoveredFys);
+      final String fy = allFys.isNotEmpty ? allFys.last : cloudTopFy;
 
       final CompanyProfile restoredProfile = CompanyProfile(
         id: compId,
@@ -2764,8 +2797,25 @@ void registerBatchActivity({
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('active_fy_${restoredProfile.id}', fy);
       await prefs.setString('last_active_fy_for_${restoredProfile.id}', fy);
+      // Automatically activate Live Cloud & Web Sync upon Cloud Restore (no manual toggle required!)
+      await prefs.setBool('is_live_web_active', true);
+      await prefs.setBool('is_cloud_sync_paused_by_user', false);
 
-      // Write all downloaded files directly to the canonical getWorkingPath() directory
+      final rootDir = await getApplicationDocumentsDirectory();
+      // 1. Unpack EVERY Financial Year from Multi-FY Cloud Vault onto local disk
+      for (final vaultEntry in cloudFyVault.entries) {
+        final String vFy = vaultEntry.key;
+        final Directory fyDir = Directory("${rootDir.path}/Pharoah_Data/${restoredProfile.id}/${restoredProfile.businessType}/$vFy");
+        if (!await fyDir.exists()) {
+          await fyDir.create(recursive: true);
+        }
+        for (final fEntry in vaultEntry.value.entries) {
+          if (fEntry.key == 'fy_vault.json') continue;
+          await File("${fyDir.path}/${fEntry.key}").writeAsString(fEntry.value);
+        }
+      }
+
+      // 2. Write active year downloaded files directly to canonical getWorkingPath() directory
       final workingDirPath = await getWorkingPath();
       final workingDir = Directory(workingDirPath);
       if (!await workingDir.exists()) {
@@ -2773,15 +2823,23 @@ void registerBatchActivity({
       }
 
       final Map<String, dynamic> files = (res["files"] is Map) ? (res["files"] as Map<String, dynamic>) : {};
-      for (var entry in files.entries) {
-        final filename = entry.key;
-        final fileContent = entry.value;
-        if (fileContent == null) continue;
-        final file = File("${workingDir.path}/$filename");
-        if (fileContent is String) {
-          await file.writeAsString(fileContent);
-        } else {
-          await file.writeAsString(jsonEncode(fileContent));
+      final Map<String, String>? activeVaultFiles = cloudFyVault[fy];
+      if (activeVaultFiles != null && activeVaultFiles.isNotEmpty) {
+        for (final entry in activeVaultFiles.entries) {
+          await File("${workingDir.path}/${entry.key}").writeAsString(entry.value);
+        }
+      } else {
+        for (var entry in files.entries) {
+          final filename = entry.key;
+          if (filename == 'fy_vault.json') continue;
+          final fileContent = entry.value;
+          if (fileContent == null) continue;
+          final file = File("${workingDir.path}/$filename");
+          if (fileContent is String) {
+            await file.writeAsString(fileContent);
+          } else {
+            await file.writeAsString(jsonEncode(fileContent));
+          }
         }
       }
 
@@ -2844,9 +2902,8 @@ void registerBatchActivity({
     if(ok) {
       int idx = companiesRegistry.indexWhere((c) => c.id == activeCompany!.id);
       if (idx != -1) {
-        List<String> updatedYears = List.from(companiesRegistry[idx].fYears);
-        if (!updatedYears.contains(n)) {
-          updatedYears.add(n);
+        List<String> updatedYears = AppDateLogic.sortFYList([...companiesRegistry[idx].fYears, n]);
+        if (true) {
           companiesRegistry[idx] = CompanyProfile(
             id: activeCompany!.id,
             name: activeCompany!.name,
@@ -2873,8 +2930,9 @@ void registerBatchActivity({
       
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('active_fy_${activeCompany!.id}', n);
-      
-      await loadAllData(); 
+      D1SalesLedgerService.activeFinancialYear = n;
+      await loadAllData();
+      AppRealtimeCoordinator.instance.notifyAppMutation(this, action: 'NEW_FY_CREATED', entityId: n);
     } 
     return ok; 
   }
@@ -3082,227 +3140,74 @@ void registerBatchActivity({
   // 🏛️ NAYA: CASCADE PROVISIONAL BALANCE SYNC (CASCADE LOOP - NO NESTING)
   // ===========================================================================
   Future<bool> syncOpeningBalancesFromPreviousYear({
-    required String startYear, 
-    required Function(double progress, String status) onStepProgress
+    required String startYear,
+    required Function(double progress, String status) onStepProgress,
+    bool reloadActiveYearAtEnd = true,
   }) async {
     if (activeCompany == null) return false;
 
     try {
       final root = await getApplicationDocumentsDirectory();
-      List<String> years = activeCompany!.fYears;
+      final List<String> years = AppDateLogic.sortFYList(activeCompany!.fYears);
       int startIndex = years.indexOf(startYear);
-      
-      if (startIndex == -1 || startIndex >= years.length - 1) {
-        debugPrint("Sync Error: Invalid starting year or no subsequent year to sync.");
-        return false;
+      if (startIndex == -1) startIndex = 0;
+
+      if (years.length < 2 || startIndex >= years.length - 1) {
+        return true;
       }
 
-      int totalSteps = (years.length - 1) - startIndex;
+      final int totalSteps = (years.length - 1) - startIndex;
       int completedSteps = 0;
 
-      // Chronological loop through years
       for (int i = startIndex; i < years.length - 1; i++) {
-        String prevFY = years[i];
-        String targetFY = years[i + 1];
+        final String prevFY = years[i];
+        final String targetFY = years[i + 1];
         completedSteps++;
 
-        double stepProgress = (completedSteps / totalSteps);
-        onStepProgress(stepProgress, "Syncing: $prevFY -> $targetFY");
+        final double stepProgress = completedSteps / totalSteps;
+        onStepProgress(stepProgress, "Cascading Balances & Stock: $prevFY → $targetFY");
 
-        final prevPath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}/$prevFY';
-        final targetPath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}/$targetFY';
-        
-        final prevDir = Directory(prevPath);
-        final targetDir = Directory(targetPath);
-        
+        final String prevPath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}/$prevFY';
+        final String targetPath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}/$targetFY';
+
+        final Directory prevDir = Directory(prevPath);
+        final Directory targetDir = Directory(targetPath);
+
         if (!await prevDir.exists() || !await targetDir.exists()) {
-          debugPrint("Sync Error: directories missing on step $prevFY -> $targetFY");
-          return false;
+          debugPrint("Sync Notice: directories missing on step $prevFY -> $targetFY");
+          continue;
         }
 
-        // 1. Read previous year databases directly from disk files
-        File fMeds = File('$prevPath/meds.json');
-        List<Medicine> prevMeds = fMeds.existsSync() ? (jsonDecode(fMeds.readAsStringSync()) as List).map((e) => Medicine.fromMap(e)).toList() : [];
+        final Map<String, String> prevFiles = {};
+        final Map<String, String> targetFiles = {};
 
-        File fParts = File('$prevPath/parts.json');
-        List<Party> prevParties = fParts.existsSync() ? (jsonDecode(fParts.readAsStringSync()) as List).map((e) => Party.fromMap(e)).toList() : [];
-
-        File fSales = File('$prevPath/sales.json');
-        List<Sale> prevSales = fSales.existsSync() ? (jsonDecode(fSales.readAsStringSync()) as List).map((e) => Sale.fromMap(e)).toList() : [];
-
-        File fPurc = File('$prevPath/purc.json');
-        List<Purchase> prevPurc = fPurc.existsSync() ? (jsonDecode(fPurc.readAsStringSync()) as List).map((e) => Purchase.fromMap(e)).toList() : [];
-
-        File fVouc = File('$prevPath/vouc.json');
-        List<Voucher> prevVouc = fVouc.existsSync() ? (jsonDecode(fVouc.readAsStringSync()) as List).map((e) => Voucher.fromMap(e)).toList() : [];
-
-        File fBanks = File('$prevPath/banks.json');
-        List<Bank> prevBanks = fBanks.existsSync() ? (jsonDecode(fBanks.readAsStringSync()) as List).map((e) => Bank.fromMap(e)).toList() : [];
-
-        File fBats = File('$prevPath/bats.json');
-        Map<String, dynamic> prevBatchesRaw = fBats.existsSync() ? jsonDecode(fBats.readAsStringSync()) : {};
-
-        // 2. Read target year databases
-        File fTargetParts = File('$targetPath/parts.json');
-        List<Party> targetParties = fTargetParts.existsSync() ? (jsonDecode(fTargetParts.readAsStringSync()) as List).map((e) => Party.fromMap(e)).toList() : [];
-
-        File fTargetBanks = File('$targetPath/banks.json');
-        List<Bank> targetBanks = fTargetBanks.existsSync() ? (jsonDecode(fTargetBanks.readAsStringSync()) as List).map((e) => Bank.fromMap(e)).toList() : [];
-
-        File fTargetMeds = File('$targetPath/meds.json');
-        List<Medicine> targetMeds = fTargetMeds.existsSync() ? (jsonDecode(fTargetMeds.readAsStringSync()) as List).map((e) => Medicine.fromMap(e)).toList() : [];
-
-        File fTargetBats = File('$targetPath/bats.json');
-        Map<String, dynamic> targetBatchesRaw = fTargetBats.existsSync() ? jsonDecode(fTargetBats.readAsStringSync()) : {};
-
-        // 3. Re-calculate Party Closing Balances
-        Map<String, double> recalculatedPartyBals = {};
-        for (var p in prevParties) {
-          if (p.name == "CASH") continue;
-          double bal = p.opBal;
-          
-          for (var s in prevSales.where((s) => s.partyName == p.name && s.status == "Active")) {
-            bal += s.totalAmount;
-          }
-          for (var pr in prevPurc.where((pr) => pr.distributorName == p.name)) {
-            bal -= pr.totalAmount;
-          }
-          for (var v in prevVouc.where((v) => v.partyName == p.name && v.status == "Active")) {
-            String type = v.type.toUpperCase();
-            if (type == "RECEIPT") {
-              bal -= v.amount;
-            } else if (type == "PAYMENT" || type == "EXPENSE") {
-              bal += v.amount;
-            }
-          }
-          recalculatedPartyBals[p.id] = bal;
+        for (final fName in FYTransferEngine.allFyFileNames) {
+          final fp = File('$prevPath/$fName');
+          if (fp.existsSync()) prevFiles[fName] = await fp.readAsString();
+          final ft = File('$targetPath/$fName');
+          if (ft.existsSync()) targetFiles[fName] = await ft.readAsString();
         }
 
-        // 4. Re-calculate Bank Balances
-        Map<String, double> recalculatedBankBals = {};
-        for (var b in prevBanks) {
-          double bal = b.openingBalance;
-          for (var v in prevVouc.where((v) => v.depositedIn.toUpperCase() == b.name.toUpperCase() && v.status == "Active")) {
-            String type = v.type.toUpperCase();
-            if (type == "RECEIPT") {
-              bal += v.amount;
-            } else if (type == "PAYMENT" || type == "EXPENSE") {
-              bal -= v.amount;
-            }
-          }
-          recalculatedBankBals[b.id] = bal;
+        final cascaded = FYTransferEngine.cascadeSingleYearStep(
+          prevFiles: prevFiles,
+          targetFiles: targetFiles,
+          prevFY: prevFY,
+          targetFY: targetFY,
+        );
+
+        for (final entry in cascaded.healedPrevFiles.entries) {
+          await File('$prevPath/${entry.key}').writeAsString(entry.value);
+        }
+        for (final entry in cascaded.healedTargetFiles.entries) {
+          await File('$targetPath/${entry.key}').writeAsString(entry.value);
         }
 
-        // 5. Re-calculate Batch Stocks
-        Map<String, List<BatchInfo>> recalculatedBatches = {};
-        prevBatchesRaw.forEach((medKey, batchList) {
-          List<dynamic> list = batchList as List;
-          recalculatedBatches[medKey] = list.map((b) {
-            BatchInfo bObj = BatchInfo.fromMap(b);
-            if (bObj.qty < 0) bObj.qty = 0;
-            bObj.openingQty = bObj.qty; 
-            bObj.adjustmentQty = 0;     
-            return bObj;
-          }).toList();
-        });
-
-        // 6. DELTA MASTERS EXPORT (Masters Sync)
-        Set<String> targetPartyIds = targetParties.map((p) => p.id).toSet();
-        List<Party> missingParties = [];
-        for (var p in prevParties) {
-          if (!targetPartyIds.contains(p.id)) {
-            p.opBal = recalculatedPartyBals[p.id] ?? p.opBal;
-            missingParties.add(p);
-          }
-        }
-
-        List<Party> updatedParties = targetParties.map((p) {
-          if (recalculatedPartyBals.containsKey(p.id)) {
-            p.opBal = recalculatedPartyBals[p.id]!;
-          }
-          return p;
-        }).toList();
-        updatedParties.addAll(missingParties);
-
-        Set<String> targetMedKeys = targetMeds.map((m) => m.identityKey).toSet();
-        List<Medicine> missingMeds = [];
-        
-        for (var m in prevMeds) {
-          if (!targetMedKeys.contains(m.identityKey)) {
-            double totalStock = 0.0;
-            if (recalculatedBatches.containsKey(m.identityKey)) {
-              for (var b in recalculatedBatches[m.identityKey]!) {
-                totalStock += b.qty;
-              }
-            }
-            m.stock = totalStock;
-            missingMeds.add(m);
-          }
-        }
-
-        List<Medicine> updatedMeds = targetMeds.map((m) {
-          String key = m.identityKey;
-          if (prevBatchesRaw.containsKey(key)) {
-            double totalStock = 0.0;
-            if (recalculatedBatches.containsKey(key)) {
-              for (var b in recalculatedBatches[key]!) {
-                totalStock += b.qty;
-              }
-            }
-            m.stock = totalStock;
-          }
-          return m;
-        }).toList();
-        updatedMeds.addAll(missingMeds);
-
-        // Delta for other static files
-        File fPrevRouts = File('$prevPath/routs.json');
-        List<RouteArea> prevRouts = fPrevRouts.existsSync() ? (jsonDecode(fPrevRouts.readAsStringSync()) as List).map((e) => RouteArea.fromMap(e)).toList() : [];
-        File fTargetRouts = File('$targetPath/routs.json');
-        List<RouteArea> targetRouts = fTargetRouts.existsSync() ? (jsonDecode(fTargetRouts.readAsStringSync()) as List).map((e) => RouteArea.fromMap(e)).toList() : [];
-        Set<String> targetRouteIds = targetRouts.map((r) => r.id).toSet();
-        targetRouts.addAll(prevRouts.where((r) => !targetRouteIds.contains(r.id)));
-
-        File fPrevComps = File('$prevPath/comps.json');
-        List<Company> prevComps = fPrevComps.existsSync() ? (jsonDecode(fPrevComps.readAsStringSync()) as List).map((e) => Company.fromMap(e)).toList() : [];
-        File fTargetComps = File('$targetPath/comps.json');
-        List<Company> targetComps = fTargetComps.existsSync() ? (jsonDecode(fTargetComps.readAsStringSync()) as List).map((e) => Company.fromMap(e)).toList() : [];
-        Set<String> targetCompIds = targetComps.map((c) => c.id).toSet();
-        targetComps.addAll(prevComps.where((c) => !targetCompIds.contains(c.id)));
-
-        File fPrevSalts = File('$prevPath/salts.json');
-        List<Salt> prevSalts = fPrevSalts.existsSync() ? (jsonDecode(fPrevSalts.readAsStringSync()) as List).map((e) => Salt.fromMap(e)).toList() : [];
-        File fTargetSalts = File('$targetPath/salts.json');
-        List<Salt> targetSalts = fTargetSalts.existsSync() ? (jsonDecode(fTargetSalts.readAsStringSync()) as List).map((e) => Salt.fromMap(e)).toList() : [];
-        Set<String> targetSaltIds = targetSalts.map((s) => s.id).toSet();
-        targetSalts.addAll(prevSalts.where((s) => !targetSaltIds.contains(s.id)));
-
-        List<Bank> updatedBanks = targetBanks.map((b) {
-          if (recalculatedBankBals.containsKey(b.id)) {
-            b.openingBalance = recalculatedBankBals[b.id]!;
-          }
-          return b;
-        }).toList();
-
-        recalculatedBatches.forEach((medKey, list) {
-          targetBatchesRaw[medKey] = list.map((e) => e.toMap()).toList();
-        });
-
-        // Save straight to disk
-        await File('$targetPath/meds.json').writeAsString(jsonEncode(updatedMeds.map((e) => e.toMap()).toList()));
-        await File('$targetPath/parts.json').writeAsString(jsonEncode(updatedParties.map((e) => e.toMap()).toList()));
-        await File('$targetPath/banks.json').writeAsString(jsonEncode(updatedBanks.map((e) => e.toMap()).toList()));
-        await File('$targetPath/bats.json').writeAsString(jsonEncode(targetBatchesRaw));
-        await File('$targetPath/routs.json').writeAsString(jsonEncode(targetRouts.map((e) => e.toMap()).toList()));
-        await File('$targetPath/comps.json').writeAsString(jsonEncode(targetComps.map((e) => e.toMap()).toList()));
-        await File('$targetPath/salts.json').writeAsString(jsonEncode(targetSalts.map((e) => e.toMap()).toList()));
-
-        addLog("SYSTEM", "Provisional Cascade: synced opening balances from $prevFY to $targetFY.");
-        await Future.delayed(const Duration(milliseconds: 100));
+        addLog("SYSTEM", "Marg-Grade Multi-Year Cascade: synced opening balances & rebuilt live stock from $prevFY to $targetFY.");
+        await Future.delayed(const Duration(milliseconds: 50));
       }
 
-      if (currentFY.isNotEmpty) {
-        await loadAllData(); 
+      if (reloadActiveYearAtEnd && currentFY.isNotEmpty) {
+        await loadAllData();
       }
       return true;
     } catch (e) {

@@ -126,6 +126,7 @@ class WebVoucherD1SyncService {
     try {
       final vMap = voucher.toMap();
       vMap["doc_type"] = docType;
+      vMap["fy"] = D1SalesLedgerService.activeFinancialYear.isNotEmpty ? D1SalesLedgerService.activeFinancialYear : D1SalesLedgerService.inferFyFromDate(voucher.date);
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,

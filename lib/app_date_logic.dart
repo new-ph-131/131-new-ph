@@ -1,24 +1,42 @@
 import 'package:intl/intl.dart';
 
 class AppDateLogic {
-  
   // ===========================================================================
   // 1. FINANCIAL YEAR DETECTOR (FOR SETUP & INSTALL)
   // ===========================================================================
-  
+
   /// Aaj ki system date dekh kar automatic Financial Year (FY) string nikalta hai.
   /// April-March Cycle Logic:
   /// Agar aaj 15 May 2024 hai -> "2024-25"
   /// Agar aaj 10 Feb 2025 hai -> "2024-25"
   static String getCurrentFYString() {
-    DateTime now = DateTime.now();
-    if (now.month >= 4) {
-      // April se December tak: Current Year se Agla Year
-      return "${now.year}-${(now.year + 1).toString().substring(2)}";
+    return getFYForDate(DateTime.now());
+  }
+
+  /// Kisi bhi specific DateTime se uska Indian Financial Year ("YYYY-YY") nikalta hai.
+  static String getFYForDate(DateTime dt) {
+    if (dt.month >= 4) {
+      return "${dt.year}-${(dt.year + 1).toString().substring(2)}";
     } else {
-      // January se March tak: Pichla Year se Current Year
-      return "${now.year - 1}-${now.year.toString().substring(2)}";
+      return "${dt.year - 1}-${dt.year.toString().substring(2)}";
     }
+  }
+
+  /// Normalizes and sorts a list of Financial Year strings chronologically (e.g. ["2025-26", "2026-27"])
+  static List<String> sortFYList(Iterable<String> fys) {
+    final cleaned = fys
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty && e.contains("-"))
+        .toSet()
+        .toList();
+    cleaned.sort((a, b) {
+      int ya = int.tryParse(a.split("-").first) ?? 0;
+      int yb = int.tryParse(b.split("-").first) ?? 0;
+      if (ya < 2000 && ya > 0) ya += 2000;
+      if (yb < 2000 && yb > 0) yb += 2000;
+      return ya.compareTo(yb);
+    });
+    return cleaned;
   }
 
   // ===========================================================================
@@ -30,7 +48,6 @@ class AppDateLogic {
     try {
       List<String> parts = fy.split('-');
       int startYear = int.parse(parts[0]);
-      // Agar year '24' format mein hai toh '2024' banayein
       if (startYear < 2000) startYear += 2000;
       return DateTime(startYear, 4, 1);
     } catch (e) {
@@ -44,10 +61,9 @@ class AppDateLogic {
       List<String> parts = fy.split('-');
       int startYear = int.parse(parts[0]);
       if (startYear < 2000) startYear += 2000;
-      // Agle saal ki 31st March (End of FY)
       return DateTime(startYear + 1, 3, 31, 23, 59, 59);
     } catch (e) {
-      return DateTime(DateTime.now().year + 1, 3, 31);
+      return DateTime(DateTime.now().year + 1, 3, 31, 23, 59, 59);
     }
   }
 
@@ -65,7 +81,7 @@ class AppDateLogic {
       int nextEnd = startYear + 2;
       return "$nextStart-${nextEnd.toString().substring(2)}";
     } catch (e) {
-      return "Error";
+      return getCurrentFYString();
     }
   }
 
@@ -81,7 +97,7 @@ class AppDateLogic {
     DateTime fyStart = getFYStart(currentFY);
     DateTime fyEnd = getFYEnd(currentFY);
 
-    if (now.isAfter(fyStart.subtract(const Duration(seconds: 1))) && 
+    if (now.isAfter(fyStart.subtract(const Duration(seconds: 1))) &&
         now.isBefore(fyEnd.add(const Duration(seconds: 1)))) {
       return now;
     } else if (now.isAfter(fyEnd)) {
@@ -98,9 +114,9 @@ class AppDateLogic {
 
   /// Safety Check: Kya koi date kisi specific FY ke andar hai?
   static bool isValidInFY(DateTime pickedDate, String currentFY) {
+    if (currentFY.trim().isEmpty) return true;
     DateTime fyStart = getFYStart(currentFY);
     DateTime fyEnd = getFYEnd(currentFY);
-    return pickedDate.isAfter(fyStart.subtract(const Duration(days: 1))) && 
-           pickedDate.isBefore(fyEnd.add(const Duration(days: 1)));
+    return !pickedDate.isBefore(fyStart) && !pickedDate.isAfter(fyEnd);
   }
 }

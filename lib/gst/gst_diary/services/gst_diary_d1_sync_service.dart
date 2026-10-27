@@ -146,6 +146,9 @@ class GstDiaryD1SyncService {
     try {
       final sMap = session.toMap();
       sMap["doc_type"] = docType;
+      if (D1SalesLedgerService.activeFinancialYear.isNotEmpty) {
+        sMap["fy"] = D1SalesLedgerService.activeFinancialYear;
+      }
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
@@ -261,6 +264,10 @@ class GstDiaryD1SyncService {
         final incoming = GstDiarySession.fromMap(mapData);
         if (billId.isNotEmpty) incoming.id = billId;
         incoming.version = version;
+        final DateTime? sessDate = DateTime.tryParse(incoming.fromDate);
+        if (!D1SalesLedgerService.doesEventBelongToActiveFY(mapData, sessDate)) {
+          continue;
+        }
 
         if (incoming.isDeleted == 1 || incoming.status == "Deleted") {
           D1SalesLedgerService.markPermanentlyDeleted(incoming.id);
