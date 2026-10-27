@@ -70,7 +70,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
     if (_isViewingAuditHistory && canViewAudit) {
       return BatchAuditWorkbench(
         medicine: widget.medicine,
-        batches: allBatches,
+        batches: batches,
         initialBatchNo: _targetAuditBatchNo,
         onBack: () => setState(() {
           _isViewingAuditHistory = false;
