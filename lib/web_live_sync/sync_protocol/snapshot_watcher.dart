@@ -6,10 +6,15 @@ import '../../../pharoah_manager.dart';
 
 class SnapshotWatcher {
   /// Detects records deleted from the mobile app.
+  static String _scopedKey(String prefix, String companyId, String fy) {
+    final cleanFy = fy.trim();
+    return cleanFy.isEmpty ? '${prefix}_$companyId' : '${prefix}_${companyId}_$cleanFy';
+  }
+
   static Future<List<String>> detectLocalDeletions(PharoahManager ph) async {
     final prefs = await SharedPreferences.getInstance();
     String companyId = ph.activeCompany?.id ?? "unknown";
-    String snapshotKey = 'sync_snapshot_$companyId';
+    String snapshotKey = _scopedKey('sync_snapshot', companyId, ph.currentFY);
 
     String? snapStr = prefs.getString(snapshotKey);
     if (snapStr == null || snapStr.isEmpty) return [];
@@ -40,16 +45,23 @@ class SnapshotWatcher {
   }
 
   /// Extracts baseline hashes of local objects to detect offline edits
-  static Future<Map<String, String>> getLocalHashes(String companyId) async {
+  static Future<Map<String, String>> getLocalHashes(String companyId, [String fy = ""]) async {
     final prefs = await SharedPreferences.getInstance();
-    String snapStr = prefs.getString('sync_hashes_$companyId') ?? '{}';
-    return Map<String, String>.from(jsonDecode(snapStr));
+    String key = _scopedKey('sync_hashes', companyId, fy);
+    String snapStr = prefs.getString(key) ?? prefs.getString('sync_hashes_$companyId') ?? '{}';
+    try {
+      return Map<String, String>.from(jsonDecode(snapStr));
+    } catch (_) {
+      return {};
+    }
   }
 
   /// Takes a snapshot of all active IDs and their Content Hashes.
   static Future<void> takeSnapshot(PharoahManager ph) async {
     final prefs = await SharedPreferences.getInstance();
     String companyId = ph.activeCompany?.id ?? "unknown";
+    String snapshotKey = _scopedKey('sync_snapshot', companyId, ph.currentFY);
+    String hashKey = _scopedKey('sync_hashes', companyId, ph.currentFY);
     
     Map<String, List<String>> snapshot = {
       'sales': ph.sales.map((e) => e.id).toList(),
@@ -61,7 +73,7 @@ class SnapshotWatcher {
       'vouchers': ph.vouchers.map((e) => e.id).toList(),
       'gstDiarySessions': ph.gstDiarySessions.map((e) => e.id).toList(),
     };
-    await prefs.setString('sync_snapshot_$companyId', jsonEncode(snapshot));
+    await prefs.setString(snapshotKey, jsonEncode(snapshot));
 
     // SMART HASH ENGINE: Saves exact JSON footprint of every transaction
     Map<String, String> hashes = {};
@@ -73,6 +85,6 @@ class SnapshotWatcher {
     for (var r in ph.purchaseReturns) hashes[r.id] = jsonEncode(r.toMap()).hashCode.toString();
     for (var v in ph.vouchers) hashes[v.id] = jsonEncode(v.toMap()).hashCode.toString();
     for (var gs in ph.gstDiarySessions) hashes[gs.id] = jsonEncode(gs.toMap()).hashCode.toString();
-    await prefs.setString('sync_hashes_$companyId', jsonEncode(hashes));
+    await prefs.setString(hashKey, jsonEncode(hashes));
   }
 }

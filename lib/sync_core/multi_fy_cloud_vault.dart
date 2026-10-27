@@ -167,7 +167,14 @@ class MultiFyCloudVault {
         }
         for (final fEntry in entry.value.entries) {
           if (fEntry.key == 'fy_vault.json') continue;
-          await File('$fyDirPath/${fEntry.key}').writeAsString(fEntry.value);
+          final targetFile = File('$fyDirPath/${fEntry.key}');
+          if (await targetFile.exists()) {
+            try {
+              final existingContent = await targetFile.readAsString();
+              if (existingContent == fEntry.value) continue;
+            } catch (_) {}
+          }
+          await targetFile.writeAsString(fEntry.value);
         }
       }
     } catch (e) {

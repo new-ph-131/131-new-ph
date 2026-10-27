@@ -53,6 +53,7 @@ import 'web_live_sync/weblivetoken.dart';
 import 'app_date_logic.dart';
 import 'sync_bridge/engines/app_auto_sync_daemon.dart';
 import 'realtime_signaling/coordinators/app_realtime_coordinator.dart';
+import 'realtime_signaling/engines/fast_pull_engine.dart';
 import 'web_live_sync/sync_protocol/tombstone_engine.dart';
 import 'web_live_sync/sync_protocol/snapshot_watcher.dart';
 
@@ -291,28 +292,52 @@ class PharoahManager with ChangeNotifier {
 
   
   Future<void> switchYear(String year) async {
-    currentFY = year;
+    AppRealtimeCoordinator.instance.stop();
+    FastPullEngine.invalidateInFlightPulls();
+    currentFY = year.trim();
+    activeModule = "HOME";
+    D1SalesLedgerService.activeFinancialYear = currentFY;
+    notifyListeners();
     if (activeCompany != null) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('active_fy_${activeCompany!.id}', year);
+      await prefs.setString('active_fy_${activeCompany!.id}', currentFY);
+      await prefs.setString('last_active_fy_for_${activeCompany!.id}', currentFY);
     }
     await loadAllData();
   }
 
   Future<void> loginToCompany(CompanyProfile c, String fy) async { 
+    AppRealtimeCoordinator.instance.stop();
+    FastPullEngine.invalidateInFlightPulls();
     activeCompany = c; 
-    currentFY = fy; 
+    currentFY = fy.trim(); 
+    activeModule = "HOME";
+    D1SalesLedgerService.activeFinancialYear = currentFY;
+    notifyListeners();
     
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('active_fy_${c.id}', fy); 
-    await prefs.setString('last_active_fy_for_${c.id}', fy); 
+    await prefs.setString('active_fy_${c.id}', currentFY); 
+    await prefs.setString('last_active_fy_for_${c.id}', currentFY); 
     
     await loadAllData(); 
   }
 
+  /// Exits the active Financial Year back to CompanyControlPanelView (LOGIN TO WORK / MAINTENANCE / NEW YEAR)
+  /// without forcing the user to re-enter username/password.
+  void exitYearToControlPanel() {
+    AppRealtimeCoordinator.instance.stop();
+    AppAutoSyncDaemon.instance.stop();
+    FastPullEngine.invalidateInFlightPulls();
+    currentFY = "";
+    activeModule = "HOME";
+    notifyListeners();
+  }
+
   void clearSession() { 
+    FastPullEngine.invalidateInFlightPulls();
     activeCompany = null; 
     currentFY = ""; 
+    activeModule = "HOME";
     isAdminAuthenticated = false; 
     isAppLocked = false;
     _inactivityTimer?.cancel();
@@ -382,7 +407,10 @@ class PharoahManager with ChangeNotifier {
 
   Future<void> loadAllData() async {
     final dir = await getWorkingPath(); 
-    if (dir.isEmpty) return;
+    if (dir.isEmpty) {
+      notifyListeners();
+      return;
+    }
     D1SalesLedgerService.activeFinancialYear = currentFY;
     SharedPreferences.getInstance().then((prefs) {
       final bool pausedByUser = prefs.getBool('is_cloud_sync_paused_by_user') ?? false;
@@ -390,67 +418,163 @@ class PharoahManager with ChangeNotifier {
         prefs.setBool('is_live_web_active', true);
       }
     });
-    dynamic load(String n) { final f = File('$dir/$n'); return f.existsSync() ? jsonDecode(f.readAsStringSync()) : null; }
-    
-    var cData = load('config.json');
-    if (cData != null) config = AppConfig.fromMap(cData);
-    else config = AppConfig();
-    
-    medicines = (load('meds.json') as List?)?.map((e) => Medicine.fromMap(e)).toList() ?? DemoData.getMedicines();
-    parties = (load('parts.json') as List?)?.map((e) => Party.fromMap(e)).toList() ?? [DemoData.getDemoParty(), Party(id:'cash',name:"CASH",group:"Cash in Hand")];
-    companies = (load('comps.json') as List?)?.map((e) => Company.fromMap(e)).toList() ?? MasterDataLibrary.getTopCompanies();
-    salts = (load('salts.json') as List?)?.map((e) => Salt.fromMap(e)).toList() ?? MasterDataLibrary.getTopSalts();
-    drugTypes = (load('dtypes.json') as List?)?.map((e) => DrugType.fromMap(e)).toList() ?? MasterDataLibrary.getDrugTypes();
-    sales = (load('sales.json') as List?)
-        ?.map((e) => Sale.fromMap(e))
-        .where((s) =>
-            !s.id.startsWith('SESS_') &&
-            s.id != 'APP_CONFIG_MASTER' &&
-            s.billNo.trim().isNotEmpty &&
-            !(s.items.isEmpty && s.totalAmount <= 0) &&
-            !D1SalesLedgerService.isBillDeleted(s.id, s.billNo))
-        .toList() ?? [];
-    purchases = (load('purc.json') as List?)
-        ?.map((e) => Purchase.fromMap(e))
-        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
-        .toList() ?? [];
-    vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo)).toList() ?? [];
-    saleChallans = (load('s_challan.json') as List?)
-        ?.map((e) => SaleChallan.fromMap(e))
-        .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))
-        .toList() ?? [];
-    purchaseChallans = (load('p_challan.json') as List?)
-        ?.map((e) => PurchaseChallan.fromMap(e))
-        .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
-        .toList() ?? [];
-    saleReturns = (load('s_return.json') as List?)
-        ?.map((e) => SaleReturn.fromMap(e))
-        .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
-        .toList() ?? [];
-    purchaseReturns = (load('p_return.json') as List?)
-        ?.map((e) => PurchaseReturn.fromMap(e))
-        .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
-        .toList() ?? [];
-    cheques = (load('cheques.json') as List?)?.map((e) => ChequeEntry.fromMap(e)).toList() ?? [];
-    shortages = (load('shortage.json') as List?)?.map((e) => ShortageItem.fromMap(e)).toList() ?? [];
-    logs = (load('logs.json') as List?)?.map((e) => LogEntry.fromMap(e)).toList() ?? [];
-    routes = (load('routs.json') as List?)?.map((e) => RouteArea.fromMap(e)).toList() ?? [];
-    banks = (load('banks.json') as List?)?.map((e) => Bank.fromMap(e)).toList() ?? [];
-    gstDiarySessions = (load('gst_sessions.json') as List?)?.map((e) => GstDiarySession.fromMap(e)).toList() ?? [];
-    
-    var sD = load('series.json'); if (sD!=null) numberingSeries = (sD as List).map((e)=>NumberingSeries.fromMap(e)).toList();
-    var uD = load('sys_users.json'); if (uD!=null) systemUsers = (uD as List).map((e)=>SystemUser.fromMap(e)).toList();
-    var bD = load('bats.json'); if (bD!=null) { batchHistory.clear(); (bD as Map).forEach((k,v)=>batchHistory[k]=(v as List).map((b)=>BatchInfo.fromMap(b)).toList()); }
-    
-    InventoryLogicCenter.rebuildAllInventory(
-      medicines: medicines, 
-      batchHistory: batchHistory, 
-      purchases: purchases, 
-      sales: sales,
-      saleReturns: saleReturns,      
-      purchaseReturns: purchaseReturns 
-    );
-    notifyListeners();
+
+    try {
+      // Self-heal Old FY directory if meds.json is missing but another FY folder has fy_vault.json or master files
+      final medsFile = File('$dir/meds.json');
+      if (!medsFile.existsSync() && activeCompany != null && activeCompany!.fYears.length > 1) {
+        try {
+          final root = await getApplicationDocumentsDirectory();
+          final basePath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}';
+          bool hydratedFromVault = false;
+          for (final otherFy in activeCompany!.fYears.reversed) {
+            if (otherFy == currentFY) continue;
+            final vaultFile = File('$basePath/$otherFy/fy_vault.json');
+            if (vaultFile.existsSync()) {
+              final vaultMap = MultiFyCloudVault.parseFyVault({'fy_vault.json': vaultFile.readAsStringSync()});
+              if (vaultMap.containsKey(currentFY) && vaultMap[currentFY]!.isNotEmpty) {
+                for (final entry in vaultMap[currentFY]!.entries) {
+                  if (entry.key == 'fy_vault.json') continue;
+                  await File('$dir/${entry.key}').writeAsString(entry.value);
+                }
+                hydratedFromVault = true;
+                break;
+              }
+            }
+          }
+          if (!hydratedFromVault) {
+            for (final otherFy in activeCompany!.fYears.reversed) {
+              if (otherFy == currentFY) continue;
+              final otherMeds = File('$basePath/$otherFy/meds.json');
+              if (otherMeds.existsSync()) {
+                for (final masterName in const ['meds.json', 'parts.json', 'comps.json', 'salts.json', 'routs.json', 'dtypes.json', 'banks.json', 'config.json', 'sys_users.json']) {
+                  final src = File('$basePath/$otherFy/$masterName');
+                  final dst = File('$dir/$masterName');
+                  if (src.existsSync() && !dst.existsSync()) {
+                    await dst.writeAsString(await src.readAsString());
+                  }
+                }
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint("⚠ [loadAllData] Self-heal FY folder notice: $e");
+        }
+      }
+
+      dynamic load(String n) {
+        try {
+          final f = File('$dir/$n');
+          if (!f.existsSync()) return null;
+          final raw = f.readAsStringSync().trim();
+          if (raw.isEmpty) return null;
+          return jsonDecode(raw);
+        } catch (e) {
+          debugPrint("⚠ [loadAllData] Failed to parse $n in $currentFY: $e");
+          return null;
+        }
+      }
+
+      List<T> loadList<T>(String n, T Function(Map<String, dynamic>) fromMap, [List<T>? fallback]) {
+        final raw = load(n);
+        if (raw is! List) return fallback ?? <T>[];
+        final List<T> result = <T>[];
+        for (final item in raw) {
+          try {
+            if (item is Map) {
+              result.add(fromMap(Map<String, dynamic>.from(item)));
+            }
+          } catch (_) {}
+        }
+        return result;
+      }
+
+      var cData = load('config.json');
+      if (cData is Map) {
+        try {
+          config = AppConfig.fromMap(Map<String, dynamic>.from(cData));
+        } catch (_) {
+          config = AppConfig();
+        }
+      } else {
+        config = AppConfig();
+      }
+
+      medicines = loadList<Medicine>('meds.json', (e) => Medicine.fromMap(e), DemoData.getMedicines());
+      parties = loadList<Party>('parts.json', (e) => Party.fromMap(e), [DemoData.getDemoParty(), Party(id: 'cash', name: "CASH", group: "Cash in Hand")]);
+      companies = loadList<Company>('comps.json', (e) => Company.fromMap(e), MasterDataLibrary.getTopCompanies());
+      salts = loadList<Salt>('salts.json', (e) => Salt.fromMap(e), MasterDataLibrary.getTopSalts());
+      drugTypes = loadList<DrugType>('dtypes.json', (e) => DrugType.fromMap(e), MasterDataLibrary.getDrugTypes());
+
+      sales = loadList<Sale>('sales.json', (e) => Sale.fromMap(e))
+          .where((s) =>
+              !s.id.startsWith('SESS_') &&
+              s.id != 'APP_CONFIG_MASTER' &&
+              s.billNo.trim().isNotEmpty &&
+              !(s.items.isEmpty && s.totalAmount <= 0) &&
+              !D1SalesLedgerService.isBillDeleted(s.id, s.billNo))
+          .toList();
+      purchases = loadList<Purchase>('purc.json', (e) => Purchase.fromMap(e))
+          .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
+          .toList();
+      vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
+          .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo))
+          .toList();
+      saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e))
+          .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))
+          .toList();
+      purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e))
+          .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
+          .toList();
+      saleReturns = loadList<SaleReturn>('s_return.json', (e) => SaleReturn.fromMap(e))
+          .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+          .toList();
+      purchaseReturns = loadList<PurchaseReturn>('p_return.json', (e) => PurchaseReturn.fromMap(e))
+          .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+          .toList();
+      cheques = loadList<ChequeEntry>('cheques.json', (e) => ChequeEntry.fromMap(e));
+      shortages = loadList<ShortageItem>('shortage.json', (e) => ShortageItem.fromMap(e));
+      logs = loadList<LogEntry>('logs.json', (e) => LogEntry.fromMap(e));
+      routes = loadList<RouteArea>('routs.json', (e) => RouteArea.fromMap(e));
+      banks = loadList<Bank>('banks.json', (e) => Bank.fromMap(e));
+      gstDiarySessions = loadList<GstDiarySession>('gst_sessions.json', (e) => GstDiarySession.fromMap(e));
+
+      numberingSeries = loadList<NumberingSeries>('series.json', (e) => NumberingSeries.fromMap(e));
+      final loadedUsers = loadList<SystemUser>('sys_users.json', (e) => SystemUser.fromMap(e));
+      if (loadedUsers.isNotEmpty) {
+        systemUsers = loadedUsers;
+      }
+
+      batchHistory.clear();
+      var bD = load('bats.json');
+      if (bD is Map) {
+        bD.forEach((k, v) {
+          if (v is List) {
+            final List<BatchInfo> bList = <BatchInfo>[];
+            for (final b in v) {
+              try {
+                if (b is Map) bList.add(BatchInfo.fromMap(Map<String, dynamic>.from(b)));
+              } catch (_) {}
+            }
+            batchHistory[k.toString()] = bList;
+          }
+        });
+      }
+
+      InventoryLogicCenter.rebuildAllInventory(
+        medicines: medicines, 
+        batchHistory: batchHistory, 
+        purchases: purchases, 
+        sales: sales,
+        saleReturns: saleReturns,      
+        purchaseReturns: purchaseReturns 
+      );
+    } catch (e) {
+      debugPrint("⚠ [loadAllData] Unexpected error in $currentFY: $e");
+    } finally {
+      notifyListeners();
+    }
     // ⚡ Live Event Bus Listener Active for App (Single Unified Listener)
     AppRealtimeCoordinator.instance.start(this);
   }
@@ -3272,7 +3396,17 @@ void registerBatchActivity({
     currentFY = year; 
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
-    dynamic load(String n) { final f = File('$dir/$n'); return f.existsSync() ? jsonDecode(f.readAsStringSync()) : null; }
+    dynamic load(String n) {
+      try {
+        final f = File('$dir/$n');
+        if (!f.existsSync()) return null;
+        final raw = f.readAsStringSync().trim();
+        if (raw.isEmpty) return null;
+        return jsonDecode(raw);
+      } catch (_) {
+        return null;
+      }
+    }
     
     medicines = (load('meds.json') as List?)?.map((e) => Medicine.fromMap(e)).toList() ?? DemoData.getMedicines();
     parties = (load('parts.json') as List?)?.map((e) => Party.fromMap(e)).toList() ?? [Party(id:'cash',name:"CASH",group:"Cash in Hand")];

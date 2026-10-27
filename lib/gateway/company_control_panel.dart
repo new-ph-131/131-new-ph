@@ -32,6 +32,8 @@ class _CompanyControlPanelViewState extends State<CompanyControlPanelView> {
   // 🏢 1. POPUP: FINANCIAL YEAR SELECTOR
   // ===========================================================================
   void _showFYSelectionDialog(PharoahManager ph, CompanyProfile comp) {
+    final List<String> sortedYears = AppDateLogic.sortFYList(comp.fYears);
+    final String latestFy = sortedYears.isNotEmpty ? sortedYears.last : "";
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -41,20 +43,35 @@ class _CompanyControlPanelViewState extends State<CompanyControlPanelView> {
           width: double.maxFinite,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: comp.fYears.length,
-            itemBuilder: (context, i) {
-              String fy = comp.fYears[i];
+            itemCount: sortedYears.length,
+            itemBuilder: (dialogCtx, i) {
+              final String fy = sortedYears[i];
+              final bool isLatest = fy == latestFy;
               return Card(
                 elevation: 0,
-                color: Colors.blue.shade50,
+                color: isLatest ? Colors.blue.shade50 : Colors.amber.shade50,
                 margin: const EdgeInsets.only(bottom: 10),
                 child: ListTile(
-                  leading: const Icon(Icons.calendar_today, color: Colors.blue),
+                  leading: Icon(
+                    Icons.calendar_today,
+                    color: isLatest ? Colors.blue : Colors.amber.shade900,
+                  ),
                   title: Text(fy, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  trailing: const Icon(Icons.play_circle_fill, color: Colors.green),
+                  subtitle: Text(
+                    isLatest ? "Current / Active Financial Year" : "Previous / Historical Financial Year (Auto-Cascade Ready)",
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isLatest ? Colors.blue.shade700 : Colors.amber.shade900,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  trailing: Icon(
+                    Icons.play_circle_fill,
+                    color: isLatest ? Colors.green : Colors.orange.shade800,
+                  ),
                   onTap: () {
-                    Navigator.pop(c);
-                    ph.loginToCompany(comp, fy);
+                    Navigator.of(c).pop();
+                    Future.microtask(() => ph.loginToCompany(comp, fy));
                   },
                 ),
               );

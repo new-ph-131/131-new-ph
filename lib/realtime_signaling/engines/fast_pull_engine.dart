@@ -23,27 +23,46 @@ import '../../sync_core/multi_fy_cloud_vault.dart';
 /// Strict mandate: Evaluates immutable sync_id/UUID only, never purges by human-readable billNo.
 class FastPullEngine {
   static bool _isPulling = false;
+  static int _pullEpoch = 0;
+
+  /// Immediately invalidates any in-flight pull when user logs out or switches Financial Year.
+  static void invalidateInFlightPulls() {
+    _pullEpoch++;
+    _isPulling = false;
+  }
 
   static Future<bool> pullAndMerge(PharoahManager ph) async {
     if (_isPulling) return false;
     if (ph.activeCompany == null || ph.currentFY.isEmpty) return false;
     _isPulling = true;
+    final int myEpoch = ++_pullEpoch;
+    final String targetFyAtStart = ph.currentFY;
+    final String companyId = ph.activeCompany!.id;
+
+    bool isStale() =>
+        myEpoch != _pullEpoch ||
+        ph.activeCompany == null ||
+        ph.activeCompany!.id != companyId ||
+        ph.currentFY != targetFyAtStart;
 
     try {
       final workingDir = await ph.getWorkingPath();
-      if (workingDir.isEmpty) return false;
-      final companyId = ph.activeCompany!.id;
+      if (workingDir.isEmpty || isStale()) return false;
+      D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
       final storeToken = await WebLiveToken.getOrCreateToken(companyId);
+      if (isStale()) return false;
 
-      // 1. Fetch Local Tombstone Registry & Hashes
+      // 1. Fetch Local Tombstone Registry & Hashes (Strictly Scoped to targetFyAtStart)
       Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
-      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
+      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId, targetFyAtStart);
 
       // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK (SALES + PURCHASES)
       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
         try {
           final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
+          if (isStale()) return false;
+          D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
           if (edgeEvents.isNotEmpty) {
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
@@ -204,6 +223,7 @@ class FastPullEngine {
       );
 
       final response = await http.get(pullUri).timeout(const Duration(seconds: 15));
+      if (isStale()) return false;
       if (response.statusCode != 200 || response.body.contains("ERROR")) {
         return false;
       }
@@ -457,7 +477,9 @@ class FastPullEngine {
       debugPrint("⚠ [FastPullEngine] Pull error: $e");
       return false;
     } finally {
-      _isPulling = false;
+      if (myEpoch == _pullEpoch) {
+        _isPulling = false;
+      }
     }
   }
 }

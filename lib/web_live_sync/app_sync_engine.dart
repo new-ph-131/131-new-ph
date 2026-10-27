@@ -40,7 +40,8 @@ class AppSyncEngine {
       // STEP 1: SNAP & DETECT (The Spy)
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
-      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId);
+      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId, ph.currentFY);
+      D1SalesLedgerService.activeFinancialYear = ph.currentFY;
       List<String> newlyDeleted = await SnapshotWatcher.detectLocalDeletions(ph);
       if (newlyDeleted.isNotEmpty) {
         final nowTs = DateTime.now().millisecondsSinceEpoch;
@@ -214,7 +215,7 @@ class AppSyncEngine {
           TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
           TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
-          if (hasChanges || newlyDeleted.isNotEmpty || localTombstones.isNotEmpty) {
+          if (hasChanges || newlyDeleted.isNotEmpty) {
             InventoryLogicCenter.rebuildAllInventory(
               medicines: ph.medicines,
               batchHistory: ph.batchHistory,
@@ -223,7 +224,17 @@ class AppSyncEngine {
               saleReturns: ph.saleReturns,
               purchaseReturns: ph.purchaseReturns,
             );
-            await ph.save();
+            if (hasChanges &&
+                ph.activeCompany != null &&
+                ph.activeCompany!.fYears.length > 1 &&
+                ph.currentFY.isNotEmpty &&
+                ph.currentFY != ph.activeCompany!.fYears.last) {
+              await ph.syncOpeningBalancesFromPreviousYear(
+                startYear: ph.currentFY,
+                onStepProgress: (_, __) {},
+                reloadActiveYearAtEnd: false,
+              );
+            }
             ph.notifyListeners();
           }
         }

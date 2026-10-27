@@ -87,17 +87,37 @@ class _MainControlShellState extends State<MainControlShell> {
         backgroundColor: const Color(0xFFF8F9FD),
         appBar: AppBar(
           backgroundColor: const Color(0xFF0D47A1),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(ph.activeCompany?.name ?? "PHAROAH ERP", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              Text("FY: ${ph.currentFY}", style: const TextStyle(fontSize: 10, color: Colors.white70)),
-            ],
+          title: InkWell(
+            onTap: () => ph.exitYearToControlPanel(),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(ph.activeCompany?.name ?? "PHAROAH ERP", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text("FY: ${ph.currentFY}", style: const TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.swap_horiz_rounded, size: 12, color: Colors.white70),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
           actions: [
             if (ph.activeModule != "HOME") 
                IconButton(icon: const Icon(Icons.grid_view_rounded), onPressed: () => ph.updateModule("HOME")),
             
+            IconButton(
+              icon: const Icon(Icons.calendar_month_rounded, color: Colors.lightBlueAccent),
+              tooltip: "Switch Financial Year / Control Panel",
+              onPressed: () => ph.exitYearToControlPanel(),
+            ),
+
             IconButton(
               icon: const Icon(Icons.search), 
               onPressed: () {
@@ -107,8 +127,8 @@ class _MainControlShellState extends State<MainControlShell> {
 
             IconButton(
               icon: const Icon(Icons.exit_to_app_rounded, color: Colors.orangeAccent), 
-              tooltip: "Logout",
-              onPressed: () => ph.clearSession()
+              tooltip: "Exit to Control Panel",
+              onPressed: () => ph.exitYearToControlPanel(),
             ),
           ],
         ),
