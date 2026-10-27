@@ -685,8 +685,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty
-Tap to Modify or Cancel previous adjustment entries",
+                              "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty — Tap to Modify / Cancel",
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
                             ),
                           ),
