@@ -10,6 +10,7 @@ import '../../pharoah_manager.dart';
 import '../../models.dart';
 import 'gst_diary_models.dart';
 import 'gst_diary_calculator.dart';
+import 'gst_diary_audit_history_screen.dart';
 
 class GstDiaryView extends StatefulWidget {
   final VoidCallback? onBack;
@@ -40,6 +41,8 @@ class _GstDiaryViewState extends State<GstDiaryView> with SingleTickerProviderSt
   Set<String>? customSelectedBillIds; // null = all matching bills ticked; non-null = only ticked billIds calculated
   Set<String>? customSelectedProductKeys;
   Set<String>? customSelectedPartyKeys;
+  bool showAuditHistoryScreen = false;
+  String? initialAuditSessionId;
   final TextEditingController _searchCtrl = TextEditingController();
 
   void _resetCustomTicks() {
@@ -876,7 +879,14 @@ class _GstDiaryViewState extends State<GstDiaryView> with SingleTickerProviderSt
     );
   }
 
-  void _openSessionAuditHistoryModal() {
+  void _openSessionAuditHistoryModal([String? sessionId]) {
+    setState(() {
+      initialAuditSessionId = sessionId;
+      showAuditHistoryScreen = true;
+    });
+  }
+
+  void _openLegacySessionAuditHistoryModalUnused() {
     final sessions = _ph.gstDiarySessions;
     final screenW = MediaQuery.of(context).size.width;
     final screenH = MediaQuery.of(context).size.height;
@@ -1173,6 +1183,56 @@ class _GstDiaryViewState extends State<GstDiaryView> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     Provider.of<PharoahManager>(context);
+    if (showAuditHistoryScreen) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0B1120),
+        body: SafeArea(
+          child: GstDiaryAuditHistoryScreen(
+            sessions: _ph.gstDiarySessions,
+            allSales: _ph.sales,
+            allPurchases: _ph.purchases,
+            allParties: _ph.parties,
+            initialSelectedSessionId: initialAuditSessionId,
+            onUpdateSession: (updated) {
+              _ph.updateGstDiarySession(updated);
+              setState(() {});
+            },
+            onDeleteSession: (sessionId) {
+              _ph.deleteGstDiarySession(sessionId);
+              setState(() {});
+            },
+            onLoadToWorkbench: (sess) {
+              try {
+                final pStart = DateTime.tryParse(sess.fromDate) ?? fromDate;
+                final pEnd = DateTime.tryParse(sess.toDate) ?? toDate;
+                setState(() {
+                  fromDate = pStart;
+                  toDate = pEnd;
+                  activePeriodLabel = sess.title;
+                  selectedPurchasePartyIds
+                    ..clear()
+                    ..addAll(sess.purchasePartyIds);
+                  selectedSalePartyIds
+                    ..clear()
+                    ..addAll(sess.salePartyIds);
+                  if (sess.includedBillIds.isNotEmpty) {
+                    customSelectedBillIds = Set<String>.from(sess.includedBillIds);
+                  } else {
+                    _resetCustomTicks();
+                  }
+                  showAuditHistoryScreen = false;
+                });
+              } catch (_) {}
+            },
+            onBack: () {
+              setState(() {
+                showAuditHistoryScreen = false;
+              });
+            },
+          ),
+        ),
+      );
+    }
     final calcResult = GstDiaryCalculator.compute(
       sales: _ph.sales,
       purchases: _ph.purchases,
@@ -2863,65 +2923,83 @@ class _GstDiaryViewState extends State<GstDiaryView> with SingleTickerProviderSt
     final bool isDeducted = s.status == 'DEDUCTED';
     final statusColor = isDeducted ? const Color(0xFFF59E0B) : const Color(0xFF10B981);
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  s.title,
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                  overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: () => _openSessionAuditHistoryModal(s.id),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    s.title,
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: statusColor, width: 0.8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: statusColor, width: 0.8),
+                  ),
+                  child: Text(
+                    s.status,
+                    style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.w900),
+                  ),
                 ),
-                child: Text(
-                  s.status,
-                  style: TextStyle(color: statusColor, fontSize: 9, fontWeight: FontWeight.w900),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            "${s.fromDate} - ${s.toDate} · ${s.totalBillsCount} bills",
-            style: const TextStyle(color: Colors.white38, fontSize: 10),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Deducted ₹:", style: TextStyle(color: Colors.white54, fontSize: 10)),
-              Text(
-                "₹${s.deductedAmount.toStringAsFixed(2)}",
-                style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w900),
-              ),
-            ],
-          ),
-          if (s.remarks.isNotEmpty) ...[
-            const SizedBox(height: 4),
+              ],
+            ),
+            const SizedBox(height: 6),
             Text(
-              "Note: ${s.remarks}",
-              style: const TextStyle(color: Colors.white60, fontSize: 10, fontStyle: FontStyle.italic),
-              overflow: TextOverflow.ellipsis,
+              "${s.fromDate} - ${s.toDate} · ${s.totalBillsCount} bills",
+              style: const TextStyle(color: Colors.white38, fontSize: 10),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Deducted ₹:", style: TextStyle(color: Colors.white54, fontSize: 10)),
+                Text(
+                  "₹${s.deductedAmount.toStringAsFixed(2)}",
+                  style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w900),
+                ),
+              ],
+            ),
+            if (s.remarks.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                "Note: ${s.remarks}",
+                style: const TextStyle(color: Colors.white60, fontSize: 10, fontStyle: FontStyle.italic),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Text(
+                  "View / Modify Bills →",
+                  style: TextStyle(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.95),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ],
-        ],
+        ),
       ),
     );
   }

@@ -591,8 +591,19 @@ class D1SalesLedgerService {
     List<Sale> localSales, 
     List<Map<String, dynamic>> events,
   ) {
-    if (events.isEmpty) return false;
     bool mutated = false;
+    // Purge any non-sale / ghost records (e.g. SESS_ or APP_CONFIG_MASTER or 0-amount empty billNo rows)
+    final int beforeClean = localSales.length;
+    localSales.removeWhere((s) =>
+        s.id.startsWith("SESS_") ||
+        s.id == "APP_CONFIG_MASTER" ||
+        (s.billNo.trim().isEmpty && s.partyName.trim().isEmpty && s.items.isEmpty) ||
+        (s.billNo.trim().isEmpty && s.items.isEmpty && s.totalAmount <= 0));
+    if (localSales.length != beforeClean) {
+      mutated = true;
+    }
+
+    if (events.isEmpty) return mutated;
 
     for (final ev in events) {
       final String billId = (ev["bill_id"] ?? "").toString().trim();
@@ -601,14 +612,27 @@ class D1SalesLedgerService {
       final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
       final dynamic rawSale = ev["sale_data"];
 
-      // Skip Purchase and Voucher events so they never pollute Sales
+      if (billId.startsWith("SESS_") ||
+          billId == "APP_CONFIG_MASTER" ||
+          billNo == "APP_CONFIG") {
+        continue;
+      }
+
+      // Skip Purchase, Voucher, GST Diary Session, and AppConfig events so they NEVER pollute Sales
       if (rawSale is Map &&
           (rawSale["doc_type"] == "PURCHASE" ||
            rawSale["doc_type"] == "VOUCHER" ||
+           rawSale["doc_type"] == "GST_DIARY_SESSION" ||
+           rawSale["doc_type"] == "GST_SESSION" ||
+           rawSale["doc_type"] == "APP_CONFIG" ||
+           rawSale["doc_type"] == "CONFIG" ||
            rawSale.containsKey("distributorName") ||
            rawSale.containsKey("internalNo") ||
            rawSale.containsKey("voucherNo") ||
-           rawSale.containsKey("depositedIn"))) {
+           rawSale.containsKey("depositedIn") ||
+           rawSale.containsKey("includedBillIds") ||
+           rawSale.containsKey("deductedAmount") ||
+           rawSale.containsKey("developerAllowGstDiaryToUser"))) {
         continue;
       }
 
@@ -638,6 +662,12 @@ class D1SalesLedgerService {
           final incomingSale = Sale.fromMap(rawSale);
           if (billId.isNotEmpty) incomingSale.id = billId;
           incomingSale.version = version;
+          // Guard against non-sale payloads with empty billNo and empty items
+          if (incomingSale.billNo.trim().isEmpty &&
+              incomingSale.items.isEmpty &&
+              incomingSale.totalAmount <= 0) {
+            continue;
+          }
           unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo);
           int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
           if (existingIdx != -1) {

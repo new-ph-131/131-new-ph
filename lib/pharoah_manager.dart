@@ -377,7 +377,15 @@ class PharoahManager with ChangeNotifier {
     companies = (load('comps.json') as List?)?.map((e) => Company.fromMap(e)).toList() ?? MasterDataLibrary.getTopCompanies();
     salts = (load('salts.json') as List?)?.map((e) => Salt.fromMap(e)).toList() ?? MasterDataLibrary.getTopSalts();
     drugTypes = (load('dtypes.json') as List?)?.map((e) => DrugType.fromMap(e)).toList() ?? MasterDataLibrary.getDrugTypes();
-    sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
+    sales = (load('sales.json') as List?)
+        ?.map((e) => Sale.fromMap(e))
+        .where((s) =>
+            !s.id.startsWith('SESS_') &&
+            s.id != 'APP_CONFIG_MASTER' &&
+            s.billNo.trim().isNotEmpty &&
+            !(s.items.isEmpty && s.totalAmount <= 0) &&
+            !D1SalesLedgerService.isBillDeleted(s.id, s.billNo))
+        .toList() ?? [];
     purchases = (load('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
         .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))

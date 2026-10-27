@@ -367,9 +367,20 @@ class PharoahWebManager with ChangeNotifier {
     var allParsedSales = (decodeJson('sales.json') as List?)
         ?.map((e) => Sale.fromMap(e))
         .toList();
+    sales.removeWhere((s) =>
+        s.id.startsWith('SESS_') ||
+        s.id == 'APP_CONFIG_MASTER' ||
+        s.billNo.trim().isEmpty ||
+        (s.items.isEmpty && s.totalAmount <= 0));
     if (allParsedSales != null) {
       for (var s in allParsedSales) {
-        if (s.id.isEmpty) continue;
+        if (s.id.isEmpty ||
+            s.id.startsWith('SESS_') ||
+            s.id == 'APP_CONFIG_MASTER' ||
+            s.billNo.trim().isEmpty ||
+            (s.items.isEmpty && s.totalAmount <= 0)) {
+          continue;
+        }
 
         // 🛡️ D1 MASTER GRAVESTONE SHIELD: If deleted in D1, Google Drive can NEVER resurrect!
         if (D1SalesLedgerService.isBillDeleted(s.id, s.billNo)) {

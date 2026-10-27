@@ -402,7 +402,15 @@ class DeltaMergeEngine {
       tombstoneRegistry: tombstoneRegistry,
     );
 
-    final anyChanged = hasChanges || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cComps || cSalts || cRouts || cGstSessions;
+    final int beforePurgeGhost = ph.sales.length;
+    ph.sales.removeWhere((s) =>
+        s.id.startsWith('SESS_') ||
+        s.id == 'APP_CONFIG_MASTER' ||
+        s.billNo.trim().isEmpty ||
+        (s.items.isEmpty && s.totalAmount <= 0));
+    final bool ghostPurged = ph.sales.length != beforePurgeGhost;
+
+    final anyChanged = hasChanges || ghostPurged || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cComps || cSalts || cRouts || cGstSessions;
     if (anyChanged) {
       try {
         ph.autoHydrateBatchHistoryFromTransactions();

@@ -84,9 +84,12 @@ class GstDiaryCalculator {
       }
     }
 
-    // 1. Filter Purchases matching period, party, and deduction status
+    // 1. Filter Purchases matching period, party, and deduction status (ignore ghost/0-amount empty records)
     final allMatchingPurchases = purchases.where((p) {
-      if (p.isDeleted == 1 || p.gstStatus == 'Cancelled') return false;
+      if (p.isDeleted == 1 || p.gstStatus == 'Cancelled' || p.gstStatus == 'Deleted') return false;
+      if (p.id.startsWith('SESS_') || p.id == 'APP_CONFIG_MASTER') return false;
+      if (p.billNo.trim().isEmpty && p.internalNo.trim().isEmpty) return false;
+      if (p.items.isEmpty && p.totalAmount <= 0) return false;
       if (!_isDateInRange(p.date, fromDate, toDate)) return false;
       if (selectedPurchasePartyIds.isNotEmpty) {
         final matchesId = selectedPurchasePartyIds.contains(p.partyId);
@@ -99,9 +102,12 @@ class GstDiaryCalculator {
       return true;
     }).toList();
 
-    // 2. Filter Sales matching period, party, and deduction status
+    // 2. Filter Sales matching period, party, and deduction status (ignore ghost/0-amount empty records)
     final allMatchingSales = sales.where((s) {
-      if (s.isDeleted == 1 || s.status == 'Cancelled') return false;
+      if (s.isDeleted == 1 || s.status == 'Cancelled' || s.status == 'Deleted') return false;
+      if (s.id.startsWith('SESS_') || s.id == 'APP_CONFIG_MASTER') return false;
+      if (s.billNo.trim().isEmpty) return false;
+      if (s.items.isEmpty && s.totalAmount <= 0) return false;
       if (!_isDateInRange(s.date, fromDate, toDate)) return false;
       if (selectedSalePartyIds.isNotEmpty) {
         final matchesId = selectedSalePartyIds.contains(s.partyId);
