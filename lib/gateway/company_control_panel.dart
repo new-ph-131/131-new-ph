@@ -69,9 +69,25 @@ class _CompanyControlPanelViewState extends State<CompanyControlPanelView> {
                     Icons.play_circle_fill,
                     color: isLatest ? Colors.green : Colors.orange.shade800,
                   ),
-                  onTap: () {
+                  onTap: () async {
                     Navigator.of(c).pop();
-                    Future.microtask(() => ph.loginToCompany(comp, fy));
+                    if (mounted) {
+                      setState(() {
+                        isMaintenanceRunning = true;
+                        isMaintenanceCompleted = false;
+                        maintenanceProgress = 0.50;
+                        maintenanceStatus = "Opening $fy Workspace...";
+                      });
+                    }
+                    try {
+                      await ph.loginToCompany(comp, fy);
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          isMaintenanceRunning = false;
+                        });
+                      }
+                    }
                   },
                 ),
               );

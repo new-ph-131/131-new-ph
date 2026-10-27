@@ -172,6 +172,13 @@ class MultiFyCloudVault {
             try {
               final existingContent = await targetFile.readAsString();
               if (existingContent == fEntry.value) continue;
+              // 🛡️ ANTI-DATA-LOSS SHIELD: Never overwrite populated local data with empty or corrupted cloud payload!
+              final existingTrim = existingContent.trim();
+              final cloudTrim = fEntry.value.trim();
+              if (existingTrim.length > 10 && (cloudTrim.length <= 4 || cloudTrim == '[]' || cloudTrim == '{}')) {
+                debugPrint('🛡️ [MultiFyCloudVault] Shielded local $targetFile (${existingTrim.length} bytes) against empty cloud payload!');
+                continue;
+              }
             } catch (_) {}
           }
           await targetFile.writeAsString(fEntry.value);
@@ -197,6 +204,9 @@ class MultiFyCloudVault {
       comp.fYears.isNotEmpty ? comp.fYears : [ph.currentFY],
     );
     final String latestFy = sortedFys.isNotEmpty ? sortedFys.last : ph.currentFY;
+    // 🛡️ ACTIVE FY PRIORITY: If user is working in an active FY (e.g. 2026-27),
+    // top-level files (s_return.json, sales.json, etc.) MUST reflect the active FY so Web & Relay see live data!
+    final String primaryFy = ph.currentFY.isNotEmpty ? ph.currentFY : latestFy;
 
     final Map<String, Map<String, String>> fyVault = {};
     for (final fy in sortedFys) {
@@ -216,9 +226,9 @@ class MultiFyCloudVault {
       }
     }
 
-    // Primary top-level files come from `latestFy` (or `ph.currentFY` if latestFy not in vault)
+    // Primary top-level files come from `primaryFy` (active year) falling back to `latestFy`
     final Map<String, String> filesPayload = {};
-    final Map<String, String> topSource = fyVault[latestFy] ?? fyVault[ph.currentFY] ?? {};
+    final Map<String, String> topSource = fyVault[primaryFy] ?? fyVault[latestFy] ?? fyVault[ph.currentFY] ?? {};
     for (final name in coreFiles) {
       if (topSource.containsKey(name)) {
         filesPayload[name] = topSource[name]!;
@@ -229,6 +239,6 @@ class MultiFyCloudVault {
     filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
     filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
 
-    return (primaryFy: latestFy, filesPayload: filesPayload);
+    return (primaryFy: primaryFy, filesPayload: filesPayload);
   }
 }

@@ -606,6 +606,8 @@ class FYTransferEngine {
       if (!await targetDir.exists()) {
         await targetDir.create(recursive: true);
       }
+      // 🛡️ Yield to UI event loop so progress screen renders without freezing
+      await Future.delayed(const Duration(milliseconds: 60));
 
       final Map<String, String> sourceFiles = {};
       for (final fileName in allFyFileNames) {

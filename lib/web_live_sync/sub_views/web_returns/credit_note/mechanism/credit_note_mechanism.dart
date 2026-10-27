@@ -104,9 +104,8 @@ class CreditNoteMechanism {
 
     webPh.addSaleReturnAndSync(newReturn);
 
-    // ग्राहक के लेजर बैलेंस में क्रेडिट घटाएं (कस्टमर का बकाया कम होगा)
-    customer.opBal -= totalAmount;
-    webPh.updateParty(customer);
+    // 🛡️ Enterprise Ledger Protocol: Party closing balances are dynamically computed
+    // from opBal + transactions in Ledger. opBal (opening balance) is preserved untouched.
 
     return await webPh.pushUpdatedDataToCloud();
   }

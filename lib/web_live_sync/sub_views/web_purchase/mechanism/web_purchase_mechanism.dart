@@ -30,7 +30,6 @@ class WebPurchaseMechanism {
       );
       if (idx != -1) {
         currentVer = webPh.purchases[idx].version + 1;
-        supplier.opBal -= webPh.purchases[idx].totalAmount;
       }
     } else {
       if (finalInternalNo.isEmpty || finalInternalNo.toUpperCase().startsWith("PUR-")) {
@@ -115,9 +114,7 @@ class WebPurchaseMechanism {
       }
     }
 
-    // Update supplier payable
-    supplier.opBal += totalAmount;
-    webPh.updateParty(supplier);
+    // 🛡️ Enterprise Ledger Protocol: Supplier balances are dynamically computed from transactions.
     webPh.rebuildInventory();
     webPh.notifyListeners();
     return await webPh.pushUpdatedDataToCloud();

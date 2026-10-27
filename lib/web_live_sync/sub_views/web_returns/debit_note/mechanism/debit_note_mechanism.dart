@@ -104,9 +104,8 @@ class DebitNoteMechanism {
 
     webPh.addPurchaseReturnAndSync(newReturn);
 
-    // सप्लायर के बकाए (Payable) में से डेबिट नोट घटाएं
-    supplier.opBal -= totalAmount;
-    webPh.updateParty(supplier);
+    // 🛡️ Enterprise Ledger Protocol: Supplier balances are dynamically computed
+    // from opBal + transactions in Ledger. opBal is preserved untouched.
 
     return await webPh.pushUpdatedDataToCloud();
   }

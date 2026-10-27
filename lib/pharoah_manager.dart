@@ -313,12 +313,12 @@ class PharoahManager with ChangeNotifier {
     currentFY = fy.trim(); 
     activeModule = "HOME";
     D1SalesLedgerService.activeFinancialYear = currentFY;
-    notifyListeners();
     
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('active_fy_${c.id}', currentFY); 
     await prefs.setString('last_active_fy_for_${c.id}', currentFY); 
     
+    // 🛡️ Data fully loaded from disk before notifying listeners to prevent freeze and empty screen flashes
     await loadAllData(); 
   }
 
@@ -3230,12 +3230,21 @@ void registerBatchActivity({
           await saveRegistry();
         }
       }
-      currentFY = n; 
-      
+      final bool wasInGateway = currentFY.isEmpty;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('active_fy_${activeCompany!.id}', n);
-      D1SalesLedgerService.activeFinancialYear = n;
-      await loadAllData();
+      await prefs.setString('last_active_fy_for_${activeCompany!.id}', n);
+      
+      if (!wasInGateway) {
+        // Active in-session FY switch
+        currentFY = n;
+        await prefs.setString('active_fy_${activeCompany!.id}', n);
+        D1SalesLedgerService.activeFinancialYear = n;
+        await loadAllData();
+      } else {
+        // User was on Gateway/Control Panel. Keep currentFY = "" so user remains on Control Panel
+        // and can deliberately click 'LOGIN TO WORK' to enter the year of their choice!
+        notifyListeners();
+      }
       AppRealtimeCoordinator.instance.notifyAppMutation(this, action: 'NEW_FY_CREATED', entityId: n);
     } 
     return ok; 
