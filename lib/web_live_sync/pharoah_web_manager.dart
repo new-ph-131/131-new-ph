@@ -732,6 +732,11 @@ class PharoahWebManager with ChangeNotifier {
             edgeEvents: edgeEvents,
             onConfigMutated: (cfg) => appConfig = cfg,
           );
+          final bool serMut = SettingsSyncModule.applyEdgeEventsToLocalSeries(
+            currentSeries: numberingSeries,
+            edgeEvents: edgeEvents,
+            onSeriesMutated: (serList) => numberingSeries = serList,
+          );
           if (sMut) {
             Map<String, Sale> postD1Map = {};
             for (var s in sales) {
@@ -746,7 +751,7 @@ class PharoahWebManager with ChangeNotifier {
           if (sMut || pMut) {
             rebuildInventory();
           }
-          if (sMut || pMut || vMut || gMut || cMut) {
+          if (sMut || pMut || vMut || gMut || cMut || serMut) {
             notifyListeners();
           }
         }

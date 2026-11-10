@@ -1,11 +1,12 @@
 // FILE: lib/web_live_sync/sub_views/web_settings/web_mail_setup_view.dart
-// Revision: #PH-REV-792 (ENTERPRISE-WEB-SETTINGS-HUB-AND-D1-CONFIG-SYNC)
+// Revision: #PH-REV-797 (ENTERPRISE-WEB-SETTINGS-HUB-AND-D1-CONFIG-SYNC)
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../pharoah_web_manager.dart';
 import 'web_settings_sync_coordinator.dart';
+import 'services/web_mail_d1_sync_service.dart';
 
 class WebMailSetupView extends StatefulWidget {
   final VoidCallback onBack;

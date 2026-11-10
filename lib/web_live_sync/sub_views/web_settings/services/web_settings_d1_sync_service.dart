@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/sub_views/web_settings/services/web_settings_d1_sync_service.dart
-// Revision: #PH-REV-794 (ENTERPRISE-WEB-SETTINGS-D1-SYNC-SERVICE)
+// Revision: #PH-REV-797 (ENTERPRISE-WEB-SETTINGS-D1-SYNC-SERVICE)
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -53,7 +53,7 @@ class WebSettingsD1SyncService {
       "sale_event": {
         "id": configSyncId,
         "bill_no": "APP_CONFIG",
-        "version": config.version,
+        "version": DateTime.now().millisecondsSinceEpoch,
         "action": "UPDATE",
         "status": "Active",
         "client_source": clientSource,

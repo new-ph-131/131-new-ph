@@ -1,3 +1,4 @@
+import '../sync_core/modules/settings_sync_module.dart';
 import "sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import "../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
 import "../sync_core/d1_sales_ledger_service.dart";
@@ -114,7 +115,12 @@ class AppSyncEngine {
                   edgeEvents: edgeEvents,
                   onConfigMutated: (cfg) => ph.config = cfg,
                 );
-                if (d1Sales || d1Purc || d1Vouc || d1Gst || d1Cfg) d1HasChanges = true;
+                bool d1Series = SettingsSyncModule.applyEdgeEventsToLocalSeries(
+                  currentSeries: ph.numberingSeries,
+                  edgeEvents: edgeEvents,
+                  onSeriesMutated: (updated) => ph.numberingSeries = updated,
+                );
+                if (d1Sales || d1Purc || d1Vouc || d1Gst || d1Cfg || d1Series) d1HasChanges = true;
                 for (final ev in edgeEvents) {
                   final String action = (ev["action"] ?? "").toString().toUpperCase();
                   final String bId = (ev["bill_id"] ?? "").toString().trim();

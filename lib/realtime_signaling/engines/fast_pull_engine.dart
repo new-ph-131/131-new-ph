@@ -1,3 +1,4 @@
+import '../../sync_core/modules/settings_sync_module.dart';
 import "../../web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import "../../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
 import "../../logic/master_cascade_service.dart";
@@ -72,6 +73,11 @@ class FastPullEngine {
               currentConfig: ph.config,
               edgeEvents: edgeEvents,
               onConfigMutated: (cfg) => ph.config = cfg,
+            );
+            bool d1SeriesMutated = SettingsSyncModule.applyEdgeEventsToLocalSeries(
+              currentSeries: ph.numberingSeries,
+              edgeEvents: edgeEvents,
+              onSeriesMutated: (updated) => ph.numberingSeries = updated,
             );
             final List<String> newTombKeys = [];
             final List<String> newUnmarkKeys = [];
@@ -170,7 +176,7 @@ class FastPullEngine {
               }
               await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
             }
-            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1GstMutated || d1CfgMutated) {
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated) {
               if (d1SalesMutated || d1PurcMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
                   medicines: ph.medicines,
@@ -204,6 +210,11 @@ class FastPullEngine {
               if (d1CfgMutated) {
                 await File('$workingDir/config.json').writeAsString(
                   jsonEncode(ph.config.toMap()),
+                );
+              }
+              if (d1SeriesMutated) {
+                await File('$workingDir/series.json').writeAsString(
+                  jsonEncode(ph.numberingSeries.map((e) => e.toMap()).toList()),
                 );
               }
               ph.notifyListeners();

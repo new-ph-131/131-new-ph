@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/sub_views/web_settings/web_settings_sync_coordinator.dart
-// Revision: #PH-REV-794 (ENTERPRISE-WEB-SETTINGS-D1-FAST-PATH)
+// Revision: #PH-REV-797 (ENTERPRISE-WEB-SETTINGS-D1-FAST-PATH)
 
 import 'dart:async';
 import 'dart:convert';
@@ -17,8 +17,9 @@ class WebSettingsSyncCoordinator {
     required AppConfig updatedConfig,
   }) async {
     try {
-      updatedConfig.version += 1;
-      updatedConfig.updatedAt = DateTime.now().millisecondsSinceEpoch;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      updatedConfig.version = nowMs;
+      updatedConfig.updatedAt = nowMs;
       webPh.appConfig = updatedConfig;
 
       // 1. Save config.json specifically for the active Financial Year in fyVault

@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/sub_views/web_settings/web_signatures_settings_view.dart
-// Revision: #PH-REV-794 (ENTERPRISE-WEB-SERIES-AUDIT-AND-D1-SERVICE-SEPARATION)
+// Revision: #PH-REV-797 (ENTERPRISE-WEB-SERIES-AUDIT-AND-D1-SERVICE-SEPARATION)
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -336,6 +336,108 @@ class _WebSeriesManagerDialogState extends State<_WebSeriesManagerDialog> with S
   void initState() {
     super.initState();
     _tabController = TabController(length: types.length, vsync: this);
+    _ensureWebDefaultsAndDeduplicate();
+  }
+
+  void _ensureWebDefaultsAndDeduplicate() {
+    List<NumberingSeries> current = List.from(widget.webPh.numberingSeries);
+    bool modified = false;
+
+    // Deduplicate by (type, prefix) and (type, name)
+    Map<String, NumberingSeries> uniqueMap = {};
+    for (var s in current) {
+      final key = "${s.type.toUpperCase()}_${s.name.trim().toLowerCase()}";
+      final prefixKey = "${s.type.toUpperCase()}_${s.prefix.trim().toUpperCase()}";
+      if (uniqueMap.containsKey(key)) {
+        if (s.isDefault && !uniqueMap[key]!.isDefault) {
+          uniqueMap[key] = s;
+        }
+        modified = true;
+      } else if (uniqueMap.containsKey(prefixKey)) {
+        if (s.isDefault && !uniqueMap[prefixKey]!.isDefault) {
+          uniqueMap[prefixKey] = s;
+        }
+        modified = true;
+      } else {
+        uniqueMap[key] = s;
+        uniqueMap[prefixKey] = s;
+      }
+    }
+    final distinctList = uniqueMap.values.toSet().toList();
+    if (distinctList.length != current.length) {
+      current = distinctList;
+      modified = true;
+    }
+
+    // Ensure Web Default Series (W-, WPUR-, WSCH-, WCN-)
+    bool hasWebSale = current.any((s) => s.type.toUpperCase() == "SALE" && s.prefix.trim().toUpperCase() == "W-");
+    if (!hasWebSale) {
+      for (var s in current) {
+        if (s.type.toUpperCase() == "SALE" && s.prefix.trim().toUpperCase() == "INV-") {
+          s.isDefault = false;
+        }
+      }
+      current.add(NumberingSeries(
+        id: 'web_sale_default',
+        name: 'Web Standard Retail',
+        type: 'SALE',
+        prefix: 'W-',
+        startNumber: 1,
+        isDefault: true,
+        isActive: true,
+      ));
+      modified = true;
+    }
+
+    bool hasWebPur = current.any((s) => s.type.toUpperCase() == "PURCHASE" && s.prefix.trim().toUpperCase() == "WPUR-");
+    if (!hasWebPur) {
+      current.add(NumberingSeries(
+        id: 'web_pur_default',
+        name: 'Web Standard Purchase',
+        type: 'PURCHASE',
+        prefix: 'WPUR-',
+        startNumber: 1,
+        isDefault: true,
+        isActive: true,
+      ));
+      modified = true;
+    }
+
+    bool hasWebSch = current.any((s) => s.type.toUpperCase() == "CHALLAN" && s.prefix.trim().toUpperCase() == "WSCH-");
+    if (!hasWebSch) {
+      current.add(NumberingSeries(
+        id: 'web_sch_default',
+        name: 'Web Standard Challan',
+        type: 'CHALLAN',
+        prefix: 'WSCH-',
+        startNumber: 1,
+        isDefault: true,
+        isActive: true,
+      ));
+      modified = true;
+    }
+
+    bool hasWebCn = current.any((s) => s.type.toUpperCase() == "RETURN" && s.prefix.trim().toUpperCase() == "WCN-");
+    if (!hasWebCn) {
+      current.add(NumberingSeries(
+        id: 'web_cn_default',
+        name: 'Web Standard Credit Note',
+        type: 'RETURN',
+        prefix: 'WCN-',
+        startNumber: 1,
+        isDefault: true,
+        isActive: true,
+      ));
+      modified = true;
+    }
+
+    if (modified) {
+      widget.webPh.numberingSeries = current;
+      WebSettingsSyncCoordinator.saveAndBroadcastSeries(
+        webPh: widget.webPh,
+        updatedSeries: current,
+      );
+    }
   }
 
   @override
@@ -519,7 +621,9 @@ class _WebSeriesManagerDialogState extends State<_WebSeriesManagerDialog> with S
   }
 
   Widget _buildSeriesTab(String type) {
-    final list = widget.webPh.numberingSeries.where((s) => s.type.toUpperCase() == type.toUpperCase()).toList();
+    final list = widget.webPh.numberingSeries
+        .where((s) => s.type.toUpperCase() == type.toUpperCase() && s.prefix.trim().toUpperCase() != "INV-")
+        .toList();
     if (list.isEmpty) {
       return Center(
         child: Column(
