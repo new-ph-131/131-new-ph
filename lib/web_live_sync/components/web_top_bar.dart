@@ -8,12 +8,14 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
   final PharoahWebManager webPh;
   final ValueChanged<String>? onSearchChanged;
   final bool showGlobalSearch;
+  final VoidCallback? onSettingsPressed;
 
   const WebTopBar({
     super.key,
     required this.webPh,
     this.onSearchChanged,
     this.showGlobalSearch = true,
+    this.onSettingsPressed,
   });
 
   @override
@@ -111,7 +113,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
                       border: Border.all(color: Colors.greenAccent, width: 0.5),
                     ),
                     child: const Text(
-                      "#PH-REV-791 (OLD-FY-LOGIN-AND-SYNC-LOOP-FIX)",
+                      "#PH-REV-792 (ENTERPRISE-WEB-SETTINGS-HUB-AND-D1-CONFIG-SYNC)",
                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),
@@ -165,6 +167,12 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
               );
             },
           ),
+          if (onSettingsPressed != null)
+            IconButton(
+              icon: const Icon(Icons.settings_suggest_rounded, color: Color(0xFF38BDF8), size: 21),
+              tooltip: "Global ERP Settings",
+              onPressed: onSettingsPressed,
+            ),
           IconButton(
             icon: const Icon(Icons.sync_rounded, color: Colors.white70, size: 20),
             tooltip: "Refresh Live Cloud",

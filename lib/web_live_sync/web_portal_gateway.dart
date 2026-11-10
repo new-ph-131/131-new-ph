@@ -33,6 +33,7 @@ import 'web_salt_master.dart';
 import 'web_route_master.dart';
 import 'web_challan_view.dart';
 import 'web_ca_profile_view.dart';
+import 'sub_views/web_settings/web_settings_view.dart';
 import 'sub_views/user_control/web_user_control_view.dart';
 import 'web_shortage_register.dart';
 import 'web_ledger_view.dart';
@@ -152,6 +153,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
         webPh: webPh,
         showGlobalSearch: isHomeDashboard,
         onSearchChanged: (v) => setState(() => searchQuery = v),
+        onSettingsPressed: () => _handleActionTap("GO_SETTINGS", "GLOBAL ERP SETTINGS"),
       ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,6 +181,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
                     currentView == "GO_M_SALT" ||
                     currentView == "GO_M_ROUTE" ||
                     currentView == "GO_M_USER_CONTROL" ||
+                    currentView == "GO_SETTINGS" ||
                     currentView == "GO_CHALLAN_SALE" ||
                     currentView == "GO_CHALLAN_PUR" ||
                     currentView == "GO_GST_DIARY" ||
@@ -294,6 +297,9 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
     }
     if (currentView == "GO_M_BATCH") {
       return WebBatchMasterView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));
+    }
+    if (currentView == "GO_SETTINGS") {
+      return WebSettingsView(onBack: () => _navigateToHub("HOME", "MAIN BUSINESS MODULES"));
     }
     if (currentView == "GO_M_CA") {
       return WebCaProfileView(onBack: () => _navigateToHub("MASTERS", "BUSINESS MASTERS"));

@@ -365,7 +365,28 @@ class DeltaMergeEngine {
               incomingCfg.userEnableGstDiary != localCfg.userEnableGstDiary ||
               incomingCfg.printFormat != localCfg.printFormat ||
               incomingCfg.isArchitectMode != localCfg.isArchitectMode ||
-              incomingCfg.termsAndConditions != localCfg.termsAndConditions;
+              incomingCfg.termsAndConditions != localCfg.termsAndConditions ||
+              incomingCfg.showLogo != localCfg.showLogo ||
+              incomingCfg.logoPath != localCfg.logoPath ||
+              incomingCfg.showTerms != localCfg.showTerms ||
+              incomingCfg.showStaffSign != localCfg.showStaffSign ||
+              incomingCfg.signLabel != localCfg.signLabel ||
+              incomingCfg.showCustomerSignChallan != localCfg.showCustomerSignChallan ||
+              incomingCfg.showQrCode != localCfg.showQrCode ||
+              incomingCfg.qrCodePath != localCfg.qrCodePath ||
+              incomingCfg.bankAccName != localCfg.bankAccName ||
+              incomingCfg.bankAccNumber != localCfg.bankAccNumber ||
+              incomingCfg.bankIfsc != localCfg.bankIfsc ||
+              incomingCfg.bankNameBranch != localCfg.bankNameBranch ||
+              incomingCfg.isMailActive != localCfg.isMailActive ||
+              incomingCfg.smtpMailID != localCfg.smtpMailID ||
+              incomingCfg.smtpMailPass != localCfg.smtpMailPass ||
+              incomingCfg.smtpHost != localCfg.smtpHost ||
+              incomingCfg.smtpPort != localCfg.smtpPort ||
+              incomingCfg.caName != localCfg.caName ||
+              incomingCfg.caMailID != localCfg.caMailID ||
+              incomingCfg.caPhone != localCfg.caPhone ||
+              incomingCfg.isAuditMode != localCfg.isAuditMode;
           if (incomingCfg.updatedAt > localCfg.updatedAt ||
               incomingCfg.version > localCfg.version ||
               (localCfg.updatedAt == 0 && isDiff)) {

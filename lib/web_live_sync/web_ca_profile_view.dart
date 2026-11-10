@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'pharoah_web_manager.dart';
+import 'sub_views/web_settings/web_settings_sync_coordinator.dart';
 
 class WebCaProfileView extends StatefulWidget {
   final VoidCallback onBack;
@@ -52,12 +53,13 @@ class _WebCaProfileViewState extends State<WebCaProfileView> {
 
     setState(() => isSaving = true);
 
-    webPh.appConfig.caName = nameC.text.trim().toUpperCase();
-    webPh.appConfig.caMailID = mailC.text.trim().toLowerCase();
-    webPh.appConfig.caPhone = phoneC.text.trim();
-    webPh.appConfig.isAuditMode = isAuditMode;
+    final cfg = webPh.appConfig;
+    cfg.caName = nameC.text.trim().toUpperCase();
+    cfg.caMailID = mailC.text.trim().toLowerCase();
+    cfg.caPhone = phoneC.text.trim();
+    cfg.isAuditMode = isAuditMode;
 
-    bool synced = await webPh.pushUpdatedDataToCloud();
+    bool synced = await WebSettingsSyncCoordinator.saveAndBroadcastConfig(webPh: webPh, updatedConfig: cfg);
     setState(() => isSaving = false);
 
     if (mounted) {

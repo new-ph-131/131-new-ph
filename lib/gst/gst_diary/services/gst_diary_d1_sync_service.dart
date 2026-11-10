@@ -334,7 +334,30 @@ class GstDiaryD1SyncService {
             incoming.developerAllowGstDiaryToUser != currentConfig.developerAllowGstDiaryToUser ||
             incoming.userEnableGstDiary != currentConfig.userEnableGstDiary ||
             incoming.developerAllowBatchHistoryToUser != currentConfig.developerAllowBatchHistoryToUser ||
-            incoming.userEnableBatchHistory != currentConfig.userEnableBatchHistory;
+            incoming.userEnableBatchHistory != currentConfig.userEnableBatchHistory ||
+            incoming.showLogo != currentConfig.showLogo ||
+            incoming.logoPath != currentConfig.logoPath ||
+            incoming.printFormat != currentConfig.printFormat ||
+            incoming.showTerms != currentConfig.showTerms ||
+            incoming.termsAndConditions != currentConfig.termsAndConditions ||
+            incoming.showStaffSign != currentConfig.showStaffSign ||
+            incoming.signLabel != currentConfig.signLabel ||
+            incoming.showCustomerSignChallan != currentConfig.showCustomerSignChallan ||
+            incoming.showQrCode != currentConfig.showQrCode ||
+            incoming.qrCodePath != currentConfig.qrCodePath ||
+            incoming.bankAccName != currentConfig.bankAccName ||
+            incoming.bankAccNumber != currentConfig.bankAccNumber ||
+            incoming.bankIfsc != currentConfig.bankIfsc ||
+            incoming.bankNameBranch != currentConfig.bankNameBranch ||
+            incoming.isMailActive != currentConfig.isMailActive ||
+            incoming.smtpMailID != currentConfig.smtpMailID ||
+            incoming.smtpMailPass != currentConfig.smtpMailPass ||
+            incoming.smtpHost != currentConfig.smtpHost ||
+            incoming.smtpPort != currentConfig.smtpPort ||
+            incoming.caName != currentConfig.caName ||
+            incoming.caMailID != currentConfig.caMailID ||
+            incoming.caPhone != currentConfig.caPhone ||
+            incoming.isAuditMode != currentConfig.isAuditMode;
         if (incoming.version > bestVer ||
             incoming.updatedAt > bestTs ||
             (bestTs == 0 && fieldDiff)) {
