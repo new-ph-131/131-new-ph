@@ -541,8 +541,8 @@ class _ArchitectControlViewState extends State<ArchitectControlView> with Single
       try {
         final commaIdx = path.indexOf(',');
         final raw = commaIdx != -1 ? path.substring(commaIdx + 1) : path;
-        bytes = base64Decode(raw.replaceAll('
-', '').trim());
+        final clean = raw.replaceAll(RegExp(r'\s+'), '');
+        bytes = base64Decode(clean);
       } catch (_) {}
     }
     return Padding(

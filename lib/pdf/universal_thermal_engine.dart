@@ -218,6 +218,16 @@ class UniversalThermalEngine {
       totalAmt = doc.amount;
     }
 
+    pw.MemoryImage? qrImg;
+    if (config.showQrCode && config.qrCodePath != null && config.qrCodePath!.isNotEmpty) {
+      try {
+        qrImg = PdfMasterService.resolveBase64Image(config.qrCodePath);
+        if (qrImg == null && File(config.qrCodePath!).existsSync()) {
+          qrImg = pw.MemoryImage(File(config.qrCodePath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
+
     return pw.Column(children: [
       // Total Box
       pw.Container(

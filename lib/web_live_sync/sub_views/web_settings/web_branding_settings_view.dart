@@ -99,8 +99,8 @@ class _WebBrandingSettingsViewState extends State<WebBrandingSettingsView> {
       try {
         final comma = logoPath!.indexOf(',');
         final raw = comma != -1 ? logoPath!.substring(comma + 1) : logoPath!;
-        imgBytes = base64Decode(raw.replaceAll('
-', '').trim());
+        final clean = raw.replaceAll(RegExp(r'\s+'), '');
+        imgBytes = base64Decode(clean);
       } catch (_) {}
     }
     return Container(
