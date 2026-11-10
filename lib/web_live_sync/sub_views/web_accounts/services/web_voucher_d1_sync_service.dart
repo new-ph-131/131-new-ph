@@ -248,6 +248,9 @@ class WebVoucherD1SyncService {
         final incoming = Voucher.fromMap(rawData);
         if (billId.isNotEmpty) incoming.id = billId;
         incoming.version = version;
+        if (!D1SalesLedgerService.doesEventBelongToActiveFY(rawData, incoming.date)) {
+          continue;
+        }
         if (action == "CANCEL") {
           incoming.status = "Cancelled";
           incoming.isDeleted = 0;
@@ -298,6 +301,9 @@ class WebVoucherD1SyncService {
       incoming.version = version;
       incoming.updatedAt = updatedAt;
       incoming.isDeleted = isDeleted;
+      if (isDeleted != 1 && !D1SalesLedgerService.doesEventBelongToActiveFY(vMap, incoming.date)) {
+        continue;
+      }
 
       if (VoucherSyncModule.applyVoucherMutation(localVouchers, incoming)) {
         hasChanges = true;

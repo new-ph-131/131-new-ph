@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
+import 'services/web_fy_date_range_helper.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
 import 'sub_views/web_challans/web_sale_challan_billing_view.dart';
@@ -42,19 +43,23 @@ class _WebChallanViewState extends State<WebChallanView> {
     activeIndex = widget.initialTabIndex;
   }
 
+  String _lastSyncedFy = "";
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final webPh = Provider.of<PharoahWebManager>(context, listen: false);
-      final now = DateTime.now();
-      DateTime fyStart = WebAppDateLogic.getFYStart(webPh.financialYear);
-      DateTime fyEnd = WebAppDateLogic.getFYEnd(webPh.financialYear);
-      regFromDate = fyStart;
-      regToDate = now.isAfter(fyEnd) ? fyEnd : DateTime(now.year, now.month, now.day);
-      if (regToDate.isBefore(regFromDate)) {
-        regToDate = fyEnd;
-      }
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    if (!_isInit || _lastSyncedFy != webPh.financialYear) {
+      final range = WebFyDateRangeHelper.computeRegisterDateRange(
+        webPh.financialYear,
+        recordDates: [
+          ...webPh.saleChallans.map((c) => c.date),
+          ...webPh.purchaseChallans.map((c) => c.date),
+        ],
+      );
+      regFromDate = range.fromDate;
+      regToDate = range.toDate;
+      _lastSyncedFy = webPh.financialYear;
       _isInit = true;
     }
   }

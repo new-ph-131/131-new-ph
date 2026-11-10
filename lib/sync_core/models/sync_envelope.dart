@@ -1,5 +1,6 @@
 // FILE: lib/sync_core/models/sync_envelope.dart
 import 'dart:convert';
+import '../d1_sales_ledger_service.dart';
 
 /// SyncEnvelope: Standardized event container for transaction outbox & D1 replication.
 /// Fully compatible with Step 4 JSON Batch Format with sequential ordering and action tagging.
@@ -28,19 +29,26 @@ class SyncEnvelope {
     required this.billData,
   });
 
-  Map<String, dynamic> toMap() => {
-    'seq': seq,
-    'sync_id': syncId,
-    'store_token': storeToken,
-    'document_type': documentType,
-    'action': action,
-    'device_id': deviceId,
-    'version': version,
-    'updated_at': updatedAt,
-    'is_deleted': isDeleted,
-    'data': billData,
-    'bill_data': billData,
-  };
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> enrichedData = Map<String, dynamic>.from(billData);
+    if (D1SalesLedgerService.activeFinancialYear.trim().isNotEmpty &&
+        (enrichedData['fy'] == null || enrichedData['fy'].toString().trim().isEmpty)) {
+      enrichedData['fy'] = D1SalesLedgerService.activeFinancialYear.trim();
+    }
+    return {
+      'seq': seq,
+      'sync_id': syncId,
+      'store_token': storeToken,
+      'document_type': documentType,
+      'action': action,
+      'device_id': deviceId,
+      'version': version,
+      'updated_at': updatedAt,
+      'is_deleted': isDeleted,
+      'data': enrichedData,
+      'bill_data': enrichedData,
+    };
+  }
 
   String toJson() => jsonEncode(toMap());
 

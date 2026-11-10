@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../web_models.dart';
 import '../../pharoah_web_manager.dart';
+import '../../services/web_fy_date_range_helper.dart';
 import '../../../compliance/gst_offline_engine/gst_offline_export_service.dart';
 
 class WebGstr1View extends StatefulWidget {
@@ -27,13 +28,22 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
     _tabController = TabController(length: 4, vsync: this);
   }
 
+  String _lastSyncedFy = "";
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final now = DateTime.now();
-      toDate = DateTime(now.year, now.month, now.day);
-      fromDate = DateTime(now.year, now.month, 1);
+    if (!_isInit || _lastSyncedFy != widget.webPh.financialYear) {
+      final range = WebFyDateRangeHelper.computeRegisterDateRange(
+        widget.webPh.financialYear,
+        recordDates: [
+          ...widget.webPh.sales.map((s) => s.date),
+          ...widget.webPh.saleReturns.map((r) => r.date),
+        ],
+      );
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _lastSyncedFy = widget.webPh.financialYear;
       _isInit = true;
     }
   }

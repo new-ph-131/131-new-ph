@@ -112,7 +112,7 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
   }
 
   void _triggerBatchLookup(PharoahWebManager webPh) async {
-    final rawBatches = webPh.batchHistory[widget.med.identityKey] ?? [];
+    final rawBatches = webPh.getBatchesForMedicine(widget.med);
 
     final selected = await showDialog<dynamic>(
       context: context,

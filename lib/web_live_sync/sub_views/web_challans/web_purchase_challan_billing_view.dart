@@ -70,7 +70,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     if (med.purRate > 0) return med.purRate;
 
     // Check available batches for this medicine
-    final batches = webPh.batchHistory[med.identityKey] ?? [];
+    final batches = webPh.getBatchesForMedicine(med);
     for (var b in batches.reversed) {
       if (b.purRate > 0) return b.purRate;
       if (b.rate > 0) return b.rate;
@@ -124,7 +124,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     final discAmtC = TextEditingController(text: itemToEdit?.discountRupees.toString() ?? "0.0");
 
     String selectedRateType = itemToEdit?.appliedRateType ?? "A";
-    List<BatchInfo> availableBatches = webPh.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> availableBatches = webPh.getBatchesForMedicine(med);
 
     showDialog(
       context: context,

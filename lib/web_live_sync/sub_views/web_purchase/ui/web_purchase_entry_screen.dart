@@ -33,7 +33,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
   final searchController = TextEditingController();
 
   DateTime selectedBillDate = DateTime.now();
-  DateTime selectedEntryDate = DateTime.now();
+  DateTime selectedEntryDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
   String paymentMode = "CREDIT";
   Party? selectedSupplier;
   String searchQuery = "";
@@ -67,7 +67,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
       } else {
         internalNoC.text = webPh.getNextBillNumber("PURCHASE", "WPUR-", 1);
         selectedBillDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
-        selectedEntryDate = DateTime.now();
+        selectedEntryDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
       }
 
       setState(() => isLoading = false);

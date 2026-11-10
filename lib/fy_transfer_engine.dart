@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'models.dart';
 import 'inventory_logic_center.dart';
+import 'expiry_master.dart';
 
 class FYTransferEngine {
   static const List<String> allFyFileNames = [
@@ -267,15 +268,18 @@ class FYTransferEngine {
           continue;
         }
 
-        if (filterExpired) {
+        if (filterExpired && !ExpiryMaster.isNonExpiryValue(bObj.exp)) {
           try {
-            final List<String> parts = bObj.exp.split('/');
-            final int m = int.parse(parts[0]);
-            int y = int.parse(parts[1]);
-            if (y < 2000) y += 2000;
-            final DateTime lastDay = DateTime(y, m + 1, 0);
-            if (lastDay.isBefore(today)) {
-              continue;
+            final String cleanExp = bObj.exp.trim().replaceAll('-', '/');
+            final List<String> parts = cleanExp.split('/');
+            if (parts.length == 2) {
+              final int m = int.parse(parts[0]);
+              int y = int.parse(parts[1]);
+              if (y < 100) y += 2000;
+              final DateTime lastDay = DateTime(y, m + 1, 0, 23, 59, 59);
+              if (lastDay.isBefore(today)) {
+                continue;
+              }
             }
           } catch (_) {}
         }
@@ -290,7 +294,7 @@ class FYTransferEngine {
       }
     });
 
-    // 6. MEDICINE STOCK SYNC WITH CARRIED BATCHES
+    // 6. MEDICINE STOCK SYNC WITH CARRIED BATCHES (Preserves Loose Stock & Synthesizes Non-Expiry Batch)
     final List<Map<String, dynamic>> correctedMeds = oldMeds.map((m) {
       final String key = m.identityKey;
       double totalStock = 0.0;
@@ -299,8 +303,32 @@ class FYTransferEngine {
         for (final b in bList) {
           totalStock += ((b['qty'] as num?)?.toDouble() ?? 0.0);
         }
+        m.stock = totalStock >= 0 ? totalStock : 0.0;
+      } else {
+        final bool hadSourceBatches = sourceBatchHistory.containsKey(key) && sourceBatchHistory[key]!.isNotEmpty;
+        if (!hadSourceBatches && m.stock > 0 && !filterZeroStock) {
+          // Medicine had loose/opening stock without explicit batch rows: synthesize an OPENING non-expiry batch
+          final BatchInfo openingBatch = BatchInfo(
+            batch: "OPENING",
+            exp: "N/A",
+            qty: m.stock,
+            openingQty: m.stock,
+            adjustmentQty: 0,
+            mrp: m.mrp,
+            sRate: m.rateA > 0 ? m.rateA : m.mrp,
+            purRate: m.purRate,
+            rateA: m.rateA > 0 ? m.rateA : m.mrp,
+            rateB: m.rateB,
+            rateC: m.rateC,
+            gst: m.gst,
+          );
+          correctedBatches[key] = [openingBatch.toMap()];
+        } else if (hadSourceBatches) {
+          m.stock = 0.0;
+        } else if (filterZeroStock && m.stock <= 0) {
+          m.stock = 0.0;
+        }
       }
-      m.stock = totalStock >= 0 ? totalStock : 0.0;
       return m.toMap();
     }).toList();
 
@@ -497,7 +525,7 @@ class FYTransferEngine {
         final int idx = targetList.indexWhere((tb) => tb.batch.trim().toUpperCase() == cleanBatchNo);
         if (idx != -1) {
           targetList[idx].openingQty = carriedOpening;
-        } else if (carriedOpening > 0) {
+        } else {
           final BatchInfo carriedCopy = BatchInfo.fromMap(pb.toMap());
           carriedCopy.openingQty = carriedOpening;
           carriedCopy.qty = carriedOpening;

@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../pharoah_web_manager.dart';
+import '../../services/web_fy_date_range_helper.dart';
 
 class WebGstr3bView extends StatefulWidget {
   final PharoahWebManager webPh;
@@ -19,13 +20,22 @@ class _WebGstr3bViewState extends State<WebGstr3bView> {
   DateTime toDate = DateTime.now();
   bool _isInit = false;
 
+  String _lastSyncedFy = "";
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final now = DateTime.now();
-      toDate = DateTime(now.year, now.month, now.day);
-      fromDate = DateTime(now.year, now.month, 1);
+    if (!_isInit || _lastSyncedFy != widget.webPh.financialYear) {
+      final range = WebFyDateRangeHelper.computeRegisterDateRange(
+        widget.webPh.financialYear,
+        recordDates: [
+          ...widget.webPh.sales.map((s) => s.date),
+          ...widget.webPh.purchases.map((p) => p.date),
+        ],
+      );
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _lastSyncedFy = widget.webPh.financialYear;
       _isInit = true;
     }
   }

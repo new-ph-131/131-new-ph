@@ -72,6 +72,27 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
       mrpC.text = widget.med.mrp.toStringAsFixed(2);
       gstC.text = widget.med.gst.toString();
       _updateRateLogic();
+      if (widget.availableBatches.isNotEmpty) {
+        final validBatches = widget.availableBatches.where((b) => widget.allowExpired || WebExpiryMaster.isSaleAllowed(b.exp)).toList();
+        final inStockValid = validBatches.where((b) => b.qty > 0).toList();
+        final BatchInfo? chosen = inStockValid.isNotEmpty
+            ? inStockValid.first
+            : (validBatches.isNotEmpty ? validBatches.first : widget.availableBatches.first);
+        if (chosen != null) {
+          batchC.text = chosen.batch;
+          expC.text = chosen.exp;
+          if (chosen.mrp > 0) mrpC.text = chosen.mrp.toStringAsFixed(2);
+          if (selectedRateType == "A" && chosen.rateA > 0) {
+            rateC.text = chosen.rateA.toStringAsFixed(2);
+          } else if (selectedRateType == "B" && chosen.rateB > 0) {
+            rateC.text = chosen.rateB.toStringAsFixed(2);
+          } else if (selectedRateType == "C" && chosen.rateC > 0) {
+            rateC.text = chosen.rateC.toStringAsFixed(2);
+            rateCDiscC.text = chosen.rateCFormula.toStringAsFixed(2);
+          }
+          _syncDiscount(true);
+        }
+      }
     }
   }
 

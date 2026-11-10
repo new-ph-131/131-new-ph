@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
+import 'services/web_fy_date_range_helper.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
 import 'sub_views/web_returns/credit_note/ui/web_credit_note_screen.dart';
@@ -55,16 +56,27 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     }
   }
 
+  String _lastSyncedFy = "";
+
+  void _syncDatesForFy(PharoahWebManager webPh) {
+    final range = WebFyDateRangeHelper.computeRegisterDateRange(
+      webPh.financialYear,
+      recordDates: [
+        ...webPh.saleReturns.map((r) => r.date),
+        ...webPh.purchaseReturns.map((r) => r.date),
+      ],
+    );
+    regFromDate = range.fromDate;
+    regToDate = range.toDate;
+    _lastSyncedFy = webPh.financialYear;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final webPh = Provider.of<PharoahWebManager>(context, listen: false);
-      final now = DateTime.now();
-      regToDate = DateTime(now.year, now.month, now.day);
-      DateTime thirtyDaysAgo = regToDate.subtract(const Duration(days: 30));
-      DateTime fyStart = WebAppDateLogic.getFYStart(webPh.financialYear);
-      regFromDate = thirtyDaysAgo.isBefore(fyStart) ? fyStart : thirtyDaysAgo;
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    if (!_isInit || _lastSyncedFy != webPh.financialYear) {
+      _syncDatesForFy(webPh);
       _isInit = true;
     }
   }

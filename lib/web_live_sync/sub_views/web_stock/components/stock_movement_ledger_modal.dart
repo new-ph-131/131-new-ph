@@ -194,7 +194,7 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
       }
     }
     // Also include batches from batchHistory
-    final batchesInHistory = webPh.batchHistory[widget.medicine.identityKey] ?? [];
+    final batchesInHistory = webPh.getBatchesForMedicine(widget.medicine);
     for (var b in batchesInHistory) {
       if (b.batch.trim().isNotEmpty) {
         allBatches.add(b.batch.trim());

@@ -68,7 +68,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
     final webPh = Provider.of<PharoahWebManager>(context, listen: false);
     String shopState = (webPh.companyProfile['state'] ?? 'Rajasthan').toString();
     String partyState = widget.party.state;
-    List<BatchInfo> batches = webPh.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> batches = webPh.getBatchesForMedicine(med);
 
     showDialog(
       context: context,

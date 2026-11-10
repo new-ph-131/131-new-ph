@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../pharoah_web_manager.dart';
 import '../../web_models.dart';
 import '../../web_app_date_logic.dart';
+import '../../services/web_fy_date_range_helper.dart';
 import '../../web_pdf_router_service.dart';
 import '../web_mail/widgets/web_smart_mail_button.dart';
 import 'web_accounts_excel_service.dart';
@@ -34,14 +35,19 @@ class _WebVoucherHistoryWidgetState extends State<WebVoucherHistoryWidget> {
   bool _isInit = false;
   bool showAllDates = true;
 
+  String _lastSyncedFy = "";
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      toDate = WebAppDateLogic.getSmartDate(widget.webPh.financialYear);
-      fromDate = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = WebAppDateLogic.getFYStart(widget.webPh.financialYear);
-      if (fromDate.isBefore(fyStart)) fromDate = fyStart;
+    if (!_isInit || _lastSyncedFy != widget.webPh.financialYear) {
+      final range = WebFyDateRangeHelper.computeRegisterDateRange(
+        widget.webPh.financialYear,
+        recordDates: widget.webPh.vouchers.map((v) => v.date),
+      );
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _lastSyncedFy = widget.webPh.financialYear;
       _isInit = true;
     }
   }

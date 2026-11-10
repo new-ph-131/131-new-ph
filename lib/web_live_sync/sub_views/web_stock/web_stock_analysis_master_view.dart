@@ -146,7 +146,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
   }
 
   String _getNearestExpiry(PharoahWebManager webPh, Medicine med) {
-    final batches = webPh.batchHistory[med.identityKey] ?? [];
+    final batches = webPh.getBatchesForMedicine(med);
     final active = batches.where((b) => b.qty > 0 && b.exp.trim().isNotEmpty).toList();
     if (active.isEmpty) return "-";
     active.sort((a, b) => a.exp.compareTo(b.exp));
@@ -1076,7 +1076,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
         return _cellContainer(width, Text("₹${val.toStringAsFixed(2)}", style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)), isRight: true);
 
       case StockColumnId.batchCount:
-        final batches = webPh.batchHistory[m.identityKey] ?? [];
+        final batches = webPh.getBatchesForMedicine(m);
         final count = batches.where((b) => b.qty > 0).length;
         return _cellContainer(width, Text("$count Batches", style: const TextStyle(color: Colors.white70, fontSize: 10)), isRight: true);
 

@@ -49,7 +49,7 @@ class CreditNoteCartWidget extends StatelessWidget {
   }) {
     String shopState = (webPh.companyProfile['state'] ?? 'Rajasthan').toString();
     String partyState = controller.selectedCustomer?.state ?? 'Rajasthan';
-    List<BatchInfo> batches = webPh.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> batches = webPh.getBatchesForMedicine(med);
 
     BillItem? preFilled = itemToEdit;
     if (historyData != null && itemToEdit == null) {

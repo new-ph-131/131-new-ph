@@ -53,7 +53,9 @@ class WebRealtimeCoordinator {
         if (allDel.isNotEmpty) {
           webManager.purgeDeletedIds(allDel);
         }
-        await webManager.refreshStoreData();
+        if (!_isPushing && !webManager.isCloudPushInProgress) {
+          await webManager.refreshStoreData();
+        }
       },
     );
 

@@ -819,14 +819,21 @@ class D1SalesLedgerService {
   /// 3. LOCAL SEQUENCE PERSISTENCE
   /// =========================================================================
 
+  static String _seqKey(String storeToken) {
+    final cleanToken = storeToken.trim().toUpperCase();
+    final cleanFy = activeFinancialYear.trim();
+    if (cleanFy.isEmpty) return "d1_sale_seq_$cleanToken";
+    return "d1_sale_seq_${cleanToken}_$cleanFy";
+  }
+
   static Future<int> getLatestLocalSeq(String storeToken) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt("d1_sale_seq_${storeToken.trim().toUpperCase()}") ?? 0;
+    return prefs.getInt(_seqKey(storeToken)) ?? 0;
   }
 
   static Future<void> _updateHighestLocalSeq(String storeToken, int seq) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = "d1_sale_seq_${storeToken.trim().toUpperCase()}";
+    final key = _seqKey(storeToken);
     final current = prefs.getInt(key) ?? 0;
     if (seq > current) {
       await prefs.setInt(key, seq);

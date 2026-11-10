@@ -51,13 +51,20 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   // --- EXPIRY UTILITIES ---
+  bool _isNonExpiry(String expStr) {
+    final c = expStr.trim().toUpperCase();
+    return c.isEmpty || c == "N/A" || c == "NA" || c == "-" || c == "NONE" || c == "NO EXP" || c == "NO EXPIRY" || c == "00/00";
+  }
+
   bool _isNearExpiry(String expStr) {
+    if (_isNonExpiry(expStr)) return false;
     try {
-      final parts = expStr.split('/');
+      final parts = expStr.trim().replaceAll('-', '/').split('/');
       if (parts.length != 2) return false;
       int m = int.parse(parts[0]);
-      int y = 2000 + int.parse(parts[1]);
-      DateTime lastDay = DateTime(y, m + 1, 0);
+      int y = int.parse(parts[1]);
+      if (y < 100) y += 2000;
+      DateTime lastDay = DateTime(y, m + 1, 0, 23, 59, 59);
       DateTime today = DateTime.now();
       int days = lastDay.difference(today).inDays;
       return days >= 0 && days <= 90;
@@ -67,12 +74,14 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
   }
 
   bool _isExpired(String expStr) {
+    if (_isNonExpiry(expStr)) return false;
     try {
-      final parts = expStr.split('/');
+      final parts = expStr.trim().replaceAll('-', '/').split('/');
       if (parts.length != 2) return false;
       int m = int.parse(parts[0]);
-      int y = 2000 + int.parse(parts[1]);
-      DateTime lastDay = DateTime(y, m + 1, 0);
+      int y = int.parse(parts[1]);
+      if (y < 100) y += 2000;
+      DateTime lastDay = DateTime(y, m + 1, 0, 23, 59, 59);
       return lastDay.isBefore(DateTime.now());
     } catch (_) {
       return false;
@@ -158,7 +167,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                               separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
                               itemBuilder: (c, i) {
                                 final m = results[i];
-                                final batchesCount = webPh.batchHistory[m.identityKey]?.length ?? 0;
+                                final batchesCount = webPh.getBatchesForMedicine(m).length;
                                 return ListTile(
                                   dense: true,
                                   leading: Container(
@@ -1291,7 +1300,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
 
     if (_viewingAuditMed != null) {
       final auditMed = _viewingAuditMed!;
-      final medBatches = webPh.batchHistory[auditMed.identityKey] ?? [];
+      final medBatches = webPh.getBatchesForMedicine(auditMed);
       return BatchAuditWorkbench(
         medicine: auditMed,
         batches: medBatches,
@@ -1347,7 +1356,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
     int nearExpiryCount = 0;
 
     for (var m in webPh.medicines) {
-      final list = webPh.batchHistory[m.identityKey];
+      final list = webPh.getBatchesForMedicine(m);
       if (list != null && list.isNotEmpty) {
         for (var b in list) {
           allBatches.add(GlobalBatchItem(medicine: m, batch: b));
@@ -1845,7 +1854,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     ),
                   ),
                   ...matchingMeds.map((med) {
-                    final bList = webPh.batchHistory[med.identityKey] ?? [];
+                    final bList = webPh.getBatchesForMedicine(med);
                     final isCur = selectedMed?.identityKey == med.identityKey && !isGlobalExplorer;
                     return InkWell(
                       onTap: () {

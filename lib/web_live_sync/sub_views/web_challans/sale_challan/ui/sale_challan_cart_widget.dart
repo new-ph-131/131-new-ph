@@ -28,7 +28,7 @@ class SaleChallanCartWidget extends StatelessWidget {
 
     String shopState = (webPh.companyProfile['state'] ?? 'Rajasthan').toString();
     String partyState = controller.selectedCustomer!.state;
-    List<BatchInfo> batches = webPh.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> batches = webPh.getBatchesForMedicine(med);
 
     showDialog(
       context: context,

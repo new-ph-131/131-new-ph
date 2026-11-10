@@ -9,6 +9,7 @@ import 'package:file_saver/file_saver.dart';
 import '../../../web_models.dart';
 import '../../../pharoah_web_manager.dart';
 import '../../../web_app_date_logic.dart';
+import '../../../services/web_fy_date_range_helper.dart';
 import '../engine/web_csv_engine.dart';
 
 class WebExportSelectorView extends StatefulWidget {
@@ -35,13 +36,22 @@ class _WebExportSelectorViewState extends State<WebExportSelectorView> {
   bool isExporting = false;
   bool _isInit = false;
 
+  String _lastSyncedFy = "";
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final now = DateTime.now();
-      toDate = DateTime(now.year, now.month, now.day);
-      fromDate = toDate.subtract(const Duration(days: 30));
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    if (!_isInit || _lastSyncedFy != webPh.financialYear) {
+      final range = WebFyDateRangeHelper.computeRegisterDateRange(
+        webPh.financialYear,
+        recordDates: widget.exportType == "SALE"
+            ? webPh.sales.map((s) => s.date)
+            : webPh.purchases.map((p) => p.date),
+      );
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _lastSyncedFy = webPh.financialYear;
       _isInit = true;
     }
   }

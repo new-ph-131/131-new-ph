@@ -211,6 +211,13 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
   }
 
   Widget _buildCurrentView(PharoahWebManager webPh) {
+    return KeyedSubtree(
+      key: ValueKey("fy_${webPh.financialYear}_$currentView"),
+      child: _buildCurrentViewRaw(webPh),
+    );
+  }
+
+  Widget _buildCurrentViewRaw(PharoahWebManager webPh) {
         // --- GST COMPLIANCE (FIXED ROUTING - NO LONGER OPENS BILLING SALES) ---
     if (currentView == "GO_GST_1" || currentView == "GO_GST_3B" || currentView == "GO_GST_2" || currentView == "GO_GST_RECON" || currentView == "GO_EWAY" || currentView == "GO_GST_DIARY" || currentView == "GST") {
       return WebGstHub(

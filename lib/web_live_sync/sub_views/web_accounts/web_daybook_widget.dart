@@ -18,6 +18,16 @@ class WebDaybookWidget extends StatefulWidget {
 class _WebDaybookWidgetState extends State<WebDaybookWidget> {
   DateTime selectedDate = DateTime.now();
   String filterType = "ALL"; // ALL, INFLOW, OUTFLOW
+  String _lastSyncedFy = "";
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_lastSyncedFy != widget.webPh.financialYear) {
+      selectedDate = WebAppDateLogic.getSmartDate(widget.webPh.financialYear);
+      _lastSyncedFy = widget.webPh.financialYear;
+    }
+  }
 
   bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 

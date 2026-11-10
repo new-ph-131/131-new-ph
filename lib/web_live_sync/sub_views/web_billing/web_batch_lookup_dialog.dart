@@ -22,10 +22,14 @@ class WebBatchLookupDialog extends StatefulWidget {
 
 class _WebBatchLookupDialogState extends State<WebBatchLookupDialog> {
   DateTime _parseExpiry(String exp) {
+    if (ExpiryMaster.isNonExpiryValue(exp)) {
+      return DateTime(2099, 12, 31);
+    }
     try {
-      final parts = exp.split('/');
+      final parts = exp.trim().replaceAll('-', '/').split('/');
       int m = int.parse(parts[0]);
-      int y = 2000 + int.parse(parts[1]);
+      int y = int.parse(parts[1]);
+      if (y < 100) y += 2000;
       return DateTime(y, m + 1, 0);
     } catch (_) {
       return DateTime(2100);
@@ -144,7 +148,7 @@ class _WebBatchLookupDialogState extends State<WebBatchLookupDialog> {
                                   flex: 2,
                                   child: Row(
                                     children: [
-                                      Text(b.exp, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10.5)),
+                                      Text(ExpiryMaster.isNonExpiryValue(b.exp) ? "N/A" : b.exp, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10.5)),
                                       const SizedBox(width: 3),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),

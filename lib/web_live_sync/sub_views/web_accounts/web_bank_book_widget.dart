@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../web_models.dart';
 import '../../pharoah_web_manager.dart';
 import '../../web_app_date_logic.dart';
+import '../../services/web_fy_date_range_helper.dart';
 
 class WebBankBookWidget extends StatefulWidget {
   final PharoahWebManager webPh;
@@ -21,15 +22,19 @@ class _WebBankBookWidgetState extends State<WebBankBookWidget> {
   DateTime toDate = DateTime.now();
   bool _isInit = false;
 
+  String _lastSyncedFy = "";
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final now = DateTime.now();
-      toDate = DateTime(now.year, now.month, now.day);
-      DateTime thirtyDaysAgo = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = WebAppDateLogic.getFYStart(widget.webPh.financialYear);
-      fromDate = thirtyDaysAgo.isBefore(fyStart) ? fyStart : thirtyDaysAgo;
+    if (!_isInit || _lastSyncedFy != widget.webPh.financialYear) {
+      final range = WebFyDateRangeHelper.computeRegisterDateRange(
+        widget.webPh.financialYear,
+        recordDates: widget.webPh.vouchers.map((v) => v.date),
+      );
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _lastSyncedFy = widget.webPh.financialYear;
 
       final bankAccounts = widget.webPh.parties.where((p) => p.group == "Bank Accounts").toList();
       if (bankAccounts.isNotEmpty) {

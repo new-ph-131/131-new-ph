@@ -158,7 +158,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     String shopState = (webPh.companyProfile['state'] ?? 'Rajasthan').toString();
     String partyState = selectedParty?.state ?? 'Rajasthan';
 
-    List<BatchInfo> batches = webPh.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> batches = webPh.getBatchesForMedicine(med);
 
     showDialog(
       context: context,

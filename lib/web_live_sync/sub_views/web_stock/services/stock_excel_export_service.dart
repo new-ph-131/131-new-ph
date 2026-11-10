@@ -60,7 +60,7 @@ class StockExcelExportService {
         }
       }
 
-      final batches = webPh.batchHistory[m.identityKey] ?? [];
+      final batches = webPh.getBatchesForMedicine(m);
       final activeBatches = batches.where((b) => b.qty > 0).length;
       final purVal = m.stock * m.purRate;
       final mrpVal = m.stock * m.mrp;

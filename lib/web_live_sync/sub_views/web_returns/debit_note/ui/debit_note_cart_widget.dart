@@ -47,7 +47,7 @@ class DebitNoteCartWidget extends StatelessWidget {
     int? editIndex,
     Map<String, dynamic>? historyData,
   }) {
-    List<BatchInfo> batches = webPh.batchHistory[med.identityKey] ?? [];
+    List<BatchInfo> batches = webPh.getBatchesForMedicine(med);
 
     final batchC = TextEditingController(text: itemToEdit?.batch ?? (historyData?['batch'] ?? ""));
     final expC = TextEditingController(text: itemToEdit?.exp ?? (historyData?['exp'] ?? "12/28"));

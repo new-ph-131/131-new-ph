@@ -38,6 +38,8 @@ import 'web_inventory_logic_center.dart';
 import 'web_sync_engine.dart';
 import 'web_pharoah_numbering_engine.dart';
 import 'web_app_date_logic.dart';
+import 'services/web_fy_date_range_helper.dart';
+import 'services/web_batch_resolver.dart';
 import '../fy_transfer_engine.dart';
 import 'web_cloud_config.dart';
 import 'sync_protocol/tombstone_engine.dart';
@@ -300,7 +302,38 @@ class PharoahWebManager with ChangeNotifier {
     };
   }
 
-  void _extractAndSyncFyVaultFromCloud(Map<String, dynamic> files, {String? cloudTopFy}) {
+  List<BatchInfo> getBatchesForMedicine(Medicine med) {
+    return WebBatchResolver.resolveBatchesForMedicine(med, batchHistory);
+  }
+
+  void _clearYearScopedMemory() {
+    sales.clear();
+    purchases.clear();
+    vouchers.clear();
+    saleChallans.clear();
+    purchaseChallans.clear();
+    saleReturns.clear();
+    purchaseReturns.clear();
+    gstDiarySessions.clear();
+    batchHistory.clear();
+    parties.clear();
+    medicines.clear();
+    banks.clear();
+    numberingSeries.clear();
+  }
+
+  void _snapshotActiveFyToVault() {
+    if (financialYear.trim().isNotEmpty) {
+      fyVault[financialYear.trim()] = _captureCurrentMemoryToFyFilesMap();
+    }
+  }
+
+  Map<String, Map<String, String>> _extractAndSyncFyVaultFromCloud(
+    Map<String, dynamic> files, {
+    String? cloudTopFy,
+    bool overwriteActiveYearInVault = false,
+  }) {
+    final Map<String, Map<String, String>> cloudVaultParsed = {};
     final rawVault = files['fy_vault.json'];
     if (rawVault != null) {
       try {
@@ -315,7 +348,10 @@ class PharoahWebManager with ChangeNotifier {
                   fMap[fName.toString()] = fVal is String ? fVal : jsonEncode(fVal);
                 }
               });
-              fyVault[cleanFy] = fMap;
+              cloudVaultParsed[cleanFy] = fMap;
+              if (overwriteActiveYearInVault || cleanFy != financialYear || !fyVault.containsKey(cleanFy)) {
+                fyVault[cleanFy] = fMap;
+              }
             }
           });
         }
@@ -332,6 +368,9 @@ class PharoahWebManager with ChangeNotifier {
     for (final k in fyVault.keys) {
       if (k.trim().isNotEmpty) discoveredFys.add(k.trim());
     }
+    for (final k in cloudVaultParsed.keys) {
+      if (k.trim().isNotEmpty) discoveredFys.add(k.trim());
+    }
     if (cloudTopFy != null && cloudTopFy.trim().isNotEmpty) {
       discoveredFys.add(cloudTopFy.trim());
     }
@@ -340,6 +379,7 @@ class PharoahWebManager with ChangeNotifier {
     }
     availableFinancialYears = WebAppDateLogic.sortFYList(discoveredFys);
     companyProfile['fYears'] = availableFinancialYears;
+    return cloudVaultParsed;
   }
 
   void _populateDataFromCloud(String token, String user, String pass, Map<String, dynamic> result) {
@@ -357,7 +397,9 @@ class PharoahWebManager with ChangeNotifier {
     final Map<String, dynamic> files = (result['files'] is Map)
         ? Map<String, dynamic>.from(result['files'])
         : {};
-    _extractAndSyncFyVaultFromCloud(files, cloudTopFy: cloudTopFy);
+    fyVault.clear();
+    availableFinancialYears = [cloudTopFy];
+    _extractAndSyncFyVaultFromCloud(files, cloudTopFy: cloudTopFy, overwriteActiveYearInVault: true);
 
     if (!isExplicitBackYearSelected || !availableFinancialYears.contains(financialYear)) {
       financialYear = availableFinancialYears.isNotEmpty ? availableFinancialYears.last : cloudTopFy;
@@ -365,17 +407,23 @@ class PharoahWebManager with ChangeNotifier {
     }
     D1SalesLedgerService.activeFinancialYear = financialYear;
 
+    _clearYearScopedMemory();
+
     if (fyVault.containsKey(financialYear) && fyVault[financialYear]!.isNotEmpty) {
       final Map<String, dynamic> scopedFiles = Map<String, dynamic>.from(fyVault[financialYear]!);
+      scopedFiles['_targetFy'] = financialYear;
       if (files.containsKey('tombstones.json')) scopedFiles['tombstones.json'] = files['tombstones.json'];
       if (files.containsKey('tombstone_registry.json')) scopedFiles['tombstone_registry.json'] = files['tombstone_registry.json'];
       _parseDownloadedFiles(scopedFiles);
     } else if (cloudTopFy == financialYear || fyVault.isEmpty) {
-      _parseDownloadedFiles(files);
+      final Map<String, dynamic> rootScoped = Map<String, dynamic>.from(files);
+      rootScoped['_targetFy'] = cloudTopFy;
+      _parseDownloadedFiles(rootScoped);
       fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
     }
 
     rebuildInventory();
+    _snapshotActiveFyToVault();
   }
 
   void _parseDownloadedFiles(Map<String, dynamic> files) {
@@ -1093,6 +1141,10 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void rebuildInventory() {
+    WebBatchResolver.normalizeAndHealBatchHistory(
+      medicines: medicines,
+      batchHistory: batchHistory,
+    );
     WebInventoryLogicCenter.rebuildWebInventory(
       medicines: medicines,
       batchHistory: batchHistory,
@@ -1258,8 +1310,9 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   Future<bool> pushUpdatedDataToCloud() async {
+    if (!isAuthenticated || activeStoreToken.isEmpty) return false;
+    isCloudPushInProgress = true;
     try {
-      if (!isAuthenticated || activeStoreToken.isEmpty) return false;
 
       // 1. Save current active FY state into Multi-FY Vault
       fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
@@ -1307,6 +1360,8 @@ class PharoahWebManager with ChangeNotifier {
     } catch (e) {
       debugPrint("Web push error: $e");
       return false;
+    } finally {
+      isCloudPushInProgress = false;
     }
   }
 
@@ -1374,6 +1429,9 @@ class PharoahWebManager with ChangeNotifier {
     sale.updatedAt = DateTime.now().millisecondsSinceEpoch;
     D1SalesLedgerService.recordKnownVersion(sale.id, sale.billNo, sale.version);
 
+    if (!isUpdate) {
+      sale.date = WebFyDateRangeHelper.ensureDateInActiveFy(sale.date, financialYear);
+    }
     if (isUpdate) {
       sales[existingIdx] = sale;
     } else {
@@ -1401,6 +1459,7 @@ class PharoahWebManager with ChangeNotifier {
       );
     }
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
 
     // ⚡ Transactional Outbox Batch Enqueue
@@ -1467,6 +1526,7 @@ class PharoahWebManager with ChangeNotifier {
 
     sales.removeWhere((s) => s.id == realId || (targetBillNo.isNotEmpty && s.billNo.trim().toUpperCase() == targetBillNo.trim().toUpperCase()));
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
@@ -1545,6 +1605,9 @@ class PharoahWebManager with ChangeNotifier {
     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
     D1SalesLedgerService.recordPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.version, purchase.internalNo);
 
+    if (!isUpdate) {
+      purchase.date = WebFyDateRangeHelper.ensureDateInActiveFy(purchase.date, financialYear);
+    }
     if (isUpdate) {
       purchases[existingIdx] = purchase;
     } else {
@@ -1574,6 +1637,7 @@ class PharoahWebManager with ChangeNotifier {
       );
     }
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
 
     // ⚡ Fast Non-Blocking Background Cloud Push with Composite Key
@@ -1697,10 +1761,14 @@ class PharoahWebManager with ChangeNotifier {
     v.isDeleted = 0;
     D1SalesLedgerService.recordKnownVersion(v.id, cleanVNo, v.version);
 
+    if (existingIdx == -1) {
+      v.date = WebFyDateRangeHelper.ensureDateInActiveFy(v.date, financialYear);
+    }
     vouchers.removeWhere((old) =>
       old.id == v.id || (cleanVNo.isNotEmpty && old.voucherNo.trim().toUpperCase() == cleanVNo)
     );
     vouchers.add(v);
+    _snapshotActiveFyToVault();
     notifyListeners();
 
     WebVoucherD1SyncService.onVoucherSaved(v, activeStoreToken, clientSource: "WEB_PORTAL");
@@ -1775,6 +1843,9 @@ class PharoahWebManager with ChangeNotifier {
     }
     challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
+    if (!isUpdate) {
+      challan.date = WebFyDateRangeHelper.ensureDateInActiveFy(challan.date, financialYear);
+    }
     if (isUpdate) {
       saleChallans[existingIdx] = challan;
     } else {
@@ -1847,6 +1918,9 @@ class PharoahWebManager with ChangeNotifier {
     }
     challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
+    if (!isUpdate) {
+      challan.date = WebFyDateRangeHelper.ensureDateInActiveFy(challan.date, financialYear);
+    }
     if (isUpdate) {
       purchaseChallans[existingIdx] = challan;
     } else {
@@ -1983,6 +2057,9 @@ class PharoahWebManager with ChangeNotifier {
     }
     ret.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
+    if (!isUpdate) {
+      ret.date = WebFyDateRangeHelper.ensureDateInActiveFy(ret.date, financialYear);
+    }
     if (isUpdate) {
       saleReturns[existingIdx] = ret;
     } else {
@@ -2041,6 +2118,9 @@ class PharoahWebManager with ChangeNotifier {
     }
     ret.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
+    if (!isUpdate) {
+      ret.date = WebFyDateRangeHelper.ensureDateInActiveFy(ret.date, financialYear);
+    }
     if (isUpdate) {
       purchaseReturns[existingIdx] = ret;
     } else {
@@ -2967,29 +3047,50 @@ class PharoahWebManager with ChangeNotifier {
     );
 
     if (result['success'] == true) {
+      final String prevActiveFy = financialYear;
       final Map<String, dynamic> files = (result['files'] is Map)
           ? Map<String, dynamic>.from(result['files'])
           : {};
       final String? cloudTopFy = result['fy']?.toString();
       if (result['profile'] is Map) {
-        companyProfile = Map<String, dynamic>.from(result['profile']);
+        final Map<String, dynamic> incomingProf = Map<String, dynamic>.from(result['profile']);
+        companyProfile = {...companyProfile, ...incomingProf};
       }
-      _extractAndSyncFyVaultFromCloud(files, cloudTopFy: cloudTopFy);
+      final Map<String, Map<String, String>> cloudVaultMap =
+          _extractAndSyncFyVaultFromCloud(files, cloudTopFy: cloudTopFy, overwriteActiveYearInVault: false);
+
       if (!isExplicitBackYearSelected && availableFinancialYears.isNotEmpty) {
         financialYear = availableFinancialYears.last;
       }
       D1SalesLedgerService.activeFinancialYear = financialYear;
 
-      if (fyVault.containsKey(financialYear) && fyVault[financialYear]!.isNotEmpty) {
+      // 🛡️ ZERO-MIXING ISOLATION: If active Financial Year changed during refresh, snapshot old year & clear memory first!
+      if (financialYear != prevActiveFy) {
+        if (prevActiveFy.trim().isNotEmpty) {
+          fyVault[prevActiveFy] = _captureCurrentMemoryToFyFilesMap();
+        }
+        _clearYearScopedMemory();
+      }
+
+      if (cloudVaultMap.containsKey(financialYear) && cloudVaultMap[financialYear]!.isNotEmpty) {
+        final Map<String, dynamic> scoped = Map<String, dynamic>.from(cloudVaultMap[financialYear]!);
+        scoped['_targetFy'] = financialYear;
+        if (files.containsKey('tombstones.json')) scoped['tombstones.json'] = files['tombstones.json'];
+        if (files.containsKey('tombstone_registry.json')) scoped['tombstone_registry.json'] = files['tombstone_registry.json'];
+        _parseDownloadedFiles(scoped);
+      } else if (fyVault.containsKey(financialYear) && fyVault[financialYear]!.isNotEmpty) {
         final Map<String, dynamic> scoped = Map<String, dynamic>.from(fyVault[financialYear]!);
+        scoped['_targetFy'] = financialYear;
         if (files.containsKey('tombstones.json')) scoped['tombstones.json'] = files['tombstones.json'];
         if (files.containsKey('tombstone_registry.json')) scoped['tombstone_registry.json'] = files['tombstone_registry.json'];
         _parseDownloadedFiles(scoped);
       } else if (cloudTopFy == null || cloudTopFy.trim().isEmpty || cloudTopFy.trim() == financialYear) {
-        _parseDownloadedFiles(files);
+        final Map<String, dynamic> rootScoped = Map<String, dynamic>.from(files);
+        rootScoped['_targetFy'] = cloudTopFy ?? financialYear;
+        _parseDownloadedFiles(rootScoped);
       }
-      fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
       rebuildInventory();
+      fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
       successMessage = "Data refreshed live!";
     } else {
       errorMessage = result['message'] ?? 'Live Refresh failed.';
@@ -3000,26 +3101,18 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   /// Switches active Financial Year on Web with full in-memory isolation & back-year auto-cascade
-  Future<void> switchWebFinancialYear(String targetFy) async {
+  Future<void> switchWebFinancialYear(String targetFy, {bool skipBackYearCascade = false}) async {
     final cleanTarget = targetFy.trim();
     if (cleanTarget.isEmpty || cleanTarget == financialYear) return;
 
     // 1. Save current year snapshot & cascade if leaving a back year
     fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
-    if (isBackYearActive) {
+    if (!skipBackYearCascade && isBackYearActive) {
       _cascadeWebFyVaultFrom(financialYear);
     }
 
-    // 2. Clear active transaction registers before loading target year
-    sales.clear();
-    purchases.clear();
-    vouchers.clear();
-    saleChallans.clear();
-    purchaseChallans.clear();
-    saleReturns.clear();
-    purchaseReturns.clear();
-    gstDiarySessions.clear();
-    batchHistory.clear();
+    // 2. Completely clear all year-scoped registers & masters before loading target year
+    _clearYearScopedMemory();
 
     financialYear = cleanTarget;
     isExplicitBackYearSelected =
@@ -3028,6 +3121,7 @@ class PharoahWebManager with ChangeNotifier {
 
     if (fyVault.containsKey(cleanTarget) && fyVault[cleanTarget]!.isNotEmpty) {
       final targetFiles = Map<String, dynamic>.from(fyVault[cleanTarget]!);
+      targetFiles['_targetFy'] = cleanTarget;
       if (targetFiles.containsKey('config.json') && targetFiles['config.json'] != null) {
         try {
           final cMap = jsonDecode(targetFiles['config.json']);
@@ -3039,6 +3133,7 @@ class PharoahWebManager with ChangeNotifier {
       _parseDownloadedFiles(targetFiles);
     }
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
   }
 
@@ -3075,7 +3170,7 @@ class PharoahWebManager with ChangeNotifier {
       availableFinancialYears = WebAppDateLogic.sortFYList([...availableFinancialYears, cleanNewFy]);
       companyProfile['fYears'] = availableFinancialYears;
 
-      await switchWebFinancialYear(cleanNewFy);
+      await switchWebFinancialYear(cleanNewFy, skipBackYearCascade: true);
       isExplicitBackYearSelected = false;
 
       await pushUpdatedDataToCloud();
@@ -3125,15 +3220,10 @@ class PharoahWebManager with ChangeNotifier {
 
       onProgress?.call(0.70, "Auditing Active Year ($financialYear) Batches & Ledgers...");
       if (fyVault.containsKey(financialYear)) {
-        sales.clear();
-        purchases.clear();
-        vouchers.clear();
-        saleChallans.clear();
-        purchaseChallans.clear();
-        saleReturns.clear();
-        purchaseReturns.clear();
-        batchHistory.clear();
-        _parseDownloadedFiles(Map<String, dynamic>.from(fyVault[financialYear]!));
+        _clearYearScopedMemory();
+        final Map<String, dynamic> maintScoped = Map<String, dynamic>.from(fyVault[financialYear]!);
+        maintScoped['_targetFy'] = financialYear;
+        _parseDownloadedFiles(maintScoped);
       }
 
       final Set<String> validProductKeys = medicines.map((m) => m.identityKey).toSet();

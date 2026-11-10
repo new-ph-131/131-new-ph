@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
+import 'services/web_fy_date_range_helper.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
 import 'sub_views/web_mail/services/web_mail_router_service.dart';
@@ -33,16 +34,24 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
   double progressValue = 0.0;
   String progressText = "";
 
+  String _lastSyncedFy = "";
+
+  void _syncDatesForFy(PharoahWebManager webPh) {
+    final range = WebFyDateRangeHelper.computeRegisterDateRange(
+      webPh.financialYear,
+      recordDates: webPh.sales.map((s) => s.date),
+    );
+    fromDate = range.fromDate;
+    toDate = range.toDate;
+    _lastSyncedFy = webPh.financialYear;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final webPh = Provider.of<PharoahWebManager>(context, listen: false);
-      final now = DateTime.now();
-      toDate = DateTime(now.year, now.month, now.day);
-      DateTime thirtyDaysAgo = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = WebAppDateLogic.getFYStart(webPh.financialYear);
-      fromDate = thirtyDaysAgo.isBefore(fyStart) ? fyStart : thirtyDaysAgo;
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    if (!_isInit || _lastSyncedFy != webPh.financialYear) {
+      _syncDatesForFy(webPh);
       _isInit = true;
     }
   }
@@ -100,6 +109,9 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
     final webPh = Provider.of<PharoahWebManager>(context);
     final activeShop = CompanyProfile.fromMap(webPh.companyProfile);
 
+    if (_lastSyncedFy != webPh.financialYear) {
+      _syncDatesForFy(webPh);
+    }
     final fDateOnly = _dateOnly(fromDate);
     final tDateOnly = _dateOnly(toDate);
 
