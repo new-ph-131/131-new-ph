@@ -665,27 +665,13 @@ class WebPdfRouterService {
                       children: [
                         _hBox(
                           280, true,
-                          pw.Row(
+                          pw.Column(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              if (logoImage != null)
-                                pw.Container(
-                                  width: 38,
-                                  height: 38,
-                                  margin: const pw.EdgeInsets.only(right: 6),
-                                  child: pw.Image(logoImage, fit: pw.BoxFit.contain),
-                                ),
-                              pw.Expanded(
-                                child: pw.Column(
-                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                  children: [
-                                    pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                                    pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
-                                    pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                                    pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
-                                  ],
-                                ),
-                              ),
+                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
+                              pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
@@ -946,27 +932,13 @@ class WebPdfRouterService {
                       children: [
                         _hBox(
                           280, true,
-                          pw.Row(
+                          pw.Column(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              if (logoImage != null)
-                                pw.Container(
-                                  width: 38,
-                                  height: 38,
-                                  margin: const pw.EdgeInsets.only(right: 6),
-                                  child: pw.Image(logoImage, fit: pw.BoxFit.contain),
-                                ),
-                              pw.Expanded(
-                                child: pw.Column(
-                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                                  children: [
-                                    pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                                    pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
-                                    pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                                    pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
-                                  ],
-                                ),
-                              ),
+                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                              pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
+                              pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
                             ],
                           ),
                         ),
