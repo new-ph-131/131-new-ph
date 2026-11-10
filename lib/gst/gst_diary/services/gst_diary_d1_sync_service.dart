@@ -1,3 +1,4 @@
+import '../../../sync_core/modules/settings_sync_module.dart';
 // FILE: lib/gst/gst_diary/services/gst_diary_d1_sync_service.dart
 // Revision: #PH-REV-785 (ENTERPRISE-GST-DIARY-D1-EDGE-SYNC-SERVICE)
 
@@ -317,68 +318,16 @@ class GstDiaryD1SyncService {
     return mutated;
   }
 
-  /// 📥 5. Applies incoming D1 Edge Ledger APP_CONFIG updates (e.g., User Control GST Diary permissions)
+  /// 📥 5. Applies incoming D1 Edge Ledger APP_CONFIG updates (Delegates to SettingsSyncModule)
   static bool applyEdgeEventsToLocalConfig({
     required AppConfig currentConfig,
     required List<Map<String, dynamic>> edgeEvents,
     required void Function(AppConfig) onConfigMutated,
   }) {
-    if (edgeEvents.isEmpty) return false;
-    AppConfig? updated;
-    int bestVer = currentConfig.version;
-    int bestTs = currentConfig.updatedAt;
-
-    for (final ev in edgeEvents) {
-      final String billId = (ev["bill_id"] ?? "").toString().trim();
-      final dynamic rawData = ev["sale_data"];
-      if (billId == configSyncId && rawData is Map) {
-        final evMap = Map<String, dynamic>.from(rawData);
-        final String eventFy = (evMap["fy"] ?? ev["fy"] ?? "").toString().trim();
-        if (eventFy.isNotEmpty && D1SalesLedgerService.activeFinancialYear.isNotEmpty && eventFy != D1SalesLedgerService.activeFinancialYear) {
-          continue;
-        }
-        final incoming = AppConfig.fromMap(Map<String, dynamic>.from(rawData));
-        final bool fieldDiff =
-            incoming.developerAllowGstDiaryToUser != currentConfig.developerAllowGstDiaryToUser ||
-            incoming.userEnableGstDiary != currentConfig.userEnableGstDiary ||
-            incoming.developerAllowBatchHistoryToUser != currentConfig.developerAllowBatchHistoryToUser ||
-            incoming.userEnableBatchHistory != currentConfig.userEnableBatchHistory ||
-            incoming.showLogo != currentConfig.showLogo ||
-            incoming.logoPath != currentConfig.logoPath ||
-            incoming.printFormat != currentConfig.printFormat ||
-            incoming.showTerms != currentConfig.showTerms ||
-            incoming.termsAndConditions != currentConfig.termsAndConditions ||
-            incoming.showStaffSign != currentConfig.showStaffSign ||
-            incoming.signLabel != currentConfig.signLabel ||
-            incoming.showCustomerSignChallan != currentConfig.showCustomerSignChallan ||
-            incoming.showQrCode != currentConfig.showQrCode ||
-            incoming.qrCodePath != currentConfig.qrCodePath ||
-            incoming.bankAccName != currentConfig.bankAccName ||
-            incoming.bankAccNumber != currentConfig.bankAccNumber ||
-            incoming.bankIfsc != currentConfig.bankIfsc ||
-            incoming.bankNameBranch != currentConfig.bankNameBranch ||
-            incoming.isMailActive != currentConfig.isMailActive ||
-            incoming.smtpMailID != currentConfig.smtpMailID ||
-            incoming.smtpMailPass != currentConfig.smtpMailPass ||
-            incoming.smtpHost != currentConfig.smtpHost ||
-            incoming.smtpPort != currentConfig.smtpPort ||
-            incoming.caName != currentConfig.caName ||
-            incoming.caMailID != currentConfig.caMailID ||
-            incoming.caPhone != currentConfig.caPhone ||
-            incoming.isAuditMode != currentConfig.isAuditMode;
-        if (incoming.version > bestVer ||
-            incoming.updatedAt > bestTs ||
-            (bestTs == 0 && fieldDiff)) {
-          updated = incoming;
-          bestVer = incoming.version;
-          bestTs = incoming.updatedAt;
-        }
-      }
-    }
-    if (updated != null) {
-      onConfigMutated(updated);
-      return true;
-    }
-    return false;
+    return SettingsSyncModule.applyEdgeEventsToLocalConfig(
+      currentConfig: currentConfig,
+      edgeEvents: edgeEvents,
+      onConfigMutated: onConfigMutated,
+    );
   }
 }

@@ -1,14 +1,17 @@
 // FILE: lib/web_live_sync/sub_views/web_settings/web_settings_sync_coordinator.dart
-// Revision: #PH-REV-793 (ENTERPRISE-FY-ISOLATED-BRANDING-AND-BASE64-LOGO-SYNC)
+// Revision: #PH-REV-794 (ENTERPRISE-WEB-SETTINGS-D1-FAST-PATH)
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../pharoah_web_manager.dart';
+import '../../../models.dart';
 import '../../../logic/app_settings_model.dart';
+import 'services/web_settings_d1_sync_service.dart';
 
 class WebSettingsSyncCoordinator {
   /// Centrally saves AppConfig from Web, ensures monotonic versioning,
-  /// saves specifically into the active FY snapshot in fyVault, and pushes to D1 Edge & Cloud.
+  /// saves specifically into the active FY snapshot in fyVault, and pushes to D1 Edge with fast ~200ms confirmation.
   static Future<bool> saveAndBroadcastConfig({
     required PharoahWebManager webPh,
     required AppConfig updatedConfig,
@@ -29,14 +32,68 @@ class WebSettingsSyncCoordinator {
         };
       }
 
-      // 2. Dispatch via Manager which enqueues to SyncQueue and D1 Edge
-      webPh.updateAppConfig(updatedConfig);
+      // 2. Fast-Path D1 Edge Sync (~200ms roundtrip)
+      final bool d1Success = await WebSettingsD1SyncService.syncConfigToD1(
+        config: updatedConfig,
+        storeToken: webPh.activeStoreToken,
+        financialYear: activeFy,
+        clientSource: "WEB_PORTAL",
+      );
 
-      // 3. Trigger immediate cloud push to update Cloud storage
-      final bool cloudSynced = await webPh.pushUpdatedDataToCloud();
-      return cloudSynced;
+      // 3. Dispatch to local manager outbox & notify listeners
+      webPh.updateAppConfigWithoutBlockingCloud(updatedConfig);
+
+      // 4. Trigger background full-store cloud vault backup silently (unawaited so UI is not blocked)
+      unawaited(webPh.pushUpdatedDataToCloud().catchError((e) {
+        debugPrint("Background cloud push: $e");
+        return false;
+      }));
+
+      return d1Success;
     } catch (e) {
       debugPrint("WebSettingsSyncCoordinator error: $e");
+      return false;
+    }
+  }
+
+  /// Centrally saves NumberingSeries from Web, saves into active FY snapshot in fyVault, and pushes to D1 Edge.
+  static Future<bool> saveAndBroadcastSeries({
+    required PharoahWebManager webPh,
+    required List<NumberingSeries> updatedSeries,
+  }) async {
+    try {
+      webPh.numberingSeries = updatedSeries;
+
+      // 1. Save series.json specifically for the active Financial Year in fyVault
+      final activeFy = webPh.financialYear;
+      final seriesJsonStr = jsonEncode(updatedSeries.map((e) => e.toMap()).toList());
+      if (webPh.fyVault.containsKey(activeFy) && webPh.fyVault[activeFy] != null) {
+        webPh.fyVault[activeFy]!['series.json'] = seriesJsonStr;
+      } else {
+        webPh.fyVault[activeFy] = {
+          'series.json': seriesJsonStr,
+        };
+      }
+
+      // 2. Fast-Path D1 Edge Sync (~200ms)
+      final bool d1Success = await WebSettingsD1SyncService.syncSeriesToD1(
+        seriesList: updatedSeries,
+        storeToken: webPh.activeStoreToken,
+        financialYear: activeFy,
+        clientSource: "WEB_PORTAL",
+      );
+
+      webPh.notifyListeners();
+
+      // 3. Trigger background full-store backup silently
+      unawaited(webPh.pushUpdatedDataToCloud().catchError((e) {
+        debugPrint("Background series cloud push: $e");
+        return false;
+      }));
+
+      return d1Success;
+    } catch (e) {
+      debugPrint("WebSettingsSyncCoordinator series error: $e");
       return false;
     }
   }

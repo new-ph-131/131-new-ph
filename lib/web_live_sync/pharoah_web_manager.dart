@@ -1,3 +1,4 @@
+import '../sync_core/modules/settings_sync_module.dart';
 import '../gst/gst_diary/services/gst_diary_d1_sync_service.dart';
 import '../sync_core/modules/gst_diary_sync_module.dart';
 import '../sync_core/outbox/sync_queue_manager.dart';
@@ -726,7 +727,7 @@ class PharoahWebManager with ChangeNotifier {
           final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents);
           final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents);
           final bool gMut = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(gstDiarySessions, edgeEvents);
-          final bool cMut = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+          final bool cMut = SettingsSyncModule.applyEdgeEventsToLocalConfig(
             currentConfig: appConfig,
             edgeEvents: edgeEvents,
             onConfigMutated: (cfg) => appConfig = cfg,
@@ -3768,22 +3769,69 @@ class PharoahWebManager with ChangeNotifier {
     c.updatedAt = DateTime.now().millisecondsSinceEpoch;
     appConfig = c;
     if (activeStoreToken.isNotEmpty) {
-      SyncQueueManager.enqueueMutation(
-        syncId: 'APP_CONFIG_MASTER',
-        storeToken: activeStoreToken.trim().toUpperCase(),
-        docType: 'CONFIG',
-        currentVersion: c.version,
-        isDelete: false,
-        rawPayload: c.toMap(),
-      );
-      GstDiaryD1SyncService.onAppConfigSaved(c, activeStoreToken, clientSource: "WEB_PORTAL");
+      SettingsSyncModule.onConfigSaved(c, activeStoreToken, fy: financialYear);
     }
     _autoSyncService.triggerAutoSync(
       action: 'CONFIG_UPDATED',
-      entityId: 'APP_CONFIG_MASTER',
+      entityId: SettingsSyncModule.syncIdConfig,
     );
     notifyListeners();
     pushUpdatedDataToCloud();
+  }
+
+  void updateAppConfigWithoutBlockingCloud(AppConfig c) {
+    appConfig = c;
+    if (activeStoreToken.isNotEmpty) {
+      SettingsSyncModule.onConfigSaved(c, activeStoreToken, fy: financialYear);
+    }
+    _autoSyncService.triggerAutoSync(
+      action: 'CONFIG_UPDATED',
+      entityId: SettingsSyncModule.syncIdConfig,
+    );
+    notifyListeners();
+  }
+
+  List<NumberingSeries> getSeriesByType(String t) =>
+      numberingSeries.where((s) => s.type.toUpperCase() == t.toUpperCase()).toList();
+
+  NumberingSeries? getDefaultSeries(String t) {
+    final searchType = t.toUpperCase();
+    try {
+      return numberingSeries.firstWhere((s) => s.type.toUpperCase() == searchType && s.isDefault && s.isActive);
+    } catch (_) {
+      try {
+        return numberingSeries.firstWhere((s) => s.type.toUpperCase() == searchType && s.isActive);
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  void addNumberingSeries(NumberingSeries ns) {
+    numberingSeries.add(ns);
+    if (activeStoreToken.isNotEmpty) {
+      SettingsSyncModule.onSeriesSaved(numberingSeries, activeStoreToken, fy: financialYear);
+    }
+    notifyListeners();
+  }
+
+  void updateNumberingSeries(NumberingSeries ns) {
+    int i = numberingSeries.indexWhere((x) => x.id == ns.id);
+    if (i != -1) {
+      numberingSeries[i] = ns;
+      if (activeStoreToken.isNotEmpty) {
+        SettingsSyncModule.onSeriesSaved(numberingSeries, activeStoreToken, fy: financialYear);
+      }
+      notifyListeners();
+    }
+  }
+
+  void deleteNumberingSeries(String id) {
+    numberingSeries.removeWhere((x) => x.id == id);
+    if (activeStoreToken.isNotEmpty) {
+      SettingsSyncModule.onSeriesSaved(numberingSeries, activeStoreToken, fy: financialYear);
+    }
+    notifyListeners();
   }
 
   void changeBatchStatus({
