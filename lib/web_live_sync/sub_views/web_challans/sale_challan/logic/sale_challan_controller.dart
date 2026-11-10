@@ -40,11 +40,7 @@ class SaleChallanController extends ChangeNotifier {
         selectedCustomer = Party(id: existingRecord.partyId, name: existingRecord.partyName, state: existingRecord.partyState, gst: existingRecord.partyGstin);
       }
     } else {
-      challanNoC.text = WebPharoahNumberingEngine.getNextNumber(
-        prefix: "SCH-",
-        startFrom: 101,
-        currentList: webPh.saleChallans,
-      );
+      challanNoC.text = webPh.getNextBillNumber("CHALLAN", "WSCH-", 1);
       selectedDate = AppDateLogic.getSmartDate(webPh.financialYear);
     }
     notifyListeners();

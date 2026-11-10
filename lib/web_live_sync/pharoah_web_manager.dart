@@ -2908,16 +2908,22 @@ class PharoahWebManager with ChangeNotifier {
     int start = s?.startNumber ?? defaultStart;
     if (type == "SALE" && prefix.trim().toUpperCase() == "INV-") {
       prefix = "W-";
+      start = 1;
     } else if (type == "PURCHASE" && prefix.trim().toUpperCase() == "PUR-") {
       prefix = "WPUR-";
+      start = 1;
     } else if ((type == "PURCHASE_CHALLAN" || type == "CHALLAN_PUR") && prefix.trim().toUpperCase() == "PCH-") {
       prefix = "WPCH-";
+      start = 1;
     } else if ((type == "CHALLAN" || type == "SALE_CHALLAN") && prefix.trim().toUpperCase() == "SCH-") {
       prefix = "WSCH-";
-    } else if ((type == "RETURN" || type == "SALE_RETURN" || type == "CREDIT_NOTE") && prefix.trim().toUpperCase() == "CN-") {
+      start = 1;
+    } else if ((type == "RETURN" || type == "SALE_RETURN" || type == "CREDIT_NOTE") && (prefix.trim().toUpperCase() == "CN-" || prefix.trim().toUpperCase() == "SR-")) {
       prefix = "WCN-";
-    } else if ((type == "PURCHASE_RETURN" || type == "DEBIT_NOTE") && prefix.trim().toUpperCase() == "DN-") {
+      start = 1;
+    } else if ((type == "PURCHASE_RETURN" || type == "DEBIT_NOTE") && (prefix.trim().toUpperCase() == "DN-" || prefix.trim().toUpperCase() == "PR-")) {
       prefix = "WDN-";
+      start = 1;
     }
 
     List<dynamic> targetList;

@@ -45,7 +45,7 @@ class CreditNoteController extends ChangeNotifier {
         selectedCustomer = Party(id: 'temp', name: existingRecord.partyName);
       }
     } else {
-      noteNoC.text = webPh.getNextBillNumber("RETURN", "CN-", 101);
+      noteNoC.text = webPh.getNextBillNumber("RETURN", "WCN-", 1);
       selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
     }
     notifyListeners();

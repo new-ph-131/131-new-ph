@@ -1,16 +1,21 @@
 // FILE: lib/web_live_sync/web_pharoah_numbering_engine.dart
+// Revision: #PH-REV-795 (ENTERPRISE-STRICT-SERIES-PREFIX-ISOLATION)
 
 import 'web_models.dart';
 
 class WebPharoahNumberingEngine {
-  /// Coordinated sequential gap-filling number generator matching Mobile App
+  /// Coordinated sequential gap-filling number generator matching Mobile App.
+  /// 🛡️ STRICT SERIES PREFIX ISOLATION:
+  /// Evaluates only records that strictly match the requested [prefix].
+  /// App bills (INV-1, PUR-1) and Web bills (W-1, WPUR-1) or custom series (GST-1)
+  /// never cross-contaminate or increment each other's sequences.
   static String getNextNumber({
     required String prefix,
     required int startFrom,
     required List<dynamic> currentList,
   }) {
     List<int> existingNumbers = [];
-    String cleanPrefix = prefix.trim().toUpperCase();
+    final String cleanPrefix = prefix.trim().toUpperCase();
 
     for (var item in currentList) {
       String idToParse = "";
@@ -32,35 +37,32 @@ class WebPharoahNumberingEngine {
         } else if (item is Medicine) {
           idToParse = item.systemId;
         } else if (item is Map<String, dynamic>) {
-          idToParse = (item['billNo'] ?? item['internalNo'] ?? item['voucherNo'] ?? item['systemId'] ?? '').toString();
+          idToParse = (item['billNo'] ??
+                  item['internalNo'] ??
+                  item['voucherNo'] ??
+                  item['systemId'] ??
+                  '')
+              .toString();
         }
       } catch (_) {
         idToParse = "";
       }
 
-      String upperId = idToParse.trim().toUpperCase();
-      String numPart = upperId;
-      if (numPart.startsWith("WDN-")) numPart = numPart.substring(4);
-      else if (numPart.startsWith("DN-")) numPart = numPart.substring(3);
-      else if (numPart.startsWith("WCN-")) numPart = numPart.substring(4);
-      else if (numPart.startsWith("CN-")) numPart = numPart.substring(3);
-      else if (numPart.startsWith("WPUR-")) numPart = numPart.substring(5);
-      else if (numPart.startsWith("PUR-")) numPart = numPart.substring(4);
-      else if (numPart.startsWith("WSCH-")) numPart = numPart.substring(5);
-      else if (numPart.startsWith("SCH-")) numPart = numPart.substring(4);
-      else if (numPart.startsWith("WPCH-")) numPart = numPart.substring(5);
-      else if (numPart.startsWith("PCH-")) numPart = numPart.substring(4);
-      else if (numPart.startsWith("W-")) numPart = numPart.substring(2);
-      else if (numPart.startsWith("INV-")) numPart = numPart.substring(4);
-      else if (cleanPrefix.isNotEmpty && numPart.startsWith(cleanPrefix)) numPart = numPart.replaceFirst(cleanPrefix, "");
+      final String upperId = idToParse.trim().toUpperCase();
 
-      int? n = int.tryParse(numPart.trim());
-      if (n != null) existingNumbers.add(n);
+      // 🛡️ Strict Prefix Match: Only extract sequential integer if the ID starts with this exact prefix
+      if (cleanPrefix.isNotEmpty && upperId.startsWith(cleanPrefix)) {
+        final String numPart = upperId.substring(cleanPrefix.length).trim();
+        final int? n = int.tryParse(numPart);
+        if (n != null) {
+          existingNumbers.add(n);
+        }
+      }
     }
 
     if (existingNumbers.isNotEmpty) {
       existingNumbers.sort();
-      // Continuous gap-filling check
+      // Continuous gap-filling check starting from startFrom
       for (int i = startFrom; i <= existingNumbers.last; i++) {
         if (!existingNumbers.contains(i)) {
           return "$prefix$i";
