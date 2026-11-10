@@ -86,7 +86,7 @@ class _SeriesMasterViewState extends State<SeriesMasterView> with SingleTickerPr
                   controller: prefixC, 
                   enabled: !isLocked,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(labelText: "Prefix (e.g. RET-)", border: OutlineInputBorder())
+                  decoration: const InputDecoration(labelText: "Prefix (e.g. TXN-)", border: OutlineInputBorder())
                 ),
                 const SizedBox(height: 15),
                 TextField(

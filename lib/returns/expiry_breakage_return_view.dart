@@ -34,12 +34,16 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
     final ph = Provider.of<PharoahManager>(context, listen: false);
     if (ph.activeCompany != null) {
       var defaultRetSeries = ph.getDefaultSeries("RETURN");
+      final pref = (defaultRetSeries.prefix.isNotEmpty && defaultRetSeries.prefix != "SR-" && defaultRetSeries.prefix != "CN-")
+          ? defaultRetSeries.prefix
+          : "TXN-";
+      final startNo = defaultRetSeries.startNumber > 0 ? defaultRetSeries.startNumber : 1;
       
       String nextNo = await PharoahNumberingEngine.getNextNumber(
         type: "RETURN",
         companyID: ph.activeCompany!.id,
-        prefix: defaultRetSeries.prefix,
-        startFrom: defaultRetSeries.startNumber,
+        prefix: pref,
+        startFrom: startNo,
         currentList: ph.saleReturns,
       );
       
@@ -349,11 +353,15 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
     );
     
     if (ph.activeCompany != null) {
+      var defaultRetSeries = ph.getDefaultSeries("RETURN");
+      final pref = (defaultRetSeries.prefix.isNotEmpty && defaultRetSeries.prefix != "SR-" && defaultRetSeries.prefix != "CN-")
+          ? defaultRetSeries.prefix
+          : "TXN-";
       PharoahNumberingEngine.updateSeriesCounter(
         type: "RETURN", 
         companyID: ph.activeCompany!.id, 
-        usedNumber: returnNoC.text, 
-        prefix: ph.getDefaultSeries("RETURN").prefix
+        usedNumber: returnNoC.text.trim(), 
+        prefix: pref,
       );
     }
 

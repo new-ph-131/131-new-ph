@@ -67,9 +67,13 @@ class _SaleReturnViewState extends State<SaleReturnView> {
     } else {
       if (ph.activeCompany != null) {
         var series = ph.getDefaultSeries("RETURN");
+        final pref = (series.prefix.isNotEmpty && series.prefix != "SR-" && series.prefix != "CN-")
+            ? series.prefix
+            : "TXN-";
+        final startNo = series.startNumber > 0 ? series.startNumber : 1;
         String nextNo = await PharoahNumberingEngine.getNextNumber(
           type: "RETURN", companyID: ph.activeCompany!.id,
-          prefix: series.prefix, startFrom: series.startNumber, currentList: ph.saleReturns,
+          prefix: pref, startFrom: startNo, currentList: ph.saleReturns,
         );
         setState(() {
           returnNoC.text = nextNo;
@@ -432,10 +436,23 @@ class _SaleReturnViewState extends State<SaleReturnView> {
 
   void _handleSave(PharoahManager ph) {
     if (selectedParty == null) return;
+    final usedNo = returnNoC.text.trim();
     if (widget.existingRecord != null) {
-      ph.updateSaleReturn(id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
+      ph.updateSaleReturn(id: widget.existingRecord!.id, billNo: usedNo, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
     } else {
-      ph.finalizeSaleReturn(billNo: returnNoC.text, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
+      ph.finalizeSaleReturn(billNo: usedNo, date: selectedDate, party: selectedParty!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
+      if (ph.activeCompany != null) {
+        var series = ph.getDefaultSeries("RETURN");
+        final pref = (series.prefix.isNotEmpty && series.prefix != "SR-" && series.prefix != "CN-")
+            ? series.prefix
+            : "TXN-";
+        PharoahNumberingEngine.updateSeriesCounter(
+          type: "RETURN",
+          companyID: ph.activeCompany!.id,
+          usedNumber: usedNo,
+          prefix: pref,
+        );
+      }
     }
     Navigator.pop(context);
   }

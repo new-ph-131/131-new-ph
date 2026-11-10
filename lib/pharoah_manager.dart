@@ -3014,7 +3014,10 @@ void registerBatchActivity({
   // 9. DATA REGISTRY & YEAR-END
   // ===========================================================================
 
-  Future<void> setupNewCompanyEnvironment(CompanyProfile p, String f) async { activeCompany = p; currentFY = f; numberingSeries = [NumberingSeries(id: 's1', name: "Standard Retail", type: "SALE", prefix: "INV-", isDefault: true)]; medicines = DemoData.getMedicines(); companies = MasterDataLibrary.getTopCompanies(); salts = MasterDataLibrary.getTopSalts(); drugTypes = MasterDataLibrary.getDrugTypes(); parties = [DemoData.getDemoParty(), Party(id: 'cash', name: "CASH", group: "Cash in Hand")]; await save(); if (!companiesRegistry.any((c) => c.id == p.id)) { companiesRegistry.add(p); await saveRegistry(); } notifyListeners(); }
+  Future<void> setupNewCompanyEnvironment(CompanyProfile p, String f) async { activeCompany = p; currentFY = f; numberingSeries = [
+      NumberingSeries(id: 's1', name: "Standard Retail", type: "SALE", prefix: "INV-", isDefault: true),
+      NumberingSeries(id: 's_ret', name: "Standard Credit Note", type: "RETURN", prefix: "TXN-", isDefault: true, startNumber: 1),
+    ]; medicines = DemoData.getMedicines(); companies = MasterDataLibrary.getTopCompanies(); salts = MasterDataLibrary.getTopSalts(); drugTypes = MasterDataLibrary.getDrugTypes(); parties = [DemoData.getDemoParty(), Party(id: 'cash', name: "CASH", group: "Cash in Hand")]; await save(); if (!companiesRegistry.any((c) => c.id == p.id)) { companiesRegistry.add(p); await saveRegistry(); } notifyListeners(); }
 
   Future<Map<String, dynamic>> restoreCompanyFromCloud({
     required String storeToken,
@@ -3294,10 +3297,44 @@ void registerBatchActivity({
   NumberingSeries getDefaultSeries(String t) {
     final searchType = t.toUpperCase();
     try {
-      return numberingSeries.firstWhere((s) => s.type == searchType && s.isDefault && s.isActive);
+      var s = numberingSeries.firstWhere((s) => (s.type == searchType || (searchType == "RETURN" && (s.type == "SALE_RETURN" || s.type == "CREDIT_NOTE"))) && s.isDefault && s.isActive);
+      if (searchType == "RETURN" && (s.prefix == "SR-" || s.prefix == "CN-")) {
+        s = NumberingSeries(
+          id: s.id,
+          name: s.name.isNotEmpty ? s.name : 'Standard Credit Note',
+          type: "RETURN",
+          prefix: "TXN-",
+          startNumber: s.startNumber > 0 ? s.startNumber : 1,
+          isDefault: true,
+          isActive: true,
+        );
+        int idx = numberingSeries.indexWhere((x) => x.id == s.id);
+        if (idx != -1) {
+          numberingSeries[idx] = s;
+          save();
+        }
+      }
+      return s;
     } catch (e) {
       try {
-        return numberingSeries.firstWhere((s) => s.type == searchType && s.isActive);
+        var s = numberingSeries.firstWhere((s) => (s.type == searchType || (searchType == "RETURN" && (s.type == "SALE_RETURN" || s.type == "CREDIT_NOTE"))) && s.isActive);
+        if (searchType == "RETURN" && (s.prefix == "SR-" || s.prefix == "CN-")) {
+          s = NumberingSeries(
+            id: s.id,
+            name: s.name.isNotEmpty ? s.name : 'Standard Credit Note',
+            type: "RETURN",
+            prefix: "TXN-",
+            startNumber: s.startNumber > 0 ? s.startNumber : 1,
+            isDefault: s.isDefault,
+            isActive: true,
+          );
+          int idx = numberingSeries.indexWhere((x) => x.id == s.id);
+          if (idx != -1) {
+            numberingSeries[idx] = s;
+            save();
+          }
+        }
+        return s;
       } catch (e) {
         String prefix;
         if (searchType == "RECEIPT") {
@@ -3311,15 +3348,15 @@ void registerBatchActivity({
         } else if (searchType == "PURCHASE") {
           prefix = "PUR-";
         } else if (searchType == "SALE") {
-          prefix = "SALE-";
-        } else if (searchType == "RETURN" || searchType == "SALE_RETURN") {
-          prefix = "SR-";
-        } else if (searchType == "PURCHASE_RETURN") {
-          prefix = "PR-";
+          prefix = "INV-";
+        } else if (searchType == "RETURN" || searchType == "SALE_RETURN" || searchType == "CREDIT_NOTE" || searchType == "CN") {
+          prefix = "TXN-";
+        } else if (searchType == "PURCHASE_RETURN" || searchType == "DEBIT_NOTE" || searchType == "DN") {
+          prefix = "DN-";
         } else {
           prefix = "TXN-";
         }
-        return NumberingSeries(id: 'sys_$searchType', name: 'System Default', type: searchType, prefix: prefix, isDefault: true);
+        return NumberingSeries(id: 'sys_$searchType', name: 'Credit Note Default', type: searchType, prefix: prefix, isDefault: true, startNumber: 1);
       }
     }
   }

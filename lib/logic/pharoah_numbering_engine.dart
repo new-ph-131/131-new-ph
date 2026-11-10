@@ -44,8 +44,10 @@ class PharoahNumberingEngine {
         idToParse = ""; 
       }
 
-      if (idToParse.startsWith(prefix)) {
-        String numPart = idToParse.replaceFirst(prefix, "");
+      final upperId = idToParse.trim().toUpperCase();
+      final upperPrefix = prefix.trim().toUpperCase();
+      if (upperId.startsWith(upperPrefix)) {
+        String numPart = upperId.substring(upperPrefix.length).trim();
         int? n = int.tryParse(numPart);
         if (n != null) existingNumbers.add(n);
       }
@@ -79,15 +81,16 @@ class PharoahNumberingEngine {
     required String usedNumber,
     required String prefix,
   }) async {
-    if (!usedNumber.startsWith(prefix)) return;
-
+    final upperUsed = usedNumber.trim().toUpperCase();
+    final upperPrefix = prefix.trim().toUpperCase();
+    if (!upperUsed.startsWith(upperPrefix)) return;
     final prefs = await SharedPreferences.getInstance();
-    
+        
     // Naya Year Namespace Key
     String currentFY = prefs.getString('active_fy_$companyID') ?? "default_fy";
-    String counterKey = 'lastID_${type}_${prefix}_${companyID}_$currentFY';
-    
-    String numStr = usedNumber.replaceFirst(prefix, "");
+    String counterKey = 'lastID_${type}_${upperPrefix}_${companyID}_$currentFY';
+        
+    String numStr = upperUsed.substring(upperPrefix.length).trim();
     int? usedInt = int.tryParse(numStr);
     
     if (usedInt != null) {
