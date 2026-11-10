@@ -33,7 +33,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
   final searchController = TextEditingController();
 
   DateTime selectedBillDate = DateTime.now();
-  DateTime selectedEntryDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
+  DateTime selectedEntryDate = DateTime.now();
   String paymentMode = "CREDIT";
   Party? selectedSupplier;
   String searchQuery = "";
