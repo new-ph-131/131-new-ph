@@ -10,6 +10,7 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_mail/services/web_mail_router_service.dart';
 
 class WebLedgerView extends StatefulWidget {
   final VoidCallback onBack;
@@ -418,6 +419,34 @@ class _WebLedgerViewState extends State<WebLedgerView> {
               style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
             ),
             const Spacer(),
+            if (webPh.appConfig.isMailActive) ...[
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: webPh.appConfig.isAuditMode ? const Color(0xFFEA580C) : const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () => WebMailRouterService.emailDocument(
+                  context: context,
+                  doc: statementData,
+                  party: selectedParty!,
+                  webPh: webPh,
+                  type: "LEDGER",
+                  fromDate: fromDate,
+                  toDate: toDate,
+                ),
+                icon: Icon(
+                  webPh.appConfig.isAuditMode ? Icons.forward_to_inbox_rounded : Icons.alternate_email_rounded,
+                  size: 16,
+                ),
+                label: Text(
+                  webPh.appConfig.isAuditMode ? "MAIL TO CA" : "MAIL TO PARTY",
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0F766E),

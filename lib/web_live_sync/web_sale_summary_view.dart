@@ -8,6 +8,8 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
+import 'sub_views/web_mail/services/web_mail_router_service.dart';
 import 'sub_views/web_billing/web_new_sale_view.dart';
 
 class WebSaleSummaryView extends StatefulWidget {
@@ -283,6 +285,14 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
                         const SizedBox(width: 14),
                         
                         if (!isSelectionMode) ...[
+                          WebSmartMailButton(
+                            webPh: webPh,
+                            doc: s,
+                            party: p,
+                            type: "SALE",
+                            normalColor: const Color(0xFF38BDF8),
+                            normalTooltip: "Send to Customer Mail",
+                          ),
                           IconButton(
                             icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18), 
                             tooltip: "Print Landscape Invoice",
@@ -354,19 +364,56 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
 
           if (isSelectionMode && selectedBillIds.isNotEmpty) ...[
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF59E0B), 
-                  foregroundColor: Colors.black, 
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF59E0B), 
+                        foregroundColor: Colors.black, 
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => _handleBatchZipExport(webPh),
+                      icon: const Icon(Icons.folder_zip_rounded, size: 18),
+                      label: Text("DOWNLOAD ${selectedBillIds.length} BILLS AS ZIP", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                    ),
+                  ),
                 ),
-                onPressed: () => _handleBatchZipExport(webPh),
-                icon: const Icon(Icons.folder_zip_rounded, size: 18),
-                label: Text("DOWNLOAD ${selectedBillIds.length} SELECTED INVOICES AS ZIP", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-              ),
+                if (webPh.appConfig.isMailActive) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEA580C),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          final billsToZip = webPh.sales.where((s) => selectedBillIds.contains(s.id)).toList();
+                          final ok = await WebMailRouterService.sendBatchToCa(
+                            context: context,
+                            documents: billsToZip,
+                            webPh: webPh,
+                            type: "SALE",
+                          );
+                          if (ok && mounted) {
+                            setState(() {
+                              isSelectionMode = false;
+                              selectedBillIds.clear();
+                            });
+                          }
+                        },
+                        icon: const Icon(Icons.forward_to_inbox_rounded, size: 18),
+                        label: Text("MAIL ${selectedBillIds.length} BILLS ZIP TO CA", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ],
@@ -451,6 +498,20 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
                 WebPdfRouterService.printSaleReport(sales: filteredSales, shop: activeShop, from: fromDate, to: toDate);
               } else if (val == 'download') {
                 WebPdfRouterService.downloadSaleReport(sales: filteredSales, shop: activeShop, from: fromDate, to: toDate);
+              } else if (val == 'mail') {
+                WebMailRouterService.emailDocument(
+                  context: context,
+                  doc: filteredSales,
+                  party: Party(
+                    id: 'internal',
+                    name: webPh.appConfig.isAuditMode ? 'CA Summary' : 'Sale Register',
+                    email: webPh.appConfig.isAuditMode ? webPh.appConfig.caMailID : webPh.appConfig.smtpMailID,
+                  ),
+                  webPh: webPh,
+                  type: "LEDGER",
+                  fromDate: fromDate,
+                  toDate: toDate,
+                );
               }
             },
             itemBuilder: (c) => [
@@ -474,6 +535,24 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
                   ],
                 ),
               ),
+              if (webPh.appConfig.isMailActive)
+                PopupMenuItem(
+                  value: 'mail',
+                  child: Row(
+                    children: [
+                      Icon(
+                        webPh.appConfig.isAuditMode ? Icons.forward_to_inbox_rounded : Icons.alternate_email_rounded,
+                        size: 18,
+                        color: webPh.appConfig.isAuditMode ? const Color(0xFFFB923C) : const Color(0xFF38BDF8),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        webPh.appConfig.isAuditMode ? "Mail Summary to CA" : "Mail Summary to My Mail",
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
           const SizedBox(width: 8),

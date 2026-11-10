@@ -9,6 +9,7 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
 import 'sub_views/web_returns/credit_note/ui/web_credit_note_screen.dart';
 import 'sub_views/web_returns/debit_note/ui/web_debit_note_screen.dart';
 
@@ -444,6 +445,14 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                               ),
                             ),
                             const SizedBox(width: 12),
+                            WebSmartMailButton(
+                              webPh: webPh,
+                              doc: item,
+                              party: webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party)),
+                              type: isCn ? "CN" : "DN",
+                              normalColor: isCn ? const Color(0xFFF87171) : const Color(0xFFFBBF24),
+                              normalTooltip: "Send to Party Mail",
+                            ),
                             IconButton(
                               icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18),
                               tooltip: isCn ? "Print Credit Note" : "Print Debit Note",

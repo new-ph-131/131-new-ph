@@ -7,6 +7,7 @@ import '../../pharoah_web_manager.dart';
 import '../../web_models.dart';
 import '../../web_app_date_logic.dart';
 import '../../web_pdf_router_service.dart';
+import '../web_mail/widgets/web_smart_mail_button.dart';
 import 'web_accounts_excel_service.dart';
 
 class WebVoucherHistoryWidget extends StatefulWidget {
@@ -391,6 +392,20 @@ class _WebVoucherHistoryWidgetState extends State<WebVoucherHistoryWidget> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // 0. SMART MAIL BUTTON (Party vs CA)
+              if (widget.webPh.appConfig.isMailActive) ...[
+                WebSmartMailButton(
+                  webPh: widget.webPh,
+                  doc: v,
+                  party: widget.webPh.parties.firstWhere(
+                    (pt) => pt.id == v.partyId || pt.name == v.partyName,
+                    orElse: () => Party(id: v.partyId, name: v.partyName),
+                  ),
+                  type: "VOUCHER",
+                  isPillStyle: true,
+                ),
+                const SizedBox(width: 5),
+              ],
               // 1. PRINT BUTTON
               _actionPillBtn(
                 icon: Icons.print_rounded,

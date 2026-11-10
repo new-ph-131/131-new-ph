@@ -8,6 +8,7 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
 import 'sub_views/web_challans/web_sale_challan_billing_view.dart';
 import 'sub_views/web_challans/web_purchase_challan_billing_view.dart';
 import 'sub_views/web_challans/web_sale_challan_view.dart';
@@ -235,6 +236,18 @@ class _WebChallanViewState extends State<WebChallanView> {
                               _openSaleChallanDetails(context, webPh, item, isReadOnly: false);
                             },
                           ),
+                          // 📬 SMART MAIL (Party vs CA)
+                          WebSmartMailButton(
+                            webPh: webPh,
+                            doc: item,
+                            party: webPh.parties.firstWhere(
+                              (p) => p.name == item.partyName,
+                              orElse: () => Party(id: 'temp', name: item.partyName, gst: item.partyGstin, state: item.partyState),
+                            ),
+                            type: "CHALLAN",
+                            normalColor: const Color(0xFF38BDF8),
+                            normalTooltip: "Mail to Customer",
+                          ),
                           // 🖨️ PRINT
                           IconButton(
                             icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18),
@@ -413,6 +426,18 @@ class _WebChallanViewState extends State<WebChallanView> {
                               }
                               _openPurchaseChallanDetails(context, webPh, item, isReadOnly: false);
                             },
+                          ),
+                          // 📬 SMART MAIL (Supplier vs CA)
+                          WebSmartMailButton(
+                            webPh: webPh,
+                            doc: item,
+                            party: webPh.parties.firstWhere(
+                              (p) => p.name == item.distributorName,
+                              orElse: () => Party(id: 'temp', name: item.distributorName),
+                            ),
+                            type: "CHALLAN",
+                            normalColor: const Color(0xFFF59E0B),
+                            normalTooltip: "Mail to Supplier",
                           ),
                           // 🖨️ PRINT
                           IconButton(

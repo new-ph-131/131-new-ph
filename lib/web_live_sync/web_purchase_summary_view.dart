@@ -8,6 +8,8 @@ import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
 import 'web_pdf_router_service.dart';
+import 'sub_views/web_mail/widgets/web_smart_mail_button.dart';
+import 'sub_views/web_mail/services/web_mail_router_service.dart';
 import 'web_purchase_entry_view.dart';
 
 class WebPurchaseSummaryView extends StatefulWidget {
@@ -146,6 +148,20 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                       WebPdfRouterService.printPurchaseReport(purchases: filteredPurchases, shop: activeShop, from: fromDate, to: toDate);
                     } else if (val == 'download') {
                       WebPdfRouterService.downloadPurchaseReport(purchases: filteredPurchases, shop: activeShop, from: fromDate, to: toDate);
+                    } else if (val == 'mail') {
+                      WebMailRouterService.emailDocument(
+                        context: context,
+                        doc: filteredPurchases,
+                        party: Party(
+                          id: 'internal',
+                          name: webPh.appConfig.isAuditMode ? 'Inward Audit' : 'Purchase Register',
+                          email: webPh.appConfig.isAuditMode ? webPh.appConfig.caMailID : webPh.appConfig.smtpMailID,
+                        ),
+                        webPh: webPh,
+                        type: "LEDGER",
+                        fromDate: fromDate,
+                        toDate: toDate,
+                      );
                     }
                   },
                   itemBuilder: (c) => [
@@ -169,6 +185,24 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                         ],
                       ),
                     ),
+                    if (webPh.appConfig.isMailActive)
+                      PopupMenuItem(
+                        value: 'mail',
+                        child: Row(
+                          children: [
+                            Icon(
+                              webPh.appConfig.isAuditMode ? Icons.forward_to_inbox_rounded : Icons.alternate_email_rounded,
+                              size: 18,
+                              color: webPh.appConfig.isAuditMode ? const Color(0xFFFB923C) : const Color(0xFFF59E0B),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              webPh.appConfig.isAuditMode ? "Mail Summary to CA" : "Mail Summary to My Mail",
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ],
@@ -311,6 +345,14 @@ class _WebPurchaseSummaryViewState extends State<WebPurchaseSummaryView> {
                           ],
                         ),
                         const SizedBox(width: 14),
+                        WebSmartMailButton(
+                          webPh: webPh,
+                          doc: p,
+                          party: supplierObj,
+                          type: "PURCHASE",
+                          normalColor: const Color(0xFFF59E0B),
+                          normalTooltip: "Send to Supplier Mail",
+                        ),
                         IconButton(
                           icon: const Icon(Icons.print_outlined, color: Color(0xFF38BDF8), size: 18), 
                           tooltip: "Print Inward Slip",

@@ -1,3 +1,4 @@
+import "package:archive/archive.dart";
 import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
 // FILE: lib/web_live_sync/web_pdf_router_service.dart
 // ignore_for_file: prefer_const_constructors, unnecessary_const, prefer_interpolation_to_compose_strings
@@ -1176,7 +1177,42 @@ class WebPdfRouterService {
     await WebPurchaseReportPdf.downloadReport(purchases: purchases, shop: shop, from: from, to: to);
   }
   static Future<void> printChallanReport({required List<dynamic> challans, required CompanyProfile shop, required DateTime from, required DateTime to, required bool isSaleChallan}) async {}
-  static Future<void> downloadBulkZip({required List<dynamic> documents, required CompanyProfile shop, required AppConfig config, required Function(double, String) onProgress}) async {}
+  static Future<void> downloadBulkZip({required List<dynamic> documents, required CompanyProfile shop, required AppConfig config, required Function(double, String) onProgress}) async {
+    final archive = Archive();
+    for (int i = 0; i < documents.length; i++) {
+      final doc = documents[i];
+      if (doc is Sale) {
+        onProgress((i + 1) / documents.length, doc.partyName);
+        final party = Party(
+          id: doc.partyId,
+          name: doc.partyName,
+          gst: doc.partyGstin,
+          state: doc.partyState,
+          address: doc.partyAddress,
+          city: doc.partyCity,
+          phone: doc.partyPhone,
+          email: doc.partyEmail,
+          dl: doc.partyDl,
+        );
+        final bytes = await generateSaleBytes(sale: doc, party: party, shop: shop, config: config);
+        final safeNo = doc.billNo.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+        archive.addFile(ArchiveFile("$safeNo.pdf", bytes.length, bytes));
+      } else if (doc is Purchase) {
+        onProgress((i + 1) / documents.length, doc.distributorName);
+        final party = Party(id: doc.partyId, name: doc.distributorName);
+        final bytes = await generatePurchaseBytes(purchase: doc, party: party, shop: shop);
+        final safeNo = (doc.billNo.isNotEmpty ? doc.billNo : doc.internalNo).replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+        archive.addFile(ArchiveFile("$safeNo.pdf", bytes.length, bytes));
+      }
+    }
+    final zipData = ZipEncoder().encode(archive);
+    if (zipData != null) {
+      await Printing.sharePdf(
+        bytes: Uint8List.fromList(zipData),
+        filename: "Invoices_Bundle_${DateFormat('ddMM_HHmm').format(DateTime.now())}.zip",
+      );
+    }
+  }
 
 
   static Future<void> printPartyLedger({
