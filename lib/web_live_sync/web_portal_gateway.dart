@@ -153,7 +153,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
         webPh: webPh,
         showGlobalSearch: isHomeDashboard,
         onSearchChanged: (v) => setState(() => searchQuery = v),
-        onSettingsPressed: () => _handleActionTap("GO_SETTINGS", "GLOBAL ERP SETTINGS"),
+        onSettingsPressed: () => _handleActionTap("Settings", Icons.settings_suggest_rounded, "GO_SETTINGS"),
       ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -5,8 +5,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../pharoah_web_manager.dart';
 import '../../../logic/app_settings_model.dart';
-import '../../sync_protocol/sync_queue_manager.dart';
-import '../../../gst/gst_diary/services/gst_diary_d1_sync_service.dart';
 
 class WebSettingsSyncCoordinator {
   /// Centrally saves AppConfig from Web, ensures monotonic versioning,
