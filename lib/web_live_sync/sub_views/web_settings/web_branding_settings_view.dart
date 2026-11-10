@@ -92,6 +92,72 @@ class _WebBrandingSettingsViewState extends State<WebBrandingSettingsView> {
     }
   }
 
+
+  Widget _buildLogoPreviewCard(PharoahWebManager webPh) {
+    dynamic imgBytes;
+    if (logoPath != null && logoPath!.startsWith("data:image")) {
+      try {
+        final comma = logoPath!.indexOf(',');
+        final raw = comma != -1 ? logoPath!.substring(comma + 1) : logoPath!;
+        imgBytes = base64Decode(raw.replaceAll('
+', '').trim());
+      } catch (_) {}
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black38,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.purpleAccent.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4)],
+            ),
+            child: imgBytes != null
+                ? Image.memory(imgBytes, fit: BoxFit.contain)
+                : const Icon(Icons.storefront_rounded, color: Colors.purple, size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 14),
+                    SizedBox(width: 5),
+                    Text("Shop Logo Ready & Cloud-Linked", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  "Isolated to Financial Year: ${webPh.financialYear}",
+                  style: const TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.redAccent),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
+            onPressed: () => setState(() => logoPath = null),
+            child: const Text("REMOVE", style: TextStyle(color: Colors.redAccent, fontSize: 10.5, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
@@ -187,28 +253,8 @@ class _WebBrandingSettingsViewState extends State<WebBrandingSettingsView> {
                     ),
                   ),
                   if (logoPath != null && logoPath!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.black38,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.purple.withOpacity(0.4)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 18),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text("Logo configured & active", style: TextStyle(color: Colors.white70, fontSize: 11)),
-                          ),
-                          TextButton(
-                            onPressed: () => setState(() => logoPath = null),
-                            child: const Text("REMOVE", style: TextStyle(color: Colors.redAccent, fontSize: 11)),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const SizedBox(height: 12),
+                    _buildLogoPreviewCard(webPh),
                   ],
 
                   const Divider(color: Colors.white10, height: 36),

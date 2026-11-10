@@ -3015,7 +3015,16 @@ class PharoahWebManager with ChangeNotifier {
     D1SalesLedgerService.activeFinancialYear = cleanTarget;
 
     if (fyVault.containsKey(cleanTarget) && fyVault[cleanTarget]!.isNotEmpty) {
-      _parseDownloadedFiles(Map<String, dynamic>.from(fyVault[cleanTarget]!));
+      final targetFiles = Map<String, dynamic>.from(fyVault[cleanTarget]!);
+      if (targetFiles.containsKey('config.json') && targetFiles['config.json'] != null) {
+        try {
+          final cMap = jsonDecode(targetFiles['config.json']);
+          if (cMap is Map<String, dynamic>) {
+            appConfig = AppConfig.fromMap(cMap);
+          }
+        } catch (_) {}
+      }
+      _parseDownloadedFiles(targetFiles);
     }
     rebuildInventory();
     notifyListeners();

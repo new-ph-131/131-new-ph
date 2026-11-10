@@ -1,6 +1,8 @@
 // FILE: lib/administration/architect_control_view.dart (FULLY RESOLVED PRODUCTION CODE)
 
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -127,12 +129,14 @@ class _ArchitectControlViewState extends State<ArchitectControlView> with Single
 
   Future<void> _pickImage(PharoahManager ph, bool isLogo) async {
     final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 600, maxHeight: 300, imageQuality: 75);
     if (image != null) {
+      final bytes = await image.readAsBytes();
+      final base64String = "data:image/png;base64,${base64Encode(bytes)}";
       if (isLogo) {
-        ph.config.logoPath = image.path;
+        ph.config.logoPath = base64String;
       } else {
-        ph.config.qrCodePath = image.path;
+        ph.config.qrCodePath = base64String;
       }
       ph.updateAppConfig(ph.config);
       setState(() {});
@@ -532,15 +536,45 @@ class _ArchitectControlViewState extends State<ArchitectControlView> with Single
   }
 
   Widget _imageIndicator(String path) {
+    Uint8List? bytes;
+    if (path.startsWith("data:image")) {
+      try {
+        final commaIdx = path.indexOf(',');
+        final raw = commaIdx != -1 ? path.substring(commaIdx + 1) : path;
+        bytes = base64Decode(raw.replaceAll('
+', '').trim());
+      } catch (_) {}
+    }
     return Padding(
-      padding: const EdgeInsets.only(top: 8), 
-      child: Row(
-        children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 14), 
-          const SizedBox(width: 5), 
-          Text("Selected: ${path.split('/').last}", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blueGrey))
-        ]
-      )
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.purple.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (bytes != null)
+              Container(
+                width: 28,
+                height: 28,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4)),
+                child: Image.memory(bytes, fit: BoxFit.contain),
+              )
+            else
+              const Icon(Icons.check_circle, color: Colors.green, size: 14),
+            const SizedBox(width: 5),
+            Text(
+              path.startsWith("data:image") ? "Active Image (Cloud Synced)" : "Selected: ${path.split('/').last}",
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

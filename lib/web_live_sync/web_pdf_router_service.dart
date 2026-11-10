@@ -36,6 +36,15 @@ class WebPdfRouterService {
     if (totalPages == 0) totalPages = 1;
     bool isLocal = shop.state.trim().toLowerCase() == (party.state.isNotEmpty ? party.state : sale.partyState).trim().toLowerCase();
 
+    pw.MemoryImage? logoImage;
+    if (config.showLogo && config.logoPath != null && config.logoPath!.isNotEmpty) {
+      logoImage = PdfMasterService.resolveBase64Image(config.logoPath);
+    }
+    pw.MemoryImage? qrImage;
+    if (config.showQrCode && config.qrCodePath != null && config.qrCodePath!.isNotEmpty) {
+      qrImage = PdfMasterService.resolveBase64Image(config.qrCodePath);
+    }
+
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
       int end = (start + itemsPerPage < sale.items.length) ? start + itemsPerPage : sale.items.length;
@@ -58,13 +67,27 @@ class WebPdfRouterService {
                       children: [
                         _hBox(
                           280, true,
-                          pw.Column(
+                          pw.Row(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                              pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
-                              pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
+                              if (logoImage != null)
+                                pw.Container(
+                                  width: 38,
+                                  height: 38,
+                                  margin: const pw.EdgeInsets.only(right: 6),
+                                  child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                                ),
+                              pw.Expanded(
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                                    pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
+                                    pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                    pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -135,7 +158,7 @@ class WebPdfRouterService {
                         }).toList(),
                       ),
                     ),
-                    if (isLastPage) _buildSaleFooter(shop.name, sale, isLocal)
+                    if (isLastPage) _buildSaleFooter(shop.name, sale, config, isLocal, qrImage)
                     else pw.Container(
                       height: 25, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
                       child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
@@ -642,13 +665,27 @@ class WebPdfRouterService {
                       children: [
                         _hBox(
                           280, true,
-                          pw.Column(
+                          pw.Row(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                              pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
-                              pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
+                              if (logoImage != null)
+                                pw.Container(
+                                  width: 38,
+                                  height: 38,
+                                  margin: const pw.EdgeInsets.only(right: 6),
+                                  child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                                ),
+                              pw.Expanded(
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                                    pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
+                                    pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                    pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -909,13 +946,27 @@ class WebPdfRouterService {
                       children: [
                         _hBox(
                           280, true,
-                          pw.Column(
+                          pw.Row(
                             crossAxisAlignment: pw.CrossAxisAlignment.start,
                             children: [
-                              pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
-                              pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
-                              pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
-                              pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
+                              if (logoImage != null)
+                                pw.Container(
+                                  width: 38,
+                                  height: 38,
+                                  margin: const pw.EdgeInsets.only(right: 6),
+                                  child: pw.Image(logoImage, fit: pw.BoxFit.contain),
+                                ),
+                              pw.Expanded(
+                                child: pw.Column(
+                                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                                  children: [
+                                    pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+                                    pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), maxLines: 2),
+                                    pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+                                    pw.Text("Mob: ${shop.phone}${shop.email.isNotEmpty ? ' | Email: ${shop.email.toLowerCase()}' : ''}", style: pw.TextStyle(fontSize: 7)),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -1195,7 +1246,7 @@ class WebPdfRouterService {
   static pw.Widget _tCol(String t, double w, {bool isLast = false, bool isLeft = false}) => pw.Container(width: w, height: 18, alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, padding: const pw.EdgeInsets.only(left: 5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: isLast ? 0 : 0.5), bottom: const pw.BorderSide(width: 0.5))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
   static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
 
-  static pw.Widget _buildSaleFooter(String shopName, Sale sale, bool isLocal) {
+  static pw.Widget _buildSaleFooter(String shopName, Sale sale, AppConfig config, bool isLocal, pw.MemoryImage? qrImage) {
     final summary = WebBillingGstEngine.calculate(
       items: sale.items,
       extraDiscount: sale.extraDiscount,
@@ -1214,7 +1265,31 @@ class WebPdfRouterService {
                 pw.Text("Amount in Words:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
                 pw.Text("RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
                 pw.Spacer(),
-                pw.Text("Terms: Goods once sold will not be taken back.", style: pw.TextStyle(fontSize: 6)),
+                if (qrImage != null || config.bankAccNumber.isNotEmpty)
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      if (qrImage != null)
+                        pw.Container(width: 40, height: 40, margin: const pw.EdgeInsets.only(right: 8), child: pw.Image(qrImage)),
+                      if (config.bankAccNumber.isNotEmpty)
+                        pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text("BANK: ${config.bankNameBranch.toUpperCase()}", style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                            pw.Text("A/C: ${config.bankAccNumber}", style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                            pw.Text("IFSC: ${config.bankIfsc.toUpperCase()}", style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold)),
+                          ],
+                        ),
+                    ],
+                  ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  config.showTerms && config.termsAndConditions.isNotEmpty
+                      ? config.termsAndConditions
+                      : "Terms: Goods once sold will not be taken back.",
+                  style: pw.TextStyle(fontSize: 5.5, color: PdfColors.grey700),
+                  maxLines: 2,
+                ),
               ],
             ),
           ),

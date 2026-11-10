@@ -1,6 +1,7 @@
 // FILE: lib/pdf/architect_bulk_service.dart
 
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
@@ -74,6 +75,24 @@ class ArchitectBulkService {
     double totalCGST = sale.items.fold(0, (sum, i) => sum + i.cgst);
     int roundedTotal = sale.totalAmount.round();
 
+    pw.MemoryImage? bulkLogo;
+    if (config.showLogo && config.logoPath != null && config.logoPath!.isNotEmpty) {
+      try {
+        bulkLogo = PdfMasterService.resolveBase64Image(config.logoPath);
+        if (bulkLogo == null && File(config.logoPath!).existsSync()) {
+          bulkLogo = pw.MemoryImage(File(config.logoPath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
+    pw.MemoryImage? bulkQr;
+    if (config.showQrCode && config.qrCodePath != null && config.qrCodePath!.isNotEmpty) {
+      try {
+        bulkQr = PdfMasterService.resolveBase64Image(config.qrCodePath);
+        if (bulkQr == null && File(config.qrCodePath!).existsSync()) {
+          bulkQr = pw.MemoryImage(File(config.qrCodePath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
       int end = (start + itemsPerPage < sale.items.length) ? start + itemsPerPage : sale.items.length;
@@ -91,8 +110,8 @@ class ArchitectBulkService {
             pw.Row(children: [
               // Box 1: Shop
               _hBox(285, true, pw.Row(children: [
-                if (config.showLogo && config.logoPath != null && File(config.logoPath!).existsSync())
-                  pw.Container(width: 40, height: 40, margin: const pw.EdgeInsets.only(right: 5), child: pw.Image(pw.MemoryImage(File(config.logoPath!).readAsBytesSync()))),
+                if (bulkLogo != null)
+                  pw.Container(width: 40, height: 40, margin: const pw.EdgeInsets.only(right: 5), child: pw.Image(bulkLogo)),
                 pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
                   pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
@@ -161,6 +180,24 @@ class ArchitectBulkService {
     double totalGst = pur.totalAmount - totalTaxable;
     int roundedTotal = pur.totalAmount.round();
 
+    pw.MemoryImage? bulkLogo;
+    if (config.showLogo && config.logoPath != null && config.logoPath!.isNotEmpty) {
+      try {
+        bulkLogo = PdfMasterService.resolveBase64Image(config.logoPath);
+        if (bulkLogo == null && File(config.logoPath!).existsSync()) {
+          bulkLogo = pw.MemoryImage(File(config.logoPath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
+    pw.MemoryImage? bulkQr;
+    if (config.showQrCode && config.qrCodePath != null && config.qrCodePath!.isNotEmpty) {
+      try {
+        bulkQr = PdfMasterService.resolveBase64Image(config.qrCodePath);
+        if (bulkQr == null && File(config.qrCodePath!).existsSync()) {
+          bulkQr = pw.MemoryImage(File(config.qrCodePath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
     for (int pageNum = 0; pageNum < totalPages; pageNum++) {
       int start = pageNum * itemsPerPage;
       int end = (start + itemsPerPage < pur.items.length) ? start + itemsPerPage : pur.items.length;
@@ -245,8 +282,8 @@ class ArchitectBulkService {
                 ],
                 if (!isPur && config.showTerms) pw.Text(config.termsAndConditions, style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700)),
               ])),
-              if (!isPur && config.showQrCode && config.qrCodePath != null && File(config.qrCodePath!).existsSync())
-                pw.Container(width: 50, height: 50, child: pw.Image(pw.MemoryImage(File(config.qrCodePath!).readAsBytesSync()))),
+              if (!isPur && bulkQr != null)
+                pw.Container(width: 50, height: 50, child: pw.Image(bulkQr)),
             ])
           ],
         )),

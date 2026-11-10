@@ -1,6 +1,8 @@
 // FILE: lib/pdf/thermal_invoice_pdf.dart
 
 import 'dart:io';
+import 'dart:convert';
+import 'pdf_master_service.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -12,6 +14,15 @@ import '../logic/app_settings_model.dart';
 class ThermalInvoicePdf {
   static Future<void> generate(Sale sale, Party party, CompanyProfile shop, AppConfig config) async {
     final pdf = pw.Document();
+    pw.MemoryImage? logoImage;
+    if (config.showLogo && config.logoPath != null && config.logoPath!.isNotEmpty) {
+      try {
+        logoImage = PdfMasterService.resolveBase64Image(config.logoPath);
+        if (logoImage == null && File(config.logoPath!).existsSync()) {
+          logoImage = pw.MemoryImage(File(config.logoPath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
 
     pdf.addPage(
       pw.Page(
@@ -24,8 +35,8 @@ class ThermalInvoicePdf {
               // --- HEADER ---
               pw.Center(
                 child: pw.Column(children: [
-                  if (config.showLogo && config.logoPath != null && File(config.logoPath!).existsSync())
-                    pw.Container(width: 40, height: 40, child: pw.Image(pw.MemoryImage(File(config.logoPath!).readAsBytesSync()))),
+                  if (logoImage != null)
+                    pw.Container(width: 40, height: 40, child: pw.Image(logoImage)),
                   pw.Text(shop.name.toUpperCase(), style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
                   pw.Text(shop.address, style: pw.TextStyle(fontSize: 7), textAlign: pw.TextAlign.center),
                   pw.Text("GSTIN: ${shop.gstin}", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),

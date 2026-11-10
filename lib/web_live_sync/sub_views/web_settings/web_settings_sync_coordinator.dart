@@ -1,5 +1,5 @@
 // FILE: lib/web_live_sync/sub_views/web_settings/web_settings_sync_coordinator.dart
-// Revision: #PH-REV-792 (ENTERPRISE-WEB-SETTINGS-HUB-AND-D1-CONFIG-SYNC)
+// Revision: #PH-REV-793 (ENTERPRISE-FY-ISOLATED-BRANDING-AND-BASE64-LOGO-SYNC)
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -8,7 +8,7 @@ import '../../../logic/app_settings_model.dart';
 
 class WebSettingsSyncCoordinator {
   /// Centrally saves AppConfig from Web, ensures monotonic versioning,
-  /// replicates across all Multi-FY snapshots, and pushes to D1 Edge & Cloud.
+  /// saves specifically into the active FY snapshot in fyVault, and pushes to D1 Edge & Cloud.
   static Future<bool> saveAndBroadcastConfig({
     required PharoahWebManager webPh,
     required AppConfig updatedConfig,
@@ -18,11 +18,16 @@ class WebSettingsSyncCoordinator {
       updatedConfig.updatedAt = DateTime.now().millisecondsSinceEpoch;
       webPh.appConfig = updatedConfig;
 
-      // 1. Mirror config.json across all FY snapshots in fyVault so FY switches never revert settings
+      // 1. Save config.json specifically for the active Financial Year in fyVault
+      final activeFy = webPh.financialYear;
       final configJsonStr = jsonEncode(updatedConfig.toMap());
-      webPh.fyVault.forEach((fy, files) {
-        files['config.json'] = configJsonStr;
-      });
+      if (webPh.fyVault.containsKey(activeFy) && webPh.fyVault[activeFy] != null) {
+        webPh.fyVault[activeFy]!['config.json'] = configJsonStr;
+      } else {
+        webPh.fyVault[activeFy] = {
+          'config.json': configJsonStr,
+        };
+      }
 
       // 2. Dispatch via Manager which enqueues to SyncQueue and D1 Edge
       webPh.updateAppConfig(updatedConfig);

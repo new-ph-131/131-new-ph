@@ -1,6 +1,7 @@
 // FILE: lib/pdf/universal_thermal_engine.dart (FINAL COMPREHENSIVE VERSION)
 
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -27,10 +28,25 @@ class UniversalThermalEngine {
     final shop = ph.activeCompany!;
     final config = ph.config;
 
-    // Load Logo
+    // Load Logo (Base64 Cloud or Local File)
     pw.MemoryImage? logoImg;
-    if (config.showLogo && config.logoPath != null && File(config.logoPath!).existsSync()) {
-      logoImg = pw.MemoryImage(File(config.logoPath!).readAsBytesSync());
+    if (config.showLogo && config.logoPath != null && config.logoPath!.isNotEmpty) {
+      try {
+        logoImg = PdfMasterService.resolveBase64Image(config.logoPath);
+        if (logoImg == null && File(config.logoPath!).existsSync()) {
+          logoImg = pw.MemoryImage(File(config.logoPath!).readAsBytesSync());
+        }
+      } catch (_) {}
+    }
+
+    pw.MemoryImage? qrImg;
+    if (config.showQrCode && config.qrCodePath != null && config.qrCodePath!.isNotEmpty) {
+      try {
+        qrImg = PdfMasterService.resolveBase64Image(config.qrCodePath);
+        if (qrImg == null && File(config.qrCodePath!).existsSync()) {
+          qrImg = pw.MemoryImage(File(config.qrCodePath!).readAsBytesSync());
+        }
+      } catch (_) {}
     }
 
     pdf.addPage(
@@ -217,8 +233,8 @@ class UniversalThermalEngine {
       PdfMasterService.thermalDivider(),
 
       // UPI QR
-      if (config.showQrCode && config.qrCodePath != null && File(config.qrCodePath!).existsSync())
-        pw.Center(child: pw.Container(width: 70, height: 70, child: pw.Image(pw.MemoryImage(File(config.qrCodePath!).readAsBytesSync())))),
+      if (qrImg != null)
+        pw.Center(child: pw.Container(width: 70, height: 70, child: pw.Image(qrImg))),
 
       pw.SizedBox(height: 5),
 

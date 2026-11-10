@@ -1,6 +1,7 @@
 // FILE: lib/pdf/architect_sale_pdf.dart (FULLY RESOLVED PRODUCTION CODE - WITH BANK DETAILS ON PRINT)
 
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data'; 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -39,16 +40,22 @@ class ArchitectSalePdf {
     pw.MemoryImage? qrImage;
 
     try {
-      if (config.showLogo && config.logoPath != null) {
-        final file = File(config.logoPath!);
-        if (await file.exists()) {
-          logoImage = pw.MemoryImage(await file.readAsBytes());
+      if (config.showLogo && config.logoPath != null && config.logoPath!.isNotEmpty) {
+        logoImage = PdfMasterService.resolveBase64Image(config.logoPath);
+        if (logoImage == null) {
+          final file = File(config.logoPath!);
+          if (await file.exists()) {
+            logoImage = pw.MemoryImage(await file.readAsBytes());
+          }
         }
       }
-      if (config.showQrCode && config.qrCodePath != null) {
-        final file = File(config.qrCodePath!);
-        if (await file.exists()) {
-          qrImage = pw.MemoryImage(await file.readAsBytes());
+      if (config.showQrCode && config.qrCodePath != null && config.qrCodePath!.isNotEmpty) {
+        qrImage = PdfMasterService.resolveBase64Image(config.qrCodePath);
+        if (qrImage == null) {
+          final file = File(config.qrCodePath!);
+          if (await file.exists()) {
+            qrImage = pw.MemoryImage(await file.readAsBytes());
+          }
         }
       }
     } catch (imgError) {
@@ -176,6 +183,10 @@ pw.Container(
       // Left Footer Box (QR Code and Bank Details side-by-side)
       pw.Container(width: 320, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text("Amt In Words: RUPEES ${PdfMasterService.numberToWords(sale.totalAmount.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+        if (config.showTerms && config.termsAndConditions.isNotEmpty) ...[
+          pw.SizedBox(height: 2),
+          pw.Text(config.termsAndConditions, style: const pw.TextStyle(fontSize: 5.5, color: PdfColors.grey700), maxLines: 2),
+        ],
         pw.Spacer(),
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -209,7 +220,7 @@ pw.Container(
       pw.Container(width: 230, padding: const pw.EdgeInsets.all(5), child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
         pw.Text("For $shopName", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 30),
-        pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+        pw.Text(config.signLabel.isNotEmpty ? config.signLabel.toUpperCase() : "AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700, fontWeight: pw.FontWeight.bold)),
       ])),
     ]));
   }

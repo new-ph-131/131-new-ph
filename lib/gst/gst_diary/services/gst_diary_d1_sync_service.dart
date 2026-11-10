@@ -109,6 +109,9 @@ class GstDiaryD1SyncService {
     final cfgMap = config.toMap();
     cfgMap["doc_type"] = configDocType;
     cfgMap["id"] = configSyncId;
+    if (D1SalesLedgerService.activeFinancialYear.isNotEmpty) {
+      cfgMap["fy"] = D1SalesLedgerService.activeFinancialYear;
+    }
 
     final payload = {
       "storeToken": storeToken.trim().toUpperCase(),
@@ -329,6 +332,11 @@ class GstDiaryD1SyncService {
       final String billId = (ev["bill_id"] ?? "").toString().trim();
       final dynamic rawData = ev["sale_data"];
       if (billId == configSyncId && rawData is Map) {
+        final evMap = Map<String, dynamic>.from(rawData);
+        final String eventFy = (evMap["fy"] ?? ev["fy"] ?? "").toString().trim();
+        if (eventFy.isNotEmpty && D1SalesLedgerService.activeFinancialYear.isNotEmpty && eventFy != D1SalesLedgerService.activeFinancialYear) {
+          continue;
+        }
         final incoming = AppConfig.fromMap(Map<String, dynamic>.from(rawData));
         final bool fieldDiff =
             incoming.developerAllowGstDiaryToUser != currentConfig.developerAllowGstDiaryToUser ||
