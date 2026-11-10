@@ -66,7 +66,7 @@ class MasterSyncOrchestrator {
     if (!isDeleteAction && _fyScopedTransactionTypes.contains(docType)) {
       final String targetFy = (phApp != null ? phApp.currentFY : (phWeb != null ? phWeb.financialYear : D1SalesLedgerService.activeFinancialYear)).trim();
       final DateTime? envDate = _extractEnvelopeDate(envelope.billData);
-      if (!D1SalesLedgerService.doesEventBelongToActiveFY(envelope.billData, envDate, targetFy: targetFy)) {
+      if (!D1SalesLedgerService.doesEventBelongToActiveFY(envelope.billData, envDate, targetFy)) {
         // Skip Pending Challans only if they are not Pending? Wait: Pending Challans carry forward across FYs!
         final String status = (envelope.billData['status'] ?? '').toString();
         final bool isPendingChallan = (docType == 'CHALLAN' || docType == 'SALE_CHALLAN' || docType == 'PURCHASE_CHALLAN') && status == 'Pending';

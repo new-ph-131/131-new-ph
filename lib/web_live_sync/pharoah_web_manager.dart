@@ -1144,6 +1144,7 @@ class PharoahWebManager with ChangeNotifier {
     WebBatchResolver.normalizeAndHealBatchHistory(
       medicines: medicines,
       batchHistory: batchHistory,
+      purchases: purchases,
     );
     WebInventoryLogicCenter.rebuildWebInventory(
       medicines: medicines,

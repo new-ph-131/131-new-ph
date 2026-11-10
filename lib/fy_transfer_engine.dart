@@ -311,16 +311,16 @@ class FYTransferEngine {
           final BatchInfo openingBatch = BatchInfo(
             batch: "OPENING",
             exp: "N/A",
+            packing: m.packing,
+            mrp: m.mrp,
+            rate: m.purRate > 0 ? m.purRate : m.rateA,
             qty: m.stock,
             openingQty: m.stock,
             adjustmentQty: 0,
-            mrp: m.mrp,
-            sRate: m.rateA > 0 ? m.rateA : m.mrp,
             purRate: m.purRate,
             rateA: m.rateA > 0 ? m.rateA : m.mrp,
             rateB: m.rateB,
             rateC: m.rateC,
-            gst: m.gst,
           );
           correctedBatches[key] = [openingBatch.toMap()];
         } else if (hadSourceBatches) {
