@@ -198,9 +198,12 @@ class PartySyncModule {
 
       if (existingIdx != -1) {
         var localParty = localPartyList[existingIdx];
+        final double cloudOpBal = double.tryParse(cloudMap["opBal"]?.toString() ?? cloudMap["op_bal"]?.toString() ?? "0.0") ?? 0.0;
+        final bool opBalDiffers = (localParty.opBal != cloudOpBal);
         if (cloudVersion > localParty.version ||
             (cloudVersion == localParty.version && cloudTimestamp >= localParty.updatedAt) ||
-            localParty.updatedAt == 0) {
+            localParty.updatedAt == 0 ||
+            opBalDiffers) {
           final merged = Party.fromMap(cloudMap);
           if (localParty.id.isNotEmpty && merged.id != localParty.id) {
             merged.id = localParty.id; // Preserve established ID

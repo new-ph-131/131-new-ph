@@ -224,6 +224,7 @@ class FYTransferEngine {
     );
 
     // 1. CALCULATE NEW PARTY OPENING BALANCES (Includes Sales, Purchases, Returns & Vouchers)
+    final int nowTs = DateTime.now().millisecondsSinceEpoch;
     final List<Party> newParties = oldParties.map((p) {
       p.opBal = calculatePartyClosingBalance(
         party: p,
@@ -233,6 +234,8 @@ class FYTransferEngine {
         purchaseReturns: oldPurReturns,
         vouchers: oldVouc,
       );
+      p.updatedAt = nowTs;
+      p.version = (p.version < 1 ? 1 : p.version) + 1;
       return p;
     }).toList();
 
@@ -478,11 +481,20 @@ class FYTransferEngine {
 
     final Set<String> targetPartyIds = targetParties.map((p) => p.id.trim()).toSet();
     final Set<String> targetPartyNames = targetParties.map((p) => p.name.trim().toUpperCase()).toSet();
+    final int nowTs = DateTime.now().millisecondsSinceEpoch;
     final List<Party> updatedParties = targetParties.map((p) {
+      double? newBal;
       if (recalculatedPartyBalsById.containsKey(p.id.trim())) {
-        p.opBal = recalculatedPartyBalsById[p.id.trim()]!;
+        newBal = recalculatedPartyBalsById[p.id.trim()]!;
       } else if (recalculatedPartyBalsByName.containsKey(p.name.trim().toUpperCase())) {
-        p.opBal = recalculatedPartyBalsByName[p.name.trim().toUpperCase()]!;
+        newBal = recalculatedPartyBalsByName[p.name.trim().toUpperCase()]!;
+      }
+      if (newBal != null) {
+        if (p.opBal != newBal) {
+          p.opBal = newBal;
+          p.version = (p.version < 1 ? 1 : p.version) + 1;
+          p.updatedAt = nowTs;
+        }
       }
       return p;
     }).toList();
@@ -490,6 +502,8 @@ class FYTransferEngine {
     for (final p in prevParties) {
       if (!targetPartyIds.contains(p.id.trim()) && !targetPartyNames.contains(p.name.trim().toUpperCase())) {
         p.opBal = recalculatedPartyBalsById[p.id.trim()] ?? recalculatedPartyBalsByName[p.name.trim().toUpperCase()] ?? p.opBal;
+        p.version = (p.version < 1 ? 1 : p.version) + 1;
+        p.updatedAt = nowTs;
         updatedParties.add(p);
       }
     }
@@ -501,10 +515,14 @@ class FYTransferEngine {
       recalculatedBankBals[b.name.trim().toUpperCase()] = recalculatedBankBals[b.id]!;
     }
     final List<Bank> updatedBanks = targetBanks.map((b) {
+      double? newBankBal;
       if (recalculatedBankBals.containsKey(b.id)) {
-        b.openingBalance = recalculatedBankBals[b.id]!;
+        newBankBal = recalculatedBankBals[b.id]!;
       } else if (recalculatedBankBals.containsKey(b.name.trim().toUpperCase())) {
-        b.openingBalance = recalculatedBankBals[b.name.trim().toUpperCase()]!;
+        newBankBal = recalculatedBankBals[b.name.trim().toUpperCase()]!;
+      }
+      if (newBankBal != null && b.openingBalance != newBankBal) {
+        b.openingBalance = newBankBal;
       }
       return b;
     }).toList();

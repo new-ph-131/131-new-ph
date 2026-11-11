@@ -40,6 +40,18 @@ class D1SalesLedgerService {
     return true;
   }
 
+  /// Extracts the Financial Year from an incoming raw edge event payload or record date
+  static String extractEventFy(dynamic rawPayload, DateTime? recordDate) {
+    if (rawPayload is Map) {
+      final String payloadFy = (rawPayload["fy"] ?? "").toString().trim();
+      if (payloadFy.isNotEmpty) return payloadFy;
+    }
+    if (recordDate != null) {
+      return inferFyFromDate(recordDate);
+    }
+    return "";
+  }
+
   /// 🛡️ PERMANENT GRAVESTONES: Once marked deleted in D1, Google Drive can NEVER resurrect
   static final Set<String> _permanentDeletedKeys = {};
 
