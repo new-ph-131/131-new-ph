@@ -184,7 +184,7 @@ class MultiFyCloudVault {
       return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, fy);
     }
     if (id.isNotEmpty || sec.isNotEmpty) {
-      return D1SalesLedgerService.isBillDeleted(id, sec, null, fy);
+      return D1SalesLedgerService.isBillDeleted(id, sec, "", fy);
     }
     return false;
   }
@@ -416,10 +416,9 @@ class MultiFyCloudVault {
                           .toList();
                     }
                   });
-                  final bool batsChanged = BatchDeltaMergeModule.mergeCloudBatchHistory(
-                    cloudBatchMap: Map<String, dynamic>.from(cldMapRaw),
-                    localBatchHistory: locBatches,
-                    tombstoneRegistry: const {},
+                  final bool batsChanged = BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
+                    targetBatchHistory: locBatches,
+                    incomingJson: cldMapRaw,
                   );
                   if (batsChanged) {
                     await targetFile.writeAsString(
@@ -491,7 +490,7 @@ class MultiFyCloudVault {
         if (rawDate != null) {
           final dt = DateTime.tryParse(rawDate.toString());
           if (dt != null) {
-            evFy = AppDateLogic.getFYFromDate(dt);
+            evFy = AppDateLogic.getFYForDate(dt);
           }
         }
       }

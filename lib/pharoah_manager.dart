@@ -514,25 +514,25 @@ class PharoahManager with ChangeNotifier {
               s.id != 'APP_CONFIG_MASTER' &&
               s.billNo.trim().isNotEmpty &&
               !(s.items.isEmpty && s.totalAmount <= 0) &&
-              !D1SalesLedgerService.isBillDeleted(s.id, s.billNo, null, currentFY))
+              !D1SalesLedgerService.isBillDeleted(s.id, s.billNo, "", currentFY))
           .toList();
       purchases = loadList<Purchase>('purc.json', (e) => Purchase.fromMap(e))
           .where((p) => p.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, currentFY))
           .toList();
       vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
-          .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, null, currentFY))
+          .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, "", currentFY))
           .toList();
       saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e))
-          .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(c.id, c.billNo, null, currentFY))
+          .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(c.id, c.billNo, "", currentFY))
           .toList();
       purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e))
           .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo, currentFY))
           .toList();
       saleReturns = loadList<SaleReturn>('s_return.json', (e) => SaleReturn.fromMap(e))
-          .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, null, currentFY))
+          .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, "", currentFY))
           .toList();
       purchaseReturns = loadList<PurchaseReturn>('p_return.json', (e) => PurchaseReturn.fromMap(e))
-          .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, null, currentFY))
+          .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, "", currentFY))
           .toList();
       cheques = loadList<ChequeEntry>('cheques.json', (e) => ChequeEntry.fromMap(e));
       shortages = loadList<ShortageItem>('shortage.json', (e) => ShortageItem.fromMap(e));

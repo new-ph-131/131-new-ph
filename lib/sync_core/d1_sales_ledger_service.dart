@@ -424,7 +424,7 @@ class D1SalesLedgerService {
     return false;
   }
 
-  static void markPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
+  static void markPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
@@ -433,12 +433,12 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    markPermanentlyDeleted(cleanId, cleanInt, compKey2);
-    if (cleanId.isNotEmpty) markPermanentlyDeleted(cleanId.toUpperCase());
-    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3);
+    markPermanentlyDeleted(cleanId, cleanInt, compKey2, fy);
+    if (cleanId.isNotEmpty) markPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy);
+    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3, "", "", fy);
   }
 
-  static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
+  static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
@@ -447,10 +447,10 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey2);
-    if (cleanId.isNotEmpty) unmarkPermanentlyDeleted(cleanId.toUpperCase());
-    if (compKey3.isNotEmpty) unmarkPermanentlyDeleted(compKey3);
-    if (cleanBill.isNotEmpty) unmarkPermanentlyDeleted(cleanBill);
+    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey2, fy);
+    if (cleanId.isNotEmpty) unmarkPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy);
+    if (compKey3.isNotEmpty) unmarkPermanentlyDeleted(compKey3, "", "", fy);
+    if (cleanBill.isNotEmpty) unmarkPermanentlyDeleted(cleanBill, "", "", fy);
   }
 
   static Future<void> loadPersistedGravestones() async {
@@ -757,7 +757,7 @@ class D1SalesLedgerService {
         final cleanBNo = billNo.trim().toUpperCase();
         final bool hasActiveNewSale = localSales.any((s) => s.id != billId && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
         if (!hasActiveNewSale && cleanBNo.isNotEmpty) {
-          markPermanentlyDeleted(billId, cleanBNo, null, effFy);
+          markPermanentlyDeleted(billId, cleanBNo, "", effFy);
         }
         final initialLen = localSales.length;
         localSales.removeWhere((s) => s.id == billId || (!hasActiveNewSale && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo));
@@ -784,7 +784,7 @@ class D1SalesLedgerService {
           if (!doesEventBelongToActiveFY(rawSale, incomingSale.date, effFy)) {
             continue;
           }
-          unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo, null, effFy);
+          unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo, "", effFy);
           int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
           if (existingIdx != -1) {
             if (version >= localSales[existingIdx].version ||

@@ -565,7 +565,7 @@ class FYTransferEngine {
     // Ensure any missing Medicines from prevFY are present in targetMeds
     final Set<String> targetMedKeys = targetMeds.map((m) => m.identityKey).toSet();
     final List<Medicine> updatedMeds = List<Medicine>.from(targetMeds);
-    final Map<String, int> prevMedStocks = {for (final m in updatedMeds) m.identityKey: m.stock};
+    final Map<String, double> prevMedStocks = {for (final m in updatedMeds) m.identityKey: m.stock};
     for (final pm in prevMeds) {
       if (!targetMedKeys.contains(pm.identityKey)) {
         final clonedMed = Medicine.fromMap(pm.toMap());
@@ -587,7 +587,7 @@ class FYTransferEngine {
 
     // Bump version & updatedAt on medicines whose calculated stock changed after carry-forward cascade
     for (final m in updatedMeds) {
-      final int? oldStock = prevMedStocks[m.identityKey];
+      final double? oldStock = prevMedStocks[m.identityKey];
       if (oldStock != null && m.stock != oldStock) {
         m.version = (m.version < 1 ? 1 : m.version) + 1;
         m.updatedAt = nowTs;

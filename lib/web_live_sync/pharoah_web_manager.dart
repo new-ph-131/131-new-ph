@@ -414,7 +414,7 @@ class PharoahWebManager with ChangeNotifier {
                           );
                         }
                         final String sec = (m['billNo'] ?? m['voucherNo'] ?? '').toString().trim();
-                        return D1SalesLedgerService.isBillDeleted(id, sec, null, cleanFy);
+                        return D1SalesLedgerService.isBillDeleted(id, sec, "", cleanFy);
                       }
                       final Map<String, dynamic> mergedMap = {};
                       for (var item in cloudArr) {
@@ -1528,10 +1528,10 @@ class PharoahWebManager with ChangeNotifier {
           try {
             final rawBats = jsonDecode(currentFyFiles['bats.json']!);
             if (rawBats is Map) {
-              BatchDeltaMergeModule.mergeCloudBatchHistory(
-                cloudBatchMap: Map<String, dynamic>.from(rawBats),
-                localBatchHistory: batchHistory,
-                tombstoneRegistry: localTombstoneRegistry,
+              BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
+                targetBatchHistory: batchHistory,
+                incomingJson: rawBats,
+                registry: localTombstoneRegistry,
               );
             }
           } catch (_) {}
