@@ -311,6 +311,21 @@ class AppSyncEngine {
         }
       }
 
+      // 🏛️ FINAL BACK-YEAR CARRY-FORWARD ENFORCER BEFORE CLOUD BUNDLE:
+      // If active year is a historical year, re-cascade forward to guarantee that
+      // all newer FY folders on disk contain authoritative opening balances and stock
+      // before building the multi-FY cloud vault payload!
+      if (ph.activeCompany != null &&
+          ph.activeCompany!.fYears.length > 1 &&
+          ph.currentFY.isNotEmpty &&
+          ph.currentFY != ph.activeCompany!.fYears.last) {
+        await ph.syncOpeningBalancesFromPreviousYear(
+          startYear: ph.currentFY,
+          onStepProgress: (_, __) {},
+          reloadActiveYearAtEnd: false,
+        );
+      }
+
       // STEP 5: PUSH TO CLOUD (Multi-FY Cloud Vault — All Financial Years Preserved!)
       final vaultBundle = await MultiFyCloudVault.buildMultiFyCloudPayload(
         ph: ph,

@@ -259,6 +259,9 @@ class MultiFyCloudVault {
         final int cldUpd = int.tryParse((cloudMap['updatedAt'] ?? cloudMap['updated_at'] ?? '0').toString()) ?? 0;
 
         if (cldVer > locVer || (cldVer == locVer && cldUpd > locUpd)) {
+          if (fileName == "parts.json" && locMap["opBal"] != null && locUpd >= cldUpd) {
+            cloudMap["opBal"] = locMap["opBal"];
+          }
           mergedList[existingIdx] = cloudMap;
           if (k.isNotEmpty) keyToIdx[k] = existingIdx;
           if (sec.isNotEmpty) secKeyToIdx[sec] = existingIdx;
@@ -460,6 +463,20 @@ class MultiFyCloudVault {
           );
           registryChanged = true;
         }
+      }
+      // 🏛️ CRITICAL BACK-YEAR CASCADE GUARD:
+      // If the user active year is a historical/back year (e.g. 2025-26), vault sync from cloud
+      // could have merged older future year files. We MUST unconditionally re-cascade forward from
+      // ph.currentFY so that the local back-year closing balances (Party opBal, Bank balances, Batch stock)
+      // remain strictly authoritative in all future years!
+      final int activeBackFyIdx = ph.currentFY.isNotEmpty ? sortedFys.indexOf(ph.currentFY) : -1;
+      if (activeBackFyIdx != -1 && activeBackFyIdx < sortedFys.length - 1) {
+        debugPrint("🔄 [MultiFyCloudVault] Active FY is back-year ${ph.currentFY}. Cascading forward to newer years...");
+        await ph.syncOpeningBalancesFromPreviousYear(
+          startYear: ph.currentFY,
+          onStepProgress: (_, __) {},
+          reloadActiveYearAtEnd: false,
+        );
       }
     } catch (e) {
       debugPrint("⚠ [MultiFyCloudVault] syncVaultYearsToLocalDisk error: $e");

@@ -3326,6 +3326,13 @@ class PharoahWebManager with ChangeNotifier {
       }
       D1SalesLedgerService.activeFinancialYear = financialYear;
 
+      // 🏛️ RE-CASCADE MULTI-YEAR OPENING BALANCES & STOCK ON WEB REFRESH:
+      // If multiple financial years exist, cascade forward across fyVault so active year
+      // always has exact authoritative opening balances from prior years!
+      if (availableFinancialYears.length > 1) {
+        _cascadeWebFyVaultFrom(availableFinancialYears.first);
+      }
+
       // 🛡️ ZERO-MIXING ISOLATION: If active Financial Year changed during refresh, snapshot old year & clear memory first!
       if (financialYear != prevActiveFy) {
         if (prevActiveFy.trim().isNotEmpty) {
@@ -3334,14 +3341,14 @@ class PharoahWebManager with ChangeNotifier {
         _clearYearScopedMemory();
       }
 
-      if (cloudVaultMap.containsKey(financialYear) && cloudVaultMap[financialYear]!.isNotEmpty) {
-        final Map<String, dynamic> scoped = Map<String, dynamic>.from(cloudVaultMap[financialYear]!);
+      if (fyVault.containsKey(financialYear) && fyVault[financialYear]!.isNotEmpty) {
+        final Map<String, dynamic> scoped = Map<String, dynamic>.from(fyVault[financialYear]!);
         scoped['_targetFy'] = financialYear;
         if (files.containsKey('tombstones.json')) scoped['tombstones.json'] = files['tombstones.json'];
         if (files.containsKey('tombstone_registry.json')) scoped['tombstone_registry.json'] = files['tombstone_registry.json'];
         _parseDownloadedFiles(scoped);
-      } else if (fyVault.containsKey(financialYear) && fyVault[financialYear]!.isNotEmpty) {
-        final Map<String, dynamic> scoped = Map<String, dynamic>.from(fyVault[financialYear]!);
+      } else if (cloudVaultMap.containsKey(financialYear) && cloudVaultMap[financialYear]!.isNotEmpty) {
+        final Map<String, dynamic> scoped = Map<String, dynamic>.from(cloudVaultMap[financialYear]!);
         scoped['_targetFy'] = financialYear;
         if (files.containsKey('tombstones.json')) scoped['tombstones.json'] = files['tombstones.json'];
         if (files.containsKey('tombstone_registry.json')) scoped['tombstone_registry.json'] = files['tombstone_registry.json'];

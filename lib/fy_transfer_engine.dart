@@ -55,41 +55,90 @@ class FYTransferEngine {
     final String pId = party.id.trim();
     final String pName = party.name.trim();
 
-    // 1. Sales (Debit +)
+    // 1. Sales (Debit +) — Strictly deduplicated by billNo & credit sales only
+    final Map<String, Sale> dedupSales = {};
     for (final s in sales) {
       if (s.isDeleted == 1 || s.status == "Cancelled") continue;
+      final k = s.billNo.trim().toUpperCase().isNotEmpty ? s.billNo.trim().toUpperCase() : s.id.trim();
+      if (k.isEmpty) continue;
+      if (!dedupSales.containsKey(k) || (s.version > dedupSales[k]!.version) || (s.version == dedupSales[k]!.version && s.updatedAt >= dedupSales[k]!.updatedAt)) {
+        dedupSales[k] = s;
+      }
+    }
+    for (final s in dedupSales.values) {
       if ((pId.isNotEmpty && s.partyId.trim() == pId) || _sameName(s.partyName, pName)) {
-        runningBal += s.totalAmount;
+        final mode = s.paymentMode.trim().toUpperCase();
+        // Credit sale adds to outstanding. Cash sales are settled at counter immediately.
+        if (mode == "CREDIT" || mode.isEmpty) {
+          runningBal += s.totalAmount;
+        }
       }
     }
 
-    // 2. Purchases (Credit -)
+    // 2. Purchases (Credit -) — Strictly deduplicated by internalNo/billNo & credit purchases only
+    final Map<String, Purchase> dedupPurchases = {};
     for (final pr in purchases) {
       if (pr.isDeleted == 1) continue;
+      final k = pr.internalNo.trim().toUpperCase().isNotEmpty
+          ? pr.internalNo.trim().toUpperCase()
+          : (pr.billNo.trim().toUpperCase().isNotEmpty ? "${pr.partyId.trim().toUpperCase()}_${pr.billNo.trim().toUpperCase()}" : pr.id.trim());
+      if (k.isEmpty) continue;
+      if (!dedupPurchases.containsKey(k) || (pr.version > dedupPurchases[k]!.version) || (pr.version == dedupPurchases[k]!.version && pr.updatedAt >= dedupPurchases[k]!.updatedAt)) {
+        dedupPurchases[k] = pr;
+      }
+    }
+    for (final pr in dedupPurchases.values) {
       if ((pId.isNotEmpty && pr.partyId.trim() == pId) || _sameName(pr.distributorName, pName)) {
-        runningBal -= pr.totalAmount;
+        final mode = pr.paymentMode.trim().toUpperCase();
+        if (mode == "CREDIT" || mode.isEmpty) {
+          runningBal -= pr.totalAmount;
+        }
       }
     }
 
     // 3. Sale Returns / Credit Notes (Credit -)
+    final Map<String, SaleReturn> dedupSr = {};
     for (final sr in saleReturns) {
       if (sr.isDeleted == 1 || sr.status == "Cancelled") continue;
+      final k = sr.billNo.trim().toUpperCase().isNotEmpty ? sr.billNo.trim().toUpperCase() : sr.id.trim();
+      if (k.isEmpty) continue;
+      if (!dedupSr.containsKey(k) || (sr.version >= dedupSr[k]!.version)) {
+        dedupSr[k] = sr;
+      }
+    }
+    for (final sr in dedupSr.values) {
       if (_sameName(sr.partyName, pName)) {
         runningBal -= sr.totalAmount;
       }
     }
 
     // 4. Purchase Returns / Debit Notes (Debit +)
+    final Map<String, PurchaseReturn> dedupPr = {};
     for (final pr in purchaseReturns) {
       if (pr.isDeleted == 1 || pr.status == "Cancelled") continue;
+      final k = pr.billNo.trim().toUpperCase().isNotEmpty ? pr.billNo.trim().toUpperCase() : pr.id.trim();
+      if (k.isEmpty) continue;
+      if (!dedupPr.containsKey(k) || (pr.version >= dedupPr[k]!.version)) {
+        dedupPr[k] = pr;
+      }
+    }
+    for (final pr in dedupPr.values) {
       if (_sameName(pr.distributorName, pName)) {
         runningBal += pr.totalAmount;
       }
     }
 
     // 5. Vouchers (Receipts, Payments, Expenses)
+    final Map<String, Voucher> dedupVouchers = {};
     for (final v in vouchers) {
       if (v.isDeleted == 1 || v.status != "Active") continue;
+      final k = v.voucherNo.trim().toUpperCase().isNotEmpty ? v.voucherNo.trim().toUpperCase() : v.id.trim();
+      if (k.isEmpty) continue;
+      if (!dedupVouchers.containsKey(k) || (v.version >= dedupVouchers[k]!.version)) {
+        dedupVouchers[k] = v;
+      }
+    }
+    for (final v in dedupVouchers.values) {
       if ((pId.isNotEmpty && v.partyId.trim() == pId) || _sameName(v.partyName, pName)) {
         final String type = v.type.trim().toUpperCase();
         if (type == "RECEIPT") {

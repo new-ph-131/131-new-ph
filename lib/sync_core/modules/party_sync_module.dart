@@ -209,15 +209,16 @@ class PartySyncModule {
 
       if (existingIdx != -1) {
         var localParty = localPartyList[existingIdx];
-        final double cloudOpBal = double.tryParse(cloudMap["opBal"]?.toString() ?? cloudMap["op_bal"]?.toString() ?? "0.0") ?? 0.0;
-        final bool opBalDiffers = (localParty.opBal != cloudOpBal);
         if (cloudVersion > localParty.version ||
             (cloudVersion == localParty.version && cloudTimestamp >= localParty.updatedAt) ||
-            localParty.updatedAt == 0 ||
-            opBalDiffers) {
+            localParty.updatedAt == 0) {
           final merged = Party.fromMap(cloudMap);
           if (localParty.id.isNotEmpty && merged.id != localParty.id) {
             merged.id = localParty.id; // Preserve established ID
+          }
+          // If local party opening balance was recently cascaded/updated locally with a newer timestamp, preserve it!
+          if (localParty.updatedAt > cloudTimestamp && localParty.opBal != merged.opBal) {
+            merged.opBal = localParty.opBal;
           }
           localPartyList[existingIdx] = merged;
           hasChanged = true;
