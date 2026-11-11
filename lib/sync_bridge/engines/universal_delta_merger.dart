@@ -22,18 +22,13 @@ class UniversalDeltaMerger {
     if (cloudList == null) return false;
     bool hasChanged = false;
 
-    // 1. Purge any locally present item that exists in tombstones (by immutable ID or composite key) (#PH-REV-806)
+    // 1. Purge any locally present item that exists in tombstones (#PH-REV-806)
     final initialLen = localList.length;
     localList.removeWhere((item) {
       final id = getId(item).trim();
       final composite = getCompositeKey?.call(item).trim().toUpperCase() ?? '';
-      if (id.isNotEmpty && (tombstones.contains(id) || tombstones.contains(id.toUpperCase()))) {
-        return true;
-      }
-      if (composite.isNotEmpty && (tombstones.contains(composite) || tombstones.contains(composite.toUpperCase()))) {
-        return true;
-      }
-      return false;
+      return SyncTombstoneHub.isDeleted(tombstones, id, referenceNo: getRefNo(item)) ||
+          (composite.isNotEmpty && (tombstones.contains(composite) || tombstones.contains(composite.toUpperCase())));
     });
     if (localList.length != initialLen) {
       hasChanged = true;

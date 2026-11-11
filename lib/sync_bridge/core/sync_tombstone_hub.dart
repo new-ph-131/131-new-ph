@@ -33,10 +33,10 @@ class SyncTombstoneHub {
     } catch (_) {}
   }
 
-  /// Permanently records a deletion in both memory, disk file, and SharedPreferences.
+  /// Permanently records a deletion in memory, disk file, and SharedPreferences. (#PH-REV-806)
   static Future<void> markDeleted({
-    required String workingDir,
-    required String companyId,
+    String workingDir = "",
+    String companyId = "",
     required String id,
     String? referenceNo,
     String? fy,
@@ -44,34 +44,40 @@ class SyncTombstoneHub {
     final cleanId = id.trim();
     if (cleanId.isEmpty) return;
 
-    final rawRef = referenceNo?.trim() ?? '';
-    final scopedRef = (fy != null && fy.trim().isNotEmpty && rawRef.isNotEmpty) ? "$fy::$rawRef" : rawRef;
+    final rawRef = referenceNo?.trim() ?? "";
+    final isBareInt = rawRef.isNotEmpty && RegExp(r"^\d{1,9}$").hasMatch(rawRef);
+    final scopedRef = (fy != null && fy.trim().isNotEmpty && rawRef.isNotEmpty) ? "$fy::$rawRef" : "";
 
     // 1. Update SharedPreferences cache
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'tombstones_$companyId';
-      final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
-      localList.add(cleanId);
-      if (scopedRef.isNotEmpty) {
-        localList.add(scopedRef);
-      }
-      await prefs.setStringList(key, localList.toList());
+    if (companyId.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final key = 'tombstones_$companyId';
+        final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
+        localList.add(cleanId);
+        if (scopedRef.isNotEmpty) {
+          localList.add(scopedRef);
+        }
+        if (rawRef.isNotEmpty && !isBareInt) {
+          localList.add(rawRef);
+        }
+        await prefs.setStringList(key, localList.toList());
 
-      final uKey = 'unmarked_tombstones_$companyId';
-      final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
-      if (cleanId.isNotEmpty) {
+        final uKey = 'unmarked_tombstones_$companyId';
+        final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
         uList.remove(cleanId);
         uList.remove(cleanId.toUpperCase());
-      }
-      if (rawRef.isNotEmpty) {
-        uList.remove(rawRef);
-        uList.remove(rawRef.toUpperCase());
-        uList.remove(scopedRef);
-        uList.remove(scopedRef.toUpperCase());
-      }
-      await prefs.setStringList(uKey, uList.toList());
-    } catch (_) {}
+        if (scopedRef.isNotEmpty) {
+          uList.remove(scopedRef);
+          uList.remove(scopedRef.toUpperCase());
+        }
+        if (rawRef.isNotEmpty) {
+          uList.remove(rawRef);
+          uList.remove(rawRef.toUpperCase());
+        }
+        await prefs.setStringList(uKey, uList.toList());
+      } catch (_) {}
+    }
 
     // 2. Update tombstones.json in working directory
     if (workingDir.isNotEmpty) {
@@ -80,52 +86,61 @@ class SyncTombstoneHub {
       if (scopedRef.isNotEmpty) {
         diskSet.add(scopedRef);
       }
+      if (rawRef.isNotEmpty && !isBareInt) {
+        diskSet.add(rawRef);
+      }
       await saveToDisk(workingDir, diskSet);
     }
   }
 
   /// Unmarks a tombstone when a record is newly imported or recreated with higher version (#PH-REV-806)
   static Future<void> unmarkDeleted({
-    required String workingDir,
-    required String companyId,
+    String workingDir = "",
+    String companyId = "",
     required String id,
     String? referenceNo,
     String? fy,
   }) async {
     final cleanId = id.trim();
-    final rawRef = referenceNo?.trim() ?? '';
-    final scopedRef = (fy != null && fy.trim().isNotEmpty && rawRef.isNotEmpty) ? "$fy::$rawRef" : rawRef;
+    final rawRef = referenceNo?.trim() ?? "";
+    final scopedRef = (fy != null && fy.trim().isNotEmpty && rawRef.isNotEmpty) ? "$fy::$rawRef" : "";
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'tombstones_$companyId';
-      final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
-      if (cleanId.isNotEmpty) {
-        localList.remove(cleanId);
-        localList.remove(cleanId.toUpperCase());
-      }
-      if (rawRef.isNotEmpty) {
-        localList.remove(rawRef);
-        localList.remove(rawRef.toUpperCase());
-        localList.remove(scopedRef);
-        localList.remove(scopedRef.toUpperCase());
-      }
-      await prefs.setStringList(key, localList.toList());
+    if (companyId.isNotEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final key = 'tombstones_$companyId';
+        final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
+        if (cleanId.isNotEmpty) {
+          localList.remove(cleanId);
+          localList.remove(cleanId.toUpperCase());
+        }
+        if (scopedRef.isNotEmpty) {
+          localList.remove(scopedRef);
+          localList.remove(scopedRef.toUpperCase());
+        }
+        if (rawRef.isNotEmpty) {
+          localList.remove(rawRef);
+          localList.remove(rawRef.toUpperCase());
+        }
+        await prefs.setStringList(key, localList.toList());
 
-      final uKey = 'unmarked_tombstones_$companyId';
-      final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
-      if (cleanId.isNotEmpty) {
-        uList.add(cleanId);
-        uList.add(cleanId.toUpperCase());
-      }
-      if (rawRef.isNotEmpty) {
-        uList.add(rawRef);
-        uList.add(rawRef.toUpperCase());
-        uList.add(scopedRef);
-        uList.add(scopedRef.toUpperCase());
-      }
-      await prefs.setStringList(uKey, uList.toList());
-    } catch (_) {}
+        final uKey = 'unmarked_tombstones_$companyId';
+        final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
+        if (cleanId.isNotEmpty) {
+          uList.add(cleanId);
+          uList.add(cleanId.toUpperCase());
+        }
+        if (scopedRef.isNotEmpty) {
+          uList.add(scopedRef);
+          uList.add(scopedRef.toUpperCase());
+        }
+        if (rawRef.isNotEmpty) {
+          uList.add(rawRef);
+          uList.add(rawRef.toUpperCase());
+        }
+        await prefs.setStringList(uKey, uList.toList());
+      } catch (_) {}
+    }
 
     if (workingDir.isNotEmpty) {
       final diskSet = await loadFromDisk(workingDir);
@@ -133,11 +148,13 @@ class SyncTombstoneHub {
         diskSet.remove(cleanId);
         diskSet.remove(cleanId.toUpperCase());
       }
+      if (scopedRef.isNotEmpty) {
+        diskSet.remove(scopedRef);
+        diskSet.remove(scopedRef.toUpperCase());
+      }
       if (rawRef.isNotEmpty) {
         diskSet.remove(rawRef);
         diskSet.remove(rawRef.toUpperCase());
-        diskSet.remove(scopedRef);
-        diskSet.remove(scopedRef.toUpperCase());
       }
       await saveToDisk(workingDir, diskSet);
     }
@@ -151,9 +168,17 @@ class SyncTombstoneHub {
     }
     if (referenceNo != null && referenceNo.trim().isNotEmpty) {
       final cleanRef = referenceNo.trim();
-      final scopedRef = (fy != null && fy.trim().isNotEmpty) ? "$fy::$cleanRef" : "";
-      if (scopedRef.isNotEmpty && (tombstones.contains(scopedRef) || tombstones.contains(scopedRef.toUpperCase()))) {
-        return true;
+      if (fy != null && fy.trim().isNotEmpty) {
+        final scopedRef = "$fy::$cleanRef";
+        if (tombstones.contains(scopedRef) || tombstones.contains(scopedRef.toUpperCase())) {
+          return true;
+        }
+      }
+      final isBareInt = RegExp(r"^\d{1,9}$").hasMatch(cleanRef);
+      if (!(isBareInt && fy != null && fy.trim().isNotEmpty)) {
+        if (tombstones.contains(cleanRef) || tombstones.contains(cleanRef.toUpperCase())) {
+          return true;
+        }
       }
     }
     return false;

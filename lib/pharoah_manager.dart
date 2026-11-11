@@ -610,10 +610,14 @@ Future<void> finalizeSale({
     }
     if (activeCompany != null) {
       await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: sId, secondaryKey: billNo, fy: currentFY);
+      SyncTombstoneHub.unmarkDeleted(
+        companyId: activeCompany!.id,
+        id: sId,
+        referenceNo: billNo,
+        fy: currentFY,
+      );
     }
-    D1SalesLedgerService.unmarkPermanentlyDeleted(sId, billNo, currentFY);
-    SyncTombstoneHub.unmarkDeleted(sId, fy: currentFY);
-    SyncTombstoneHub.unmarkDeleted(billNo, fy: currentFY);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(sId, billNo, "", currentFY);
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
     ProductIntegrityService.ensureLineItemsInProductMaster(
       items: items,
@@ -742,12 +746,22 @@ Future<void> finalizePurchase({
       if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: currentFY);
       if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo, fy: currentFY);
       if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo, fy: currentFY);
+      SyncTombstoneHub.unmarkDeleted(
+        companyId: activeCompany!.id,
+        id: pId,
+        referenceNo: compKey,
+        fy: currentFY,
+      );
+      if (cleanBillNo.isNotEmpty) {
+        SyncTombstoneHub.unmarkDeleted(
+          companyId: activeCompany!.id,
+          id: cleanBillNo,
+          fy: currentFY,
+        );
+      }
     }
     D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo, currentFY);
-    if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo, null, currentFY);
-    SyncTombstoneHub.unmarkDeleted(pId, fy: currentFY);
-    if (compKey.isNotEmpty) SyncTombstoneHub.unmarkDeleted(compKey, fy: currentFY);
-    if (cleanBillNo.isNotEmpty) SyncTombstoneHub.unmarkDeleted(cleanBillNo, fy: currentFY);
+    if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo, "", "", currentFY);
     final int existingIdx = purchases.indexWhere((p) => 
       p.id == pId || 
       (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
@@ -2670,7 +2684,7 @@ void registerBatchActivity({
       }
       final String realId = s.id;
       sales.removeWhere((x) => x.id == realId || (s.billNo.isNotEmpty && x.billNo.trim().toUpperCase() == s.billNo.trim().toUpperCase()));
-      D1SalesLedgerService.markPermanentlyDeleted(realId, s.billNo, currentFY);
+      D1SalesLedgerService.markPermanentlyDeleted(realId, s.billNo, "", currentFY);
       try {
         getWorkingPath().then((dir) {
           if (dir.isNotEmpty) {
