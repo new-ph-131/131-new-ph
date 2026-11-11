@@ -21,16 +21,17 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
   DateTime fromDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime toDate = DateTime.now();
   bool _isInit = false;
+  String _boundFy = "";
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final ph = Provider.of<PharoahManager>(context, listen: false);
-      toDate = AppDateLogic.getSmartDate(ph.currentFY);
-      fromDate = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = AppDateLogic.getFYStart(ph.currentFY);
-      if (fromDate.isBefore(fyStart)) fromDate = fyStart;
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    if (!_isInit || _boundFy != ph.currentFY) {
+      final range = AppDateLogic.getRegisterDateRange(ph.currentFY);
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _boundFy = ph.currentFY;
       _isInit = true;
     }
   }
@@ -38,13 +39,17 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
+    DateTime dOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final fOnly = dOnly(fromDate);
+    final tOnly = dOnly(toDate);
 
     // LOGIC: Filter Purchase Returns
     final list = ph.purchaseReturns.reversed.where((ret) {
+      if (ret.isDeleted == 1) return false;
       bool matchesSearch = ret.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
                            ret.billNo.toLowerCase().contains(searchQuery.toLowerCase());
-      bool matchesDate = ret.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
-                         ret.date.isBefore(toDate.add(const Duration(days: 1)));
+      final rOnly = dOnly(ret.date);
+      bool matchesDate = !rOnly.isBefore(fOnly) && !rOnly.isAfter(tOnly);
       return matchesSearch && matchesDate;
     }).toList();
 

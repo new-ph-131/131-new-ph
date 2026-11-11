@@ -4,6 +4,7 @@ import "../../models.dart";
 import "../../pharoah_manager.dart";
 import "../models/sync_envelope.dart";
 import "../outbox/sync_queue_manager.dart";
+import "../d1_sales_ledger_service.dart";
 
 /// 🛡️ PARTY MASTER SYNC MODULE (#PH-REV-734)
 /// Handles 360-degree all-field mirroring, LWW monotonic versioning,
@@ -31,13 +32,17 @@ class PartySyncModule {
   /// 📤 1. D1 OUTBOX ENQUEUE: Push Party Mutation directly to Cloudflare D1
   static void onPartySaved(Party party, String storeToken, {bool isDelete = false}) {
     if (storeToken.trim().isEmpty || party.id.trim().isEmpty) return;
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(party.toMap());
+    if (D1SalesLedgerService.activeFinancialYear.trim().isNotEmpty) {
+      payload['fy'] = D1SalesLedgerService.activeFinancialYear.trim();
+    }
     SyncQueueManager.enqueueMutation(
       syncId: party.id.trim(),
       storeToken: storeToken.trim().toUpperCase(),
       docType: 'PARTY',
       currentVersion: party.version,
       isDelete: isDelete,
-      rawPayload: party.toMap(),
+      rawPayload: payload,
     );
   }
 
@@ -86,6 +91,12 @@ class PartySyncModule {
         // Ensure ID is preserved if matched via name/phone
         if (localParty.id.isNotEmpty && mergedParty.id != localParty.id) {
           mergedParty.id = localParty.id;
+        }
+        // Protect FY-specific opening balance when party update originates from a different FY
+        final String envFy = (partyMap['fy'] ?? '').toString().trim();
+        final String activeFy = D1SalesLedgerService.activeFinancialYear.trim();
+        if (envFy.isNotEmpty && activeFy.isNotEmpty && envFy != activeFy) {
+          mergedParty.opBal = localParty.opBal;
         }
         mergedParty.version = incomingVersion;
         mergedParty.updatedAt = incomingTimestamp;

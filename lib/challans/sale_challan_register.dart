@@ -25,16 +25,17 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   DateTime fromDate = DateTime.now();
   DateTime toDate = DateTime.now();
   bool _isInit = false;
+  String _boundFy = "";
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final ph = Provider.of<PharoahManager>(context, listen: false);
-      toDate = AppDateLogic.getSmartDate(ph.currentFY);
-      fromDate = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = AppDateLogic.getFYStart(ph.currentFY);
-      if (fromDate.isBefore(fyStart)) fromDate = fyStart;
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    if (!_isInit || _boundFy != ph.currentFY) {
+      final range = AppDateLogic.getRegisterDateRange(ph.currentFY);
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _boundFy = ph.currentFY;
       _isInit = true;
     }
   }
@@ -42,12 +43,16 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
+    DateTime dOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final fOnly = dOnly(fromDate);
+    final tOnly = dOnly(toDate);
 
     final list = ph.saleChallans.reversed.where((ch) {
+      if (ch.isDeleted == 1) return false;
       bool matchesSearch = ch.partyName.toLowerCase().contains(searchQuery.toLowerCase()) || 
                            ch.billNo.toLowerCase().contains(searchQuery.toLowerCase());
-      bool matchesDate = ch.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
-                         ch.date.isBefore(toDate.add(const Duration(days: 1)));
+      final cOnly = dOnly(ch.date);
+      bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) || ch.status == "Pending";
       return matchesSearch && matchesDate;
     }).toList();
 

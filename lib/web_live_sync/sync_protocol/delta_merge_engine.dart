@@ -148,36 +148,42 @@ class DeltaMergeEngine {
 
         if (id.isEmpty) continue;
 
-        // 🛡️ Multi-Key Anti-Zombie Check: ID, InternalNo, BillNo, CompositeKey
+        // 🛡️ Multi-Key Anti-Zombie Check: ID + FY-Scoped Secondary Keys (InternalNo, BillNo, CompositeKey)
+        final String activeFy = ph.currentFY.trim();
         String bNoKey = billNo.toUpperCase();
         String intNoKey = internalNo.toUpperCase();
         String partyIdKey = (cloudMap["partyId"] ?? "").toString().trim().toUpperCase();
         String compKey2 = (partyIdKey.isNotEmpty && bNoKey.isNotEmpty) ? "${partyIdKey}_$bNoKey" : "";
         final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? "";
 
-        // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Never resurrect deleted records from lagging Drive files)
+        final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNoKey, activeFy);
+        final String scopedIntNo = D1SalesLedgerService.scopeSecondaryKey(intNoKey, activeFy);
+        final String scopedComp2 = D1SalesLedgerService.scopeSecondaryKey(compKey2, activeFy);
+        final String scopedComp3 = D1SalesLedgerService.scopeSecondaryKey(compositeKey, activeFy);
+
+        // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Scoped by activeFy so series numbers never collide across FYs)
         if (getCloudCompositeKey != null) {
-          if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo)) {
+          if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo, activeFy)) {
             continue;
           }
         } else {
-          if (D1SalesLedgerService.isBillDeleted(id, billNo, internalNo)) {
+          if (D1SalesLedgerService.isBillDeleted(id, billNo, internalNo, activeFy)) {
             continue;
           }
         }
 
-        // 🛡️ 2. STRICT TOMBSTONE REGISTRY CHECK (Immutable ID vs Chronological Series/Composite Keys)
+        // 🛡️ 2. STRICT TOMBSTONE REGISTRY CHECK (Immutable ID vs FY-Scoped Chronological Series/Composite Keys)
         final int idDelTs = tombstoneRegistry[id] ?? tombstoneRegistry[id.toUpperCase()] ?? 0;
-        if (idDelTs > 0) {
-          // Exact UUID was deleted — never resurrect it
+        if (idDelTs > 0 && (cloudTimestamp == 0 || idDelTs >= cloudTimestamp)) {
+          // Exact UUID was deleted at or after this record timestamp — never resurrect it
           continue;
         }
-        final int secDelTs = (intNoKey.isNotEmpty ? tombstoneRegistry[intNoKey] : null) ??
-            (compositeKey.isNotEmpty ? tombstoneRegistry[compositeKey] : null) ??
-            (compKey2.isNotEmpty ? tombstoneRegistry[compKey2] : null) ??
-            (getCloudCompositeKey == null && bNoKey.isNotEmpty ? tombstoneRegistry[bNoKey] : null) ?? 0;
+        final int secDelTs = (scopedIntNo.isNotEmpty ? tombstoneRegistry[scopedIntNo] : null) ??
+            (scopedComp3.isNotEmpty ? tombstoneRegistry[scopedComp3] : null) ??
+            (scopedComp2.isNotEmpty ? tombstoneRegistry[scopedComp2] : null) ??
+            (getCloudCompositeKey == null && scopedBNo.isNotEmpty ? tombstoneRegistry[scopedBNo] : null) ?? 0;
         if (secDelTs > 0 && (cloudTimestamp == 0 || secDelTs >= cloudTimestamp)) {
-          // Secondary key was deleted at or after this record timestamp — block stale snapshot record
+          // Secondary key in this FY was deleted at or after this record timestamp — block stale snapshot record
           continue;
         }
 
@@ -198,10 +204,10 @@ class DeltaMergeEngine {
           }
           tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
           tombstoneRegistry[id.toUpperCase()] = tombstoneRegistry[id]!;
-          if (getCloudCompositeKey == null && bNoKey.isNotEmpty) tombstoneRegistry[bNoKey] = tombstoneRegistry[id]!;
-          if (intNoKey.isNotEmpty) tombstoneRegistry[intNoKey] = tombstoneRegistry[id]!;
-          if (compKey2.isNotEmpty) tombstoneRegistry[compKey2] = tombstoneRegistry[id]!;
-          if (compositeKey.isNotEmpty) tombstoneRegistry[compositeKey] = tombstoneRegistry[id]!;
+          if (getCloudCompositeKey == null && scopedBNo.isNotEmpty) tombstoneRegistry[scopedBNo] = tombstoneRegistry[id]!;
+          if (scopedIntNo.isNotEmpty) tombstoneRegistry[scopedIntNo] = tombstoneRegistry[id]!;
+          if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = tombstoneRegistry[id]!;
+          if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = tombstoneRegistry[id]!;
           continue;
         }
 

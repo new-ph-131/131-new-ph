@@ -58,20 +58,50 @@ class D1SalesLedgerService {
   /// 🛡️ MASTER KNOWN VERSIONS: Google Drive can NEVER downgrade a known higher version
   static final Map<String, int> _knownBillVersions = {};
 
-  static bool isBillDeleted(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
+  /// Checks if a key is a human-readable bill/series number or composite key (which repeats across FYs)
+  static bool isUnscopedSeriesKey(String key) {
+    final k = key.trim().toUpperCase();
+    if (k.isEmpty || k.contains("::")) return false;
+    if (k.startsWith("COMP_") || k.startsWith("SALT_") || k.startsWith("ROUTE_") || k.startsWith("SESS_") || k.startsWith("PARTY-")) {
+      // Note: PARTY-123_BILLNO contains '_' so check if it has '_'
+      if (!k.contains("_")) return false;
+    }
+    if (RegExp(r'^\d{10,}$').hasMatch(k) || RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(k)) return false;
+    return k.startsWith("INV-") || k.startsWith("WSALE-") || k.startsWith("PUR-") || k.startsWith("WPUR-") ||
+           k.startsWith("SCH-") || k.startsWith("WSCH-") || k.startsWith("PCH-") || k.startsWith("WPCH-") ||
+           k.startsWith("TXN-") || k.startsWith("WCN-") || k.startsWith("WDN-") || k.startsWith("SR-") ||
+           k.startsWith("CN-") || k.startsWith("PR-") || k.startsWith("DN-") || k.startsWith("RCT-") ||
+           k.startsWith("WRCT-") || k.startsWith("PAY-") || k.startsWith("WPAY-") || k.startsWith("CNT-") ||
+           k.startsWith("EXP-") || k.startsWith("BILL-") || k.startsWith("VOU-") || k.contains("_");
+  }
+
+  /// Scopes a secondary/series key (e.g. INV-1, PUR-1, PARTY_BILL) to the target Financial Year
+  /// so bill numbers that reset to #1 in a new FY never collide with or delete old FY bills.
+  static String scopeSecondaryKey(String secKey, [String? fy]) {
+    final clean = secKey.trim().toUpperCase();
+    if (clean.isEmpty) return "";
+    if (clean.contains("::")) return clean;
+    final effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : activeFinancialYear.trim();
+    if (effFy.isEmpty) return clean;
+    return "$effFy::$clean";
+  }
+
+  static bool isBillDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
     final cleanId = id.trim();
-    final cleanSec = secondaryKey.trim().toUpperCase();
-    final cleanTer = tertiaryKey.trim().toUpperCase();
-    return (cleanId.isNotEmpty && _permanentDeletedKeys.contains(cleanId)) ||
+    final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    final String cleanSec = scopeSecondaryKey(secondaryKey, fy);
+    final String cleanTer = scopeSecondaryKey(tertiaryKey, fy);
+    return (idKey.isNotEmpty && (_permanentDeletedKeys.contains(idKey) || _permanentDeletedKeys.contains(idKey.toUpperCase()))) ||
            (cleanSec.isNotEmpty && _permanentDeletedKeys.contains(cleanSec)) ||
            (cleanTer.isNotEmpty && _permanentDeletedKeys.contains(cleanTer));
   }
 
-  static int getKnownVersion(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
+  static int getKnownVersion(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
     final cleanId = id.trim();
-    final cleanSec = secondaryKey.trim().toUpperCase();
-    final cleanTer = tertiaryKey.trim().toUpperCase();
-    int maxV = cleanId.isNotEmpty ? (_knownBillVersions[cleanId] ?? 0) : 0;
+    final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    final String cleanSec = scopeSecondaryKey(secondaryKey, fy);
+    final String cleanTer = scopeSecondaryKey(tertiaryKey, fy);
+    int maxV = idKey.isNotEmpty ? (_knownBillVersions[idKey] ?? 0) : 0;
     if (cleanSec.isNotEmpty && (_knownBillVersions[cleanSec] ?? 0) > maxV) {
       maxV = _knownBillVersions[cleanSec]!;
     }
@@ -81,29 +111,31 @@ class D1SalesLedgerService {
     return maxV;
   }
 
-  static void recordKnownVersion(String id, [String secondaryKey = "", int version = 1]) {
+  static void recordKnownVersion(String id, [String secondaryKey = "", int version = 1, String? fy]) {
     final cleanId = id.trim();
-    final cleanSec = secondaryKey.trim().toUpperCase();
-    if (cleanId.isNotEmpty && version > (_knownBillVersions[cleanId] ?? 0)) {
-      _knownBillVersions[cleanId] = version;
+    final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    final String cleanSec = scopeSecondaryKey(secondaryKey, fy);
+    if (idKey.isNotEmpty && version > (_knownBillVersions[idKey] ?? 0)) {
+      _knownBillVersions[idKey] = version;
     }
     if (cleanSec.isNotEmpty && version > (_knownBillVersions[cleanSec] ?? 0)) {
       _knownBillVersions[cleanSec] = version;
     }
   }
 
-  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
+  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
     final cleanId = id.trim();
-    final cleanSec = secondaryKey.trim().toUpperCase();
-    final cleanTer = tertiaryKey.trim().toUpperCase();
-    if (cleanId.isNotEmpty) _permanentDeletedKeys.add(cleanId);
+    final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    final String cleanSec = scopeSecondaryKey(secondaryKey, fy);
+    final String cleanTer = scopeSecondaryKey(tertiaryKey, fy);
+    if (idKey.isNotEmpty) _permanentDeletedKeys.add(idKey);
     if (cleanSec.isNotEmpty) _permanentDeletedKeys.add(cleanSec);
     if (cleanTer.isNotEmpty) _permanentDeletedKeys.add(cleanTer);
     try {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
-        final set = existing.toSet();
-        if (cleanId.isNotEmpty) set.add(cleanId);
+        final set = existing.where((k) => !isUnscopedSeriesKey(k)).toSet();
+        if (idKey.isNotEmpty) set.add(idKey);
         if (cleanSec.isNotEmpty) set.add(cleanSec);
         if (cleanTer.isNotEmpty) set.add(cleanTer);
         prefs.setStringList("d1_permanent_gravestones", set.toList());
@@ -111,31 +143,36 @@ class D1SalesLedgerService {
     } catch (_) {}
   }
 
-  static void unmarkPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = ""]) {
+  static void unmarkPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
     final cleanId = id.trim();
-    final cleanSec = secondaryKey.trim().toUpperCase();
-    final cleanTer = tertiaryKey.trim().toUpperCase();
-    if (cleanId.isNotEmpty) {
-      _permanentDeletedKeys.remove(cleanId);
-      _permanentDeletedKeys.remove(cleanId.toUpperCase());
-      _knownBillVersions.remove(cleanId);
-      _knownBillVersions.remove(cleanId.toUpperCase());
+    final cleanSecRaw = secondaryKey.trim().toUpperCase();
+    final cleanTerRaw = tertiaryKey.trim().toUpperCase();
+    final scopedId = scopeSecondaryKey(cleanId, fy);
+    final scopedSec = scopeSecondaryKey(cleanSecRaw, fy);
+    final scopedTer = scopeSecondaryKey(cleanTerRaw, fy);
+
+    void removeEverywhere(String k) {
+      if (k.isEmpty) return;
+      _permanentDeletedKeys.remove(k);
+      _permanentDeletedKeys.remove(k.toUpperCase());
+      _knownBillVersions.remove(k);
+      _knownBillVersions.remove(k.toUpperCase());
     }
-    if (cleanSec.isNotEmpty) {
-      _permanentDeletedKeys.remove(cleanSec);
-      _knownBillVersions.remove(cleanSec);
-    }
-    if (cleanTer.isNotEmpty) {
-      _permanentDeletedKeys.remove(cleanTer);
-      _knownBillVersions.remove(cleanTer);
-    }
+
+    removeEverywhere(cleanId);
+    removeEverywhere(scopedId);
+    removeEverywhere(cleanSecRaw);
+    removeEverywhere(scopedSec);
+    removeEverywhere(cleanTerRaw);
+    removeEverywhere(scopedTer);
+
     try {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
-        final set = existing.toSet();
-        if (cleanId.isNotEmpty) set.remove(cleanId);
-        if (cleanSec.isNotEmpty) set.remove(cleanSec);
-        if (cleanTer.isNotEmpty) set.remove(cleanTer);
+        final set = existing.where((k) => !isUnscopedSeriesKey(k)).toSet();
+        for (final k in [cleanId, cleanId.toUpperCase(), scopedId, cleanSecRaw, scopedSec, cleanTerRaw, scopedTer]) {
+          if (k.isNotEmpty) set.remove(k);
+        }
         prefs.setStringList("d1_permanent_gravestones", set.toList());
       });
     } catch (_) {}
@@ -144,35 +181,39 @@ class D1SalesLedgerService {
   // =========================================================================
   // 🛡️ PURCHASE COMPOSITE CONCURRENCY & GRAVESTONES (PARTY_ID + BILL_NO + INTERNAL_NO)
   // =========================================================================
-  static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = ""]) {
+  static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
-    if (cleanId.isNotEmpty) {
+    if (cleanId.isNotEmpty && !isUnscopedSeriesKey(cleanId)) {
       return _permanentDeletedKeys.contains(cleanId) ||
              _permanentDeletedKeys.contains(cleanId.toUpperCase());
     }
-    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
-    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
-        ? "${cleanParty}_${cleanBill}_$cleanInt"
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy)
+        : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy)
         : "";
     return (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
            (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
            (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3));
   }
 
-  static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = ""]) {
+  static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
-    if (cleanId.isNotEmpty) {
+    if (cleanId.isNotEmpty && !isUnscopedSeriesKey(cleanId)) {
       return _knownBillVersions[cleanId] ?? 0;
     }
-    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
-    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
-        ? "${cleanParty}_${cleanBill}_$cleanInt"
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy)
+        : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy)
         : "";
     int maxV = 0;
     if (cleanInt.isNotEmpty && (_knownBillVersions[cleanInt] ?? 0) > maxV) {
@@ -187,14 +228,16 @@ class D1SalesLedgerService {
     return maxV;
   }
 
-  static void recordPurchaseKnownVersion(String id, String partyId, String billNo, int version, [String internalNo = ""]) {
+  static void recordPurchaseKnownVersion(String id, String partyId, String billNo, int version, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
-    final cleanInt = internalNo.trim().toUpperCase();
+    final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
     final cleanBill = billNo.trim().toUpperCase();
-    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
-    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
-        ? "${cleanParty}_${cleanBill}_$cleanInt"
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy)
+        : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy)
         : "";
     if (cleanId.isNotEmpty) {
       _knownBillVersions[cleanId] = version;
@@ -356,6 +399,7 @@ class D1SalesLedgerService {
             "billNo": billNo,
             "internalNo": internalNo,
             "is_deleted": 1,
+            "fy": activeFinancialYear,
             "linkedChallanIds": linkedChallanIds,
           },
         },
@@ -413,7 +457,13 @@ class D1SalesLedgerService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList("d1_permanent_gravestones") ?? [];
-      _permanentDeletedKeys.addAll(list);
+      final sanitized = list.where((k) => !isUnscopedSeriesKey(k)).toList();
+      _permanentDeletedKeys
+        ..clear()
+        ..addAll(sanitized);
+      if (sanitized.length != list.length) {
+        await prefs.setStringList("d1_permanent_gravestones", sanitized);
+      }
     } catch (_) {}
   }
 
@@ -573,6 +623,7 @@ class D1SalesLedgerService {
             "billNo": billNo,
             "is_deleted": 1,
             "status": "Deleted",
+            "fy": activeFinancialYear,
             "linkedChallanIds": linkedChallanIds,
           },
         },
@@ -636,8 +687,12 @@ class D1SalesLedgerService {
   /// Merges incoming edge events into local Sales memory list
   static bool applyEventsToLocalSales(
     List<Sale> localSales, 
-    List<Map<String, dynamic>> events,
-  ) {
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
+    final String effFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+        ? targetFyOverride.trim()
+        : activeFinancialYear;
     bool mutated = false;
     // Purge any non-sale / ghost records (e.g. SESS_ or APP_CONFIG_MASTER or 0-amount empty billNo rows)
     final int beforeClean = localSales.length;
@@ -685,14 +740,24 @@ class D1SalesLedgerService {
 
       if (billId.isEmpty && billNo.isEmpty) continue;
 
-      recordKnownVersion(billId, billNo, version);
+      if (rawSale is Map && (rawSale["fy"] != null || rawSale["date"] != null)) {
+        DateTime? evDate;
+        if (rawSale["date"] != null) {
+          evDate = DateTime.tryParse(rawSale["date"].toString());
+        }
+        if (!doesEventBelongToActiveFY(rawSale, evDate, effFy)) {
+          continue;
+        }
+      }
+
+      recordKnownVersion(billId, billNo, version, effFy);
 
       if (action == "DELETE") {
         if (billId.isNotEmpty) markPermanentlyDeleted(billId);
         final cleanBNo = billNo.trim().toUpperCase();
         final bool hasActiveNewSale = localSales.any((s) => s.id != billId && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
         if (!hasActiveNewSale && cleanBNo.isNotEmpty) {
-          markPermanentlyDeleted(cleanBNo);
+          markPermanentlyDeleted(billId, cleanBNo, null, effFy);
         }
         final initialLen = localSales.length;
         localSales.removeWhere((s) => s.id == billId || (!hasActiveNewSale && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo));
@@ -716,10 +781,10 @@ class D1SalesLedgerService {
             continue;
           }
           // Strict Financial Year Isolation Guard
-          if (!doesEventBelongToActiveFY(rawSale, incomingSale.date)) {
+          if (!doesEventBelongToActiveFY(rawSale, incomingSale.date, effFy)) {
             continue;
           }
-          unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo);
+          unmarkPermanentlyDeleted(incomingSale.id, incomingSale.billNo, null, effFy);
           int existingIdx = localSales.indexWhere((s) => s.id == billId || (billNo.isNotEmpty && s.billNo.trim().toUpperCase() == billNo.trim().toUpperCase()));
           if (existingIdx != -1) {
             if (version >= localSales[existingIdx].version ||
@@ -742,9 +807,13 @@ class D1SalesLedgerService {
   /// Merges incoming edge events into local Purchases memory list
   static bool applyEventsToLocalPurchases(
     List<Purchase> localPurchases,
-    List<Map<String, dynamic>> events,
-  ) {
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
     if (events.isEmpty) return false;
+    final String effFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+        ? targetFyOverride.trim()
+        : activeFinancialYear;
     bool mutated = false;
 
     for (final ev in events) {
@@ -765,6 +834,16 @@ class D1SalesLedgerService {
            rawData.containsKey("distributorName") ||
            rawData.containsKey("internalNo"));
 
+      if (rawData is Map && (rawData["fy"] != null || rawData["date"] != null)) {
+        DateTime? evDate;
+        if (rawData["date"] != null) {
+          evDate = DateTime.tryParse(rawData["date"].toString());
+        }
+        if (!doesEventBelongToActiveFY(rawData, evDate, effFy)) {
+          continue;
+        }
+      }
+
       if (action == "DELETE") {
         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
@@ -774,7 +853,7 @@ class D1SalesLedgerService {
           markPermanentlyDeleted(billId);
         }
         if (!hasActiveNewPur && (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty)) {
-          markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo);
+          markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo, effFy);
         }
         final initialLen = localPurchases.length;
         localPurchases.removeWhere((p) =>
@@ -789,7 +868,7 @@ class D1SalesLedgerService {
         final incomingPur = Purchase.fromMap(rawData);
         if (billId.isNotEmpty) incomingPur.id = billId;
         incomingPur.version = version;
-        if (!doesEventBelongToActiveFY(rawData, incomingPur.date)) {
+        if (!doesEventBelongToActiveFY(rawData, incomingPur.date, effFy)) {
           continue;
         }
         unmarkPurchasePermanentlyDeleted(
@@ -797,6 +876,7 @@ class D1SalesLedgerService {
           incomingPur.partyId,
           incomingPur.billNo,
           incomingPur.internalNo,
+          effFy,
         );
         recordPurchaseKnownVersion(
           incomingPur.id,
@@ -804,6 +884,7 @@ class D1SalesLedgerService {
           incomingPur.billNo,
           version,
           incomingPur.internalNo,
+          effFy,
         );
         final cleanInt = incomingPur.internalNo.trim().toUpperCase();
         int existingIdx = localPurchases.indexWhere((p) =>

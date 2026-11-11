@@ -42,6 +42,7 @@ class BatchSyncModule {
       rawPayload: {
         'medKey': medIdentityKey.trim(),
         'batch': batch.toMap(),
+        'fy': D1SalesLedgerService.activeFinancialYear,
         'isDeleted': isDelete ? 1 : 0,
       },
     );
@@ -127,14 +128,20 @@ class BatchSyncModule {
       existing.rateCFormula = incomingBatch.rateCFormula;
       existing.appliedRateType = incomingBatch.appliedRateType;
       existing.status = incomingBatch.status;
+      final String envFy = (rawData['fy'] ?? batchMap['fy'] ?? '').toString().trim();
+      final String activeFy = D1SalesLedgerService.activeFinancialYear.trim();
+      final bool isSameOrUnscopedFy = envFy.isEmpty || activeFy.isEmpty || envFy == activeFy;
+      final bool isNewerVersion = incomingVersion >= existing.version;
       existing.version = incomingVersion;
       existing.updatedAt = incomingTimestamp;
-      if (incomingBatch.openingQty != 0.0 || incomingVersion > existing.version) {
-        existing.openingQty = incomingBatch.openingQty;
+      if (isSameOrUnscopedFy) {
+        if (incomingBatch.openingQty != 0.0 || isNewerVersion) {
+          existing.openingQty = incomingBatch.openingQty;
+        }
+        existing.adjustmentQty = incomingBatch.adjustmentQty;
+        existing.adjReason = incomingBatch.adjReason;
+        existing.adjustmentHistory = List<BatchAdjustmentRecord>.from(incomingBatch.adjustmentHistory);
       }
-      existing.adjustmentQty = incomingBatch.adjustmentQty;
-      existing.adjReason = incomingBatch.adjReason;
-      existing.adjustmentHistory = List<BatchAdjustmentRecord>.from(incomingBatch.adjustmentHistory);
       return true;
     } else {
       list.add(incomingBatch);

@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 import 'pharoah_manager.dart';
 import 'models.dart';
 import 'sale_entry_view.dart';
-import 'pdf/sale_invoice_pdf.dart'; 
+import 'pdf/sale_invoice_pdf.dart';
+import 'app_date_logic.dart'; 
 import 'package:intl/intl.dart';
 
 class SaleBillModifyView extends StatefulWidget {
@@ -14,14 +15,15 @@ class SaleBillModifyView extends StatefulWidget {
 }
 
 class _SaleBillModifyViewState extends State<SaleBillModifyView> {
-  String dur = "Today"; 
+  String dur = "All"; 
   String pF = "All"; 
   Party? sP;
 
-  // ORIGINAL FILTER LOGIC
-  List<Sale> getFilteredSales(List<Sale> all) {
-    DateTime n = DateTime.now();
+  // FY-AWARE FILTER LOGIC
+  List<Sale> getFilteredSales(List<Sale> all, String currentFY) {
+    DateTime n = AppDateLogic.getSmartDate(currentFY);
     return all.where((s) {
+      if (s.isDeleted == 1) return false;
       bool dateMatch = false;
       if (dur == "Today") {
         dateMatch = s.date.day == n.day && s.date.month == n.month && s.date.year == n.year;
@@ -106,7 +108,7 @@ class _SaleBillModifyViewState extends State<SaleBillModifyView> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
-    final list = getFilteredSales(ph.sales);
+    final list = getFilteredSales(ph.sales, ph.currentFY);
     final activeShop = ph.activeCompany;
 
     return Scaffold(

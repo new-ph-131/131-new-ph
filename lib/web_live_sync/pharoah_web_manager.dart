@@ -27,6 +27,7 @@ import '../sync_core/modules/batch_delta_merge_module.dart';
 import '../logic/batch_cascade_engine.dart';
 // FILE: lib/web_live_sync/pharoah_web_manager.dart
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -105,14 +106,18 @@ class PharoahWebManager with ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList('web_tombstone_ids') ?? [];
-      deletedRecordIds = list.where((id) => !id.contains('/')).toSet();
+      deletedRecordIds = list
+          .where((id) => !id.contains('/') && !D1SalesLedgerService.isUnscopedSeriesKey(id))
+          .toSet();
       final uList = prefs.getStringList('web_unmarked_ids') ?? [];
       unmarkedRecordIds = uList.toSet();
       final rawRegistry = prefs.getString('web_tombstone_registry') ?? '';
       if (rawRegistry.isNotEmpty) {
         final decoded = jsonDecode(rawRegistry) as Map<String, dynamic>;
         localTombstoneRegistry = decoded.map((k, v) => MapEntry(k, int.tryParse(v.toString()) ?? 0));
-        localTombstoneRegistry.removeWhere((k, _) => k.contains('/'));
+        localTombstoneRegistry.removeWhere(
+          (k, _) => k.contains('/') || D1SalesLedgerService.isUnscopedSeriesKey(k),
+        );
       }
     } catch (_) {}
   }
@@ -120,17 +125,21 @@ class PharoahWebManager with ChangeNotifier {
   Future<void> _saveLocalTombstones() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final cleanDeleted = deletedRecordIds.where((id) => !id.contains('/')).toList();
+      final cleanDeleted = deletedRecordIds
+          .where((id) => !id.contains('/') && !D1SalesLedgerService.isUnscopedSeriesKey(id))
+          .toList();
       await prefs.setStringList('web_tombstone_ids', cleanDeleted);
       await prefs.setStringList('web_unmarked_ids', unmarkedRecordIds.toList());
       final cleanRegistry = Map<String, int>.from(localTombstoneRegistry);
-      cleanRegistry.removeWhere((k, _) => k.contains('/'));
+      cleanRegistry.removeWhere(
+        (k, _) => k.contains('/') || D1SalesLedgerService.isUnscopedSeriesKey(k),
+      );
       await prefs.setString('web_tombstone_registry', jsonEncode(cleanRegistry));
     } catch (_) {}
   }
 
   /// Atomically purges deleted IDs across all transaction collections in memory
-  /// Evaluates ID ONLY and checks deleteTimestamp >= recordTimestamp. NEVER purges by billNo.
+  /// Evaluates ID ONLY and checks deleteTimestamp >= recordTimestamp. Series keys are strictly FY-scoped.
   void purgeDeletedIds(List<String> ids) {
     if (ids.isEmpty) return;
     final nowTs = DateTime.now().millisecondsSinceEpoch;
@@ -139,11 +148,20 @@ class PharoahWebManager with ChangeNotifier {
     unmarkedRecordIds.removeAll(set);
     unmarkedRecordIds.removeAll(upperSet);
     for (var id in set) {
-      localTombstoneRegistry[id] = nowTs;
-      localTombstoneRegistry[id.toUpperCase()] = nowTs;
+      if (D1SalesLedgerService.isUnscopedSeriesKey(id)) {
+        final scoped = D1SalesLedgerService.scopeSecondaryKey(id, financialYear);
+        if (scoped.isNotEmpty) {
+          localTombstoneRegistry[scoped] = nowTs;
+          deletedRecordIds.add(scoped);
+          unmarkedRecordIds.remove(scoped);
+        }
+      } else {
+        localTombstoneRegistry[id] = nowTs;
+        localTombstoneRegistry[id.toUpperCase()] = nowTs;
+        deletedRecordIds.add(id);
+        deletedRecordIds.add(id.toUpperCase());
+      }
     }
-    deletedRecordIds.addAll(set);
-    deletedRecordIds.addAll(upperSet);
     _saveLocalTombstones();
 
     sales.removeWhere((s) {
@@ -367,16 +385,47 @@ class PharoahWebManager with ChangeNotifier {
                     try {
                       final localArr = jsonDecode(mergedYearFiles[fname]!) as List;
                       final cloudArr = jsonDecode(fcontent) as List;
+                      String itemPrimaryKey(Map m) {
+                        if (fname == 'purc.json' || fname == 'p_challan.json') {
+                          final intNo = (m['internalNo'] ?? '').toString().trim().toUpperCase();
+                          if (intNo.isNotEmpty) return intNo;
+                        }
+                        if (fname == 'sales.json' || fname == 's_challan.json' || fname == 's_return.json' || fname == 'p_return.json') {
+                          final bNo = (m['billNo'] ?? '').toString().trim().toUpperCase();
+                          if (bNo.isNotEmpty) return bNo;
+                        }
+                        if (fname == 'vouc.json') {
+                          final vNo = (m['voucherNo'] ?? '').toString().trim().toUpperCase();
+                          if (vNo.isNotEmpty) return vNo;
+                        }
+                        return (m['id'] ?? m['name'] ?? '').toString().trim();
+                      }
+                      bool isVaultItemDeleted(Map m) {
+                        final int isDel = int.tryParse((m['isDeleted'] ?? m['is_deleted'] ?? '0').toString()) ?? 0;
+                        if (isDel == 1) return true;
+                        final String id = (m['id'] ?? '').toString().trim();
+                        if (fname == 'purc.json' || fname == 'p_challan.json') {
+                          return D1SalesLedgerService.isPurchaseDeleted(
+                            id,
+                            (m['partyId'] ?? '').toString(),
+                            (m['billNo'] ?? '').toString(),
+                            (m['internalNo'] ?? '').toString(),
+                            cleanFy,
+                          );
+                        }
+                        final String sec = (m['billNo'] ?? m['voucherNo'] ?? '').toString().trim();
+                        return D1SalesLedgerService.isBillDeleted(id, sec, null, cleanFy);
+                      }
                       final Map<String, dynamic> mergedMap = {};
                       for (var item in cloudArr) {
-                        if (item is Map) {
-                          final k = (item['id'] ?? item['billNo'] ?? '').toString().trim();
+                        if (item is Map && !isVaultItemDeleted(item)) {
+                          final k = itemPrimaryKey(item);
                           if (k.isNotEmpty) mergedMap[k] = item;
                         }
                       }
                       for (var item in localArr) {
-                        if (item is Map) {
-                          final k = (item['id'] ?? item['billNo'] ?? '').toString().trim();
+                        if (item is Map && !isVaultItemDeleted(item)) {
+                          final k = itemPrimaryKey(item);
                           if (k.isNotEmpty) {
                             if (!mergedMap.containsKey(k)) {
                               mergedMap[k] = item;
@@ -385,8 +434,6 @@ class PharoahWebManager with ChangeNotifier {
                               final int cVer = int.tryParse(mergedMap[k]['version']?.toString() ?? '1') ?? 1;
                               final int lTs = int.tryParse(item['updatedAt']?.toString() ?? item['updated_at']?.toString() ?? '0') ?? 0;
                               final int cTs = int.tryParse(mergedMap[k]['updatedAt']?.toString() ?? mergedMap[k]['updated_at']?.toString() ?? '0') ?? 0;
-                              // 🛡️ ACCURATE LWW CONFLICT RESOLUTION:
-                              // Keep local only if local version is higher OR (versions equal and local timestamp is strictly newer)
                               if (lVer > cVer || (lVer == cVer && lTs > cTs)) {
                                 mergedMap[k] = item;
                               }
@@ -1400,6 +1447,7 @@ class PharoahWebManager with ChangeNotifier {
   void _applyEdgeEventsToFyVault(List<Map<String, dynamic>> edgeEvents) {
     if (edgeEvents.isEmpty || fyVault.isEmpty) return;
     final Set<String> mutatedFys = {};
+    final Map<String, List<Map<String, dynamic>>> eventsByFy = {};
     for (final ev in edgeEvents) {
       final dynamic rawPayload = ev["sale_data"];
       DateTime? recDate;
@@ -1412,56 +1460,48 @@ class PharoahWebManager with ChangeNotifier {
       if (eventFy.isEmpty || eventFy == financialYear || !fyVault.containsKey(eventFy)) {
         continue;
       }
+      eventsByFy.putIfAbsent(eventFy, () => []).add(ev);
+    }
 
+    for (final entry in eventsByFy.entries) {
+      final String eventFy = entry.key;
+      final List<Map<String, dynamic>> fyEvents = entry.value;
       final Map<String, String> targetFiles = Map<String, String>.from(fyVault[eventFy]!);
-      final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
-      final String billId = (ev["bill_id"] ?? "").toString().trim();
-      final String billNo = (ev["bill_no"] ?? "").toString().trim();
-      final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
-
-      final bool isPurc = rawPayload is Map &&
-          (rawPayload["doc_type"] == "PURCHASE" ||
-           rawPayload.containsKey("distributorName") ||
-           rawPayload.containsKey("internalNo"));
-
-      final String fileKey = isPurc ? 'purc.json' : 'sales.json';
       try {
-        List<dynamic> list = [];
-        if (targetFiles.containsKey(fileKey) && targetFiles[fileKey]!.trim().isNotEmpty) {
-          list = jsonDecode(targetFiles[fileKey]!) as List;
-        }
-        final Map<String, dynamic> itemMap = {};
-        for (var it in list) {
-          if (it is Map) {
-            final k = (it['id'] ?? it['billNo'] ?? '').toString().trim();
-            if (k.isNotEmpty) itemMap[k] = it;
+        List<Sale> vaultSales = [];
+        if (targetFiles.containsKey('sales.json') && targetFiles['sales.json']!.trim().isNotEmpty) {
+          final raw = jsonDecode(targetFiles['sales.json']!);
+          if (raw is List) {
+            vaultSales = raw.map((e) => Sale.fromMap(Map<String, dynamic>.from(e as Map))).toList();
           }
         }
-        final String targetKey = billId.isNotEmpty ? billId : billNo;
-        if (action == "DELETE") {
-          if (billId.isNotEmpty) itemMap.remove(billId);
-          if (billNo.isNotEmpty) itemMap.remove(billNo);
+        List<Purchase> vaultPurc = [];
+        if (targetFiles.containsKey('purc.json') && targetFiles['purc.json']!.trim().isNotEmpty) {
+          final raw = jsonDecode(targetFiles['purc.json']!);
+          if (raw is List) {
+            vaultPurc = raw.map((e) => Purchase.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+          }
+        }
+        final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(vaultSales, fyEvents, eventFy);
+        final bool pChanged = D1SalesLedgerService.applyEventsToLocalPurchases(vaultPurc, fyEvents, eventFy);
+        if (sChanged) {
+          targetFiles['sales.json'] = jsonEncode(vaultSales.map((e) => e.toMap()).toList());
+        }
+        if (pChanged) {
+          targetFiles['purc.json'] = jsonEncode(vaultPurc.map((e) => e.toMap()).toList());
+        }
+        if (sChanged || pChanged) {
+          fyVault[eventFy] = targetFiles;
           mutatedFys.add(eventFy);
-        } else if (rawPayload is Map<String, dynamic> && targetKey.isNotEmpty) {
-          final int existingVer = itemMap.containsKey(targetKey)
-              ? (int.tryParse(itemMap[targetKey]['version']?.toString() ?? '1') ?? 1)
-              : 0;
-          if (version >= existingVer) {
-            itemMap[targetKey] = rawPayload;
-            mutatedFys.add(eventFy);
-          }
         }
-        targetFiles[fileKey] = jsonEncode(itemMap.values.toList());
-        fyVault[eventFy] = targetFiles;
       } catch (e) {
-        debugPrint("⚠ Error applying D1 edge event to vault $eventFy: $e");
+        debugPrint("⚠ Error applying D1 edge events to vault $eventFy: $e");
       }
     }
 
     if (mutatedFys.isNotEmpty) {
-      for (final mFy in mutatedFys) {
-        _cascadeWebFyVaultFrom(mFy);
-      }
+      final List<String> sortedMutated = WebAppDateLogic.sortFYList(mutatedFys);
+      _cascadeWebFyVaultFrom(sortedMutated.first);
       if (fyVault.containsKey(financialYear)) {
         final currentFyFiles = fyVault[financialYear]!;
         if (currentFyFiles.containsKey('parts.json')) {
@@ -1484,6 +1524,33 @@ class PharoahWebManager with ChangeNotifier {
             }
           } catch (_) {}
         }
+        if (currentFyFiles.containsKey('bats.json')) {
+          try {
+            final rawBats = jsonDecode(currentFyFiles['bats.json']!);
+            if (rawBats is Map) {
+              BatchDeltaMergeModule.mergeCloudBatchHistory(
+                cloudBatchMap: Map<String, dynamic>.from(rawBats),
+                localBatchHistory: batchHistory,
+                tombstoneRegistry: localTombstoneRegistry,
+              );
+            }
+          } catch (_) {}
+        }
+        if (currentFyFiles.containsKey('meds.json')) {
+          try {
+            final rawMeds = jsonDecode(currentFyFiles['meds.json']!) as List?;
+            if (rawMeds != null) {
+              MedicineSyncModule.mergeMedicineList(
+                cloudMedicineList: rawMeds,
+                localMedicineList: medicines,
+                tombstoneRegistry: localTombstoneRegistry,
+                deletedRecordIds: deletedRecordIds,
+              );
+            }
+          } catch (_) {}
+        }
+        rebuildInventory();
+        _snapshotActiveFyToVault();
       }
     }
   }
@@ -1549,21 +1616,33 @@ class PharoahWebManager with ChangeNotifier {
   void unmarkDeletedId(String id, {String? referenceNo}) {
     final cleanId = id.trim();
     if (cleanId.isNotEmpty) {
+      final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, financialYear);
       deletedRecordIds.remove(cleanId);
       deletedRecordIds.remove(cleanId.toUpperCase());
       localTombstoneRegistry.remove(cleanId);
       localTombstoneRegistry.remove(cleanId.toUpperCase());
       unmarkedRecordIds.add(cleanId);
       unmarkedRecordIds.add(cleanId.toUpperCase());
+      if (scopedId.isNotEmpty) {
+        deletedRecordIds.remove(scopedId);
+        localTombstoneRegistry.remove(scopedId);
+        unmarkedRecordIds.add(scopedId);
+      }
     }
     if (referenceNo != null && referenceNo.trim().isNotEmpty) {
       final cleanRef = referenceNo.trim();
+      final scopedRef = D1SalesLedgerService.scopeSecondaryKey(cleanRef, financialYear);
       deletedRecordIds.remove(cleanRef);
       deletedRecordIds.remove(cleanRef.toUpperCase());
       localTombstoneRegistry.remove(cleanRef);
       localTombstoneRegistry.remove(cleanRef.toUpperCase());
       unmarkedRecordIds.add(cleanRef);
       unmarkedRecordIds.add(cleanRef.toUpperCase());
+      if (scopedRef.isNotEmpty) {
+        deletedRecordIds.remove(scopedRef);
+        localTombstoneRegistry.remove(scopedRef);
+        unmarkedRecordIds.add(scopedRef);
+      }
     }
     _saveLocalTombstones();
   }
@@ -3287,11 +3366,12 @@ class PharoahWebManager with ChangeNotifier {
   Future<void> switchWebFinancialYear(String targetFy, {bool skipBackYearCascade = false}) async {
     final cleanTarget = targetFy.trim();
     if (cleanTarget.isEmpty || cleanTarget == financialYear) return;
+    final bool wasInBackYear = isBackYearActive;
 
-    // 1. Save current year snapshot & cascade if leaving a back year
+    // 1. Save current year snapshot & cascade across all years if leaving a back year
     fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
-    if (!skipBackYearCascade && isBackYearActive) {
-      _cascadeWebFyVaultFrom(financialYear);
+    if (!skipBackYearCascade && availableFinancialYears.length > 1) {
+      _cascadeWebFyVaultFrom(availableFinancialYears.first);
     }
 
     // 2. Completely clear all year-scoped registers & masters before loading target year
@@ -3318,6 +3398,9 @@ class PharoahWebManager with ChangeNotifier {
     rebuildInventory();
     _snapshotActiveFyToVault();
     notifyListeners();
+    if (!skipBackYearCascade && wasInBackYear) {
+      unawaited(pushUpdatedDataToCloud());
+    }
   }
 
   /// Creates a new Marg-Style Financial Year directly from Web and syncs to Cloud & App

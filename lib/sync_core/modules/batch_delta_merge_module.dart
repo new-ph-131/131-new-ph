@@ -199,12 +199,13 @@ class BatchDeltaMergeModule {
             existing.status = incomingBatch.status;
             fieldChanged = true;
           }
-          if (incomingBatch.openingQty != 0.0 && existing.openingQty != incomingBatch.openingQty) {
+          final bool isIncomingNewerOrEqual = incomingBatch.version > existing.version ||
+              (incomingBatch.version == existing.version && incomingBatch.updatedAt >= existing.updatedAt);
+          if (existing.openingQty != incomingBatch.openingQty &&
+              (isIncomingNewerOrEqual || (incomingBatch.openingQty != 0.0 && existing.openingQty == 0.0))) {
             existing.openingQty = incomingBatch.openingQty;
             fieldChanged = true;
           }
-          final bool isIncomingNewerOrEqual = incomingBatch.version > existing.version ||
-              (incomingBatch.version == existing.version && incomingBatch.updatedAt >= existing.updatedAt);
           if (isIncomingNewerOrEqual) {
             if (existing.adjustmentQty != incomingBatch.adjustmentQty ||
                 existing.adjReason != incomingBatch.adjReason) {

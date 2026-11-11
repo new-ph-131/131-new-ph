@@ -542,12 +542,18 @@ class FYTransferEngine {
         final String cleanBatchNo = pb.batch.trim().toUpperCase();
         final int idx = targetList.indexWhere((tb) => tb.batch.trim().toUpperCase() == cleanBatchNo);
         if (idx != -1) {
-          targetList[idx].openingQty = carriedOpening;
+          if (targetList[idx].openingQty != carriedOpening) {
+            targetList[idx].openingQty = carriedOpening;
+            targetList[idx].version = (targetList[idx].version < 1 ? 1 : targetList[idx].version) + 1;
+            targetList[idx].updatedAt = nowTs;
+          }
         } else {
           final BatchInfo carriedCopy = BatchInfo.fromMap(pb.toMap());
           carriedCopy.openingQty = carriedOpening;
           carriedCopy.qty = carriedOpening;
           carriedCopy.adjustmentQty = 0;
+          carriedCopy.version = (carriedCopy.version < 1 ? 1 : carriedCopy.version) + 1;
+          carriedCopy.updatedAt = nowTs;
           targetList.add(carriedCopy);
         }
       }
@@ -559,9 +565,13 @@ class FYTransferEngine {
     // Ensure any missing Medicines from prevFY are present in targetMeds
     final Set<String> targetMedKeys = targetMeds.map((m) => m.identityKey).toSet();
     final List<Medicine> updatedMeds = List<Medicine>.from(targetMeds);
+    final Map<String, int> prevMedStocks = {for (final m in updatedMeds) m.identityKey: m.stock};
     for (final pm in prevMeds) {
       if (!targetMedKeys.contains(pm.identityKey)) {
-        updatedMeds.add(Medicine.fromMap(pm.toMap()));
+        final clonedMed = Medicine.fromMap(pm.toMap());
+        clonedMed.version = (clonedMed.version < 1 ? 1 : clonedMed.version) + 1;
+        clonedMed.updatedAt = nowTs;
+        updatedMeds.add(clonedMed);
       }
     }
 
@@ -574,6 +584,15 @@ class FYTransferEngine {
       saleReturns: targetSaleReturns,
       purchaseReturns: targetPurReturns,
     );
+
+    // Bump version & updatedAt on medicines whose calculated stock changed after carry-forward cascade
+    for (final m in updatedMeds) {
+      final int? oldStock = prevMedStocks[m.identityKey];
+      if (oldStock != null && m.stock != oldStock) {
+        m.version = (m.version < 1 ? 1 : m.version) + 1;
+        m.updatedAt = nowTs;
+      }
+    }
 
     // 7. Update Pending Invoices & Carry Forward any newly added Pending Challans
     final List<Map<String, dynamic>> pendingInvoices = buildPendingInvoices(

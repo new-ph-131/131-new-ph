@@ -113,59 +113,78 @@ class AppSyncEngine {
 
           // 🚀 STEP 2.5: EDGE D1 REAL-TIME SALES & PURCHASES DELTA HARVEST BEFORE CLOUD MERGE
           bool d1HasChanges = false;
+          final bool stillInEffectiveFy = ph.activeCompany != null &&
+              ph.activeCompany!.id == companyId &&
+              ph.currentFY == effectiveFy;
           if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
             try {
               final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
               if (edgeEvents.isNotEmpty) {
-                bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
-                bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
-                bool d1Vouc = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
-                bool d1Gst = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
-                bool d1Cfg = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
-                  currentConfig: ph.config,
+                if (stillInEffectiveFy) {
+                  bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, effectiveFy);
+                  bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, effectiveFy);
+                  bool d1Vouc = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
+                  bool d1Gst = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
+                  bool d1Cfg = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+                    currentConfig: ph.config,
+                    edgeEvents: edgeEvents,
+                    onConfigMutated: (cfg) => ph.config = cfg,
+                  );
+                  bool d1Series = SettingsSyncModule.applyEdgeEventsToLocalSeries(
+                    currentSeries: ph.numberingSeries,
+                    edgeEvents: edgeEvents,
+                    onSeriesMutated: (updated) => ph.numberingSeries = updated,
+                  );
+                  if (d1Sales || d1Purc || d1Vouc || d1Gst || d1Cfg || d1Series) d1HasChanges = true;
+                }
+                await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
+                  ph: ph,
                   edgeEvents: edgeEvents,
-                  onConfigMutated: (cfg) => ph.config = cfg,
                 );
-                bool d1Series = SettingsSyncModule.applyEdgeEventsToLocalSeries(
-                  currentSeries: ph.numberingSeries,
-                  edgeEvents: edgeEvents,
-                  onSeriesMutated: (updated) => ph.numberingSeries = updated,
-                );
-                if (d1Sales || d1Purc || d1Vouc || d1Gst || d1Cfg || d1Series) d1HasChanges = true;
                 for (final ev in edgeEvents) {
                   final String action = (ev["action"] ?? "").toString().toUpperCase();
                   final String bId = (ev["bill_id"] ?? "").toString().trim();
                   final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
                   final int evTs = int.tryParse(ev["updated_at"]?.toString() ?? "0") ?? 1;
                   final dynamic rawPayload = ev["sale_data"];
+                  if (rawPayload is Map && (rawPayload["fy"] != null || rawPayload["date"] != null)) {
+                    final DateTime? evDate = rawPayload["date"] != null
+                        ? DateTime.tryParse(rawPayload["date"].toString())
+                        : null;
+                    if (!D1SalesLedgerService.doesEventBelongToActiveFY(rawPayload, evDate, effectiveFy)) {
+                      continue;
+                    }
+                  }
                   final bool isPurc = rawPayload is Map &&
                       (rawPayload["doc_type"] == "PURCHASE" ||
                        rawPayload.containsKey("distributorName") ||
                        rawPayload.containsKey("internalNo"));
+                  final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNo, effectiveFy);
                   if (action == "DELETE") {
                     if (bId.isNotEmpty) {
                       localRegistry[bId] = evTs;
                       localRegistry[bId.toUpperCase()] = evTs;
                       localTombstones.add(bId);
                     }
-                    if (!isPurc && bNo.isNotEmpty) {
-                      localRegistry[bNo] = evTs;
-                      localTombstones.add(bNo);
+                    if (!isPurc && scopedBNo.isNotEmpty) {
+                      localRegistry[scopedBNo] = evTs;
+                      localTombstones.add(scopedBNo);
                     }
                     if (rawPayload is Map) {
                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                       final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                      if (iNo.isNotEmpty) {
-                        localRegistry[iNo] = evTs;
-                        localTombstones.add(iNo);
+                      final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
+                      if (scopedINo.isNotEmpty) {
+                        localRegistry[scopedINo] = evTs;
+                        localTombstones.add(scopedINo);
                       }
                       if (pId.isNotEmpty && pBill.isNotEmpty) {
-                        final c2 = "${pId}_$pBill";
+                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy);
                         localRegistry[c2] = evTs;
                         localTombstones.add(c2);
                         if (iNo.isNotEmpty) {
-                          final c3 = "${pId}_${pBill}_$iNo";
+                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy);
                           localRegistry[c3] = evTs;
                           localTombstones.add(c3);
                         }
@@ -178,28 +197,30 @@ class AppSyncEngine {
                       localTombstones.remove(bId);
                       localTombstones.remove(bId.toUpperCase());
                     }
-                    if (bNo.isNotEmpty) {
-                      localRegistry.remove(bNo);
-                      localTombstones.remove(bNo);
+                    if (scopedBNo.isNotEmpty) {
+                      localRegistry.remove(scopedBNo);
+                      localTombstones.remove(scopedBNo);
                     }
                     if (rawPayload is Map) {
                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                       final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                      if (iNo.isNotEmpty) {
-                        localRegistry.remove(iNo);
-                        localTombstones.remove(iNo);
+                      final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
+                      final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, effectiveFy);
+                      if (scopedINo.isNotEmpty) {
+                        localRegistry.remove(scopedINo);
+                        localTombstones.remove(scopedINo);
                       }
-                      if (pBill.isNotEmpty) {
-                        localRegistry.remove(pBill);
-                        localTombstones.remove(pBill);
+                      if (scopedPBill.isNotEmpty) {
+                        localRegistry.remove(scopedPBill);
+                        localTombstones.remove(scopedPBill);
                       }
                       if (pId.isNotEmpty && pBill.isNotEmpty) {
-                        final c2 = "${pId}_$pBill";
+                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy);
                         localRegistry.remove(c2);
                         localTombstones.remove(c2);
                         if (iNo.isNotEmpty) {
-                          final c3 = "${pId}_${pBill}_$iNo";
+                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy);
                           localRegistry.remove(c3);
                           localTombstones.remove(c3);
                         }
@@ -211,78 +232,83 @@ class AppSyncEngine {
             } catch (_) {}
           }
 
-          // STEP 3: EXECUTE DEATH (The Graveyard - Monotonic Anti-Zombie & Multi-Key)
-          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
-          TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
-
           // STEP 3.5: SYNC OTHER FINANCIAL YEARS FROM CLOUD VAULT TO DISK & EXTRACT CURRENT FY FILES
           await MultiFyCloudVault.syncVaultYearsToLocalDisk(ph: ph, cloudData: cloudData);
-          final Map<String, dynamic>? currentFyCloudFiles = MultiFyCloudVault.extractFyFilesForTargetYear(
-            cloudData: cloudData,
-            targetFy: effectiveFy,
-          );
 
-          // STEP 4: DELTA MERGE (The Updater - Strictly Scoped to ph.currentFY)
-          bool hasChanges = (currentFyCloudFiles != null
-                  ? DeltaMergeEngine.processCloudData(ph, currentFyCloudFiles, localRegistry, localHashes)
-                  : false) ||
-              d1HasChanges;
+          if (ph.activeCompany != null && ph.activeCompany!.id == companyId && ph.currentFY == effectiveFy) {
+            // STEP 3: EXECUTE DEATH (The Graveyard - Monotonic Anti-Zombie & Multi-Key)
+            TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
+            TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
 
-          // Final post-merge tombstone sweep so nothing slips through
-          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
-          TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
-
-          if (hasChanges || newlyDeleted.isNotEmpty) {
-            InventoryLogicCenter.rebuildAllInventory(
-              medicines: ph.medicines,
-              batchHistory: ph.batchHistory,
-              purchases: ph.purchases,
-              sales: ph.sales,
-              saleReturns: ph.saleReturns,
-              purchaseReturns: ph.purchaseReturns,
+            final Map<String, dynamic>? currentFyCloudFiles = MultiFyCloudVault.extractFyFilesForTargetYear(
+              cloudData: cloudData,
+              targetFy: effectiveFy,
             );
-            if (hasChanges &&
-                ph.activeCompany != null &&
-                ph.activeCompany!.fYears.length > 1 &&
-                ph.currentFY.isNotEmpty &&
-                ph.currentFY != ph.activeCompany!.fYears.last) {
-              await ph.syncOpeningBalancesFromPreviousYear(
-                startYear: ph.currentFY,
-                onStepProgress: (_, __) {},
-                reloadActiveYearAtEnd: false,
+
+            // STEP 4: DELTA MERGE (The Updater - Strictly Scoped to ph.currentFY)
+            bool hasChanges = (currentFyCloudFiles != null
+                    ? DeltaMergeEngine.processCloudData(ph, currentFyCloudFiles, localRegistry, localHashes)
+                    : false) ||
+                d1HasChanges;
+
+            // Final post-merge tombstone sweep so nothing slips through
+            TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
+            TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
+
+            if (hasChanges || newlyDeleted.isNotEmpty) {
+              InventoryLogicCenter.rebuildAllInventory(
+                medicines: ph.medicines,
+                batchHistory: ph.batchHistory,
+                purchases: ph.purchases,
+                sales: ph.sales,
+                saleReturns: ph.saleReturns,
+                purchaseReturns: ph.purchaseReturns,
               );
+              if (hasChanges &&
+                  ph.activeCompany != null &&
+                  ph.activeCompany!.fYears.length > 1 &&
+                  ph.currentFY.isNotEmpty &&
+                  ph.currentFY != ph.activeCompany!.fYears.last) {
+                await ph.syncOpeningBalancesFromPreviousYear(
+                  startYear: ph.currentFY,
+                  onStepProgress: (_, __) {},
+                  reloadActiveYearAtEnd: false,
+                );
+              }
+              ph.notifyListeners();
             }
-            ph.notifyListeners();
           }
         }
       }
 
       await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
-      await SnapshotWatcher.takeSnapshot(ph);
+      if (ph.activeCompany != null && ph.activeCompany!.id == companyId && ph.currentFY == effectiveFy) {
+        await SnapshotWatcher.takeSnapshot(ph);
 
-      // 🛡️ Ensure ALL core disk files strictly match in-memory state before pushing to Cloud Relay
-      try {
-        await File('$workingDir/sales.json').writeAsString(jsonEncode(ph.sales.map((e) => e.toMap()).toList()));
-        await File('$workingDir/purc.json').writeAsString(jsonEncode(ph.purchases.map((e) => e.toMap()).toList()));
-        await File('$workingDir/parts.json').writeAsString(jsonEncode(ph.parties.map((e) => e.toMap()).toList()));
-        await File('$workingDir/meds.json').writeAsString(jsonEncode(ph.medicines.map((e) => e.toMap()).toList()));
-        await File('$workingDir/comps.json').writeAsString(jsonEncode(ph.companies.map((e) => e.toMap()).toList()));
-        await File('$workingDir/salts.json').writeAsString(jsonEncode(ph.salts.map((e) => e.toMap()).toList()));
-        await File('$workingDir/routs.json').writeAsString(jsonEncode(ph.routes.map((e) => e.toMap()).toList()));
-        await File('$workingDir/shortage.json').writeAsString(jsonEncode(ph.shortages.map((e) => e.toMap()).toList()));
-        await File('$workingDir/vouc.json').writeAsString(jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()));
-        await File('$workingDir/s_challan.json').writeAsString(jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()));
-        await File('$workingDir/p_challan.json').writeAsString(jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()));
-        await File('$workingDir/s_return.json').writeAsString(jsonEncode(ph.saleReturns.map((e) => e.toMap()).toList()));
-        await File('$workingDir/p_return.json').writeAsString(jsonEncode(ph.purchaseReturns.map((e) => e.toMap()).toList()));
-        await File('$workingDir/banks.json').writeAsString(jsonEncode(ph.banks.map((e) => e.toMap()).toList()));
-        await File('$workingDir/series.json').writeAsString(jsonEncode(ph.numberingSeries.map((e) => e.toMap()).toList()));
-        await File('$workingDir/bats.json').writeAsString(jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
-        await File('$workingDir/gst_sessions.json').writeAsString(jsonEncode(ph.gstDiarySessions.map((e) => e.toMap()).toList()));
-        await File('$workingDir/config.json').writeAsString(jsonEncode(ph.config.toMap()));
-      } catch (e) {
-        debugPrint("Error flushing core sync files to disk: $e");
+        // 🛡️ Ensure ALL core disk files strictly match in-memory state before pushing to Cloud Relay
+        try {
+          await File('$workingDir/sales.json').writeAsString(jsonEncode(ph.sales.map((e) => e.toMap()).toList()));
+          await File('$workingDir/purc.json').writeAsString(jsonEncode(ph.purchases.map((e) => e.toMap()).toList()));
+          await File('$workingDir/parts.json').writeAsString(jsonEncode(ph.parties.map((e) => e.toMap()).toList()));
+          await File('$workingDir/meds.json').writeAsString(jsonEncode(ph.medicines.map((e) => e.toMap()).toList()));
+          await File('$workingDir/comps.json').writeAsString(jsonEncode(ph.companies.map((e) => e.toMap()).toList()));
+          await File('$workingDir/salts.json').writeAsString(jsonEncode(ph.salts.map((e) => e.toMap()).toList()));
+          await File('$workingDir/routs.json').writeAsString(jsonEncode(ph.routes.map((e) => e.toMap()).toList()));
+          await File('$workingDir/shortage.json').writeAsString(jsonEncode(ph.shortages.map((e) => e.toMap()).toList()));
+          await File('$workingDir/vouc.json').writeAsString(jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()));
+          await File('$workingDir/s_challan.json').writeAsString(jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()));
+          await File('$workingDir/p_challan.json').writeAsString(jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()));
+          await File('$workingDir/s_return.json').writeAsString(jsonEncode(ph.saleReturns.map((e) => e.toMap()).toList()));
+          await File('$workingDir/p_return.json').writeAsString(jsonEncode(ph.purchaseReturns.map((e) => e.toMap()).toList()));
+          await File('$workingDir/banks.json').writeAsString(jsonEncode(ph.banks.map((e) => e.toMap()).toList()));
+          await File('$workingDir/series.json').writeAsString(jsonEncode(ph.numberingSeries.map((e) => e.toMap()).toList()));
+          await File('$workingDir/bats.json').writeAsString(jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))));
+          await File('$workingDir/gst_sessions.json').writeAsString(jsonEncode(ph.gstDiarySessions.map((e) => e.toMap()).toList()));
+          await File('$workingDir/config.json').writeAsString(jsonEncode(ph.config.toMap()));
+        } catch (e) {
+          debugPrint("Error flushing core sync files to disk: $e");
+        }
       }
 
       // STEP 5: PUSH TO CLOUD (Multi-FY Cloud Vault — All Financial Years Preserved!)

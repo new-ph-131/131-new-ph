@@ -21,6 +21,7 @@ class _SaleSummaryViewState extends State<SaleSummaryView> {
   DateTime toDate = DateTime.now();
   String searchQuery = "";
   bool _isInit = false;
+  String _boundFy = "";
 
   // --- NAYA AUDIT CODE: SELECTION & PROCESSING STATE ---
   bool isSelectionMode = false;
@@ -32,12 +33,12 @@ class _SaleSummaryViewState extends State<SaleSummaryView> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final ph = Provider.of<PharoahManager>(context, listen: false);
-      toDate = AppDateLogic.getSmartDate(ph.currentFY);
-      DateTime thirtyDaysAgo = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = AppDateLogic.getFYStart(ph.currentFY);
-      fromDate = thirtyDaysAgo.isBefore(fyStart) ? fyStart : thirtyDaysAgo;
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    if (!_isInit || _boundFy != ph.currentFY) {
+      final range = AppDateLogic.getRegisterDateRange(ph.currentFY);
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _boundFy = ph.currentFY;
       _isInit = true;
     }
   }

@@ -203,10 +203,30 @@ class AppRealtimeCoordinator {
     });
   }
 
-  void stop() {
+  /// Immediately flushes any pending debounced outbox/cloud push before switching Financial Year
+  Future<void> flushPendingPushBeforeSwitch(PharoahManager ph) async {
+    final bool hadPending = (_pushDebounceTimer?.isActive ?? false) ||
+        _hasPendingPush ||
+        _pendingDeletedIds.isNotEmpty ||
+        _pendingUnmarkedIds.isNotEmpty;
+    _pushDebounceTimer?.cancel();
+    if (!hadPending && !_isPushing) return;
+    if (ph.activeCompany == null) return;
+    try {
+      await SyncQueueManager.flushOutboxAsJSONBatch();
+      unawaited(AppSyncEngine.pushStoreData(ph));
+    } catch (_) {}
+  }
+
+  void stop({PharoahManager? ph}) {
+    final bool hadPendingTimer = _pushDebounceTimer?.isActive ?? false;
     _pushDebounceTimer?.cancel();
     _safetyHeartbeatTimer?.cancel();
     CloudSignalChannel.instance.stopListening();
+    if (hadPendingTimer && ph != null && ph.activeCompany != null) {
+      unawaited(SyncQueueManager.flushOutboxAsJSONBatch());
+      unawaited(AppSyncEngine.pushStoreData(ph));
+    }
     _isPushing = false;
     _hasPendingPush = false;
     _pendingDeletedIds.clear();

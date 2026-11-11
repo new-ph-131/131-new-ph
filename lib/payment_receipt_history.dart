@@ -27,17 +27,17 @@ class _PaymentReceiptHistoryState extends State<PaymentReceiptHistory> {
   String viewMode = "All";
   Party? selectedParty;
   bool _isInit = false;
+  String _boundFy = "";
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final ph = Provider.of<PharoahManager>(context, listen: false);
-      // FY Locked Smart Date Initialization
-      toDate = AppDateLogic.getSmartDate(ph.currentFY);
-      fromDate = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = AppDateLogic.getFYStart(ph.currentFY);
-      if (fromDate.isBefore(fyStart)) fromDate = fyStart;
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    if (!_isInit || _boundFy != ph.currentFY) {
+      final range = AppDateLogic.getRegisterDateRange(ph.currentFY);
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _boundFy = ph.currentFY;
       _isInit = true;
     }
   }

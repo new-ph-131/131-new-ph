@@ -65,8 +65,8 @@ class FastPullEngine {
           if (isStale()) return false;
           D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
           if (edgeEvents.isNotEmpty) {
-            bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents);
-            bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents);
+            bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, targetFyAtStart);
+            bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, targetFyAtStart);
             bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
             bool d1GstMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
             bool d1CfgMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
@@ -79,6 +79,11 @@ class FastPullEngine {
               edgeEvents: edgeEvents,
               onSeriesMutated: (updated) => ph.numberingSeries = updated,
             );
+            // Apply any cross-FY D1 edge events directly to their respective non-active FY folders on disk & cascade!
+            await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
+              ph: ph,
+              edgeEvents: edgeEvents,
+            );
             final List<String> newTombKeys = [];
             final List<String> newUnmarkKeys = [];
             for (final ev in edgeEvents) {
@@ -86,37 +91,47 @@ class FastPullEngine {
               final String bId = (ev["bill_id"] ?? "").toString().trim();
               final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
               final dynamic rawPayload = ev["sale_data"];
+              if (rawPayload is Map && (rawPayload["fy"] != null || rawPayload["date"] != null)) {
+                final DateTime? evDate = rawPayload["date"] != null
+                    ? DateTime.tryParse(rawPayload["date"].toString())
+                    : null;
+                if (!D1SalesLedgerService.doesEventBelongToActiveFY(rawPayload, evDate, targetFyAtStart)) {
+                  continue;
+                }
+              }
+              final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNo, targetFyAtStart);
               if (action == "DELETE") {
                 if (bId.isNotEmpty) {
                   newTombKeys.add(bId);
                   newUnmarkKeys.remove(bId);
                   newUnmarkKeys.remove(bId.toUpperCase());
                 }
-                if (bNo.isNotEmpty) {
+                if (scopedBNo.isNotEmpty) {
                   final cleanBNo = bNo.trim().toUpperCase();
                   final bool hasActiveSale = ph.sales.any((s) => s.id != bId && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
                   if (!hasActiveSale) {
-                    newTombKeys.add(bNo);
-                    newUnmarkKeys.remove(bNo);
+                    newTombKeys.add(scopedBNo);
+                    newUnmarkKeys.remove(scopedBNo);
                   }
                 }
                 if (rawPayload is Map) {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                   final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                  if (iNo.isNotEmpty) {
+                  final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
+                  if (scopedINo.isNotEmpty) {
                     final bool hasActivePur = ph.purchases.any((p) => p.id != bId && p.internalNo.trim().toUpperCase() == iNo && p.isDeleted != 1);
                     if (!hasActivePur) {
-                      newTombKeys.add(iNo);
-                      newUnmarkKeys.remove(iNo);
+                      newTombKeys.add(scopedINo);
+                      newUnmarkKeys.remove(scopedINo);
                     }
                   }
                   if (pId.isNotEmpty && pBill.isNotEmpty) {
-                    final c2 = "${pId}_$pBill";
+                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart);
                     newTombKeys.add(c2);
                     newUnmarkKeys.remove(c2);
                     if (iNo.isNotEmpty) {
-                      final c3 = "${pId}_${pBill}_$iNo";
+                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart);
                       newTombKeys.add(c3);
                       newUnmarkKeys.remove(c3);
                     }
@@ -128,28 +143,30 @@ class FastPullEngine {
                   newTombKeys.remove(bId);
                   newTombKeys.remove(bId.toUpperCase());
                 }
-                if (bNo.isNotEmpty) {
-                  newUnmarkKeys.add(bNo);
-                  newTombKeys.remove(bNo);
+                if (scopedBNo.isNotEmpty) {
+                  newUnmarkKeys.add(scopedBNo);
+                  newTombKeys.remove(scopedBNo);
                 }
                 if (rawPayload is Map) {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                   final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                  if (iNo.isNotEmpty) {
-                    newUnmarkKeys.add(iNo);
-                    newTombKeys.remove(iNo);
+                  final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
+                  final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, targetFyAtStart);
+                  if (scopedINo.isNotEmpty) {
+                    newUnmarkKeys.add(scopedINo);
+                    newTombKeys.remove(scopedINo);
                   }
-                  if (pBill.isNotEmpty) {
-                    newUnmarkKeys.add(pBill);
-                    newTombKeys.remove(pBill);
+                  if (scopedPBill.isNotEmpty) {
+                    newUnmarkKeys.add(scopedPBill);
+                    newTombKeys.remove(scopedPBill);
                   }
                   if (pId.isNotEmpty && pBill.isNotEmpty) {
-                    final c2 = "${pId}_$pBill";
+                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart);
                     newUnmarkKeys.add(c2);
                     newTombKeys.remove(c2);
                     if (iNo.isNotEmpty) {
-                      final c3 = "${pId}_${pBill}_$iNo";
+                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart);
                       newUnmarkKeys.add(c3);
                       newTombKeys.remove(c3);
                     }
@@ -312,16 +329,23 @@ class FastPullEngine {
                 final k = keys[ki].trim();
                 final clean = k.toUpperCase();
                 if (clean.isEmpty) continue;
-                final bool inTombs = localTombstones.contains(clean) || localTombstones.contains(k);
-                final int regTs = localRegistry[clean] ?? localRegistry[k] ?? 0;
                 if (ki == 0) {
                   // Primary immutable ID check
-                  if (inTombs || regTs > 0) {
+                  final bool inTombs = localTombstones.contains(clean) || localTombstones.contains(k);
+                  final int regTs = localRegistry[clean] ?? localRegistry[k] ?? 0;
+                  if (inTombs && (regTs == 0 || itemUpdatedAt == 0 || regTs >= itemUpdatedAt)) {
+                    isBlocked = true;
+                    break;
+                  }
+                  if (regTs > 0 && (itemUpdatedAt == 0 || regTs >= itemUpdatedAt)) {
                     isBlocked = true;
                     break;
                   }
                 } else {
-                  // Secondary / Series key check: allow newer re-created bills with a newer timestamp!
+                  // Secondary / Series key check: Strictly FY-scoped!
+                  final String scopedClean = D1SalesLedgerService.scopeSecondaryKey(clean, targetFyAtStart);
+                  final bool inTombs = localTombstones.contains(scopedClean);
+                  final int regTs = localRegistry[scopedClean] ?? 0;
                   if (regTs > 0 && (itemUpdatedAt == 0 || regTs >= itemUpdatedAt)) {
                     isBlocked = true;
                     break;
@@ -338,7 +362,7 @@ class FastPullEngine {
         } catch (_) {}
       }
 
-      // 🛡️ UNIVERSAL D1 PRE-MERGE SHIELD: Sales, Purchases, Challans, Returns, Vouchers
+      // 🛡️ UNIVERSAL D1 PRE-MERGE SHIELD: Sales, Purchases, Challans, Returns, Vouchers (Strictly Scoped to targetFyAtStart)
       void applyUniversalD1Shield(String fileName, String docType, List<String> Function(Map) keyExtractor) {
         if (!cloudFiles.containsKey(fileName) || cloudFiles[fileName] == null) return;
         try {
@@ -351,9 +375,9 @@ class FastPullEngine {
                 final partyId = (item["partyId"] ?? "").toString();
                 final billNo = (item["billNo"] ?? "").toString();
                 final intNo = (item["internalNo"] ?? "").toString();
-                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo)) continue;
+                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, targetFyAtStart)) continue;
                 final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
-                if (D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo) > itemVer) continue;
+                if (D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo, targetFyAtStart) > itemVer) continue;
                 filtered.add(item);
                 continue;
               }
@@ -361,9 +385,9 @@ class FastPullEngine {
               final String k1 = keys.isNotEmpty ? keys[0].trim() : "";
               final String k2 = keys.length > 1 ? keys[1].trim() : "";
               final String k3 = keys.length > 2 ? keys[2].trim() : "";
-              if (D1SalesLedgerService.isBillDeleted(k1, k2, k3)) continue;
+              if (D1SalesLedgerService.isBillDeleted(k1, k2, k3, targetFyAtStart)) continue;
               final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
-              if (D1SalesLedgerService.getKnownVersion(k1, k2, k3) > itemVer) continue;
+              if (D1SalesLedgerService.getKnownVersion(k1, k2, k3, targetFyAtStart) > itemVer) continue;
               filtered.add(item);
             }
           }

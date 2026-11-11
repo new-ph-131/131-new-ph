@@ -112,6 +112,18 @@ class AppDateLogic {
     return DateFormat('dd/MM/yyyy').format(date);
   }
 
+  /// Returns the default full-year (fromDate, toDate) range for Register / Summary views.
+  /// Always starts from 1st April of `currentFY` so bills in earlier months of active or back FYs are never hidden!
+  static ({DateTime fromDate, DateTime toDate}) getRegisterDateRange(String currentFY) {
+    final DateTime fyStart = getFYStart(currentFY);
+    final DateTime fyEnd = getFYEnd(currentFY);
+    final DateTime now = DateTime.now();
+    if (!now.isBefore(fyStart) && !now.isAfter(fyEnd)) {
+      return (fromDate: fyStart, toDate: now);
+    }
+    return (fromDate: fyStart, toDate: fyEnd);
+  }
+
   /// Safety Check: Kya koi date kisi specific FY ke andar hai?
   static bool isValidInFY(DateTime pickedDate, String currentFY) {
     if (currentFY.trim().isEmpty) return true;

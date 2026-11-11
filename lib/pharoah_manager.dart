@@ -292,7 +292,7 @@ class PharoahManager with ChangeNotifier {
 
   
   Future<void> switchYear(String year) async {
-    AppRealtimeCoordinator.instance.stop();
+    AppRealtimeCoordinator.instance.stop(ph: this);
     FastPullEngine.invalidateInFlightPulls();
     currentFY = year.trim();
     activeModule = "HOME";
@@ -325,7 +325,7 @@ class PharoahManager with ChangeNotifier {
   /// Exits the active Financial Year back to CompanyControlPanelView (LOGIN TO WORK / MAINTENANCE / NEW YEAR)
   /// without forcing the user to re-enter username/password.
   void exitYearToControlPanel() {
-    AppRealtimeCoordinator.instance.stop();
+    AppRealtimeCoordinator.instance.stop(ph: this);
     AppAutoSyncDaemon.instance.stop();
     FastPullEngine.invalidateInFlightPulls();
     currentFY = "";
@@ -509,29 +509,30 @@ class PharoahManager with ChangeNotifier {
 
       sales = loadList<Sale>('sales.json', (e) => Sale.fromMap(e))
           .where((s) =>
+              s.isDeleted != 1 &&
               !s.id.startsWith('SESS_') &&
               s.id != 'APP_CONFIG_MASTER' &&
               s.billNo.trim().isNotEmpty &&
               !(s.items.isEmpty && s.totalAmount <= 0) &&
-              !D1SalesLedgerService.isBillDeleted(s.id, s.billNo))
+              !D1SalesLedgerService.isBillDeleted(s.id, s.billNo, null, currentFY))
           .toList();
       purchases = loadList<Purchase>('purc.json', (e) => Purchase.fromMap(e))
-          .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
+          .where((p) => p.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, currentFY))
           .toList();
       vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
-          .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo))
+          .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, null, currentFY))
           .toList();
       saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e))
-          .where((c) => !D1SalesLedgerService.isBillDeleted(c.id, c.billNo))
+          .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(c.id, c.billNo, null, currentFY))
           .toList();
       purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e))
-          .where((c) => !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo))
+          .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo, currentFY))
           .toList();
       saleReturns = loadList<SaleReturn>('s_return.json', (e) => SaleReturn.fromMap(e))
-          .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+          .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, null, currentFY))
           .toList();
       purchaseReturns = loadList<PurchaseReturn>('p_return.json', (e) => PurchaseReturn.fromMap(e))
-          .where((r) => !D1SalesLedgerService.isBillDeleted(r.id, r.billNo))
+          .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, null, currentFY))
           .toList();
       cheques = loadList<ChequeEntry>('cheques.json', (e) => ChequeEntry.fromMap(e));
       shortages = loadList<ShortageItem>('shortage.json', (e) => ShortageItem.fromMap(e));
@@ -3191,11 +3192,21 @@ void registerBatchActivity({
   
   Future<bool> startNewFinancialYear(String n, {bool filterZeroStock = false, bool filterExpired = false}) async { 
     await save(); 
-    
+    if (activeCompany != null && activeCompany!.fYears.length > 1) {
+      final sortedExisting = AppDateLogic.sortFYList(activeCompany!.fYears);
+      await syncOpeningBalancesFromPreviousYear(
+        startYear: sortedExisting.first,
+        onStepProgress: (_, __) {},
+        reloadActiveYearAtEnd: currentFY.isNotEmpty,
+      );
+    }
     // --- 🛡️ PATH COLLISION FIX (NEW) ---
     // Gateway screen par currentFY khali ("") hoti hai, jisse path mismatch ho jata hai.
     // Isliye hum strictly pichle saal ka active folder (fYears.last) use karenge.
-    String actualSourceYear = currentFY.isNotEmpty ? currentFY : activeCompany!.fYears.last;
+    final sortedFysForSource = AppDateLogic.sortFYList(activeCompany!.fYears);
+    String actualSourceYear = sortedFysForSource.isNotEmpty
+        ? sortedFysForSource.last
+        : (currentFY.isNotEmpty ? currentFY : activeCompany!.fYears.last);
 
     bool ok = await FYTransferEngine.transferData(
       companyID: activeCompany!.id, 
@@ -3439,7 +3450,8 @@ void registerBatchActivity({
   // --- 🛡️ SILENT MAINTENANCE LOADERS (NEW) ---
   // Yeh system ko bina notify kiye (bina screen flash kiye) memory reload karne ki permission dete hain.
   Future<void> loadDataForMaintenanceSilently(String year) async {
-    currentFY = year; 
+    currentFY = year.trim();
+    D1SalesLedgerService.activeFinancialYear = currentFY;
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
     dynamic load(String n) {

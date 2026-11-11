@@ -49,6 +49,7 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
   String currentView = "HOME";
   String currentViewTitle = "MAIN BUSINESS MODULES";
   String searchQuery = "";
+  String _lastBoundFy = "";
 
   List<Map<String, dynamic>> recentShortcuts = [];
 
@@ -127,6 +128,14 @@ class _WebPortalGatewayState extends State<WebPortalGateway> {
   @override
   Widget build(BuildContext context) {
     final webPh = Provider.of<PharoahWebManager>(context);
+
+    if (webPh.financialYear.isNotEmpty && _lastBoundFy != webPh.financialYear) {
+      if (_lastBoundFy.isNotEmpty && currentView != "HOME") {
+        currentView = "HOME";
+        currentViewTitle = "MAIN BUSINESS MODULES";
+      }
+      _lastBoundFy = webPh.financialYear;
+    }
 
     if (!webPh.isAuthenticated) {
       return Scaffold(
