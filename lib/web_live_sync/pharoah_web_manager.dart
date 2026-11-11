@@ -349,8 +349,53 @@ class PharoahWebManager with ChangeNotifier {
                 }
               });
               cloudVaultParsed[cleanFy] = fMap;
-              if (overwriteActiveYearInVault || cleanFy != financialYear || !fyVault.containsKey(cleanFy)) {
+              // 🛡️ ANTI-DATA-LOSS VAULT SHIELD (#PH-REV-800): Never blindly wipe an existing in-memory FY vault!
+              if (!fyVault.containsKey(cleanFy) || overwriteActiveYearInVault) {
                 fyVault[cleanFy] = fMap;
+              } else {
+                // If local vault already has records (e.g. freshly created bills in back-year or active year),
+                // preserve local transaction registers and merge so newly created bills are NEVER lost!
+                final existingYearFiles = fyVault[cleanFy]!;
+                final Map<String, String> mergedYearFiles = Map<String, String>.from(existingYearFiles);
+                fMap.forEach((fname, fcontent) {
+                  if (!mergedYearFiles.containsKey(fname) || mergedYearFiles[fname]!.trim().length <= 2) {
+                    mergedYearFiles[fname] = fcontent;
+                  } else if (fname == 'sales.json' || fname == 'purc.json' || fname == 'vouc.json' || 
+                             fname == 's_challan.json' || fname == 'p_challan.json' || 
+                             fname == 's_return.json' || fname == 'p_return.json') {
+                    try {
+                      final localArr = jsonDecode(mergedYearFiles[fname]!) as List;
+                      final cloudArr = jsonDecode(fcontent) as List;
+                      final Map<String, dynamic> mergedMap = {};
+                      for (var item in cloudArr) {
+                        if (item is Map) {
+                          final k = (item['id'] ?? item['billNo'] ?? '').toString().trim();
+                          if (k.isNotEmpty) mergedMap[k] = item;
+                        }
+                      }
+                      for (var item in localArr) {
+                        if (item is Map) {
+                          final k = (item['id'] ?? item['billNo'] ?? '').toString().trim();
+                          if (k.isNotEmpty) {
+                            if (!mergedMap.containsKey(k)) {
+                              mergedMap[k] = item;
+                            } else {
+                              final int lVer = int.tryParse(item['version']?.toString() ?? '1') ?? 1;
+                              final int cVer = int.tryParse(mergedMap[k]['version']?.toString() ?? '1') ?? 1;
+                              if (lVer >= cVer) mergedMap[k] = item;
+                            }
+                          }
+                        }
+                      }
+                      mergedYearFiles[fname] = jsonEncode(mergedMap.values.toList());
+                    } catch (_) {
+                      // Preserve local in case of parse error
+                    }
+                  } else {
+                    mergedYearFiles[fname] = fcontent;
+                  }
+                });
+                fyVault[cleanFy] = mergedYearFiles;
               }
             }
           });
@@ -359,6 +404,18 @@ class PharoahWebManager with ChangeNotifier {
     }
 
     final Set<String> discoveredFys = Set<String>.from(availableFinancialYears);
+    if (files.containsKey('registered_fyears.json')) {
+      try {
+        final rawRf = files['registered_fyears.json'];
+        final rfList = rawRf is String ? jsonDecode(rawRf) : rawRf;
+        if (rfList is List) {
+          for (final y in rfList) {
+            final cy = y.toString().trim();
+            if (cy.isNotEmpty) discoveredFys.add(cy);
+          }
+        }
+      } catch (_) {}
+    }
     if (companyProfile['fYears'] is List) {
       for (final y in (companyProfile['fYears'] as List)) {
         final cy = y.toString().trim();
@@ -398,7 +455,29 @@ class PharoahWebManager with ChangeNotifier {
         ? Map<String, dynamic>.from(result['files'])
         : {};
     fyVault.clear();
-    availableFinancialYears = [cloudTopFy];
+    final Set<String> preDiscovered = {};
+    if (companyProfile['fYears'] is List) {
+      for (final y in (companyProfile['fYears'] as List)) {
+        final cy = y.toString().trim();
+        if (cy.isNotEmpty) preDiscovered.add(cy);
+      }
+    }
+    if (files.containsKey('registered_fyears.json')) {
+      try {
+        final rawRf = files['registered_fyears.json'];
+        final rfList = rawRf is String ? jsonDecode(rawRf) : rawRf;
+        if (rfList is List) {
+          for (final y in rfList) {
+            final cy = y.toString().trim();
+            if (cy.isNotEmpty) preDiscovered.add(cy);
+          }
+        }
+      } catch (_) {}
+    }
+    if (cloudTopFy.trim().isNotEmpty) preDiscovered.add(cloudTopFy.trim());
+    availableFinancialYears = preDiscovered.isNotEmpty
+        ? WebAppDateLogic.sortFYList(preDiscovered)
+        : [cloudTopFy];
     _extractAndSyncFyVaultFromCloud(files, cloudTopFy: cloudTopFy, overwriteActiveYearInVault: true);
 
     if (!isExplicitBackYearSelected || !availableFinancialYears.contains(financialYear)) {
@@ -3060,8 +3139,10 @@ class PharoahWebManager with ChangeNotifier {
       final Map<String, Map<String, String>> cloudVaultMap =
           _extractAndSyncFyVaultFromCloud(files, cloudTopFy: cloudTopFy, overwriteActiveYearInVault: false);
 
-      if (!isExplicitBackYearSelected && availableFinancialYears.isNotEmpty) {
-        financialYear = availableFinancialYears.last;
+      // 🛡️ Respect active FY: NEVER force jump to latest year if current FY is still valid!
+      if (!availableFinancialYears.contains(financialYear)) {
+        financialYear = availableFinancialYears.isNotEmpty ? availableFinancialYears.last : (cloudTopFy ?? financialYear);
+        isExplicitBackYearSelected = false;
       }
       D1SalesLedgerService.activeFinancialYear = financialYear;
 

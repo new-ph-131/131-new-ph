@@ -120,6 +120,18 @@ class MultiFyCloudVault {
           if (cy.isNotEmpty) allKnownFys.add(cy);
         }
       }
+      if (rawCloudFiles.containsKey('registered_fyears.json')) {
+        try {
+          final rawRf = rawCloudFiles['registered_fyears.json'];
+          final rfList = rawRf is String ? jsonDecode(rawRf) : rawRf;
+          if (rfList is List) {
+            for (final y in rfList) {
+              final cy = y.toString().trim();
+              if (cy.isNotEmpty) allKnownFys.add(cy);
+            }
+          }
+        } catch (_) {}
+      }
       for (final vy in vault.keys) {
         if (vy.trim().isNotEmpty) allKnownFys.add(vy.trim());
       }
@@ -236,6 +248,7 @@ class MultiFyCloudVault {
     }
 
     filesPayload['fy_vault.json'] = jsonEncode(fyVault);
+    filesPayload['registered_fyears.json'] = jsonEncode(sortedFys);
     filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
     filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
 

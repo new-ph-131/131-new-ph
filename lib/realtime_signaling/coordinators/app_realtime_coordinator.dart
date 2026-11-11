@@ -30,7 +30,8 @@ class AppRealtimeCoordinator {
   /// Starts listening to real-time events from Web
   Future<void> start(PharoahManager ph) async {
     stop();
-    if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
+    if (ph.activeCompany == null) return;
+    if (ph.currentFY.isEmpty && action != 'NEW_FY_CREATED') return;
 
     final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
 

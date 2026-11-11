@@ -30,9 +30,19 @@ class AppSyncEngine {
   /// 🔄 1000-IQ BULLETPROOF 2-WAY SYNC ENGINE (STATE SNAPSHOT DIFFING & TOMBSTONE PROTOCOL)
   static Future<bool> pushStoreData(PharoahManager ph) async {
     try {
-      if (ph.activeCompany == null || ph.currentFY.isEmpty) return false;
-      final workingDir = await ph.getWorkingPath();
-      if (workingDir.isEmpty) return false;
+      if (ph.activeCompany == null) return false;
+      final String effectiveFy = ph.currentFY.isNotEmpty
+          ? ph.currentFY
+          : (ph.activeCompany!.fYears.isNotEmpty ? ph.activeCompany!.fYears.last : "");
+      if (effectiveFy.isEmpty) return false;
+
+      String workingDir = await ph.getWorkingPath();
+      if (workingDir.isEmpty) {
+        final root = await getApplicationDocumentsDirectory();
+        workingDir = '${root.path}/Pharoah_Data/${ph.activeCompany!.id}/${ph.activeCompany!.businessType}/$effectiveFy';
+        final d = Directory(workingDir);
+        if (!await d.exists()) await d.create(recursive: true);
+      }
 
       final prefs = await SharedPreferences.getInstance();
       final companyId = ph.activeCompany!.id;
@@ -41,8 +51,8 @@ class AppSyncEngine {
       // STEP 1: SNAP & DETECT (The Spy)
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
-      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId, ph.currentFY);
-      D1SalesLedgerService.activeFinancialYear = ph.currentFY;
+      Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId, effectiveFy);
+      D1SalesLedgerService.activeFinancialYear = effectiveFy;
       List<String> newlyDeleted = await SnapshotWatcher.detectLocalDeletions(ph);
       if (newlyDeleted.isNotEmpty) {
         final nowTs = DateTime.now().millisecondsSinceEpoch;
@@ -208,7 +218,7 @@ class AppSyncEngine {
           await MultiFyCloudVault.syncVaultYearsToLocalDisk(ph: ph, cloudData: cloudData);
           final Map<String, dynamic>? currentFyCloudFiles = MultiFyCloudVault.extractFyFilesForTargetYear(
             cloudData: cloudData,
-            targetFy: ph.currentFY,
+            targetFy: effectiveFy,
           );
 
           // STEP 4: DELTA MERGE (The Updater - Strictly Scoped to ph.currentFY)
@@ -290,7 +300,7 @@ class AppSyncEngine {
         "adminUser": ph.activeCompany!.adminUser,
         "adminPassword": ph.activeCompany!.password,
         "fy": vaultBundle.primaryFy,
-        "activeFy": ph.currentFY,
+        "activeFy": effectiveFy,
         "registryProfile": ph.activeCompany!.toMap(),
         "files": vaultBundle.filesPayload,
         "syncedAt": DateTime.now().toIso8601String(),
