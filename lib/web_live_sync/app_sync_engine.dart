@@ -17,6 +17,7 @@ import 'sync_protocol/snapshot_watcher.dart';
 import 'sync_protocol/tombstone_engine.dart';
 import 'sync_protocol/delta_merge_engine.dart';
 import '../sync_core/multi_fy_cloud_vault.dart';
+import 'package:path_provider/path_provider.dart';
 
 class AppSyncEngine {
   static const List<String> _coreFiles = [

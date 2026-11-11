@@ -3249,8 +3249,6 @@ void registerBatchActivity({
         notifyListeners();
       }
       AppRealtimeCoordinator.instance.notifyAppMutation(this, action: 'NEW_FY_CREATED', entityId: n);
-      // 🛡️ Immediate Cloud Push to ensure Web sees newly registered FY instantly (#PH-REV-800)
-      AppSyncEngine.pushStoreData(this);
     } 
     return ok; 
   }
