@@ -79,17 +79,17 @@ class AppRealtimeCoordinator {
         debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
         if (event.unmarkedIds.isNotEmpty && ph.activeCompany != null) {
           for (final u in event.unmarkedIds) {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(u);
-            D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase());
-            await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(u, "", "", ph.currentFY);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase(), "", "", ph.currentFY);
+            await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u, fy: ph.currentFY);
           }
         }
         if (event.deletedIds.isNotEmpty && ph.activeCompany != null) {
           final companyId = ph.activeCompany!.id;
           for (final d in event.deletedIds) {
-            D1SalesLedgerService.markPermanentlyDeleted(d);
+            D1SalesLedgerService.markPermanentlyDeleted(d, "", "", ph.currentFY);
           }
-          await TombstoneEngine.recordBatchTombstones(companyId, event.deletedIds);
+          await TombstoneEngine.recordBatchTombstones(companyId, event.deletedIds, fy: ph.currentFY);
           final reg = await TombstoneEngine.getTombstoneRegistry(companyId);
           final tombstones = await TombstoneEngine.getLocalTombstones(companyId);
           TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, reg);

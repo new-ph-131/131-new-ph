@@ -67,6 +67,8 @@ class D1SalesLedgerService {
       if (!k.contains("_")) return false;
     }
     if (RegExp(r'^\d{10,}$').hasMatch(k) || RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(k)) return false;
+    // 🛡️ All human numeric sequence numbers (1, 2, 001, 10, etc.) are series keys that reset across FYs! (#PH-REV-806)
+    if (RegExp(r'^\d{1,9}$').hasMatch(k)) return true;
     return k.startsWith("INV-") || k.startsWith("WSALE-") || k.startsWith("PUR-") || k.startsWith("WPUR-") ||
            k.startsWith("SCH-") || k.startsWith("WSCH-") || k.startsWith("PCH-") || k.startsWith("WPCH-") ||
            k.startsWith("TXN-") || k.startsWith("WCN-") || k.startsWith("WDN-") || k.startsWith("SR-") ||

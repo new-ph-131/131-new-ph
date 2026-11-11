@@ -39,9 +39,13 @@ class SyncTombstoneHub {
     required String companyId,
     required String id,
     String? referenceNo,
+    String? fy,
   }) async {
     final cleanId = id.trim();
     if (cleanId.isEmpty) return;
+
+    final rawRef = referenceNo?.trim() ?? '';
+    final scopedRef = (fy != null && fy.trim().isNotEmpty && rawRef.isNotEmpty) ? "$fy::$rawRef" : rawRef;
 
     // 1. Update SharedPreferences cache
     try {
@@ -49,16 +53,22 @@ class SyncTombstoneHub {
       final key = 'tombstones_$companyId';
       final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
       localList.add(cleanId);
-      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-        localList.add(referenceNo.trim());
+      if (scopedRef.isNotEmpty) {
+        localList.add(scopedRef);
       }
       await prefs.setStringList(key, localList.toList());
 
       final uKey = 'unmarked_tombstones_$companyId';
       final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
-      if (cleanId.isNotEmpty) uList.remove(cleanId);
-      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-        uList.remove(referenceNo.trim());
+      if (cleanId.isNotEmpty) {
+        uList.remove(cleanId);
+        uList.remove(cleanId.toUpperCase());
+      }
+      if (rawRef.isNotEmpty) {
+        uList.remove(rawRef);
+        uList.remove(rawRef.toUpperCase());
+        uList.remove(scopedRef);
+        uList.remove(scopedRef.toUpperCase());
       }
       await prefs.setStringList(uKey, uList.toList());
     } catch (_) {}
@@ -67,54 +77,84 @@ class SyncTombstoneHub {
     if (workingDir.isNotEmpty) {
       final diskSet = await loadFromDisk(workingDir);
       diskSet.add(cleanId);
-      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-        diskSet.add(referenceNo.trim());
+      if (scopedRef.isNotEmpty) {
+        diskSet.add(scopedRef);
       }
       await saveToDisk(workingDir, diskSet);
     }
   }
 
-  /// Unmarks a tombstone when a record is newly imported or recreated with higher version
+  /// Unmarks a tombstone when a record is newly imported or recreated with higher version (#PH-REV-806)
   static Future<void> unmarkDeleted({
     required String workingDir,
     required String companyId,
     required String id,
     String? referenceNo,
+    String? fy,
   }) async {
     final cleanId = id.trim();
+    final rawRef = referenceNo?.trim() ?? '';
+    final scopedRef = (fy != null && fy.trim().isNotEmpty && rawRef.isNotEmpty) ? "$fy::$rawRef" : rawRef;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = 'tombstones_$companyId';
       final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
-      if (cleanId.isNotEmpty) localList.remove(cleanId);
-      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-        localList.remove(referenceNo.trim());
+      if (cleanId.isNotEmpty) {
+        localList.remove(cleanId);
+        localList.remove(cleanId.toUpperCase());
+      }
+      if (rawRef.isNotEmpty) {
+        localList.remove(rawRef);
+        localList.remove(rawRef.toUpperCase());
+        localList.remove(scopedRef);
+        localList.remove(scopedRef.toUpperCase());
       }
       await prefs.setStringList(key, localList.toList());
 
       final uKey = 'unmarked_tombstones_$companyId';
       final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
-      if (cleanId.isNotEmpty) uList.add(cleanId);
-      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-        uList.add(referenceNo.trim());
+      if (cleanId.isNotEmpty) {
+        uList.add(cleanId);
+        uList.add(cleanId.toUpperCase());
+      }
+      if (rawRef.isNotEmpty) {
+        uList.add(rawRef);
+        uList.add(rawRef.toUpperCase());
+        uList.add(scopedRef);
+        uList.add(scopedRef.toUpperCase());
       }
       await prefs.setStringList(uKey, uList.toList());
     } catch (_) {}
+
     if (workingDir.isNotEmpty) {
       final diskSet = await loadFromDisk(workingDir);
-      if (cleanId.isNotEmpty) diskSet.remove(cleanId);
-      if (referenceNo != null && referenceNo.trim().isNotEmpty) {
-        diskSet.remove(referenceNo.trim());
+      if (cleanId.isNotEmpty) {
+        diskSet.remove(cleanId);
+        diskSet.remove(cleanId.toUpperCase());
+      }
+      if (rawRef.isNotEmpty) {
+        diskSet.remove(rawRef);
+        diskSet.remove(rawRef.toUpperCase());
+        diskSet.remove(scopedRef);
+        diskSet.remove(scopedRef.toUpperCase());
       }
       await saveToDisk(workingDir, diskSet);
     }
   }
 
-  /// Checks if a record ID or reference number has been marked as deleted.
-  static bool isDeleted(Set<String> tombstones, String id, {String? referenceNo}) {
-    if (tombstones.contains(id.trim())) return true;
-    if (referenceNo != null && referenceNo.trim().isNotEmpty && tombstones.contains(referenceNo.trim())) {
+  /// Checks if a record ID or reference number has been marked as deleted (#PH-REV-806).
+  static bool isDeleted(Set<String> tombstones, String id, {String? referenceNo, String? fy}) {
+    final cleanId = id.trim();
+    if (cleanId.isNotEmpty && (tombstones.contains(cleanId) || tombstones.contains(cleanId.toUpperCase()))) {
       return true;
+    }
+    if (referenceNo != null && referenceNo.trim().isNotEmpty) {
+      final cleanRef = referenceNo.trim();
+      final scopedRef = (fy != null && fy.trim().isNotEmpty) ? "$fy::$cleanRef" : "";
+      if (scopedRef.isNotEmpty && (tombstones.contains(scopedRef) || tombstones.contains(scopedRef.toUpperCase()))) {
+        return true;
+      }
     }
     return false;
   }

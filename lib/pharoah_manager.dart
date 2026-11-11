@@ -55,6 +55,7 @@ import 'sync_bridge/engines/app_auto_sync_daemon.dart';
 import 'realtime_signaling/coordinators/app_realtime_coordinator.dart';
 import 'realtime_signaling/engines/fast_pull_engine.dart';
 import 'web_live_sync/sync_protocol/tombstone_engine.dart';
+import 'sync_bridge/core/sync_tombstone_hub.dart';
 import 'web_live_sync/sync_protocol/snapshot_watcher.dart';
 
 class PharoahManager with ChangeNotifier {
@@ -608,9 +609,11 @@ Future<void> finalizeSale({
       currentVer = sales[existingIdx].version + 1;
     }
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: sId, secondaryKey: billNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: sId, secondaryKey: billNo, fy: currentFY);
     }
-    D1SalesLedgerService.unmarkPermanentlyDeleted(sId, billNo);
+    D1SalesLedgerService.unmarkPermanentlyDeleted(sId, billNo, currentFY);
+    SyncTombstoneHub.unmarkDeleted(sId, fy: currentFY);
+    SyncTombstoneHub.unmarkDeleted(billNo, fy: currentFY);
     sales.removeWhere((s) => s.id == sId || s.billNo == billNo);
     ProductIntegrityService.ensureLineItemsInProductMaster(
       items: items,
@@ -735,13 +738,16 @@ Future<void> finalizePurchase({
     final compKey2 = (cleanPartyId.isNotEmpty && cleanBillNo.isNotEmpty) ? "${cleanPartyId}_$cleanBillNo" : "";
     final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: pId, secondaryKey: compKey);
-      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2);
-      if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo);
-      if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: pId, secondaryKey: compKey, fy: currentFY);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: currentFY);
+      if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo, fy: currentFY);
+      if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo, fy: currentFY);
     }
-    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo);
-    if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo);
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo, currentFY);
+    if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo, null, currentFY);
+    SyncTombstoneHub.unmarkDeleted(pId, fy: currentFY);
+    if (compKey.isNotEmpty) SyncTombstoneHub.unmarkDeleted(compKey, fy: currentFY);
+    if (cleanBillNo.isNotEmpty) SyncTombstoneHub.unmarkDeleted(cleanBillNo, fy: currentFY);
     final int existingIdx = purchases.indexWhere((p) => 
       p.id == pId || 
       (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
@@ -2664,7 +2670,7 @@ void registerBatchActivity({
       }
       final String realId = s.id;
       sales.removeWhere((x) => x.id == realId || (s.billNo.isNotEmpty && x.billNo.trim().toUpperCase() == s.billNo.trim().toUpperCase()));
-      D1SalesLedgerService.markPermanentlyDeleted(realId, s.billNo);
+      D1SalesLedgerService.markPermanentlyDeleted(realId, s.billNo, currentFY);
       try {
         getWorkingPath().then((dir) {
           if (dir.isNotEmpty) {
@@ -2685,13 +2691,16 @@ void registerBatchActivity({
         });
       }
       if (activeCompany != null) {
-        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: realId, secondaryKey: s.billNo);
+        TombstoneEngine.recordTombstoneWithTimestamp(activeCompany!.id, id: realId, secondaryKey: s.billNo, fy: currentFY);
         final List<String> allUnmarked = [...revertedChallanIds, ...revertedChallanBillNos];
+        final String scopedBillNo = (s.billNo.isNotEmpty && currentFY.isNotEmpty && !s.billNo.toUpperCase().startsWith("${currentFY.toUpperCase()}_"))
+            ? "${currentFY}_${s.billNo}"
+            : s.billNo;
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_SALE',
           entityId: realId,
-          deletedIds: [realId, if (s.billNo.isNotEmpty) s.billNo],
+          deletedIds: [realId, if (scopedBillNo.isNotEmpty) scopedBillNo],
           unmarkedIds: allUnmarked,
         );
       }
@@ -2739,7 +2748,7 @@ void registerBatchActivity({
         (bNo.isNotEmpty && partyId.isNotEmpty && 
          x.billNo.trim().toUpperCase() == bNo && x.partyId.trim().toUpperCase() == partyId)
       );
-      D1SalesLedgerService.markPurchasePermanentlyDeleted(pId, partyId, bNo, intNo);
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(pId, partyId, bNo, intNo, currentFY);
       try {
         getWorkingPath().then((dir) {
           if (dir.isNotEmpty) {
@@ -2765,7 +2774,7 @@ void registerBatchActivity({
             SyncQueueManager.flushOutboxAsJSONBatch();
           }
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys).then((_) {
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY).then((_) {
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
             action: 'DELETE_PURCHASE',
