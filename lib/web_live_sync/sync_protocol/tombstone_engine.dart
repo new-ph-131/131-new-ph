@@ -225,6 +225,46 @@ class TombstoneEngine {
     return tombstones;
   }
 
+    /// 🛡️ SELF-HEALING DISINFECTION (#PH-REV-807):
+  /// Scans SharedPreferences and purges all poisoned legacy naked series keys (e.g. "INV-1", "W-1", "PUR-1")
+  /// that lack a financial year prefix ("FY::"), ensuring past back-year deletions stop killing bills in new FYs!
+  static Future<void> purgeNakedSeriesTombstones(String companyId) async {
+    if (companyId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = "tombstones_$companyId";
+      final list = prefs.getStringList(key) ?? [];
+      final sanitized = list.where((k) {
+        final clean = k.trim();
+        if (clean.isEmpty) return false;
+        if (clean.contains("::")) return true;
+        return !D1SalesLedgerService.isUnscopedSeriesKey(clean);
+      }).toList();
+      if (sanitized.length != list.length) {
+        await prefs.setStringList(key, sanitized);
+      }
+
+      final regKey = "tombstone_registry_$companyId";
+      final regRaw = prefs.getString(regKey);
+      if (regRaw != null && regRaw.isNotEmpty) {
+        final decoded = jsonDecode(regRaw) as Map<String, dynamic>;
+        final cleanReg = <String, dynamic>{};
+        bool hadUnscoped = false;
+        decoded.forEach((k, v) {
+          final clean = k.toString().trim();
+          if (clean.contains("::") || !D1SalesLedgerService.isUnscopedSeriesKey(clean)) {
+            cleanReg[clean] = v;
+          } else {
+            hadUnscoped = true;
+          }
+        });
+        if (hadUnscoped) {
+          await prefs.setString(regKey, jsonEncode(cleanReg));
+        }
+      }
+    } catch (_) {}
+  }
+
   static Future<Set<String>> sanitizeCloudTombstones(String companyId, Iterable<String> incomingCloudTombstones) async {
     final unmarked = await getUnmarkedKeys(companyId);
     final sanitized = <String>{};

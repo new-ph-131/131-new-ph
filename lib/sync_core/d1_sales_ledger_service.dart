@@ -59,22 +59,52 @@ class D1SalesLedgerService {
   static final Map<String, int> _knownBillVersions = {};
 
   /// Checks if a key is a human-readable bill/series number or composite key (which repeats across FYs)
+  /// Checks if a key is a human-readable bill/series number or composite key (which repeats across FYs)
   static bool isUnscopedSeriesKey(String key) {
     final k = key.trim().toUpperCase();
     if (k.isEmpty || k.contains("::")) return false;
-    if (k.startsWith("COMP_") || k.startsWith("SALT_") || k.startsWith("ROUTE_") || k.startsWith("SESS_") || k.startsWith("PARTY-")) {
-      // Note: PARTY-123_BILLNO contains '_' so check if it has '_'
-      if (!k.contains("_")) return false;
+
+    // Master entity identifiers that are globally unique across all FYs (must NOT be scoped)
+    if (k.startsWith("COMP_") || k.startsWith("SALT_") || k.startsWith("ROUTE_") || 
+        k.startsWith("SESS_") || k.startsWith("APP_CONFIG") || k.startsWith("BANK_") ||
+        k.startsWith("STAFF_") || k.startsWith("USER_")) {
+      return false;
     }
-    if (RegExp(r'^\d{10,}$').hasMatch(k) || RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(k)) return false;
-    // 🛡️ All human numeric sequence numbers (1, 2, 001, 10, etc.) are series keys that reset across FYs! (#PH-REV-806)
-    if (RegExp(r'^\d{1,9}$').hasMatch(k)) return true;
-    return k.startsWith("INV-") || k.startsWith("WSALE-") || k.startsWith("PUR-") || k.startsWith("WPUR-") ||
-           k.startsWith("SCH-") || k.startsWith("WSCH-") || k.startsWith("PCH-") || k.startsWith("WPCH-") ||
-           k.startsWith("TXN-") || k.startsWith("WCN-") || k.startsWith("WDN-") || k.startsWith("SR-") ||
-           k.startsWith("CN-") || k.startsWith("PR-") || k.startsWith("DN-") || k.startsWith("RCT-") ||
-           k.startsWith("WRCT-") || k.startsWith("PAY-") || k.startsWith("WPAY-") || k.startsWith("CNT-") ||
-           k.startsWith("EXP-") || k.startsWith("BILL-") || k.startsWith("VOU-") || k.contains("_");
+    if (k.startsWith("PARTY-") && !k.contains("_")) return false;
+    if (k.startsWith("MED_") || (k.startsWith("PH-") && RegExp(r"^PH-\d{4,}$").hasMatch(k))) return false;
+
+    // Timestamps (e.g. 1712345678901) or ISO dates or standard 36-char UUIDs
+    if (RegExp(r"^\d{10,}$").hasMatch(k) || RegExp(r"^\d{4}-\d{2}-\d{2}").hasMatch(k) ||
+        RegExp(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$").hasMatch(k)) {
+      return false;
+    }
+
+    // 🛡️ All human numeric sequence numbers (1, 2, 001, 10, etc.) are series keys that reset across FYs!
+    if (RegExp(r"^\d{1,9}$").hasMatch(k)) return true;
+
+    // Specific transaction series prefixes (Web & App & Standard ERPs)
+    const knownPrefixes = [
+      "INV-", "INV ", "INV", "WSALE-", "WSALE ", "WSALE",
+      "W-", "W ", "SALE-", "SALE ", "PUR-", "PUR ", "WPUR-", "WPUR ",
+      "SCH-", "SCH ", "WSCH-", "WSCH ", "PCH-", "PCH ", "WPCH-", "WPCH ",
+      "SC-", "SC ", "PC-", "PC ", "CH-", "CH ",
+      "TXN-", "TXN ", "WCN-", "WCN ", "WDN-", "WDN ",
+      "SR-", "SR ", "WSR-", "WSR ", "CN-", "CN ", "PR-", "PR ", "DN-", "DN ",
+      "RCT-", "RCT ", "WRCT-", "WRCT ", "PAY-", "PAY ", "WPAY-", "WPAY ",
+      "CNT-", "CNT ", "WCNT-", "WCNT ", "EXP-", "EXP ", "WEXP-", "WEXP ",
+      "BILL-", "BILL ", "WBILL-", "WBILL ", "TAX-", "TAX ", "WTAX-", "WTAX ",
+      "VOU-", "VOU ", "WVOU-", "WVOU "
+    ];
+    for (final pfx in knownPrefixes) {
+      if (k.startsWith(pfx)) return true;
+    }
+
+    // Generic transaction numbers (e.g. custom user series like GST-1, A-1, 2024/001, or composite PARTY_BILL)
+    if (k.contains("_") || k.contains("/") || RegExp(r"[A-Z0-9]+[- /]?[0-9]+$").hasMatch(k)) {
+      return true;
+    }
+
+    return false;
   }
 
   /// Scopes a secondary/series key (e.g. INV-1, PUR-1, PARTY_BILL) to the target Financial Year

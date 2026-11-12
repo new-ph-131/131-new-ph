@@ -1778,9 +1778,13 @@ class PharoahWebManager with ChangeNotifier {
     unmarkedRecordIds.remove(realId);
     if (targetBillNo.isNotEmpty) {
       final cleanBillKey = targetBillNo.trim().toUpperCase();
-      localTombstoneRegistry[cleanBillKey] = delTime;
-      deletedRecordIds.add(cleanBillKey);
-      unmarkedRecordIds.remove(cleanBillKey);
+      final scopedBill = D1SalesLedgerService.scopeSecondaryKey(cleanBillKey, financialYear);
+      localTombstoneRegistry[scopedBill] = delTime;
+      deletedRecordIds.add(scopedBill);
+      unmarkedRecordIds.remove(scopedBill);
+      // Purge naked un-scoped bill key so it never touches another FY!
+      deletedRecordIds.remove(cleanBillKey);
+      localTombstoneRegistry.remove(cleanBillKey);
     }
     _saveLocalTombstones();
 
@@ -1969,11 +1973,14 @@ class PharoahWebManager with ChangeNotifier {
 
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     // 🛡️ COMPOSITE TOMBSTONE KEYS: NEVER naked targetBillNo alone!
+    final scopedIntNo = targetIntNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(targetIntNo, financialYear) : "";
+    final scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, financialYear) : "";
+    final scopedComp3 = compKey3.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey3, financialYear) : "";
     final List<String> delKeys = [
       realId,
-      if (targetIntNo.isNotEmpty) targetIntNo,
-      if (compKey2.isNotEmpty) compKey2,
-      if (compKey3.isNotEmpty) compKey3,
+      if (scopedIntNo.isNotEmpty) scopedIntNo,
+      if (scopedComp2.isNotEmpty) scopedComp2,
+      if (scopedComp3.isNotEmpty) scopedComp3,
     ];
 
     for (var k in delKeys) {
@@ -2051,10 +2058,11 @@ class PharoahWebManager with ChangeNotifier {
       D1SalesLedgerService.markPermanentlyDeleted(voucherId);
     }
     final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final scopedVNo = vNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(vNo, financialYear) : "";
     final List<String> delKeys = [
       realId,
       if (voucherId != realId) voucherId,
-      if (vNo.isNotEmpty) vNo,
+      if (scopedVNo.isNotEmpty) scopedVNo,
     ];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
@@ -2238,7 +2246,8 @@ class PharoahWebManager with ChangeNotifier {
       SaleChallanSyncModule.onSaleChallanDeleted(targetC, activeStoreToken);
     } catch (_) {}
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final List<String> delKeys = [challanId, if (bNo.isNotEmpty) bNo];
+    final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
+    final List<String> delKeys = [challanId, if (scopedBNo.isNotEmpty) scopedBNo];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
       localTombstoneRegistry[k.toUpperCase()] = delTime;
@@ -2274,11 +2283,14 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
     D1SalesLedgerService.markPurchasePermanentlyDeleted(challanId, pId, bNo, iNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
+    final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
+    final scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, financialYear) : "";
+    final scopedComp = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, financialYear) : "";
     final List<String> delKeys = [
       challanId,
-      if (iNo.isNotEmpty) iNo,
-      if (compKey2.isNotEmpty) compKey2,
-      if (compKey.isNotEmpty) compKey,
+      if (scopedINo.isNotEmpty) scopedINo,
+      if (scopedComp2.isNotEmpty) scopedComp2,
+      if (scopedComp.isNotEmpty) scopedComp,
     ];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
@@ -2432,7 +2444,8 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final List<String> delKeys = [returnId, if (bNo.isNotEmpty) bNo];
+    final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
+    final List<String> delKeys = [returnId, if (scopedBNo.isNotEmpty) scopedBNo];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
       localTombstoneRegistry[k.toUpperCase()] = delTime;
@@ -2460,7 +2473,8 @@ class PharoahWebManager with ChangeNotifier {
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final List<String> delKeys = [returnId, if (bNo.isNotEmpty) bNo];
+    final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
+    final List<String> delKeys = [returnId, if (scopedBNo.isNotEmpty) scopedBNo];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
       localTombstoneRegistry[k.toUpperCase()] = delTime;
@@ -3430,6 +3444,13 @@ class PharoahWebManager with ChangeNotifier {
           : financialYear;
       final Map<String, String> sourceFiles =
           fyVault[sourceFy] ?? _captureCurrentMemoryToFyFilesMap();
+      // 🛡️ PRODUCT MASTER CATALOGUE SHIELD (#PH-REV-807):
+      // Master product catalogue must NEVER be lost across financial year transfers!
+      if (!sourceFiles.containsKey("meds.json") || sourceFiles["meds.json"] == null || sourceFiles["meds.json"]!.trim().length <= 2) {
+        if (medicines.isNotEmpty) {
+          sourceFiles["meds.json"] = jsonEncode(medicines.map((e) => e.toMap()).toList());
+        }
+      }
 
       final Map<String, String> newYearFiles = FYTransferEngine.computeCarryForwardFromFiles(
         sourceFiles: sourceFiles,

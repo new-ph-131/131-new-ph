@@ -2499,8 +2499,9 @@ void registerBatchActivity({
       _reverseVoucherImpact(v);
 
       // 1. Synchronous memory & D1 gravestone lock + immediate 0ms UI removal on 1st tap
-      D1SalesLedgerService.markPermanentlyDeleted(realId, vNo);
-      D1SalesLedgerService.recordKnownVersion(realId, vNo, 999999);
+      final scopedVNo = vNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(vNo, currentFY) : "";
+      D1SalesLedgerService.markPermanentlyDeleted(realId, vNo, "", currentFY);
+      D1SalesLedgerService.recordKnownVersion(realId, vNo, 999999, currentFY);
       vouchers.removeWhere((x) =>
         x.id == realId ||
         x.id == id ||
@@ -2512,10 +2513,10 @@ void registerBatchActivity({
       final List<String> delKeys = [
         realId,
         if (id != realId) id,
-        if (vNo.isNotEmpty) vNo,
+        if (scopedVNo.isNotEmpty) scopedVNo,
       ];
       if (activeCompany != null) {
-        await TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        await TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
       }
       await save();
 
@@ -2808,20 +2809,21 @@ void registerBatchActivity({
       final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
       final cId = c.id;
       final bNo = c.billNo.trim().toUpperCase();
-      final List<String> delKeys = [cId, if (bNo.isNotEmpty) bNo];
-      D1SalesLedgerService.markPermanentlyDeleted(cId, bNo);
+      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, currentFY) : "";
+      final List<String> delKeys = [cId, if (scopedBNo.isNotEmpty) scopedBNo];
+      D1SalesLedgerService.markPermanentlyDeleted(cId, bNo, "", currentFY);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanDeleted(c, t);
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_SALE_CHALLAN',
           entityId: cId,
           deletedIds: delKeys,
         );
-        }
+      }
       saleChallans.removeWhere((x) => x.id == cId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save();
       notifyListeners();
@@ -2878,13 +2880,14 @@ void registerBatchActivity({
       final r = saleReturns.firstWhere((x) => x.id == id || x.billNo == id);
       final rId = r.id;
       final bNo = r.billNo.trim().toUpperCase();
-      final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
-      D1SalesLedgerService.markPermanentlyDeleted(rId, bNo);
+      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, currentFY) : "";
+      final List<String> delKeys = [rId, if (scopedBNo.isNotEmpty) scopedBNo];
+      D1SalesLedgerService.markPermanentlyDeleted(rId, bNo, "", currentFY);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) CreditNoteSyncModule.onCreditNoteDeleted(r, t);
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_SALE_RETURN',
@@ -2904,13 +2907,14 @@ void registerBatchActivity({
       final r = purchaseReturns.firstWhere((x) => x.id == id || x.billNo == id);
       final rId = r.id;
       final bNo = r.billNo.trim().toUpperCase();
-      final List<String> delKeys = [rId, if (bNo.isNotEmpty) bNo];
-      D1SalesLedgerService.markPermanentlyDeleted(rId, bNo);
+      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, currentFY) : "";
+      final List<String> delKeys = [rId, if (scopedBNo.isNotEmpty) scopedBNo];
+      D1SalesLedgerService.markPermanentlyDeleted(rId, bNo, "", currentFY);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteDeleted(r, t);
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_PURCHASE_RETURN',
