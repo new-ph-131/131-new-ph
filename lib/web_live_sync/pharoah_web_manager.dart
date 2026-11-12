@@ -166,7 +166,10 @@ class PharoahWebManager with ChangeNotifier {
 
     sales.removeWhere((s) {
       final bNo = s.billNo.trim().toUpperCase();
-      return set.contains(s.id) || upperSet.contains(s.id.toUpperCase()) || (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
+      final bool idMatch = set.contains(s.id) || upperSet.contains(s.id.toUpperCase());
+      final bool scopedMatch = scopedBNo.isNotEmpty && (set.contains(scopedBNo) || upperSet.contains(scopedBNo));
+      return idMatch || scopedMatch;
     });
 
     purchases.removeWhere((p) {
@@ -174,10 +177,12 @@ class PharoahWebManager with ChangeNotifier {
       final bNo = p.billNo.trim().toUpperCase();
       final party = p.partyId.trim().toUpperCase();
       final compKey = (party.isNotEmpty && bNo.isNotEmpty) ? "${party}_$bNo" : "";
-      return set.contains(p.id) || upperSet.contains(p.id.toUpperCase()) ||
-          (iNo.isNotEmpty && (set.contains(iNo) || upperSet.contains(iNo))) ||
-          (compKey.isNotEmpty && (set.contains(compKey) || upperSet.contains(compKey))) ||
-          (party.isNotEmpty && bNo.isNotEmpty && (set.contains(bNo) && set.contains(party)));
+      final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
+      final scopedComp = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, financialYear) : "";
+      final bool idMatch = set.contains(p.id) || upperSet.contains(p.id.toUpperCase());
+      final bool scopedMatch = (scopedINo.isNotEmpty && (set.contains(scopedINo) || upperSet.contains(scopedINo))) ||
+                               (scopedComp.isNotEmpty && (set.contains(scopedComp) || upperSet.contains(scopedComp)));
+      return idMatch || scopedMatch;
     });
 
     saleChallans.removeWhere((c) {
@@ -340,11 +345,13 @@ class PharoahWebManager with ChangeNotifier {
     numberingSeries.clear();
   }
 
-  void _snapshotActiveFyToVault() {
+  void snapshotActiveFyToVault() {
     if (financialYear.trim().isNotEmpty) {
       fyVault[financialYear.trim()] = _captureCurrentMemoryToFyFilesMap();
     }
   }
+
+  void _snapshotActiveFyToVault() => snapshotActiveFyToVault();
 
   Map<String, Map<String, String>> _extractAndSyncFyVaultFromCloud(
     Map<String, dynamic> files, {
@@ -387,8 +394,13 @@ class PharoahWebManager with ChangeNotifier {
                       final localArr = jsonDecode(mergedYearFiles[fname]!) as List;
                       final cloudArr = jsonDecode(fcontent) as List;
                       String itemPrimaryKey(Map m) {
+                        final rawId = (m['id'] ?? '').toString().trim();
+                        if (rawId.isNotEmpty) return rawId;
                         if (fname == 'purc.json' || fname == 'p_challan.json') {
                           final intNo = (m['internalNo'] ?? '').toString().trim().toUpperCase();
+                          final party = (m['partyId'] ?? '').toString().trim().toUpperCase();
+                          final bNo = (m['billNo'] ?? '').toString().trim().toUpperCase();
+                          if (party.isNotEmpty && bNo.isNotEmpty) return "${party}_${bNo}_$intNo";
                           if (intNo.isNotEmpty) return intNo;
                         }
                         if (fname == 'sales.json' || fname == 's_challan.json' || fname == 's_return.json' || fname == 'p_return.json') {
@@ -797,12 +809,16 @@ class PharoahWebManager with ChangeNotifier {
           purchases.insert(0, p);
         }
       }
-      // 🛡️ STRICT DEDUPLICATION: Keyed by internalNo or composite key (PartyId_BillNo)
+      // 🛡️ STRICT DEDUPLICATION: Primary key is immutable ID, fallback to composite key
       Map<String, Purchase> masterPurcMap = {};
       for (var p in purchases) {
-        String key = p.internalNo.trim().toUpperCase();
-        if (key.isEmpty && p.partyId.isNotEmpty && p.billNo.isNotEmpty) {
-          key = "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}";
+        String key = p.id.trim();
+        if (key.isEmpty) {
+          if (p.partyId.isNotEmpty && p.billNo.isNotEmpty) {
+            key = "${p.partyId.trim().toUpperCase()}_${p.billNo.trim().toUpperCase()}_${p.internalNo.trim().toUpperCase()}";
+          } else if (p.internalNo.trim().isNotEmpty) {
+            key = p.internalNo.trim().toUpperCase();
+          }
         }
         if (key.isEmpty) key = p.id.trim();
         if (!masterPurcMap.containsKey(key) || p.version >= masterPurcMap[key]!.version) {

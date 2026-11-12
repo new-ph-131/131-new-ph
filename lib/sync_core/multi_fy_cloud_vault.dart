@@ -652,6 +652,7 @@ class MultiFyCloudVault {
     required List<String> coreFiles,
     required Set<String> localTombstones,
     required Map<String, int> localRegistry,
+    String? targetFyOverride,
   }) async {
     final root = await getApplicationDocumentsDirectory();
     final comp = ph.activeCompany!;
@@ -659,9 +660,10 @@ class MultiFyCloudVault {
       comp.fYears.isNotEmpty ? comp.fYears : [ph.currentFY],
     );
     final String latestFy = sortedFys.isNotEmpty ? sortedFys.last : ph.currentFY;
-    // 🛡️ ACTIVE FY PRIORITY: If user is working in an active FY (e.g. 2026-27),
-    // top-level files (s_return.json, sales.json, etc.) MUST reflect the active FY so Web & Relay see live data!
-    final String primaryFy = ph.currentFY.isNotEmpty ? ph.currentFY : latestFy;
+    // 🛡️ ACTIVE FY PRIORITY: Use explicitly passed targetFyOverride to protect against async suspensions
+    final String primaryFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+        ? targetFyOverride.trim()
+        : (ph.currentFY.isNotEmpty ? ph.currentFY : latestFy);
 
     final Map<String, Map<String, String>> fyVault = {};
     for (final fy in sortedFys) {

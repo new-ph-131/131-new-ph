@@ -29,21 +29,20 @@ class AppSyncEngine {
   ];
 
   /// 🔄 1000-IQ BULLETPROOF 2-WAY SYNC ENGINE (STATE SNAPSHOT DIFFING & TOMBSTONE PROTOCOL)
-  static Future<bool> pushStoreData(PharoahManager ph) async {
+  static Future<bool> pushStoreData(PharoahManager ph, [String? targetFyOverride]) async {
     try {
       if (ph.activeCompany == null) return false;
-      final String effectiveFy = ph.currentFY.isNotEmpty
-          ? ph.currentFY
-          : (ph.activeCompany!.fYears.isNotEmpty ? ph.activeCompany!.fYears.last : "");
+      final String effectiveFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+          ? targetFyOverride.trim()
+          : (ph.currentFY.isNotEmpty
+              ? ph.currentFY
+              : (ph.activeCompany!.fYears.isNotEmpty ? ph.activeCompany!.fYears.last : ""));
       if (effectiveFy.isEmpty) return false;
 
-      String workingDir = await ph.getWorkingPath();
-      if (workingDir.isEmpty) {
-        final root = await getApplicationDocumentsDirectory();
-        workingDir = '${root.path}/Pharoah_Data/${ph.activeCompany!.id}/${ph.activeCompany!.businessType}/$effectiveFy';
-        final d = Directory(workingDir);
-        if (!await d.exists()) await d.create(recursive: true);
-      }
+      final root = await getApplicationDocumentsDirectory();
+      final String workingDir = '${root.path}/Pharoah_Data/${ph.activeCompany!.id}/${ph.activeCompany!.businessType}/$effectiveFy';
+      final d = Directory(workingDir);
+      if (!await d.exists()) await d.create(recursive: true);
 
       final prefs = await SharedPreferences.getInstance();
       final companyId = ph.activeCompany!.id;
@@ -335,6 +334,7 @@ class AppSyncEngine {
         coreFiles: _coreFiles,
         localTombstones: localTombstones,
         localRegistry: localRegistry,
+        targetFyOverride: effectiveFy,
       );
 
       final payload = {

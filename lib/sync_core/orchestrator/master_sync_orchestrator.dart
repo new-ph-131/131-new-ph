@@ -792,6 +792,7 @@ class MasterSyncOrchestrator {
       }
       if (phWeb != null) {
         phWeb.rebuildInventory();
+        phWeb.snapshotActiveFyToVault();
         phWeb.notifyListeners();
       }
       debugPrint("🚀 [MasterSyncOrchestrator] Applied $appliedCount mutations from JSON batch!");

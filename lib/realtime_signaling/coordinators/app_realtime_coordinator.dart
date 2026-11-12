@@ -248,19 +248,14 @@ class AppRealtimeCoordinator {
     if (ph.activeCompany == null) return;
     try {
       await SyncQueueManager.flushOutboxAsJSONBatch();
-      unawaited(AppSyncEngine.pushStoreData(ph));
+      await AppSyncEngine.pushStoreData(ph, ph.currentFY);
     } catch (_) {}
   }
 
   void stop({PharoahManager? ph}) {
-    final bool hadPendingTimer = _pushDebounceTimer?.isActive ?? false;
     _pushDebounceTimer?.cancel();
     _safetyHeartbeatTimer?.cancel();
     CloudSignalChannel.instance.stopListening();
-    if (hadPendingTimer && ph != null && ph.activeCompany != null) {
-      unawaited(SyncQueueManager.flushOutboxAsJSONBatch());
-      unawaited(AppSyncEngine.pushStoreData(ph));
-    }
     _isPushing = false;
     _hasPendingPush = false;
     _pendingDeletedIds.clear();

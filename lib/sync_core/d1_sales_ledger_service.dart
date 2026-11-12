@@ -33,9 +33,35 @@ class D1SalesLedgerService {
       if (payloadFy.isNotEmpty) {
         return payloadFy == fy;
       }
+      // Check if primary or secondary key has explicit FY scoping (e.g. 2026-27::INV-1)
+      final idStr = (rawPayload["id"] ?? rawPayload["sync_id"] ?? rawPayload["bill_id"] ?? "").toString().trim();
+      if (idStr.contains("::")) {
+        final scopedFy = idStr.split("::")[0].trim();
+        if (scopedFy.isNotEmpty) return scopedFy == fy;
+      }
+      final secStr = (rawPayload["billNo"] ?? rawPayload["bill_no"] ?? rawPayload["internalNo"] ?? "").toString().trim();
+      if (secStr.contains("::")) {
+        final scopedFy = secStr.split("::")[0].trim();
+        if (scopedFy.isNotEmpty) return scopedFy == fy;
+      }
     }
     if (recordDate != null) {
       return inferFyFromDate(recordDate) == fy;
+    }
+    // 🛡️ ZERO-LEAK GUARD (#PH-REV-810): Minimal transaction deletions without FY or date
+    // must NEVER bypass validation and destroy current active year records!
+    if (rawPayload is Map) {
+      final isDel = (rawPayload["action"]?.toString().toUpperCase() == "DELETE" ||
+                     rawPayload["is_deleted"] == 1 ||
+                     rawPayload["isDeleted"] == 1 ||
+                     rawPayload["status"] == "Deleted");
+      final isTxn = (rawPayload["doc_type"] != null ||
+                     rawPayload.containsKey("billNo") ||
+                     rawPayload.containsKey("internalNo") ||
+                     rawPayload.containsKey("voucherNo"));
+      if (isDel && isTxn) {
+        return false;
+      }
     }
     return true;
   }
@@ -949,10 +975,20 @@ class D1SalesLedgerService {
           effFy,
         );
         final cleanInt = incomingPur.internalNo.trim().toUpperCase();
-        int existingIdx = localPurchases.indexWhere((p) =>
-          (incomingPur.id.isNotEmpty && p.id == incomingPur.id) ||
-          (cleanInt.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanInt)
-        );
+        int existingIdx = localPurchases.indexWhere((p) {
+          if (incomingPur.id.trim().isNotEmpty && p.id.trim().isNotEmpty) {
+            return p.id.trim() == incomingPur.id.trim();
+          }
+          if (cleanInt.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanInt) {
+            if (incomingPur.partyId.trim().isNotEmpty && p.partyId.trim().isNotEmpty &&
+                incomingPur.billNo.trim().isNotEmpty && p.billNo.trim().isNotEmpty) {
+              return p.partyId.trim().toUpperCase() == incomingPur.partyId.trim().toUpperCase() &&
+                     p.billNo.trim().toUpperCase() == incomingPur.billNo.trim().toUpperCase();
+            }
+            return incomingPur.id.trim().isEmpty && p.id.trim().isEmpty;
+          }
+          return false;
+        });
         if (existingIdx != -1) {
           if (version >= localPurchases[existingIdx].version ||
               incomingPur.id != localPurchases[existingIdx].id ||

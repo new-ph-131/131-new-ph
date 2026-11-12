@@ -292,19 +292,29 @@ class PharoahManager with ChangeNotifier {
   }
 
   
+  bool _isSwitchingYear = false;
+
   Future<void> switchYear(String year) async {
-    AppRealtimeCoordinator.instance.stop(ph: this);
-    FastPullEngine.invalidateInFlightPulls();
-    currentFY = year.trim();
-    activeModule = "HOME";
-    D1SalesLedgerService.activeFinancialYear = currentFY;
-    notifyListeners();
-    if (activeCompany != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('active_fy_${activeCompany!.id}', currentFY);
-      await prefs.setString('last_active_fy_for_${activeCompany!.id}', currentFY);
+    if (_isSwitchingYear) return;
+    _isSwitchingYear = true;
+    try {
+      // 🛡️ STRICT ORDERING: Flush and await any pending old-FY mutations BEFORE changing currentFY!
+      await AppRealtimeCoordinator.instance.flushPendingPushBeforeSwitch(this);
+      AppRealtimeCoordinator.instance.stop(ph: this);
+      FastPullEngine.invalidateInFlightPulls();
+      currentFY = year.trim();
+      activeModule = "HOME";
+      D1SalesLedgerService.activeFinancialYear = currentFY;
+      notifyListeners();
+      if (activeCompany != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('active_fy_${activeCompany!.id}', currentFY);
+        await prefs.setString('last_active_fy_for_${activeCompany!.id}', currentFY);
+      }
+      await loadAllData();
+    } finally {
+      _isSwitchingYear = false;
     }
-    await loadAllData();
   }
 
   Future<void> loginToCompany(CompanyProfile c, String fy) async { 

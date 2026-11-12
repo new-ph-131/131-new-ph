@@ -94,9 +94,19 @@ class PurchaseSyncModule {
     // Match by immutable ID first, then by series internalNo (e.g. PUR-1 vs WPUR-1).
     // Only fallback to supplier+billNo when internalNo is absent.
     int idx = currentPurchases.indexWhere((p) {
-      if (incoming.id.trim().isNotEmpty && p.id.trim() == incoming.id.trim()) return true;
-      if (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) return true;
-      if (cleanIntNo.isEmpty && p.internalNo.trim().isEmpty && hasSupplierInvoice && _sameSupplierInvoice(p, incoming)) {
+      // 1. Primary Canonical Identity: Match strictly on immutable ID
+      if (incoming.id.trim().isNotEmpty && p.id.trim().isNotEmpty) {
+        return p.id.trim() == incoming.id.trim();
+      }
+      // 2. Legacy fallback only when ID is missing on either side:
+      // Must match BOTH partyId + billNo (supplier invoice) AND series internalNo
+      if (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo) {
+        if (hasSupplierInvoice && p.partyId.trim().isNotEmpty && p.billNo.trim().isNotEmpty) {
+          return _sameSupplierInvoice(p, incoming);
+        }
+        return incoming.id.trim().isEmpty && p.id.trim().isEmpty;
+      }
+      if (hasSupplierInvoice && _sameSupplierInvoice(p, incoming)) {
         return true;
       }
       return false;
@@ -146,11 +156,11 @@ class PurchaseSyncModule {
       currentPurchases.insert(0, incoming);
     }
 
-    // Deduplicate only records that share the exact same ID or exact same non-empty internalNo
+    // Deduplicate strictly on immutable ID (or legacy empty-ID composite key)
     currentPurchases.removeWhere((p) =>
         !identical(p, incoming) &&
-        ((incoming.id.isNotEmpty && p.id == incoming.id) ||
-         (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)));
+        ((incoming.id.trim().isNotEmpty && p.id.trim().isNotEmpty && p.id.trim() == incoming.id.trim()) ||
+         (incoming.id.trim().isEmpty && p.id.trim().isEmpty && cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo && hasSupplierInvoice && _sameSupplierInvoice(p, incoming))));
     return true;
   }
 }
