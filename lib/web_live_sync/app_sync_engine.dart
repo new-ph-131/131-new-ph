@@ -335,6 +335,7 @@ class AppSyncEngine {
         localTombstones: localTombstones,
         localRegistry: localRegistry,
         targetFyOverride: effectiveFy,
+        remoteCloudFiles: cloudData,
       );
 
       final payload = {

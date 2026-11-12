@@ -653,6 +653,7 @@ class MultiFyCloudVault {
     required Set<String> localTombstones,
     required Map<String, int> localRegistry,
     String? targetFyOverride,
+    Map<String, dynamic>? remoteCloudFiles,
   }) async {
     final root = await getApplicationDocumentsDirectory();
     final comp = ph.activeCompany!;
@@ -665,21 +666,54 @@ class MultiFyCloudVault {
         ? targetFyOverride.trim()
         : (ph.currentFY.isNotEmpty ? ph.currentFY : latestFy);
 
+    final Map<String, Map<String, String>> remoteVault = remoteCloudFiles != null ? parseFyVault(remoteCloudFiles) : {};
     final Map<String, Map<String, String>> fyVault = {};
     for (final fy in sortedFys) {
       final String fyDirPath = '${root.path}/Pharoah_Data/${comp.id}/${comp.businessType}/$fy';
       final Directory fyDir = Directory(fyDirPath);
-      if (!await fyDir.exists()) continue;
-
+      
       final Map<String, String> singleFyMap = {};
-      for (final name in vaultFileKeys) {
-        final f = File('$fyDirPath/$name');
-        if (await f.exists()) {
-          singleFyMap[name] = await f.readAsString();
+      if (await fyDir.exists()) {
+        for (final name in vaultFileKeys) {
+          final f = File('$fyDirPath/$name');
+          if (await f.exists()) {
+            singleFyMap[name] = await f.readAsString();
+          }
         }
       }
-      if (singleFyMap.isNotEmpty) {
-        fyVault[fy] = singleFyMap;
+
+      // 🛡️ RC-2 REMOTE VAULT RECONCILIATION & SYMMETRIC MERGE:
+      // If remote vault contains data for this FY, merge remote and local file maps record-by-record
+      // using LWW to ensure partial local snapshots never wipe out Web-created inactive FY records!
+      if (remoteVault.containsKey(fy)) {
+        final remoteFyMap = remoteVault[fy]!;
+        if (singleFyMap.isEmpty) {
+          fyVault[fy] = Map<String, String>.from(remoteFyMap);
+        } else {
+          final Map<String, String> mergedFyMap = Map<String, String>.from(remoteFyMap);
+          for (final localEntry in singleFyMap.entries) {
+            final fileName = localEntry.key;
+            final localContent = localEntry.value;
+            if (!remoteFyMap.containsKey(fileName)) {
+              mergedFyMap[fileName] = localContent;
+            } else if (_lwwRecordListFiles.contains(fileName)) {
+              final mergedRes = _mergeJsonListLww(
+                fileName: fileName,
+                localRaw: remoteFyMap[fileName]!,
+                cloudRaw: localContent,
+                fy: fy,
+              );
+              mergedFyMap[fileName] = mergedRes.mergedJson;
+            } else {
+              mergedFyMap[fileName] = localContent;
+            }
+          }
+          fyVault[fy] = mergedFyMap;
+        }
+      } else {
+        if (singleFyMap.isNotEmpty) {
+          fyVault[fy] = singleFyMap;
+        }
       }
     }
 
