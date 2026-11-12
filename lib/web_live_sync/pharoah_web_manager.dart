@@ -367,8 +367,9 @@ class PharoahWebManager with ChangeNotifier {
                 }
               });
               cloudVaultParsed[cleanFy] = fMap;
-              // 🛡️ ANTI-DATA-LOSS VAULT SHIELD (#PH-REV-800): Never blindly wipe an existing in-memory FY vault!
-              if (!fyVault.containsKey(cleanFy) || overwriteActiveYearInVault) {
+              // 🛡️ ANTI-DATA-LOSS VAULT SHIELD (#PH-REV-800 & #PH-REV-809):
+              // For inactive/back financial years, always accept the authoritative cloud snapshot so deletions & edits made on other devices are NEVER lost or revived by stale local memory!
+              if (!fyVault.containsKey(cleanFy) || overwriteActiveYearInVault || cleanFy != financialYear) {
                 fyVault[cleanFy] = fMap;
               } else {
                 // If local vault already has records (e.g. freshly created bills in back-year or active year),
@@ -1442,6 +1443,91 @@ class PharoahWebManager with ChangeNotifier {
       fyVault[prevFy] = res.healedPrevFiles;
       fyVault[targetFy] = res.healedTargetFiles;
     }
+    _hotSwapActiveYearMastersFromVault();
+  }
+
+  /// 🏛️ IN-MEMORY LIVE MASTER HOT-SWAP (#PH-REV-809):
+  /// Directly updates active in-memory masters (Parties opBal, Batch openingQty, Live Stock, Banks)
+  /// from fyVault[financialYear] with ZERO page reload and ZERO flicker!
+  void _hotSwapActiveYearMastersFromVault() {
+    if (financialYear.isEmpty || !fyVault.containsKey(financialYear)) return;
+    final activeFiles = fyVault[financialYear];
+    if (activeFiles == null) return;
+
+    // 1. Party Opening Balances (Sundry Debtors & Creditors)
+    if (activeFiles.containsKey('parts.json') && activeFiles['parts.json'] != null) {
+      try {
+        final cascadedParts = (jsonDecode(activeFiles['parts.json']!) as List?)
+            ?.map((e) => Party.fromMap(e)).toList();
+        if (cascadedParts != null) {
+          final Map<String, double> newOpBals = {
+            for (var p in cascadedParts)
+              if (p.id.isNotEmpty) p.id: p.opBal
+          };
+          final Map<String, double> newOpBalsByName = {
+            for (var p in cascadedParts)
+              if (p.name.trim().isNotEmpty) p.name.trim().toUpperCase(): p.opBal
+          };
+          for (var p in parties) {
+            if (newOpBals.containsKey(p.id)) {
+              p.opBal = newOpBals[p.id]!;
+            } else if (newOpBalsByName.containsKey(p.name.trim().toUpperCase())) {
+              p.opBal = newOpBalsByName[p.name.trim().toUpperCase()]!;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Batch History & Opening Stock
+    if (activeFiles.containsKey('bats.json') && activeFiles['bats.json'] != null) {
+      try {
+        final rawBats = jsonDecode(activeFiles['bats.json']!) as Map<String, dynamic>?;
+        if (rawBats != null) {
+          rawBats.forEach((k, v) {
+            if (v is List) {
+              batchHistory[k] = v.map((b) => BatchInfo.fromMap(b)).toList();
+            }
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 3. Bank Opening Balances
+    if (activeFiles.containsKey('banks.json') && activeFiles['banks.json'] != null) {
+      try {
+        final cascadedBanks = (jsonDecode(activeFiles['banks.json']!) as List?)
+            ?.map((e) => Bank.fromMap(e)).toList();
+        if (cascadedBanks != null) {
+          final Map<String, double> newBankBals = {
+            for (var b in cascadedBanks)
+              if (b.id.isNotEmpty) b.id: b.openingBalance
+          };
+          for (var b in banks) {
+            if (newBankBals.containsKey(b.id)) {
+              b.openingBalance = newBankBals[b.id]!;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 4. Rebuild live inventory stock from updated opening batches
+    rebuildInventory();
+  }
+
+  /// 🏛️ REAL-TIME SILENT MULTI-YEAR AUTO-CASCADE (#PH-REV-809):
+  /// Automatically re-cascades closing balances & stock from startYear forward into newer years
+  /// and silently hot-swaps active in-memory masters (Parties, Batches, Stock, Banks)
+  /// with ZERO screen flicker and without requiring manual year switches!
+  void silentAutoCascadeMultiYear([String? startYear]) {
+    if (availableFinancialYears.length < 2) return;
+    final String start = (startYear != null && startYear.trim().isNotEmpty)
+        ? startYear.trim()
+        : availableFinancialYears.first;
+    _cascadeWebFyVaultFrom(start);
+    _hotSwapActiveYearMastersFromVault();
+    notifyListeners();
   }
 
   void _applyEdgeEventsToFyVault(List<Map<String, dynamic>> edgeEvents) {
@@ -3317,10 +3403,12 @@ class PharoahWebManager with ChangeNotifier {
     );
   }
 
-  Future<void> refreshStoreData() async {
+  Future<void> refreshStoreData({bool isSilent = false}) async {
     if (!isAuthenticated || activeStoreToken.isEmpty || isCloudPushInProgress) return;
-    isLoading = true;
-    notifyListeners();
+    if (!isSilent) {
+      isLoading = true;
+      notifyListeners();
+    }
 
     final result = await WebSyncEngine.fetchStoreData(
       storeToken: activeStoreToken,
@@ -3380,14 +3468,21 @@ class PharoahWebManager with ChangeNotifier {
         rootScoped['_targetFy'] = cloudTopFy ?? financialYear;
         _parseDownloadedFiles(rootScoped);
       }
+      _hotSwapActiveYearMastersFromVault();
       rebuildInventory();
       fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
-      successMessage = "Data refreshed live!";
+      if (!isSilent) {
+        successMessage = "Data refreshed live!";
+      }
     } else {
-      errorMessage = result['message'] ?? 'Live Refresh failed.';
+      if (!isSilent) {
+        errorMessage = result['message'] ?? 'Live Refresh failed.';
+      }
     }
 
-    isLoading = false;
+    if (!isSilent) {
+      isLoading = false;
+    }
     notifyListeners();
   }
 

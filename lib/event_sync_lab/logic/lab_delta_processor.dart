@@ -54,8 +54,8 @@ class LabDeltaProcessor {
     try {
       debugPrint("📥 [LabDeltaProcessor] Processing incoming event on Web: ${event.action} (${event.entityId})");
 
-      // Refresh Web Workstation data from Google Drive Cloud Relay
-      await webPh.refreshStoreData();
+      // Refresh Web Workstation data from Google Drive Cloud Relay silently (#PH-REV-809)
+      await webPh.refreshStoreData(isSilent: true);
 
       stopwatch.stop();
       lastSyncDurationMs = stopwatch.elapsedMilliseconds;

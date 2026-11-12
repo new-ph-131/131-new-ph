@@ -3615,6 +3615,23 @@ void registerBatchActivity({
     }
   }
 
+  /// 🏛️ REAL-TIME SILENT MULTI-YEAR AUTO-CASCADE FOR APP (#PH-REV-809):
+  /// Automatically re-cascades closing balances & stock from startYear forward into newer years
+  /// and silently reloads active FY data with ZERO screen flicker and without requiring manual year switches!
+  Future<bool> silentAutoCascadeFromBackYear(String startYear) async {
+    if (activeCompany == null || activeCompany!.fYears.length < 2) return false;
+    final String start = startYear.trim().isNotEmpty
+        ? startYear.trim()
+        : AppDateLogic.sortFYList(activeCompany!.fYears).first;
+    final res = await syncOpeningBalancesFromPreviousYear(
+      startYear: start,
+      onStepProgress: (_, __) {},
+      reloadActiveYearAtEnd: currentFY.isNotEmpty,
+    );
+    notifyListeners();
+    return res;
+  }
+
   // ===========================================================================
   // ✍️ SIGNATURES & CHALLAN SECURITY (RESTORED & RESOLVED)
   // ===========================================================================

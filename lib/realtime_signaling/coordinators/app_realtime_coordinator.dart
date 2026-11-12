@@ -109,6 +109,12 @@ class AppRealtimeCoordinator {
           }
         }
         await FastPullEngine.pullAndMerge(ph);
+        // 🏛️ REAL-TIME SILENT MULTI-YEAR AUTO-CASCADE (#PH-REV-809):
+        // If mutation/deletion happened in a back financial year, automatically cascade forward into active year!
+        if (eventFy.isNotEmpty && eventFy != activeFy && ph.activeCompany != null) {
+          debugPrint("🏛️ [AppRealtimeCoordinator] Cross-FY mutation detected from $eventFy. Silently cascading balances & stock into active year $activeFy...");
+          await ph.silentAutoCascadeFromBackYear(eventFy);
+        }
       },
     );
 

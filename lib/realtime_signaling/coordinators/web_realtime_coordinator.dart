@@ -41,29 +41,43 @@ class WebRealtimeCoordinator {
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phWeb: webManager);
       },
       onSignal: (event) async {
-        debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}). Processing...");
+        final String eventFy = event.financialYear?.trim() ?? '';
+        final String activeFy = webManager.financialYear.trim();
+        final bool isSameFy = eventFy.isEmpty || activeFy.isEmpty || eventFy == activeFy;
+        debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}, FY: $eventFy, activeFY: $activeFy). Processing...");
+
         if (event.unmarkedIds.isNotEmpty) {
           for (final u in event.unmarkedIds) {
             webManager.unmarkDeletedId(u);
           }
         }
-        final List<String> allDel = [...event.deletedIds];
-        if (event.entityId.isNotEmpty && (event.action.contains('DELETE') || event.action.contains('REMOVE'))) {
-          allDel.add(event.entityId);
-        }
-        if (allDel.isNotEmpty) {
-          webManager.purgeDeletedIds(allDel);
+        // 🛡️ STRICT CROSS-FY ISOLATION GUARD (#PH-REV-800 & #PH-REV-809):
+        // Only purge local in-memory active year if mutation occurred in active year!
+        if (isSameFy) {
+          final List<String> allDel = [...event.deletedIds];
+          if (event.entityId.isNotEmpty && (event.action.contains('DELETE') || event.action.contains('REMOVE'))) {
+            allDel.add(event.entityId);
+          }
+          if (allDel.isNotEmpty) {
+            webManager.purgeDeletedIds(allDel);
+          }
         }
         if (!_isPushing && !webManager.isCloudPushInProgress) {
-          await webManager.refreshStoreData();
+          await webManager.refreshStoreData(isSilent: true);
+          // 🏛️ REAL-TIME SILENT MULTI-YEAR AUTO-CASCADE (#PH-REV-809):
+          // If mutation/deletion happened in a back financial year, automatically cascade forward into active year!
+          if (eventFy.isNotEmpty && eventFy != activeFy) {
+            debugPrint("🏛️ [WebRealtimeCoordinator] Cross-FY mutation detected from $eventFy. Silently cascading into active year $activeFy...");
+            webManager.silentAutoCascadeMultiYear(eventFy);
+          }
         }
       },
     );
 
-    // 2. Fallback Safety Net (refreshes every 12s if signal missed)
+    // 2. Fallback Safety Net (refreshes silently every 12s if signal missed)
     _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
       if (webManager.isAuthenticated && webManager.activeStoreToken.isNotEmpty && !_isPushing) {
-        await webManager.refreshStoreData();
+        await webManager.refreshStoreData(isSilent: true);
       }
     });
   }
