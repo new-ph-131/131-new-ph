@@ -30,6 +30,8 @@ class CloudSignalChannel {
         "timestamp": event.timestamp,
         "deletedIds": event.deletedIds,
         "unmarkedIds": event.unmarkedIds,
+        "financialYear": event.financialYear,
+        "fy": event.financialYear,
         "delta": event.delta,
       };
 
@@ -174,6 +176,7 @@ class CloudSignalChannel {
                 companyId: latestRemoteEvent.companyId,
                 deletedIds: aggregatedDeletedIds.toList(),
                 unmarkedIds: aggregatedUnmarkedIds.toList(),
+                financialYear: latestRemoteEvent.financialYear,
                 delta: latestRemoteEvent.delta,
               );
               debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${mergedEvent.source}: ${mergedEvent.action} (del:${mergedEvent.deletedIds.length}, unmark:${mergedEvent.unmarkedIds.length})");

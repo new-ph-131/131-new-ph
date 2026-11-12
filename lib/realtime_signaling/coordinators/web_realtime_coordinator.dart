@@ -1,3 +1,4 @@
+import '../../sync_core/d1_sales_ledger_service.dart';
 // FILE: lib/realtime_signaling/coordinators/web_realtime_coordinator.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -73,17 +74,37 @@ class WebRealtimeCoordinator {
     String entityId = '',
     List<String> deletedIds = const [],
     List<String> unmarkedIds = const [],
+    String? fy,
   }) {
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
+    final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : webManager.financialYear.trim();
 
     if (deletedIds.isNotEmpty) {
-      _pendingDeletedIds.addAll(deletedIds);
+      for (final d in deletedIds) {
+        if (d.trim().isEmpty) continue;
+        final clean = d.trim().toUpperCase();
+        final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+            : clean;
+        _pendingDeletedIds.add(scoped);
+      }
     }
     if (unmarkedIds.isNotEmpty) {
-      _pendingUnmarkedIds.addAll(unmarkedIds);
+      for (final u in unmarkedIds) {
+        if (u.trim().isEmpty) continue;
+        final clean = u.trim().toUpperCase();
+        final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+            : clean;
+        _pendingUnmarkedIds.add(scoped);
+      }
     }
     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
-      _pendingDeletedIds.add(entityId);
+      final clean = entityId.trim().toUpperCase();
+      final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+          : clean;
+      _pendingDeletedIds.add(scoped);
     }
 
     _pushDebounceTimer?.cancel();
@@ -109,6 +130,7 @@ class WebRealtimeCoordinator {
               source: 'web',
               action: action,
               entityId: entityId,
+              financialYear: effFy,
               deletedIds: batchDeleted,
               unmarkedIds: batchUnmarked,
               companyId: webManager.companyProfile['id']?.toString() ?? '',
@@ -126,6 +148,7 @@ class WebRealtimeCoordinator {
                 source: 'web',
                 action: '${action}_COMMITTED',
                 entityId: entityId,
+                financialYear: effFy,
                 deletedIds: batchDeleted,
                 unmarkedIds: batchUnmarked,
                 companyId: webManager.companyProfile['id']?.toString() ?? '',

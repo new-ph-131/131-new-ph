@@ -147,13 +147,16 @@ class AppSyncEngine {
                   final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
                   final int evTs = int.tryParse(ev["updated_at"]?.toString() ?? "0") ?? 1;
                   final dynamic rawPayload = ev["sale_data"];
-                  if (rawPayload is Map && (rawPayload["fy"] != null || rawPayload["date"] != null)) {
-                    final DateTime? evDate = rawPayload["date"] != null
-                        ? DateTime.tryParse(rawPayload["date"].toString())
-                        : null;
-                    if (!D1SalesLedgerService.doesEventBelongToActiveFY(rawPayload, evDate, effectiveFy)) {
-                      continue;
-                    }
+                  final String evFy = (ev["fy"] ?? (rawPayload is Map ? rawPayload["fy"] : "") ?? "").toString().trim();
+                  DateTime? evDate;
+                  if (rawPayload is Map && rawPayload["date"] != null) {
+                    evDate = DateTime.tryParse(rawPayload["date"].toString());
+                  }
+                  if (evFy.isNotEmpty && evFy != effectiveFy) {
+                    continue;
+                  }
+                  if (evDate != null && !D1SalesLedgerService.doesEventBelongToActiveFY(rawPayload, evDate, effectiveFy)) {
+                    continue;
                   }
                   final bool isPurc = rawPayload is Map &&
                       (rawPayload["doc_type"] == "PURCHASE" ||

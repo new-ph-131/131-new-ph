@@ -1744,7 +1744,7 @@ class PharoahWebManager with ChangeNotifier {
       );
       realId = s.id;
       targetBillNo = s.billNo;
-      D1SalesLedgerService.markPermanentlyDeleted(realId, targetBillNo);
+      D1SalesLedgerService.markPermanentlyDeleted(realId, targetBillNo, "", financialYear);
       Set<String> targetChallanKeys = {};
       for (var cid in s.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -1762,23 +1762,24 @@ class PharoahWebManager with ChangeNotifier {
             ch.version += 1;
             ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
             unmarkDeletedId(ch.id, referenceNo: ch.billNo);
-            D1SalesLedgerService.unmarkPermanentlyDeleted(ch.id, ch.billNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(ch.id, ch.billNo, "", financialYear);
             SaleChallanSyncModule.onSaleChallanSaved(ch, activeStoreToken);
           }
         }
       }
 
       SalesSyncModule.onSaleDeleted(s, activeStoreToken);
-      D1SalesLedgerService.onSaleDeleted(realId, s.billNo, activeStoreToken, clientSource: "WEB_PORTAL", linkedChallanIds: s.linkedChallanIds);
+      D1SalesLedgerService.onSaleDeleted(realId, s.billNo, activeStoreToken, clientSource: "WEB_PORTAL", linkedChallanIds: s.linkedChallanIds, fy: financialYear);
     } catch (_) {}
 
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     localTombstoneRegistry[realId] = delTime;
     deletedRecordIds.add(realId);
     unmarkedRecordIds.remove(realId);
+    String scopedBill = "";
     if (targetBillNo.isNotEmpty) {
       final cleanBillKey = targetBillNo.trim().toUpperCase();
-      final scopedBill = D1SalesLedgerService.scopeSecondaryKey(cleanBillKey, financialYear);
+      scopedBill = D1SalesLedgerService.scopeSecondaryKey(cleanBillKey, financialYear);
       localTombstoneRegistry[scopedBill] = delTime;
       deletedRecordIds.add(scopedBill);
       unmarkedRecordIds.remove(scopedBill);
@@ -1795,7 +1796,8 @@ class PharoahWebManager with ChangeNotifier {
     _autoSyncService.triggerAutoSync(
       action: 'RECORD_DELETED',
       entityId: realId,
-      deletedIds: [realId, if (targetBillNo.isNotEmpty) targetBillNo.trim().toUpperCase()],
+      deletedIds: [realId, if (scopedBill.isNotEmpty) scopedBill],
+      fy: financialYear,
     );
   }
 
@@ -2004,6 +2006,7 @@ class PharoahWebManager with ChangeNotifier {
       action: 'DELETE_PURCHASE',
       entityId: realId,
       deletedIds: delKeys,
+      fy: financialYear,
     );
   }
 
@@ -2084,6 +2087,7 @@ class PharoahWebManager with ChangeNotifier {
       action: 'DELETE_VOUCHER',
       entityId: realId,
       deletedIds: delKeys,
+      fy: financialYear,
     );
   }
 
@@ -2263,6 +2267,7 @@ class PharoahWebManager with ChangeNotifier {
       action: 'DELETE_SALE_CHALLAN',
       entityId: challanId,
       deletedIds: delKeys,
+      fy: financialYear,
     );
   }
 
@@ -2311,6 +2316,7 @@ class PharoahWebManager with ChangeNotifier {
       action: 'DELETE_PURCHASE_CHALLAN',
       entityId: challanId,
       deletedIds: delKeys,
+      fy: financialYear,
     );
   }
 
@@ -2461,6 +2467,7 @@ class PharoahWebManager with ChangeNotifier {
       action: 'DELETE_SALE_RETURN',
       entityId: returnId,
       deletedIds: delKeys,
+      fy: financialYear,
     );
   }
 
@@ -2490,6 +2497,7 @@ class PharoahWebManager with ChangeNotifier {
       action: 'DELETE_PURCHASE_RETURN',
       entityId: returnId,
       deletedIds: delKeys,
+      fy: financialYear,
     );
   }
 

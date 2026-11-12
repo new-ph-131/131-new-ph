@@ -11,7 +11,10 @@ class SyncSignalEvent {
   final String companyId;
   final List<String> deletedIds;
   final List<String> unmarkedIds;
+  final String financialYear; // 🛡️ Multi-FY Isolation Guard (#PH-REV-808)
   final dynamic delta;
+
+  String get fy => financialYear;
 
   SyncSignalEvent({
     required this.storeToken,
@@ -22,6 +25,7 @@ class SyncSignalEvent {
     this.companyId = '',
     this.deletedIds = const [],
     this.unmarkedIds = const [],
+    this.financialYear = '',
     this.delta,
   }) : timestamp = timestamp ?? DateTime.now().millisecondsSinceEpoch;
 
@@ -34,6 +38,8 @@ class SyncSignalEvent {
     'companyId': companyId,
     'deletedIds': deletedIds,
     'unmarkedIds': unmarkedIds,
+    'financialYear': financialYear,
+    'fy': financialYear,
     'delta': delta,
   };
 
@@ -49,6 +55,7 @@ class SyncSignalEvent {
       companyId: (map['companyId'] ?? '').toString(),
       deletedIds: (map['deletedIds'] as List?)?.map((e) => e.toString()).toList() ?? [],
       unmarkedIds: (map['unmarkedIds'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      financialYear: (map['financialYear'] ?? map['fy'] ?? '').toString(),
       delta: map['delta'],
     );
   }

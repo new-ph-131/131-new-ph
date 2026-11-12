@@ -31,15 +31,18 @@ class PharoahAutoSyncService {
     String entityId = '',
     List<String> deletedIds = const [],
     List<String> unmarkedIds = const [],
+    String? fy,
   }) {
     if (!webManager.isAuthenticated || webManager.activeStoreToken.isEmpty) return;
+    final String targetFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : webManager.financialYear;
     _coordinator.notifyWebMutation(
       action: action,
       entityId: entityId,
       deletedIds: deletedIds,
       unmarkedIds: unmarkedIds,
+      fy: targetFy,
     );
-    LabSyncOrchestrator.instance.addLog("📤 [WEB] Queued unified mutation ($action: $entityId)");
+    LabSyncOrchestrator.instance.addLog("📤 [WEB] Queued unified mutation ($action: $entityId, fy: $targetFy)");
   }
 
   /// Legacy alias for compatibility
@@ -48,11 +51,13 @@ class PharoahAutoSyncService {
     String entityId = '',
     List<String> deletedIds = const [],
     List<String> unmarkedIds = const [],
+    String? fy,
   }) => triggerAutoSync(
     action: action,
     entityId: entityId,
     deletedIds: deletedIds,
     unmarkedIds: unmarkedIds,
+    fy: fy,
   );
 
   void dispose() {

@@ -76,25 +76,37 @@ class AppRealtimeCoordinator {
         ph.notifyListeners();
       },
       onSignal: (event) async {
-        debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}). Pulling immediately...");
+        final String eventFy = event.fy.trim();
+        final String activeFy = ph.currentFY.trim();
+        final bool isTargetSameFy = eventFy.isEmpty || eventFy == activeFy;
+        debugPrint("🔔 [AppRealtimeCoordinator] Web activity detected (${event.action}, FY: $eventFy, activeFY: $activeFy). Pulling...");
+
         if (event.unmarkedIds.isNotEmpty && ph.activeCompany != null) {
+          final targetFy = eventFy.isNotEmpty ? eventFy : activeFy;
           for (final u in event.unmarkedIds) {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(u, "", "", ph.currentFY);
-            D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase(), "", "", ph.currentFY);
-            await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u, fy: ph.currentFY);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(u, "", "", targetFy);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase(), "", "", targetFy);
+            await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u, fy: targetFy);
           }
         }
         if (event.deletedIds.isNotEmpty && ph.activeCompany != null) {
           final companyId = ph.activeCompany!.id;
+          final targetFy = eventFy.isNotEmpty ? eventFy : activeFy;
           for (final d in event.deletedIds) {
-            D1SalesLedgerService.markPermanentlyDeleted(d, "", "", ph.currentFY);
+            D1SalesLedgerService.markPermanentlyDeleted(d, "", "", targetFy);
           }
-          await TombstoneEngine.recordBatchTombstones(companyId, event.deletedIds, fy: ph.currentFY);
-          final reg = await TombstoneEngine.getTombstoneRegistry(companyId);
-          final tombstones = await TombstoneEngine.getLocalTombstones(companyId);
-          TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, reg);
-          TombstoneEngine.purgeDeletedRecords(ph, tombstones, reg);
-          ph.notifyListeners();
+          await TombstoneEngine.recordBatchTombstones(companyId, event.deletedIds, fy: targetFy);
+
+          // 🛡️ STRICT CROSS-FY ISOLATION GUARD (#PH-REV-808):
+          // If the deletion event happened in another FY (e.g. New FY 2027-28),
+          // NEVER purge or mutate records from the currently active session (e.g. Back FY 2026-27)!
+          if (isTargetSameFy) {
+            final reg = await TombstoneEngine.getTombstoneRegistry(companyId);
+            final tombstones = await TombstoneEngine.getLocalTombstones(companyId);
+            TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, reg);
+            TombstoneEngine.purgeDeletedRecords(ph, tombstones, reg);
+            ph.notifyListeners();
+          }
         }
         await FastPullEngine.pullAndMerge(ph);
       },
@@ -115,30 +127,44 @@ class AppRealtimeCoordinator {
     String entityId = '',
     List<String> unmarkedIds = const [],
     List<String> deletedIds = const [],
+    String? fy,
   }) {
     if (ph.activeCompany == null) return;
     if (ph.currentFY.isEmpty && action != 'NEW_FY_CREATED') return;
+    final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : ph.currentFY.trim();
 
     if (deletedIds.isNotEmpty) {
       for (final d in deletedIds) {
         if (d.trim().isNotEmpty) {
-          _pendingDeletedIds.add(d.trim());
-          _pendingUnmarkedIds.remove(d.trim());
-          _pendingUnmarkedIds.remove(d.trim().toUpperCase());
+          final clean = d.trim().toUpperCase();
+          final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+              : clean;
+          _pendingDeletedIds.add(scoped);
+          _pendingUnmarkedIds.remove(scoped);
+          _pendingUnmarkedIds.remove(clean);
         }
       }
     }
     if (unmarkedIds.isNotEmpty) {
       for (final u in unmarkedIds) {
         if (u.trim().isNotEmpty) {
-          _pendingUnmarkedIds.add(u.trim());
-          _pendingDeletedIds.remove(u.trim());
-          _pendingDeletedIds.remove(u.trim().toUpperCase());
+          final clean = u.trim().toUpperCase();
+          final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+              : clean;
+          _pendingUnmarkedIds.add(scoped);
+          _pendingDeletedIds.remove(scoped);
+          _pendingDeletedIds.remove(clean);
         }
       }
     }
     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
-      _pendingDeletedIds.add(entityId.trim());
+      final clean = entityId.trim().toUpperCase();
+      final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+          : clean;
+      _pendingDeletedIds.add(scoped);
     }
 
     _pushDebounceTimer?.cancel();
@@ -166,6 +192,7 @@ class AppRealtimeCoordinator {
                 source: 'app',
                 action: action,
                 entityId: entityId,
+                financialYear: effFy,
                 deletedIds: batchDeleted,
                 unmarkedIds: batchUnmarked,
                 companyId: ph.activeCompany!.id,
@@ -184,6 +211,7 @@ class AppRealtimeCoordinator {
                   source: 'app',
                   action: '${action}_COMMITTED',
                   entityId: entityId,
+                  financialYear: effFy,
                   deletedIds: batchDeleted,
                   unmarkedIds: batchUnmarked,
                   companyId: ph.activeCompany!.id,
