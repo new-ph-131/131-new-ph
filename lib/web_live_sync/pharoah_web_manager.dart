@@ -376,7 +376,7 @@ class PharoahWebManager with ChangeNotifier {
               cloudVaultParsed[cleanFy] = fMap;
               // 🛡️ ANTI-DATA-LOSS VAULT SHIELD (#PH-REV-800 & #PH-REV-809):
               // For inactive/back financial years, always accept the authoritative cloud snapshot so deletions & edits made on other devices are NEVER lost or revived by stale local memory!
-              if (!fyVault.containsKey(cleanFy) || overwriteActiveYearInVault || cleanFy != financialYear) {
+              if (!fyVault.containsKey(cleanFy) || overwriteActiveYearInVault) {
                 fyVault[cleanFy] = fMap;
               } else {
                 // If local vault already has records (e.g. freshly created bills in back-year or active year),
@@ -763,16 +763,19 @@ class PharoahWebManager with ChangeNotifier {
         }
 
         int secDelTs = 0;
-        if (cleanIntNo.isNotEmpty) {
-          final t = localTombstoneRegistry[cleanIntNo] ?? localTombstoneRegistry[cleanIntNo.toUpperCase()] ?? 0;
+        final scopedIntNo = cleanIntNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanIntNo, financialYear) : "";
+        final scopedCompKey = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, financialYear) : "";
+        final scopedRawCompKey = rawCompKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(rawCompKey, financialYear) : "";
+        if (scopedIntNo.isNotEmpty) {
+          final t = localTombstoneRegistry[scopedIntNo] ?? localTombstoneRegistry[scopedIntNo.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
-        if (compKey.isNotEmpty) {
-          final t = localTombstoneRegistry[compKey] ?? localTombstoneRegistry[compKey.toUpperCase()] ?? 0;
+        if (scopedCompKey.isNotEmpty) {
+          final t = localTombstoneRegistry[scopedCompKey] ?? localTombstoneRegistry[scopedCompKey.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
-        if (rawCompKey.isNotEmpty) {
-          final t = localTombstoneRegistry[rawCompKey] ?? localTombstoneRegistry[rawCompKey.toUpperCase()] ?? 0;
+        if (scopedRawCompKey.isNotEmpty) {
+          final t = localTombstoneRegistry[scopedRawCompKey] ?? localTombstoneRegistry[scopedRawCompKey.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
 
@@ -833,16 +836,19 @@ class PharoahWebManager with ChangeNotifier {
         if (p.id.isNotEmpty && (deletedRecordIds.contains(p.id) || deletedRecordIds.contains(p.id.toUpperCase()))) return false;
 
         int secDelTs = 0;
-        if (iNo.isNotEmpty) {
-          final t = localTombstoneRegistry[iNo] ?? localTombstoneRegistry[iNo.toUpperCase()] ?? 0;
+        final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
+        final scopedComp2 = comp2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp2, financialYear) : "";
+        final scopedComp3 = comp3.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp3, financialYear) : "";
+        if (scopedINo.isNotEmpty) {
+          final t = localTombstoneRegistry[scopedINo] ?? localTombstoneRegistry[scopedINo.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
-        if (comp2.isNotEmpty) {
-          final t = localTombstoneRegistry[comp2] ?? localTombstoneRegistry[comp2.toUpperCase()] ?? 0;
+        if (scopedComp2.isNotEmpty) {
+          final t = localTombstoneRegistry[scopedComp2] ?? localTombstoneRegistry[scopedComp2.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
-        if (comp3.isNotEmpty) {
-          final t = localTombstoneRegistry[comp3] ?? localTombstoneRegistry[comp3.toUpperCase()] ?? 0;
+        if (scopedComp3.isNotEmpty) {
+          final t = localTombstoneRegistry[scopedComp3] ?? localTombstoneRegistry[scopedComp3.toUpperCase()] ?? 0;
           if (t > secDelTs) secDelTs = t;
         }
         if (secDelTs > 0 && secDelTs >= p.updatedAt) return false;
