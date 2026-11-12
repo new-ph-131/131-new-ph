@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pharoah_erp/gateway/company_registry_model.dart';
@@ -9,6 +10,24 @@ import 'package:pharoah_erp/sync_core/multi_fy_cloud_vault.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory mockDocsDir;
+
+  setUpAll(() async {
+    mockDocsDir = await Directory.systemTemp.createTemp('pharoah_mock_docs_');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (MethodCall methodCall) async {
+        return mockDocsDir.path;
+      },
+    );
+  });
+
+  tearDownAll(() async {
+    if (await mockDocsDir.exists()) {
+      await mockDocsDir.delete(recursive: true);
+    }
+  });
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});

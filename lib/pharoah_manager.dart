@@ -274,15 +274,17 @@ class PharoahManager with ChangeNotifier {
   // ===========================================================================
 
   Future<void> initRegistry() async {
-    final root = await getApplicationDocumentsDirectory(); 
-    final file = File('${root.path}/pharoah_registry.json');
-    if (await file.exists()) { 
-      try { 
-        List l = jsonDecode(await file.readAsString()); 
-        companiesRegistry = l.map((e) => CompanyProfile.fromMap(e)).toList(); 
-      } catch (e) { debugPrint("Registry error: $e"); } 
-    }
-    notifyListeners();
+    try {
+      final root = await getApplicationDocumentsDirectory(); 
+      final file = File('${root.path}/pharoah_registry.json');
+      if (await file.exists()) { 
+        try { 
+          List l = jsonDecode(await file.readAsString()); 
+          companiesRegistry = l.map((e) => CompanyProfile.fromMap(e)).toList(); 
+        } catch (e) { debugPrint("Registry error: $e"); } 
+      }
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> saveRegistry() async {
