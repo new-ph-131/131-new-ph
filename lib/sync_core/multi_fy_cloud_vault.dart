@@ -67,7 +67,10 @@ class MultiFyCloudVault {
   };
 
   /// Decodes `fy_vault.json` from cloud `files` map if present.
-  static Map<String, Map<String, String>> parseFyVault(Map<String, dynamic> cloudFiles) {
+  static Map<String, Map<String, String>> parseFyVault(Map<String, dynamic> inputMap) {
+    final Map<String, dynamic> cloudFiles = (inputMap['files'] is Map)
+        ? Map<String, dynamic>.from(inputMap['files'])
+        : inputMap;
     final Map<String, Map<String, String>> result = {};
     final rawVault = cloudFiles['fy_vault.json'];
     if (rawVault == null) return result;
