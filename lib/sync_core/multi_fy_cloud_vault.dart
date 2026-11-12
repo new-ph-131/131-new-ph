@@ -66,32 +66,46 @@ class MultiFyCloudVault {
     'parts.json',
   };
 
-  /// Decodes `fy_vault.json` from cloud `files` map if present.
+  /// Decodes `fy_vault.json` from either outer `cloudData` response or inner `files` map.
+  /// Also incorporates top-level `fy` files from `cloudData` when present.
   static Map<String, Map<String, String>> parseFyVault(Map<String, dynamic> inputMap) {
     final Map<String, dynamic> cloudFiles = (inputMap['files'] is Map)
         ? Map<String, dynamic>.from(inputMap['files'])
         : inputMap;
     final Map<String, Map<String, String>> result = {};
     final rawVault = cloudFiles['fy_vault.json'];
-    if (rawVault == null) return result;
-    try {
-      final decoded = rawVault is String ? jsonDecode(rawVault) : rawVault;
-      if (decoded is Map) {
-        decoded.forEach((fyKey, fyFiles) {
-          final cleanFy = fyKey.toString().trim();
-          if (cleanFy.isNotEmpty && fyFiles is Map) {
-            final Map<String, String> fileMap = {};
-            fyFiles.forEach((fName, fContent) {
-              if (fContent != null) {
-                fileMap[fName.toString()] = fContent is String ? fContent : jsonEncode(fContent);
-              }
-            });
-            result[cleanFy] = fileMap;
-          }
-        });
+    if (rawVault != null) {
+      try {
+        final decoded = rawVault is String ? jsonDecode(rawVault) : rawVault;
+        if (decoded is Map) {
+          decoded.forEach((fyKey, fyFiles) {
+            final cleanFy = fyKey.toString().trim();
+            if (cleanFy.isNotEmpty && fyFiles is Map) {
+              final Map<String, String> fileMap = {};
+              fyFiles.forEach((fName, fContent) {
+                if (fContent != null) {
+                  fileMap[fName.toString()] = fContent is String ? fContent : jsonEncode(fContent);
+                }
+              });
+              result[cleanFy] = fileMap;
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint("⚠ [MultiFyCloudVault] parseFyVault error: $e");
       }
-    } catch (e) {
-      debugPrint("⚠ [MultiFyCloudVault] parseFyVault error: $e");
+    }
+    final String cloudTopFy = (inputMap['fy'] ?? '').toString().trim();
+    if (cloudTopFy.isNotEmpty) {
+      final Map<String, String> topMap = result[cloudTopFy] ?? {};
+      cloudFiles.forEach((k, v) {
+        if (vaultFileKeys.contains(k) && v != null && !topMap.containsKey(k)) {
+          topMap[k] = v is String ? v : jsonEncode(v);
+        }
+      });
+      if (topMap.isNotEmpty) {
+        result[cloudTopFy] = topMap;
+      }
     }
     return result;
   }
@@ -176,14 +190,55 @@ class MultiFyCloudVault {
     return '';
   }
 
-  static bool _isRecordDeletedInFy(String fileName, Map<String, dynamic> m, String fy) {
+  static bool _isRecordDeletedInFy(
+    String fileName,
+    Map<String, dynamic> m,
+    String fy, {
+    Set<String>? localTombstones,
+    Map<String, int>? localRegistry,
+  }) {
     final int isDel = int.tryParse((m['isDeleted'] ?? m['is_deleted'] ?? '0').toString()) ?? 0;
     if (isDel == 1) return true;
     final String id = (m['id'] ?? '').toString().trim();
     final String sec = _secondarySeriesKeyForMap(fileName, m);
+    final int recUpd = int.tryParse((m['updatedAt'] ?? m['updated_at'] ?? '0').toString()) ?? 0;
+
+    bool checkKeyTombstone(String key) {
+      if (key.isEmpty) return false;
+      if (localRegistry != null) {
+        final int? delTs = localRegistry[key] ?? localRegistry[key.toUpperCase()];
+        if (delTs != null) {
+          return recUpd == 0 || delTs >= recUpd;
+        }
+      }
+      if (localTombstones != null) {
+        if (localTombstones.contains(key) || localTombstones.contains(key.toUpperCase())) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (id.isNotEmpty && !D1SalesLedgerService.isUnscopedSeriesKey(id)) {
+      if (checkKeyTombstone(id)) return true;
+    }
+
+    final String scopedSec = D1SalesLedgerService.scopeSecondaryKey(sec, fy);
+    if (scopedSec.isNotEmpty && checkKeyTombstone(scopedSec)) {
+      return true;
+    }
+
     if (fileName == 'purc.json' || fileName == 'p_challan.json') {
-      final String pId = (m['partyId'] ?? '').toString().trim();
-      final String bNo = (m['billNo'] ?? '').toString().trim();
+      final String pId = (m['partyId'] ?? '').toString().trim().toUpperCase();
+      final String bNo = (m['billNo'] ?? '').toString().trim().toUpperCase();
+      if (pId.isNotEmpty && bNo.isNotEmpty) {
+        final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', fy);
+        if (checkKeyTombstone(comp2)) return true;
+        if (sec.isNotEmpty) {
+          final String comp3 = D1SalesLedgerService.scopeSecondaryKey('${pId}_${bNo}_$sec', fy);
+          if (checkKeyTombstone(comp3)) return true;
+        }
+      }
       return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, fy);
     }
     if (id.isNotEmpty || sec.isNotEmpty) {
@@ -192,13 +247,99 @@ class MultiFyCloudVault {
     return false;
   }
 
-  /// Record-level LWW merge between existing local JSON list and incoming cloud JSON list for a non-active FY.
-  /// Guarantees that unpushed or newer local back-year edits are NEVER overwritten by stale cloud snapshots!
+  static int? _findMatchingRecordIndex(
+    String fileName,
+    List<Map<String, dynamic>> mergedList,
+    Map<String, dynamic> candidate,
+    Map<String, int> keyToIdx,
+    Map<String, int> secKeyToIdx,
+  ) {
+    final String k = _recordKeyForMap(fileName, candidate);
+    final String sec = _secondarySeriesKeyForMap(fileName, candidate);
+
+    if (fileName == 'purc.json' || fileName == 'p_challan.json') {
+      final String candId = (candidate['id'] ?? '').toString().trim();
+      final String candInt = (candidate['internalNo'] ?? '').toString().trim().toUpperCase();
+      final String candParty = (candidate['partyId'] ?? '').toString().trim().toUpperCase();
+      final String candBill = (candidate['billNo'] ?? '').toString().trim().toUpperCase();
+
+      if (candId.isNotEmpty && keyToIdx.containsKey(candId)) {
+        final int idx = keyToIdx[candId]!;
+        if (idx >= 0 && idx < mergedList.length && mergedList[idx]['_remove'] != true) {
+          return idx;
+        }
+      }
+
+      for (int i = 0; i < mergedList.length; i++) {
+        final existing = mergedList[i];
+        if (existing['_remove'] == true) continue;
+        final String exId = (existing['id'] ?? '').toString().trim();
+        final String exInt = (existing['internalNo'] ?? '').toString().trim().toUpperCase();
+        final String exParty = (existing['partyId'] ?? '').toString().trim().toUpperCase();
+        final String exBill = (existing['billNo'] ?? '').toString().trim().toUpperCase();
+
+        if (candId.isNotEmpty && exId.isNotEmpty) {
+          if (candId == exId) return i;
+          // Distinct non-empty IDs: ONLY match if exact duplicate identity of same (partyId, billNo, internalNo)
+          if (candInt.isNotEmpty &&
+              candInt == exInt &&
+              candParty.isNotEmpty &&
+              candParty == exParty &&
+              candBill.isNotEmpty &&
+              candBill == exBill) {
+            return i;
+          }
+          continue;
+        }
+
+        // Legacy fallback when at least one side has an empty ID
+        if (candInt.isNotEmpty && exInt.isNotEmpty) {
+          if (candInt == exInt) {
+            if (candParty.isNotEmpty && candBill.isNotEmpty && exParty.isNotEmpty && exBill.isNotEmpty) {
+              if (candParty == exParty && candBill == exBill) return i;
+            } else {
+              return i;
+            }
+          }
+        } else if (candParty.isNotEmpty &&
+            candBill.isNotEmpty &&
+            candParty == exParty &&
+            candBill == exBill) {
+          return i;
+        }
+      }
+      return null;
+    }
+
+    return (k.isNotEmpty ? keyToIdx[k] : null) ?? (sec.isNotEmpty ? secKeyToIdx[sec] : null);
+  }
+
+  /// Record-level LWW merge between existing local JSON list and incoming cloud JSON list for an FY.
+  /// Guarantees that unpushed or newer local edits and remote inactive-FY records are safely reconciled.
+  static ({String mergedJson, bool changed}) mergeJsonListLww({
+    required String fileName,
+    required String localRaw,
+    required String cloudRaw,
+    required String fy,
+    Set<String>? localTombstones,
+    Map<String, int>? localRegistry,
+  }) =>
+      _mergeJsonListLww(
+        fileName: fileName,
+        localRaw: localRaw,
+        cloudRaw: cloudRaw,
+        fy: fy,
+        localTombstones: localTombstones,
+        localRegistry: localRegistry,
+      );
+
   static ({String mergedJson, bool changed}) _mergeJsonListLww({
     required String fileName,
     required String localRaw,
     required String cloudRaw,
     required String fy,
+    Set<String>? localTombstones,
+    Map<String, int>? localRegistry,
   }) {
     final dynamic localDec = jsonDecode(localRaw);
     final dynamic cloudDec = jsonDecode(cloudRaw);
@@ -211,72 +352,92 @@ class MultiFyCloudVault {
     final Map<String, int> secKeyToIdx = {};
     bool changed = false;
 
-    for (final item in localDec) {
-      if (item is! Map) continue;
-      final map = Map<String, dynamic>.from(item);
-      if (_isRecordDeletedInFy(fileName, map, fy)) {
-        changed = true;
-        continue;
-      }
-      final String k = _recordKeyForMap(fileName, map);
-      final String sec = _secondarySeriesKeyForMap(fileName, map);
-      if (k.isEmpty && sec.isEmpty) continue;
-      final int idx = mergedList.length;
-      mergedList.add(map);
-      if (k.isNotEmpty) keyToIdx[k] = idx;
-      if (sec.isNotEmpty) secKeyToIdx[sec] = idx;
-    }
+    void upsertCandidate(Map<String, dynamic> candidate, {required bool isCloud}) {
+      final String k = _recordKeyForMap(fileName, candidate);
+      final String sec = _secondarySeriesKeyForMap(fileName, candidate);
+      if (k.isEmpty && sec.isEmpty) return;
 
-    for (final item in cloudDec) {
-      if (item is! Map) continue;
-      final cloudMap = Map<String, dynamic>.from(item);
-      final String k = _recordKeyForMap(fileName, cloudMap);
-      final String sec = _secondarySeriesKeyForMap(fileName, cloudMap);
-      if (k.isEmpty && sec.isEmpty) continue;
+      final int? existingIdx = _findMatchingRecordIndex(
+        fileName,
+        mergedList,
+        candidate,
+        keyToIdx,
+        secKeyToIdx,
+      );
 
-      final int? existingIdx = (k.isNotEmpty ? keyToIdx[k] : null) ??
-          (sec.isNotEmpty ? secKeyToIdx[sec] : null);
-
-      if (_isRecordDeletedInFy(fileName, cloudMap, fy)) {
+      if (_isRecordDeletedInFy(
+        fileName,
+        candidate,
+        fy,
+        localTombstones: localTombstones,
+        localRegistry: localRegistry,
+      )) {
         if (existingIdx != null && existingIdx >= 0 && existingIdx < mergedList.length) {
           final locMap = mergedList[existingIdx];
           final int locUpd = int.tryParse((locMap['updatedAt'] ?? locMap['updated_at'] ?? '0').toString()) ?? 0;
-          final int cldUpd = int.tryParse((cloudMap['updatedAt'] ?? cloudMap['updated_at'] ?? '0').toString()) ?? 0;
+          final int cldUpd = int.tryParse((candidate['updatedAt'] ?? candidate['updated_at'] ?? '0').toString()) ?? 0;
           final String locId = (locMap['id'] ?? '').toString().trim();
-          final String cldId = (cloudMap['id'] ?? '').toString().trim();
-          // Only remove if same ID or cloud delete is newer/equal
-          if (locId == cldId || cldUpd >= locUpd) {
+          final String cldId = (candidate['id'] ?? '').toString().trim();
+          if (locId == cldId || cldUpd == 0 || cldUpd >= locUpd) {
             mergedList[existingIdx]['_remove'] = true;
             changed = true;
           }
+        } else if (!isCloud) {
+          changed = true;
         }
-        continue;
+        return;
       }
 
       if (existingIdx != null && existingIdx >= 0 && existingIdx < mergedList.length) {
         final locMap = mergedList[existingIdx];
-        if (locMap['_remove'] == true) continue;
+        if (locMap['_remove'] == true) return;
         final int locVer = int.tryParse((locMap['version'] ?? '1').toString()) ?? 1;
-        final int cldVer = int.tryParse((cloudMap['version'] ?? '1').toString()) ?? 1;
+        final int cldVer = int.tryParse((candidate['version'] ?? '1').toString()) ?? 1;
         final int locUpd = int.tryParse((locMap['updatedAt'] ?? locMap['updated_at'] ?? '0').toString()) ?? 0;
-        final int cldUpd = int.tryParse((cloudMap['updatedAt'] ?? cloudMap['updated_at'] ?? '0').toString()) ?? 0;
+        final int cldUpd = int.tryParse((candidate['updatedAt'] ?? candidate['updated_at'] ?? '0').toString()) ?? 0;
+
+        final String locId = (locMap['id'] ?? '').toString().trim();
+        final String candId = (candidate['id'] ?? '').toString().trim();
 
         if (cldVer > locVer || (cldVer == locVer && cldUpd > locUpd)) {
           if (fileName == "parts.json" && locMap["opBal"] != null && locUpd >= cldUpd) {
-            cloudMap["opBal"] = locMap["opBal"];
+            candidate["opBal"] = locMap["opBal"];
           }
-          mergedList[existingIdx] = cloudMap;
-          if (k.isNotEmpty) keyToIdx[k] = existingIdx;
+          if (candId.isEmpty && locId.isNotEmpty) {
+            candidate["id"] = locId;
+          }
+          mergedList[existingIdx] = candidate;
+          final String newK = _recordKeyForMap(fileName, candidate);
+          if (newK.isNotEmpty) keyToIdx[newK] = existingIdx;
           if (sec.isNotEmpty) secKeyToIdx[sec] = existingIdx;
           changed = true;
+        } else {
+          if (locId.isEmpty && candId.isNotEmpty) {
+            locMap["id"] = candId;
+            keyToIdx[candId] = existingIdx;
+            changed = true;
+          }
+          if (!isCloud) {
+            changed = true;
+          }
         }
       } else {
         final int idx = mergedList.length;
-        mergedList.add(cloudMap);
+        mergedList.add(candidate);
         if (k.isNotEmpty) keyToIdx[k] = idx;
         if (sec.isNotEmpty) secKeyToIdx[sec] = idx;
-        changed = true;
+        if (isCloud) changed = true;
       }
+    }
+
+    for (final item in localDec) {
+      if (item is! Map) continue;
+      upsertCandidate(Map<String, dynamic>.from(item), isCloud: false);
+    }
+
+    for (final item in cloudDec) {
+      if (item is! Map) continue;
+      upsertCandidate(Map<String, dynamic>.from(item), isCloud: true);
     }
 
     mergedList.removeWhere((m) => m['_remove'] == true);
@@ -291,12 +452,15 @@ class MultiFyCloudVault {
   static Future<bool> syncVaultYearsToLocalDisk({
     required PharoahManager ph,
     required Map<String, dynamic> cloudData,
+    Set<String>? localTombstones,
+    Map<String, int>? localRegistry,
+    Directory? rootDirOverride,
   }) async {
     if (ph.activeCompany == null) return false;
     bool registryChanged = false;
     final Set<String> mutatedHistoricalFys = {};
     try {
-      final root = await getApplicationDocumentsDirectory();
+      final root = rootDirOverride ?? await getApplicationDocumentsDirectory();
       final comp = ph.activeCompany!;
       final Map<String, dynamic> rawCloudFiles =
           (cloudData['files'] is Map) ? Map<String, dynamic>.from(cloudData['files']) : {};
@@ -402,6 +566,8 @@ class MultiFyCloudVault {
                   localRaw: existingContent,
                   cloudRaw: fEntry.value,
                   fy: fy,
+                  localTombstones: localTombstones,
+                  localRegistry: localRegistry,
                 );
                 if (mergedRes.changed) {
                   await targetFile.writeAsString(mergedRes.mergedJson);
@@ -440,7 +606,23 @@ class MultiFyCloudVault {
             }
           }
 
-          await targetFile.writeAsString(fEntry.value);
+          if (_lwwRecordListFiles.contains(fileName)) {
+            try {
+              final mergedRes = _mergeJsonListLww(
+                fileName: fileName,
+                localRaw: '[]',
+                cloudRaw: fEntry.value,
+                fy: fy,
+                localTombstones: localTombstones,
+                localRegistry: localRegistry,
+              );
+              await targetFile.writeAsString(mergedRes.mergedJson);
+            } catch (_) {
+              await targetFile.writeAsString(fEntry.value);
+            }
+          } else {
+            await targetFile.writeAsString(fEntry.value);
+          }
           if (_cascadeImpactFiles.contains(fileName)) {
             fyHadTransactionMutation = true;
           }
@@ -649,7 +831,9 @@ class MultiFyCloudVault {
   }
 
   /// Builds the complete Multi-FY `filesPayload` for Google Drive Relay.
-  /// Always keeps `fYears.last` (latest FY) in top-level `filesPayload` AND embeds all FYs in `fy_vault.json`.
+  /// Always keeps `primaryFy` in top-level `filesPayload` AND embeds all FYs in `fy_vault.json`,
+  /// reconciling local disk FY folders with `remoteCloudFiles` so missing/partial local folders
+  /// never erase remote inactive-FY records.
   static Future<({String primaryFy, Map<String, String> filesPayload})> buildMultiFyCloudPayload({
     required PharoahManager ph,
     required List<String> coreFiles,
@@ -657,24 +841,49 @@ class MultiFyCloudVault {
     required Map<String, int> localRegistry,
     String? targetFyOverride,
     Map<String, dynamic>? remoteCloudFiles,
+    Directory? rootDirOverride,
   }) async {
-    final root = await getApplicationDocumentsDirectory();
+    final root = rootDirOverride ?? await getApplicationDocumentsDirectory();
     final comp = ph.activeCompany!;
-    final List<String> sortedFys = AppDateLogic.sortFYList(
-      comp.fYears.isNotEmpty ? comp.fYears : [ph.currentFY],
-    );
+    final Map<String, Map<String, String>> remoteVault =
+        remoteCloudFiles != null ? parseFyVault(remoteCloudFiles) : {};
+
+    final Set<String> allFys = {
+      ...comp.fYears.map((e) => e.trim()).where((e) => e.isNotEmpty),
+      if (ph.currentFY.trim().isNotEmpty) ph.currentFY.trim(),
+      if (targetFyOverride != null && targetFyOverride.trim().isNotEmpty) targetFyOverride.trim(),
+      ...remoteVault.keys.map((e) => e.trim()).where((e) => e.isNotEmpty),
+    };
+    if (remoteCloudFiles != null) {
+      final Map<String, dynamic> innerFiles = (remoteCloudFiles['files'] is Map)
+          ? Map<String, dynamic>.from(remoteCloudFiles['files'])
+          : remoteCloudFiles;
+      final rawRf = innerFiles['registered_fyears.json'];
+      if (rawRf != null) {
+        try {
+          final rfList = rawRf is String ? jsonDecode(rawRf) : rawRf;
+          if (rfList is List) {
+            for (final y in rfList) {
+              final cy = y.toString().trim();
+              if (cy.isNotEmpty) allFys.add(cy);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    final List<String> sortedFys = AppDateLogic.sortFYList(allFys);
     final String latestFy = sortedFys.isNotEmpty ? sortedFys.last : ph.currentFY;
     // 🛡️ ACTIVE FY PRIORITY: Use explicitly passed targetFyOverride to protect against async suspensions
     final String primaryFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
         ? targetFyOverride.trim()
         : (ph.currentFY.isNotEmpty ? ph.currentFY : latestFy);
 
-    final Map<String, Map<String, String>> remoteVault = remoteCloudFiles != null ? parseFyVault(remoteCloudFiles) : {};
     final Map<String, Map<String, String>> fyVault = {};
     for (final fy in sortedFys) {
       final String fyDirPath = '${root.path}/Pharoah_Data/${comp.id}/${comp.businessType}/$fy';
       final Directory fyDir = Directory(fyDirPath);
-      
+
       final Map<String, String> singleFyMap = {};
       if (await fyDir.exists()) {
         for (final name in vaultFileKeys) {
@@ -686,37 +895,70 @@ class MultiFyCloudVault {
       }
 
       // 🛡️ RC-2 REMOTE VAULT RECONCILIATION & SYMMETRIC MERGE:
-      // If remote vault contains data for this FY, merge remote and local file maps record-by-record
-      // using LWW to ensure partial local snapshots never wipe out Web-created inactive FY records!
-      if (remoteVault.containsKey(fy)) {
-        final remoteFyMap = remoteVault[fy]!;
-        if (singleFyMap.isEmpty) {
-          fyVault[fy] = Map<String, String>.from(remoteFyMap);
-        } else {
-          final Map<String, String> mergedFyMap = Map<String, String>.from(remoteFyMap);
-          for (final localEntry in singleFyMap.entries) {
-            final fileName = localEntry.key;
-            final localContent = localEntry.value;
-            if (!remoteFyMap.containsKey(fileName)) {
-              mergedFyMap[fileName] = localContent;
-            } else if (_lwwRecordListFiles.contains(fileName)) {
-              final mergedRes = _mergeJsonListLww(
-                fileName: fileName,
-                localRaw: remoteFyMap[fileName]!,
-                cloudRaw: localContent,
-                fy: fy,
+      // Merge local disk and remote vault per file & per record with tombstone enforcement
+      // so missing/partial/empty local folders never wipe out Web-created inactive FY records,
+      // while local newer edits and cascaded opening balances remain authoritative.
+      final Map<String, String> remoteFyMap = remoteVault[fy] ?? {};
+      final Set<String> allFileNames = {...remoteFyMap.keys, ...singleFyMap.keys};
+      final Map<String, String> mergedFyMap = {};
+
+      for (final fileName in allFileNames) {
+        if (fileName == 'fy_vault.json') continue;
+        final String? localContent = singleFyMap[fileName];
+        final String? remoteContent = remoteFyMap[fileName];
+
+        if (_lwwRecordListFiles.contains(fileName)) {
+          final String safeLocal = (localContent != null && localContent.trim().isNotEmpty)
+              ? localContent
+              : '[]';
+          final String safeRemote = (remoteContent != null && remoteContent.trim().isNotEmpty)
+              ? remoteContent
+              : '[]';
+          try {
+            final mergedRes = _mergeJsonListLww(
+              fileName: fileName,
+              localRaw: safeLocal,
+              cloudRaw: safeRemote,
+              fy: fy,
+              localTombstones: localTombstones,
+              localRegistry: localRegistry,
+            );
+            mergedFyMap[fileName] = mergedRes.mergedJson;
+          } catch (_) {
+            mergedFyMap[fileName] = localContent ?? remoteContent ?? '[]';
+          }
+        } else if (fileName == 'bats.json' && localContent != null && remoteContent != null) {
+          try {
+            final dynamic locMapRaw = jsonDecode(localContent);
+            final dynamic cldMapRaw = jsonDecode(remoteContent);
+            if (locMapRaw is Map && cldMapRaw is Map) {
+              final Map<String, List<BatchInfo>> locBatches = {};
+              locMapRaw.forEach((k, v) {
+                if (v is List) {
+                  locBatches[k.toString()] =
+                      v.map((b) => BatchInfo.fromMap(Map<String, dynamic>.from(b as Map))).toList();
+                }
+              });
+              BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
+                targetBatchHistory: locBatches,
+                incomingJson: cldMapRaw,
               );
-              mergedFyMap[fileName] = mergedRes.mergedJson;
+              mergedFyMap[fileName] = jsonEncode(
+                locBatches.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList())),
+              );
             } else {
               mergedFyMap[fileName] = localContent;
             }
+          } catch (_) {
+            mergedFyMap[fileName] = localContent;
           }
-          fyVault[fy] = mergedFyMap;
+        } else {
+          mergedFyMap[fileName] = localContent ?? remoteContent!;
         }
-      } else {
-        if (singleFyMap.isNotEmpty) {
-          fyVault[fy] = singleFyMap;
-        }
+      }
+
+      if (mergedFyMap.isNotEmpty) {
+        fyVault[fy] = mergedFyMap;
       }
     }
 

@@ -4,6 +4,7 @@ import "../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
 import "../sync_core/d1_sales_ledger_service.dart";
 // FILE: lib/web_live_sync/app_sync_engine.dart
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -28,8 +29,17 @@ class AppSyncEngine {
     'gst_sessions.json'
   ];
 
+  static Completer<void>? _activePushLock;
+
   /// 🔄 1000-IQ BULLETPROOF 2-WAY SYNC ENGINE (STATE SNAPSHOT DIFFING & TOMBSTONE PROTOCOL)
   static Future<bool> pushStoreData(PharoahManager ph, [String? targetFyOverride]) async {
+    while (_activePushLock != null) {
+      try {
+        await _activePushLock!.future;
+      } catch (_) {}
+    }
+    final lock = Completer<void>();
+    _activePushLock = lock;
     try {
       if (ph.activeCompany == null) return false;
       final String effectiveFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
@@ -70,11 +80,19 @@ class AppSyncEngine {
         "&password=${Uri.encodeComponent(ph.activeCompany!.password)}"
       );
 
+      Map<String, dynamic>? pulledCloudData;
+      String initialRemoteSyncedAt = "";
       final pullRes = await http.get(pullUri).timeout(const Duration(seconds: 15));
+      if (pullRes.statusCode != 200) {
+        debugPrint("AppSyncEngine Notice: Aborting push because pre-push PULL returned HTTP ${pullRes.statusCode}");
+        return false;
+      }
       if (pullRes.statusCode == 200 && !pullRes.body.contains("ERROR")) {
         final Map<String, dynamic> cloudData = jsonDecode(pullRes.body);
         if (cloudData['status'] == 'SUCCESS' && cloudData['files'] != null) {
-          final Map<String, dynamic> cloudFiles = cloudData['files'];
+          pulledCloudData = cloudData;
+          initialRemoteSyncedAt = (cloudData['syncedAt'] ?? '').toString().trim();
+          final Map<String, dynamic> cloudFiles = Map<String, dynamic>.from(cloudData['files'] as Map);
 
           if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
             try {
@@ -235,7 +253,12 @@ class AppSyncEngine {
           }
 
           // STEP 3.5: SYNC OTHER FINANCIAL YEARS FROM CLOUD VAULT TO DISK & EXTRACT CURRENT FY FILES
-          await MultiFyCloudVault.syncVaultYearsToLocalDisk(ph: ph, cloudData: cloudData);
+          await MultiFyCloudVault.syncVaultYearsToLocalDisk(
+            ph: ph,
+            cloudData: cloudData,
+            localTombstones: localTombstones,
+            localRegistry: localRegistry,
+          );
 
           if (ph.activeCompany != null && ph.activeCompany!.id == companyId && ph.currentFY == effectiveFy) {
             // STEP 3: EXECUTE DEATH (The Graveyard - Monotonic Anti-Zombie & Multi-Key)
@@ -310,6 +333,7 @@ class AppSyncEngine {
           await File('$workingDir/config.json').writeAsString(jsonEncode(ph.config.toMap()));
         } catch (e) {
           debugPrint("Error flushing core sync files to disk: $e");
+          return false;
         }
       }
 
@@ -321,11 +345,40 @@ class AppSyncEngine {
           ph.activeCompany!.fYears.length > 1 &&
           ph.currentFY.isNotEmpty &&
           ph.currentFY != ph.activeCompany!.fYears.last) {
-        await ph.syncOpeningBalancesFromPreviousYear(
+        final bool cascadeOk = await ph.syncOpeningBalancesFromPreviousYear(
           startYear: ph.currentFY,
           onStepProgress: (_, __) {},
           reloadActiveYearAtEnd: false,
         );
+        if (!cascadeOk) {
+          debugPrint("AppSyncEngine Notice: Aborting push because multi-year carry-forward cascade failed.");
+          return false;
+        }
+      }
+
+      // 🛡️ PRE-PUSH OPTIMISTIC CONCURRENCY CHECK:
+      // Verify whether another device updated the remote vault while local merges/cascades were executing.
+      if (pulledCloudData != null) {
+        try {
+          final verifyRes = await http.get(pullUri).timeout(const Duration(seconds: 10));
+          if (verifyRes.statusCode == 200 && !verifyRes.body.contains("ERROR")) {
+            final Map<String, dynamic> latestCloudData = jsonDecode(verifyRes.body);
+            if (latestCloudData['status'] == 'SUCCESS' && latestCloudData['files'] != null) {
+              final String latestSyncedAt = (latestCloudData['syncedAt'] ?? '').toString().trim();
+              if (latestSyncedAt.isNotEmpty && latestSyncedAt != initialRemoteSyncedAt) {
+                debugPrint("🔄 [AppSyncEngine] Concurrent remote push detected ($initialRemoteSyncedAt -> $latestSyncedAt). Re-reconciling before upload...");
+                pulledCloudData = latestCloudData;
+                initialRemoteSyncedAt = latestSyncedAt;
+                await MultiFyCloudVault.syncVaultYearsToLocalDisk(
+                  ph: ph,
+                  cloudData: latestCloudData,
+                  localTombstones: localTombstones,
+                  localRegistry: localRegistry,
+                );
+              }
+            }
+          }
+        } catch (_) {}
       }
 
       // STEP 5: PUSH TO CLOUD (Multi-FY Cloud Vault — All Financial Years Preserved!)
@@ -335,7 +388,7 @@ class AppSyncEngine {
         localTombstones: localTombstones,
         localRegistry: localRegistry,
         targetFyOverride: effectiveFy,
-        remoteCloudFiles: cloudData,
+        remoteCloudFiles: pulledCloudData,
       );
 
       final payload = {
@@ -347,6 +400,7 @@ class AppSyncEngine {
         "adminPassword": ph.activeCompany!.password,
         "fy": vaultBundle.primaryFy,
         "activeFy": effectiveFy,
+        "baseSyncedAt": initialRemoteSyncedAt,
         "registryProfile": ph.activeCompany!.toMap(),
         "files": vaultBundle.filesPayload,
         "syncedAt": DateTime.now().toIso8601String(),
@@ -369,6 +423,13 @@ class AppSyncEngine {
     } catch (e) {
       debugPrint("AppSyncEngine Error: $e");
       return false;
+    } finally {
+      if (identical(_activePushLock, lock)) {
+        _activePushLock = null;
+      }
+      if (!lock.isCompleted) {
+        lock.complete();
+      }
     }
   }
 
