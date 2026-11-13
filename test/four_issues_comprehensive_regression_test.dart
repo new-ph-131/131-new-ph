@@ -201,12 +201,12 @@ void main() {
       // Sale of 1 unit from Config A1 (no batch, MRP 100)
       final sales = <Sale>[
         Sale(
-          id: 'S-1', billNo: 'SL-1', date: DateTime(2026, 6, 5), partyId: 'CUST-1', partyName: 'CUST',
+          id: 'S-1', billNo: 'SL-1', date: DateTime(2026, 6, 5), partyId: 'CUST-1', partyName: 'CUST', partyGstin: '', partyState: 'Rajasthan',
           paymentMode: 'Cash', totalAmount: 90.0,
           items: [
             BillItem(
-              medicineID: 'MED-4CFG', name: 'MULTI CONFIG ITEM', packing: '1*10',
-              batch: '', exp: '', hsn: '3004', mrp: 100.0, rate: 90.0, qty: 1.0, freeQty: 0.0,
+              id: 'BI-1', srNo: 1, medicineID: 'MED-4CFG', name: 'MULTI CONFIG ITEM', packing: '1*10',
+              batch: '', exp: '', hsn: '3004', mrp: 100.0, rate: 90.0, qty: 1.0, freeQty: 0.0, gstRate: 12.0, total: 90.0,
             ),
           ],
         ),
@@ -218,12 +218,12 @@ void main() {
           id: 'SR-1', billNo: 'CN-1', date: DateTime(2026, 6, 6), partyName: 'CUST', totalAmount: 105.0,
           items: [
             BillItem(
-              medicineID: 'MED-4CFG', name: 'MULTI CONFIG ITEM', packing: '1*10',
-              batch: '', exp: '08/28', hsn: '3004', mrp: 115.0, rate: 105.0, qty: 0.5, isBreakage: false,
+              id: 'BI-SR-1', srNo: 1, medicineID: 'MED-4CFG', name: 'MULTI CONFIG ITEM', packing: '1*10',
+              batch: '', exp: '08/28', hsn: '3004', mrp: 115.0, rate: 105.0, qty: 0.5, gstRate: 12.0, total: 52.5, isBreakage: false,
             ),
             BillItem(
-              medicineID: 'MED-4CFG', name: 'MULTI CONFIG ITEM', packing: '1*10',
-              batch: '', exp: '08/28', hsn: '3004', mrp: 115.0, rate: 105.0, qty: 1.0, isBreakage: true,
+              id: 'BI-SR-2', srNo: 2, medicineID: 'MED-4CFG', name: 'MULTI CONFIG ITEM', packing: '1*10',
+              batch: '', exp: '08/28', hsn: '3004', mrp: 115.0, rate: 105.0, qty: 1.0, gstRate: 12.0, total: 105.0, isBreakage: true,
             ),
           ],
         ),
@@ -283,7 +283,7 @@ void main() {
       ph.companiesRegistry = [comp];
       ph.currentFY = ''; // Simulating CompanyControlPanelView (Gateway mode)
 
-      final party25 = Party(id: 'P-1', name: 'RAMESH MEDICAL', type: 'Customer', opBal: 1000.0);
+      final party25 = Party(id: 'P-1', name: 'RAMESH MEDICAL', group: 'Sundry Debtors', opBal: 1000.0);
       final med25 = Medicine(id: 'M-1', systemId: 'PH-10001', name: 'DOLO 650', packing: '1*15', mrp: 35.0, purRate: 22.0, stock: 10.0);
       final batch25 = BatchInfo(batch: '', exp: '', packing: '1*15', mrp: 35.0, rate: 22.0, purRate: 22.0, openingQty: 10.0, qty: 10.0);
 
@@ -293,10 +293,12 @@ void main() {
         date: DateTime(2025, 6, 15),
         partyId: 'P-1',
         partyName: 'RAMESH MEDICAL',
+        partyGstin: '',
+        partyState: 'Rajasthan',
         paymentMode: 'Credit',
         totalAmount: 500.0,
         items: [
-          BillItem(medicineID: 'M-1', name: 'DOLO 650', packing: '1*15', batch: '', exp: '', hsn: '3004', mrp: 35.0, rate: 25.0, qty: 2.0),
+          BillItem(id: 'BI-25-1', srNo: 1, medicineID: 'M-1', name: 'DOLO 650', packing: '1*15', batch: '', exp: '', hsn: '3004', mrp: 35.0, rate: 25.0, qty: 2.0, gstRate: 12.0, total: 50.0),
         ],
       );
 
@@ -319,7 +321,7 @@ void main() {
               'p_return.json': jsonEncode([]),
             },
             '2026-27': {
-              'parts.json': jsonEncode([Party(id: 'P-1', name: 'RAMESH MEDICAL', type: 'Customer', opBal: 0.0).toMap()]),
+              'parts.json': jsonEncode([Party(id: 'P-1', name: 'RAMESH MEDICAL', group: 'Sundry Debtors', opBal: 0.0).toMap()]),
               'meds.json': jsonEncode([Medicine(id: 'M-1', systemId: 'PH-10001', name: 'DOLO 650', packing: '1*15', mrp: 35.0, purRate: 22.0, stock: 0.0).toMap()]),
               'bats.json': jsonEncode({'PH-10001': []}),
               'sales.json': jsonEncode([]),
@@ -362,8 +364,8 @@ void main() {
         version: 1,
         items: [
           BillItem(
-            medicineID: 'M-1', name: 'DOLO 650', packing: '1*15',
-            batch: '', exp: '', hsn: '3004', mrp: 35.0, rate: 25.0, qty: 1.0, isBreakage: false,
+            id: 'BI-SR25-1', srNo: 1, medicineID: 'M-1', name: 'DOLO 650', packing: '1*15',
+            batch: '', exp: '', hsn: '3004', mrp: 35.0, rate: 25.0, qty: 1.0, gstRate: 12.0, total: 25.0, isBreakage: false,
           ),
         ],
       );
@@ -375,7 +377,7 @@ void main() {
         partyId: 'P-1',
         partyName: 'RAMESH MEDICAL',
         amount: 400.0,
-        mode: 'Cash',
+        paymentMode: 'Cash',
         narration: 'Part payment',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         version: 1,
