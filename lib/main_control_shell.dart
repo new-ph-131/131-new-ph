@@ -24,6 +24,7 @@ import 'returns/purchase_return_view.dart';
 import 'returns/expiry_breakage_return_view.dart';
 import 'item_ledger_view.dart';
 import 'inventory_intel/shortage_register.dart';
+import 'inventory_intel/app_stock/app_stock_analytics_view.dart';
 import 'inventory_intel/stock_health_reports.dart';
 import 'daybook_view.dart';
 import 'ledger_reports_view.dart';
@@ -228,7 +229,7 @@ class _MainControlShellState extends State<MainControlShell> {
         case "GO_RETURN_SALE": target = const SaleReturnView(); break;
         case "GO_RETURN_PUR": target = const PurchaseReturnView(); break;
         case "GO_RETURN_BREAKAGE": target = const ExpiryBreakageReturnView(); break;
-        case "GO_STOCK": target = const ItemLedgerSearchView(); break;
+        case "GO_STOCK": target = const AppStockAnalyticsView(); break;
         case "GO_SHORTAGE": target = const ShortageRegister(); break;
         case "GO_ITEM_LEDGER": target = const ItemLedgerSearchView(); break;
         case "GO_DUMP": target = const StockHealthReports(); break;

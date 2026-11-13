@@ -41,6 +41,7 @@ import 'administration/system_user_model.dart';
 import 'finance/bank_transaction_model.dart';
 import 'demo_data.dart';
 import 'inventory_logic_center.dart';
+import 'web_live_sync/services/web_batch_resolver.dart';
 import 'fy_transfer_engine.dart';
 import 'sync_core/multi_fy_cloud_vault.dart';
 import 'gateway/company_registry_model.dart';
@@ -113,6 +114,10 @@ class PharoahManager with ChangeNotifier {
   // ===========================================================================
 
   
+  List<BatchInfo> getBatchesForMedicine(Medicine med) {
+    return WebBatchResolver.resolveBatchesForMedicine(med, batchHistory);
+  }
+
   void rebuildInventory() {
     InventoryLogicCenter.rebuildAllInventory(
       medicines: medicines,
