@@ -33,8 +33,13 @@ void main() {
   });
 
   tearDownAll(() async {
-    if (await mockDocsDir.exists()) {
-      await mockDocsDir.delete(recursive: true);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    try {
+      if (await mockDocsDir.exists()) {
+        await mockDocsDir.delete(recursive: true);
+      }
+    } catch (_) {
+      // Background async file flushes from unawaited manager saves may race with temp cleanup.
     }
   });
 
@@ -165,6 +170,7 @@ void main() {
     expect(sale1.version, equals(prevVer + 1));
     expect(med.stock, equals(100.0));
     expect(ph.batchHistory[med.identityKey]!.first.qty, equals(100.0));
+    await Future<void>.delayed(const Duration(milliseconds: 150));
   });
 
   test('BUG-02 & BUG-15: No phantom opening stock after Purchase deletion, legacy map still heals, last batch removal zeros stock', () {
