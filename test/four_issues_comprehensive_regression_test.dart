@@ -480,13 +480,13 @@ void main() {
       expect(changed, isTrue);
       expect(targetBatchHistory['PH-10001']!.length, equals(2));
 
-      final filtered = BatchDeltaMergeModule.filterTombstonedBatchJson(
-        medKey: 'PH-10001',
-        rawBatchList: incomingJson['PH-10001']!,
+      final filteredStr = BatchDeltaMergeModule.filterTombstonedBatchJson(
+        jsonEncode(incomingJson),
         registry: {},
         tombstones: {},
       );
-      expect(filtered.length, equals(2));
+      final filteredMap = jsonDecode(filteredStr) as Map<String, dynamic>;
+      expect((filteredMap['PH-10001'] as List).length, equals(2));
     });
   });
 }
