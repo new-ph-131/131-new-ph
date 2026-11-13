@@ -7,6 +7,21 @@ class ExpiryMaster {
   // ===========================================================================
   // 1. EXPIRY PARSER & STATUS LOGIC (SUPPORTS NON-EXPIRY + MM/YY + MM/YYYY)
   // ===========================================================================
+  static DateTime parseToEndOfMonth(String expStr) {
+    if (isNonExpiryValue(expStr)) return DateTime(2099, 12, 31);
+    try {
+      final parts = expStr.trim().split("/");
+      if (parts.length < 2) return DateTime(2099, 12, 31);
+      final int m = int.parse(parts[0].trim());
+      final int yPart = int.parse(parts[1].trim());
+      final int y = yPart < 100 ? (2000 + yPart) : yPart;
+      if (m < 1 || m > 12) return DateTime(2099, 12, 31);
+      return DateTime(y, m + 1, 0);
+    } catch (_) {
+      return DateTime(2099, 12, 31);
+    }
+  }
+
   static bool isNonExpiryValue(String exp) {
     final clean = exp.trim().toUpperCase();
     return clean.isEmpty ||
