@@ -10,7 +10,7 @@ import 'package:pharoah_erp/gateway/company_registry_model.dart';
 import 'package:pharoah_erp/inventory_logic_center.dart';
 import 'package:pharoah_erp/models.dart';
 import 'package:pharoah_erp/pharoah_manager.dart';
-import 'package:pharoah_erp/stock_flow_engine.dart';
+import 'package:pharoah_erp/finance/stock_flow_engine.dart';
 import 'package:pharoah_erp/sync_core/d1_sales_ledger_service.dart';
 import 'package:pharoah_erp/sync_core/modules/batch_delta_merge_module.dart';
 import 'package:pharoah_erp/sync_core/modules/batch_sync_module.dart';
@@ -133,11 +133,9 @@ void main() {
       expect(lots.length, equals(2));
 
       // Verify WebBatchResolver returns both non-batch and batch-managed options without duplicate synthetic OPENING
-      final resolved = WebBatchResolver.resolveForMedicine(
-        med: medApp,
-        batchHistory: batchHistory,
-        purchases: purchases,
-        sales: [],
+      final resolved = WebBatchResolver.resolveBatchesForMedicine(
+        medApp,
+        batchHistory,
       );
       expect(resolved.length, equals(2));
       expect(resolved.any((b) => b.batch.trim().isEmpty && b.qty == 1.0 && b.mrp == 100.0 && b.purRate == 70.0), isTrue);
@@ -256,15 +254,20 @@ void main() {
       // Expected total: A1 (2.5 - 1.0 = 1.5) + A2 (1.0) + B (3.0 - 1.0 = 2.0) + C (4.0 + 0.5 = 4.5) + D (5.0) = 14.0
       expect(med.stock, closeTo(14.0, 0.001));
 
-      final flow = StockFlowEngine.calculateStockFlow(
+      final phFlow = PharoahManager()
+        ..medicines = [med]
+        ..batchHistory = batchHistory
+        ..purchases = purchases
+        ..sales = sales
+        ..saleReturns = saleReturns
+        ..purchaseReturns = purchaseReturns;
+      final flow = StockFlowEngine.getItemFlow(
         med: med,
-        batchHistory: batchHistory,
-        purchases: purchases,
-        sales: sales,
-        saleReturns: saleReturns,
-        purchaseReturns: purchaseReturns,
+        from: DateTime(2026, 4, 1),
+        to: DateTime(2027, 3, 31),
+        ph: phFlow,
       );
-      expect(flow.closingStock, closeTo(14.0, 0.001));
+      expect(flow['closing'], closeTo(14.0, 0.001));
     });
   });
 
@@ -275,6 +278,7 @@ void main() {
         id: 'COMP_SYNC_1',
         name: 'PHAROAH TEST STORE',
         businessType: 'Wholesale',
+        createdAt: DateTime(2025, 4, 1),
         adminUser: 'admin',
         password: '1234',
         fYears: ['2025-26'],
