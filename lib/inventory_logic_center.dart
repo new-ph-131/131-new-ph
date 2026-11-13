@@ -1,11 +1,189 @@
-// FILE: lib/inventory_logic_center.dart (FULLY RESOLVED & COMPILE-SAFE)
+// FILE: lib/inventory_logic_center.dart
+// Revision: #PH-REV-810 (FULL-FOUR-CONFIG-BATCH-EXPIRY-AND-NONBATCH-LOT-ENGINE)
+
 import 'models.dart';
+import 'expiry_master.dart';
 
 class InventoryLogicCenter {
-  /// 1. DASHBOARD VALUATION ENGINE
-  static double calculateTotalStockValue({
-    required Map<String, List<BatchInfo>> batchHistory,
+  /// Normalizes an expiry string for lot identity comparisons.
+  /// Empty or non-expiry sentinels ("N/A", "NONE", "00/00", etc.) normalize to "".
+  static String normalizeExpKey(String exp) {
+    return ExpiryMaster.isNonExpiryValue(exp) ? "" : exp.trim().toUpperCase();
+  }
+
+  /// Builds a canonical lot key that distinguishes:
+  /// - Named batches by uppercase batch number.
+  /// - Non-batch lots (empty batchNo) by (normalizedExp, mrp, purRate) so unrelated
+  ///   non-batch lots with different expiry, MRP, or purchase rate never merge.
+  static String makeLotKey(
+    String batchNo, {
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
+  }) {
+    final String cleanBatch = batchNo.trim().toUpperCase();
+    if (cleanBatch.isNotEmpty) return cleanBatch;
+    final String normExp = normalizeExpKey(exp);
+    return "__NOBATCH__|\$normExp|\${mrp.toStringAsFixed(2)}|\${purRate.toStringAsFixed(2)}";
+  }
+
+  /// Builds a deterministic cloud/D1 sync key for a batch or non-batch stock lot.
+  static String makeSyncKey(
+    String medIdentityKey,
+    String batchNo, {
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
+  }) {
+    final String cleanMed = medIdentityKey.trim().toUpperCase();
+    final String cleanBatch = batchNo.trim().toUpperCase();
+    if (cleanBatch.isNotEmpty) {
+      return "BATCH_\${cleanMed}_\$cleanBatch";
+    }
+    return "BATCH_\${cleanMed}_\${makeLotKey('', exp: exp, mrp: mrp, purRate: purRate)}";
+  }
+
+  /// Finds the matching BatchInfo index in [list] for both batch-managed and non-batch stock.
+  /// - When [batchNo] is non-empty, matches by case-insensitive batch number.
+  /// - When [batchNo] is empty:
+  ///   - If [exactEmptyBatchLot] is true (e.g. Purchase inward or lot registration with purchase rate),
+  ///     requires matching (normalizedExp, mrp, purRate) so distinct non-batch lots stay separate.
+  ///   - If [exactEmptyBatchLot] is false (e.g. Sale, Return, or lookup), matches by (normalizedExp, mrp)
+  ///     with fallback to normalizedExp / mrp / positive stock.
+  static int findMatchingBatchIndex(
+    List<BatchInfo> list, {
+    required String batchNo,
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
+    bool preferPositiveStock = false,
+    bool exactEmptyBatchLot = false,
+  }) {
+    final String cleanBatch = batchNo.trim().toUpperCase();
+    if (cleanBatch.isNotEmpty) {
+      return list.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatch);
+    }
+
+    final String normExp = normalizeExpKey(exp);
+
+    // 1. Exact match on (batch == "", normExp, mrp, purRate) when purRate > 0
+    if (purRate > 0) {
+      for (int i = 0; i < list.length; i++) {
+        final b = list[i];
+        if (b.batch.trim().isNotEmpty) continue;
+        final double bPur = b.purRate > 0 ? b.purRate : b.rate;
+        if (normalizeExpKey(b.exp) == normExp &&
+            (b.mrp - mrp).abs() < 0.01 &&
+            (bPur - purRate).abs() < 0.01) {
+          return i;
+        }
+      }
+    }
+
+    if (exactEmptyBatchLot) {
+      if (purRate <= 0) {
+        for (int i = 0; i < list.length; i++) {
+          final b = list[i];
+          if (b.batch.trim().isNotEmpty) continue;
+          final double bPur = b.purRate > 0 ? b.purRate : b.rate;
+          if (normalizeExpKey(b.exp) == normExp &&
+              (b.mrp - mrp).abs() < 0.01 &&
+              bPur <= 0.01) {
+            return i;
+          }
+        }
+      }
+      // Hydrate an unused empty shell lot if present
+      for (int i = 0; i < list.length; i++) {
+        final b = list[i];
+        if (b.batch.trim().isEmpty &&
+            b.isShell &&
+            b.openingQty == 0.0 &&
+            b.adjustmentQty == 0.0 &&
+            b.qty == 0.0) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    int pickBest(List<int> candidates) {
+      if (candidates.isEmpty) return -1;
+      if (preferPositiveStock) {
+        for (final idx in candidates) {
+          if (list[idx].qty > 0) return idx;
+        }
+      }
+      return candidates.first;
+    }
+
+    // 2. Match on (batch == "", normExp, mrp)
+    final List<int> expMrpMatches = [];
+    for (int i = 0; i < list.length; i++) {
+      final b = list[i];
+      if (b.batch.trim().isNotEmpty) continue;
+      if (normalizeExpKey(b.exp) == normExp &&
+          (mrp <= 0 || (b.mrp - mrp).abs() < 0.01)) {
+        expMrpMatches.add(i);
+      }
+    }
+    if (expMrpMatches.isNotEmpty) return pickBest(expMrpMatches);
+
+    // 3. If mrp was not specified (<= 0), match on normExp alone
+    if (mrp <= 0) {
+      final List<int> expMatches = [];
+      for (int i = 0; i < list.length; i++) {
+        final b = list[i];
+        if (b.batch.trim().isNotEmpty) continue;
+        if (normalizeExpKey(b.exp) == normExp) {
+          expMatches.add(i);
+        }
+      }
+      if (expMatches.isNotEmpty) return pickBest(expMatches);
+    }
+
+    // 4. If expiry was omitted on outward/return, match empty-batch lot by MRP
+    if (normExp.isEmpty && mrp > 0) {
+      final List<int> mrpMatches = [];
+      for (int i = 0; i < list.length; i++) {
+        final b = list[i];
+        if (b.batch.trim().isNotEmpty) continue;
+        if ((b.mrp - mrp).abs() < 0.01) {
+          mrpMatches.add(i);
+        }
+      }
+      if (mrpMatches.isNotEmpty) return pickBest(mrpMatches);
+    }
+
+    // 5. If both batch and expiry/mrp are unspecified, match any empty-batch lot
+    if (normExp.isEmpty && mrp <= 0) {
+      final List<int> anyNoBatch = [];
+      for (int i = 0; i < list.length; i++) {
+        if (list[i].batch.trim().isEmpty) {
+          anyNoBatch.add(i);
+        }
+      }
+      if (anyNoBatch.isNotEmpty) return pickBest(anyNoBatch);
+    }
+
+    // 6. Legacy OPENING fallback for outward sales when no empty-batch lot exists
+    if (preferPositiveStock && normExp.isEmpty) {
+      for (int i = 0; i < list.length; i++) {
+        final b = list[i];
+        if (b.batch.trim().toUpperCase() == "OPENING" &&
+            (mrp <= 0 || b.mrp <= 0 || (b.mrp - mrp).abs() < 0.01)) {
+          return i;
+        }
+      }
+    }
+
+    return -1;
+  }
+
+  /// 1. NET TAXABLE INVENTORY VALUE (Strictly Pre-GST for Accounting)
+  static double getInventoryValuation({
     required List<Medicine> medicines,
+    required Map<String, List<BatchInfo>> batchHistory,
   }) {
     double grandTotal = 0;
     batchHistory.forEach((medKey, batches) {
@@ -20,7 +198,6 @@ class InventoryLogicCenter {
       } catch (e) {
         parentMed = null;
       }
-
       double gstRate = parentMed?.gst ?? 12.0;
       for (var batch in batches) {
         if (batch.qty > 0) {
@@ -33,7 +210,7 @@ class InventoryLogicCenter {
     return grandTotal;
   }
 
-  /// 2. THE GREAT INVENTORY REBUILD (CN/DN Impact Integrated with Loose Stock & Opening Batch Guard)
+  /// 2. THE GREAT INVENTORY REBUILD (CN/DN Impact Integrated with Loose Stock & All 4 Batch/Expiry Configs)
   static void rebuildAllInventory({
     required List<Medicine> medicines,
     required Map<String, List<BatchInfo>> batchHistory,
@@ -58,8 +235,15 @@ class InventoryLogicCenter {
           if (altList != null && altList.isNotEmpty) {
             final primaryList = batchHistory.putIfAbsent(primaryKey, () => []);
             for (final ab in altList) {
-              final cleanBNo = ab.batch.trim().toUpperCase();
-              final idx = primaryList.indexWhere((pb) => pb.batch.trim().toUpperCase() == cleanBNo);
+              final double abPur = ab.purRate > 0 ? ab.purRate : ab.rate;
+              final idx = findMatchingBatchIndex(
+                primaryList,
+                batchNo: ab.batch,
+                exp: ab.exp,
+                mrp: ab.mrp,
+                purRate: abPur,
+                exactEmptyBatchLot: true,
+              );
               if (idx == -1) {
                 primaryList.add(ab);
               } else if (primaryList[idx].qty <= 0 && ab.qty > 0) {
@@ -71,16 +255,20 @@ class InventoryLogicCenter {
       }
     }
 
-    // Build set of batches that have active inward purchases in this Financial Year
+    // Build set of lots that have active inward purchases in this Financial Year
     final Set<String> purchasedBatchKeys = {};
     for (final pur in purchases.where((p) => p.isDeleted != 1)) {
       for (final item in pur.items) {
-        final String cleanBatch = item.batch.trim().toUpperCase();
-        if (cleanBatch.isEmpty) continue;
+        final String lotKey = makeLotKey(
+          item.batch,
+          exp: item.exp,
+          mrp: item.mrp,
+          purRate: item.purchaseRate,
+        );
         final Medicine? med = _findMedicine(medicines, item.medicineID, item.name);
         final String medKey = med != null ? med.identityKey : item.medicineID.trim();
         if (medKey.isNotEmpty) {
-          purchasedBatchKeys.add("${medKey}_$cleanBatch");
+          purchasedBatchKeys.add("\${medKey}_\$lotKey");
         }
       }
     }
@@ -90,12 +278,18 @@ class InventoryLogicCenter {
     // normal/deleted purchase batches par kabhi phantom openingQty generate na ho!
     batchHistory.forEach((key, list) {
       for (var b in list) {
-        final String cleanBatch = b.batch.trim().toUpperCase();
+        final double bPur = b.purRate > 0 ? b.purRate : b.rate;
+        final String lotKey = makeLotKey(
+          b.batch,
+          exp: b.exp,
+          mrp: b.mrp,
+          purRate: bPur,
+        );
         if (b.legacyOpeningHealPending &&
             b.qty > 0 &&
             b.openingQty == 0.0 &&
             b.adjustmentQty == 0.0 &&
-            !purchasedBatchKeys.contains("${key}_$cleanBatch")) {
+            !purchasedBatchKeys.contains("\${key}_\$lotKey")) {
           b.openingQty = b.qty;
         }
         b.legacyOpeningHealPending = false;
@@ -211,23 +405,44 @@ class InventoryLogicCenter {
   ) {
     try {
       final String cleanBatchNo = batchNo.trim();
-      if (cleanBatchNo.isEmpty) return;
-
       final Medicine? med = _findMedicine(medicines, medId, medName);
       if (med == null) return;
-
       final String key = med.identityKey;
       if (!batchHistory.containsKey(key)) batchHistory[key] = [];
-      var batches = batchHistory[key]!;
-      int idx = batches.indexWhere(
-        (b) => b.batch.trim().toUpperCase() == cleanBatchNo.toUpperCase(),
+
+      final List<BatchInfo> batches = batchHistory[key]!;
+      final bool isPurItem = item is PurchaseItem;
+      final String itemExp = (item.exp ?? "").toString().trim();
+      final double mrp = (item.mrp as num?)?.toDouble() ?? med.mrp;
+      final double lookupPurRate = isPurItem ? item.purchaseRate : 0.0;
+
+      final int idx = findMatchingBatchIndex(
+        batches,
+        batchNo: cleanBatchNo,
+        exp: itemExp,
+        mrp: mrp,
+        purRate: lookupPurRate,
+        preferPositiveStock: !isAdd,
+        exactEmptyBatchLot: isAdd && isPurItem,
       );
 
       if (idx != -1) {
-        batches[idx].qty += isAdd ? qty : -qty;
+        final target = batches[idx];
+        target.qty += isAdd ? qty : -qty;
+        target.isShell = false;
+        if (isAdd && isPurItem) {
+          if (itemExp.isNotEmpty) target.exp = itemExp;
+          if (mrp > 0) target.mrp = mrp;
+          if (item.purchaseRate > 0) {
+            target.rate = item.purchaseRate;
+            target.purRate = item.purchaseRate;
+          }
+          if (item.rateA > 0) target.rateA = item.rateA;
+          if (item.rateB > 0) target.rateB = item.rateB;
+          if (item.rateC > 0) target.rateC = item.rateC;
+          if (item.rateCFormula > 0) target.rateCFormula = item.rateCFormula;
+        }
       } else if (isAdd) {
-        final bool isPurItem = item is PurchaseItem;
-        final double mrp = (item.mrp as num?)?.toDouble() ?? med.mrp;
         final double purRate = isPurItem
             ? item.purchaseRate
             : ((item.rate as num?)?.toDouble() ?? med.purRate);
@@ -240,11 +455,10 @@ class InventoryLogicCenter {
         final double rateC = isPurItem && item.rateC > 0
             ? item.rateC
             : (med.rateC > 0 ? med.rateC : rateA * 0.92);
-
         batches.add(
           BatchInfo(
             batch: cleanBatchNo,
-            exp: (item.exp ?? "").toString(),
+            exp: itemExp,
             packing: (item.packing ?? med.packing).toString(),
             mrp: mrp,
             rate: purRate,

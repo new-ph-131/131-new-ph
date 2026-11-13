@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import '../pharoah_manager.dart';
+import '../realtime_signaling/coordinators/app_realtime_coordinator.dart';
+import '../realtime_signaling/engines/fast_pull_engine.dart';
 import 'company_registry_model.dart';
 import 'maintenance_service.dart';
 import 'modify_company_view.dart';
@@ -28,25 +30,41 @@ class _CompanyControlPanelViewState extends State<CompanyControlPanelView> {
   String successReportTitle = "";      // Banner Title
   List<String> successReportDetails = []; // Bullet points
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ph = Provider.of<PharoahManager>(context, listen: false);
+      if (ph.activeCompany != null) {
+        AppRealtimeCoordinator.instance.start(ph);
+      }
+    });
+  }
+
   // ===========================================================================
   // 🏢 1. POPUP: FINANCIAL YEAR SELECTOR
   // ===========================================================================
   void _showFYSelectionDialog(PharoahManager ph, CompanyProfile comp) {
-    final List<String> sortedYears = AppDateLogic.sortFYList(comp.fYears);
-    final String latestFy = sortedYears.isNotEmpty ? sortedYears.last : "";
+    FastPullEngine.pullAndMerge(ph);
     showDialog(
       context: context,
-      builder: (c) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Select Financial Year", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: sortedYears.length,
-            itemBuilder: (dialogCtx, i) {
-              final String fy = sortedYears[i];
-              final bool isLatest = fy == latestFy;
+      builder: (c) => Consumer<PharoahManager>(
+        builder: (ctx, livePh, _) {
+          final activeComp = livePh.activeCompany ?? comp;
+          final List<String> sortedYears = AppDateLogic.sortFYList(activeComp.fYears);
+          final String latestFy = sortedYears.isNotEmpty ? sortedYears.last : "";
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("Select Financial Year", style: TextStyle(fontWeight: FontWeight.bold)),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: sortedYears.length,
+                itemBuilder: (dialogCtx, i) {
+                  final String fy = sortedYears[i];
+                  final bool isLatest = fy == latestFy;
               return Card(
                 elevation: 0,
                 color: isLatest ? Colors.blue.shade50 : Colors.amber.shade50,
@@ -91,9 +109,11 @@ class _CompanyControlPanelViewState extends State<CompanyControlPanelView> {
                   },
                 ),
               );
-            },
-          ),
-        ),
+                },
+              ),
+            ),
+          );
+        },
       ),
     );
   }

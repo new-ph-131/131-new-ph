@@ -339,11 +339,15 @@ class PharoahManager with ChangeNotifier {
   /// Exits the active Financial Year back to CompanyControlPanelView (LOGIN TO WORK / MAINTENANCE / NEW YEAR)
   /// without forcing the user to re-enter username/password.
   void exitYearToControlPanel() {
-    AppRealtimeCoordinator.instance.stop(ph: this);
     AppAutoSyncDaemon.instance.stop();
     FastPullEngine.invalidateInFlightPulls();
     currentFY = "";
     activeModule = "HOME";
+    if (activeCompany != null) {
+      AppRealtimeCoordinator.instance.start(this);
+    } else {
+      AppRealtimeCoordinator.instance.stop(ph: this);
+    }
     notifyListeners();
   }
 
@@ -404,13 +408,15 @@ class PharoahManager with ChangeNotifier {
     // the updated closing balances & batch stocks forward to 2026-27 (and any newer years)!
     if (activeCompany != null &&
         activeCompany!.fYears.length > 1 &&
-        currentFY.isNotEmpty &&
-        currentFY != activeCompany!.fYears.last) {
-      await syncOpeningBalancesFromPreviousYear(
-        startYear: currentFY,
-        onStepProgress: (_, __) {},
-        reloadActiveYearAtEnd: false,
-      );
+        currentFY.isNotEmpty) {
+      final sortedFys = AppDateLogic.sortFYList(activeCompany!.fYears);
+      if (sortedFys.isNotEmpty && currentFY != sortedFys.last) {
+        await syncOpeningBalancesFromPreviousYear(
+          startYear: currentFY,
+          onStepProgress: (_, __) {},
+          reloadActiveYearAtEnd: false,
+        );
+      }
     }
 
     notifyListeners();
@@ -719,6 +725,7 @@ Future<void> finalizeSale({
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        isPurchaseRate: false,
       );
     }
     
@@ -1144,6 +1151,7 @@ Future<bool> finalizePurchase({
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        isPurchaseRate: false,
       );
     }
     await save();
@@ -1292,7 +1300,10 @@ Future<bool> finalizePurchase({
     saleReturns.add(newSReturn);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) CreditNoteSyncModule.onCreditNoteSaved(newSReturn, t);
+        if (t.isNotEmpty) {
+          CreditNoteSyncModule.onCreditNoteSaved(newSReturn, t);
+          D1SalesLedgerService.onSaleReturnSaved(newSReturn, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+        }
       });
     } 
     
@@ -1316,6 +1327,7 @@ Future<bool> finalizePurchase({
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        isPurchaseRate: false,
       );
     }
 
@@ -1371,7 +1383,10 @@ Future<bool> finalizePurchase({
     purchaseReturns.add(newPReturn);
     if (activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteSaved(newPReturn, t);
+        if (t.isNotEmpty) {
+          DebitNoteSyncModule.onDebitNoteSaved(newPReturn, t);
+          D1SalesLedgerService.onPurchaseReturnSaved(newPReturn, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+        }
       });
     } 
     
@@ -1427,6 +1442,7 @@ void registerBatchActivity({
     String appliedRateType = "A",
     double qtyChange = 0.0,
     String status = "Active",
+    bool isPurchaseRate = true,
   }) {
     // Direct delegation to BatchSyncEngine (Centralized safe sync)
     BatchSyncEngine.registerBatchActivity(
@@ -1444,6 +1460,7 @@ void registerBatchActivity({
       appliedRateType: appliedRateType,
       qtyChange: qtyChange,
       status: status,
+      isPurchaseRate: isPurchaseRate,
     );
   }
 
@@ -1452,7 +1469,6 @@ void registerBatchActivity({
 
     void processBillItems(List<BillItem> items) {
       for (var item in items) {
-        if (item.batch.trim().isEmpty) continue;
         String resolvedKey = item.medicineID;
         try {
           final med = medicines.firstWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
@@ -1469,6 +1485,7 @@ void registerBatchActivity({
           rate: item.rate,
           appliedRateType: item.appliedRateType,
           rateCFormula: item.rateCFormula,
+          isPurchaseRate: false,
         );
         hasUpdates = true;
       }
@@ -1476,7 +1493,6 @@ void registerBatchActivity({
 
     void processPurchaseItems(List<PurchaseItem> items) {
       for (var item in items) {
-        if (item.batch.trim().isEmpty) continue;
         String resolvedKey = item.medicineID;
         try {
           final med = medicines.firstWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
@@ -1978,6 +1994,24 @@ void registerBatchActivity({
 
     if (!batchHistory.containsKey(med.identityKey)) {
       batchHistory[med.identityKey] = [];
+    }
+    if (existingIdx == -1 && med.stock > 0 && batchHistory[med.identityKey]!.isEmpty) {
+      batchHistory[med.identityKey]!.add(BatchInfo(
+        batch: ,
+        exp: ,
+        packing: med.packing,
+        mrp: med.mrp,
+        rate: med.purRate,
+        purRate: med.purRate,
+        rateA: med.rateA > 0 ? med.rateA : med.mrp,
+        rateB: med.rateB,
+        rateC: med.rateC,
+        openingQty: med.stock,
+        qty: med.stock,
+        isShell: false,
+        updatedAt: nowTs,
+        version: 1,
+      ));
     }
 
     save();
@@ -2545,7 +2579,10 @@ void registerBatchActivity({
       saleReturns[i] = updatedReturn;
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) ReturnsSyncModule.onSaleReturnSaved(updatedReturn, t);
+          if (t.isNotEmpty) {
+            ReturnsSyncModule.onSaleReturnSaved(updatedReturn, t);
+            D1SalesLedgerService.onSaleReturnSaved(updatedReturn, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+          }
         });
       }
       
@@ -2573,7 +2610,10 @@ void registerBatchActivity({
       purchaseReturns[i] = updatedPReturn;
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteSaved(updatedPReturn, t);
+          if (t.isNotEmpty) {
+            DebitNoteSyncModule.onDebitNoteSaved(updatedPReturn, t);
+            D1SalesLedgerService.onPurchaseReturnSaved(updatedPReturn, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+          }
         });
       }
 
@@ -2629,7 +2669,10 @@ void registerBatchActivity({
         if (activeCompany != null) {
           final ret = saleReturns[i];
           WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-            if (t.isNotEmpty) ReturnsSyncModule.onSaleReturnSaved(ret, t);
+            if (t.isNotEmpty) {
+              ReturnsSyncModule.onSaleReturnSaved(ret, t);
+              D1SalesLedgerService.onSaleReturnSaved(ret, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+            }
           });
         }
       }
@@ -2642,7 +2685,10 @@ void registerBatchActivity({
         if (activeCompany != null) {
           final ret = purchaseReturns[i];
           WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-            if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteSaved(ret, t);
+            if (t.isNotEmpty) {
+              DebitNoteSyncModule.onDebitNoteSaved(ret, t);
+              D1SalesLedgerService.onPurchaseReturnSaved(ret, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+            }
           });
         }
       }
@@ -2926,7 +2972,10 @@ void registerBatchActivity({
       D1SalesLedgerService.markPermanentlyDeleted(rId, bNo, "", currentFY);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) CreditNoteSyncModule.onCreditNoteDeleted(r, t);
+          if (t.isNotEmpty) {
+            CreditNoteSyncModule.onCreditNoteDeleted(r, t);
+            D1SalesLedgerService.onSaleReturnDeleted(r, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+          }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
         AppRealtimeCoordinator.instance.notifyAppMutation(
@@ -2957,7 +3006,10 @@ void registerBatchActivity({
       D1SalesLedgerService.markPermanentlyDeleted(rId, bNo, "", currentFY);
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteDeleted(r, t);
+          if (t.isNotEmpty) {
+            DebitNoteSyncModule.onDebitNoteDeleted(r, t);
+            D1SalesLedgerService.onPurchaseReturnDeleted(r, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+          }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
         AppRealtimeCoordinator.instance.notifyAppMutation(
@@ -3249,7 +3301,9 @@ void registerBatchActivity({
       }
 
       await loadAllData();
+      await FastPullEngine.pullAndMerge(this);
       await SnapshotWatcher.takeSnapshot(this);
+      AppRealtimeCoordinator.instance.start(this);
       notifyListeners();
 
       return {
@@ -3651,7 +3705,6 @@ void registerBatchActivity({
         }
 
         addLog("SYSTEM", "Marg-Grade Multi-Year Cascade: synced opening balances & rebuilt live stock from $prevFY to $targetFY.");
-        await Future.delayed(const Duration(milliseconds: 50));
       }
 
       if (reloadActiveYearAtEnd && currentFY.isNotEmpty) {

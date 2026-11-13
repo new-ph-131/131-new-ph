@@ -1,134 +1,186 @@
-import "sync_core/modules/batch_sync_module.dart";
-// FILE: lib/batch_sync_engine.dart (UPGRADED TWO-WAY SYNC ENGINE)
+// FILE: lib/batch_sync_engine.dart
+// Revision: #PH-REV-810 (SUPPORT-ALL-4-BATCH-EXPIRY-CONFIGS)
 
 import 'models.dart';
-import 'pharoah_manager.dart';
 import 'expiry_master.dart';
+import 'inventory_logic_center.dart';
+import 'sync_core/modules/batch_sync_module.dart';
 
 class BatchSyncEngine {
-  
-  /// ===========================================================================
-  /// 1. BATCH REGISTRATION & TWO-WAY SYNC (CASE SENSITIVE SAFE)
-  /// Isse Sale/Purchase/Import/CN/DN ke waqt batch memory aur disk par likha jata hai.
-  /// ===========================================================================
+  /// 1. REGISTER OR UPDATE BATCH FROM BILLING (Purchase, Sale, Challans, Returns)
   static void registerBatchActivity({
-    required PharoahManager ph,
-    required String productKey, 
-    required String batchNo,    
+    required Map<String, List<BatchInfo>> batchHistory,
+    required List<Medicine> medicines,
+    required String productKey,
+    required String batchNo,
     required String exp,
     required String packing,
     required double mrp,
-    required double rate, // Purchase rate reference
+    required double rate, // Purchase Rate (or Selling Rate when isPurchaseRate == false)
     double rateA = 0.0,
     double rateB = 0.0,
     double rateC = 0.0,
     double rateCFormula = 0.0,
     String appliedRateType = "A",
-    double qtyChange = 0.0,
-    String status = "Active",
+    String storeToken = "",
+    bool isPurchaseRate = true,
   }) {
-    if (ph.activeCompany == null) return;
+    String resolvedKey = productKey;
+    try {
+      final med = medicines.firstWhere(
+        (m) => m.id == productKey || m.identityKey == productKey || m.name.trim().toUpperCase() == productKey.trim().toUpperCase(),
+      );
+      resolvedKey = med.identityKey;
+    } catch (_) {}
 
-    if (!ph.batchHistory.containsKey(productKey)) {
-      ph.batchHistory[productKey] = [];
+    if (!batchHistory.containsKey(resolvedKey)) {
+      batchHistory[resolvedKey] = [];
     }
 
-    List<BatchInfo> history = ph.batchHistory[productKey]!;
-    
-    // CASE-INSENSITIVE MATCHING (consistent with InventoryLogicCenter & Sync)
-    final String cleanBatchUpper = batchNo.trim().toUpperCase();
-    int existingIdx = history.indexWhere(
-      (b) => b.batch.trim().toUpperCase() == cleanBatchUpper
+    List<BatchInfo> history = batchHistory[resolvedKey]!;
+    String cleanBatch = batchNo.trim().toUpperCase();
+
+    int idx = InventoryLogicCenter.findMatchingBatchIndex(
+      history,
+      batchNo: cleanBatch,
+      exp: exp,
+      mrp: mrp,
+      purRate: isPurchaseRate ? rate : 0.0,
+      preferPositiveStock: !isPurchaseRate,
+      exactEmptyBatchLot: isPurchaseRate,
     );
 
-    // Fallbacks to handle legacy files smoothly
-    double finalRateA = rateA == 0.0 ? mrp : rateA;
-    double finalRateB = rateB == 0.0 ? (rateA == 0.0 ? mrp * 0.95 : rateA * 0.95) : rateB;
-    double finalRateC = rateC == 0.0 ? (rateA == 0.0 ? mrp * 0.92 : rateA * 0.92) : rateC;
+    double finalRateA = rateA > 0 ? rateA : (mrp > 0 ? mrp : rate);
+    double finalRateB = rateB > 0 ? rateB : (finalRateA * 0.95);
+    double finalRateC = rateC > 0 ? rateC : (finalRateA * 0.92);
+    if (rateCFormula > 0 && rate > 0) {
+      finalRateC = rate + (rate * (rateCFormula / 100));
+    }
 
-    if (existingIdx != -1) {
-      final existing = history[existingIdx];
-      // 🛡️ LWW Protection: If batch was already configured in Master (version > 1),
-      // preserve its master pricing & expiry from being overwritten by older invoices.
-      if (existing.version <= 1) {
-        existing.exp = exp;
-        existing.mrp = mrp;
-        existing.rate = rate;
-        existing.packing = packing;
-        existing.purRate = rate;
-        existing.rateA = finalRateA;
-        existing.rateB = finalRateB;
-        existing.rateC = finalRateC;
-        existing.rateCFormula = rateCFormula;
-        existing.appliedRateType = appliedRateType;
-        existing.status = status;
+    final int nowTs = DateTime.now().millisecondsSinceEpoch;
+    late BatchInfo syncedBatch;
+
+    if (idx != -1) {
+      var target = history[idx];
+      if (exp.trim().isNotEmpty || isPurchaseRate) {
+        if (exp.trim().isNotEmpty) target.exp = exp.trim();
       }
-      if (qtyChange != 0.0) {
-        existing.qty += qtyChange;
+      if (packing.trim().isNotEmpty) target.packing = packing;
+      if (mrp > 0) target.mrp = mrp;
+      if (isPurchaseRate && rate > 0) {
+        target.rate = rate;
+        target.purRate = rate;
+      } else if (target.purRate <= 0 && target.rate <= 0 && rate > 0) {
+        target.rate = rate;
+        target.purRate = rate;
       }
+      if (rateA > 0) target.rateA = finalRateA;
+      if (rateB > 0) target.rateB = finalRateB;
+      if (rateC > 0 || rateCFormula > 0) target.rateC = finalRateC;
+      if (rateCFormula > 0) target.rateCFormula = rateCFormula;
+      target.appliedRateType = appliedRateType;
+      target.isShell = false;
+      target.version += 1;
+      target.updatedAt = nowTs;
+      syncedBatch = target;
     } else {
-      // 🆕 SCENARIO B: CREATE NEW BATCH (Manual Entry or Inward)
-      history.add(BatchInfo(
-        batch: batchNo.trim(), 
-        exp: exp,
+      syncedBatch = BatchInfo(
+        batch: cleanBatch,
+        exp: exp.trim(),
         packing: packing,
         mrp: mrp,
         rate: rate,
-        qty: qtyChange, 
-        openingQty: qtyChange,
-        isShell: false,
         purRate: rate,
         rateA: finalRateA,
         rateB: finalRateB,
         rateC: finalRateC,
         rateCFormula: rateCFormula,
         appliedRateType: appliedRateType,
-        status: status,
-      ));
+        qty: 0.0,
+        isShell: false,
+        status: "Active",
+        updatedAt: nowTs,
+        version: 1,
+      );
+      history.add(syncedBatch);
     }
 
-    // Disk par direct atomic save
-    ph.save();
-    if (ph.activeCompany != null && ph.activeCompany!.id.isNotEmpty) {
-      final savedBatch = history[existingIdx != -1 ? existingIdx : history.length - 1];
+    if (storeToken.trim().isNotEmpty) {
       BatchSyncModule.onBatchSaved(
-        batch: savedBatch,
-        medIdentityKey: productKey,
-        storeToken: ph.activeCompany!.id,
+        batch: syncedBatch,
+        medIdentityKey: resolvedKey,
+        storeToken: storeToken,
         isDelete: false,
       );
     }
+
+    _syncLatestToMedicineMaster(
+      medicines,
+      resolvedKey,
+      mrp,
+      isPurchaseRate ? rate : syncedBatch.purRate,
+      finalRateA,
+      finalRateB,
+      finalRateC,
+      storeToken: storeToken,
+    );
   }
 
-  /// ===========================================================================
-  /// 2. BATCH SUGGESTIONS (FOR SEARCH & SELECTION)
-  /// ===========================================================================
-  static List<BatchInfo> getFilteredBatches({
-    required PharoahManager ph,
-    required String productKey,
-    bool hideExpired = false, 
+  static void _syncLatestToMedicineMaster(
+    List<Medicine> medicines,
+    String medId,
+    double mrp,
+    double purRate,
+    double rA,
+    double rB,
+    double rC, {
+    String storeToken = "",
   }) {
-    if (ph.activeCompany == null) return [];
-    if (!ph.batchHistory.containsKey(productKey)) return [];
+    try {
+      var med = medicines.firstWhere((m) => m.identityKey == medId || m.id == medId);
+      if (mrp > 0) med.mrp = mrp;
+      if (purRate > 0) med.purRate = purRate;
+      if (rA > 0) med.rateA = rA;
+      if (rB > 0) med.rateB = rB;
+      if (rC > 0) med.rateC = rC;
+      med.version += 1;
+      med.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    } catch (e) {}
+  }
 
-    List<BatchInfo> allBatches = ph.batchHistory[productKey]!;
-    
-    if (hideExpired) {
-      // Sales / Billing screen par expired batches ko block karne ke liye
-      DateTime systemToday = DateTime.now();
-      return allBatches.where((b) {
-        try {
-          final parts = b.exp.split('/');
-          int m = int.parse(parts[0]);
-          int y = 2000 + int.parse(parts[1]);
-          DateTime lastDay = DateTime(y, m + 1, 0);
-          return !lastDay.isBefore(systemToday); // Keep non-expired
-        } catch (_) {
-          return true; // Keep if parsing fails (fallback safety)
-        }
-      }).toList();
-    }
+  /// 2. AUTO-PICK BEST BATCH FOR BILLING (Supports both dated and non-expiry / non-batch lots)
+  static BatchInfo? findBestAvailableBatch(
+    Map<String, List<BatchInfo>> batchHistory,
+    String productKey,
+  ) {
+    if (!batchHistory.containsKey(productKey)) return null;
+    List<BatchInfo> list = batchHistory[productKey]!;
+    if (list.isEmpty) return null;
 
-    return allBatches;
+    List<BatchInfo> validBatches = list.where((b) {
+      if (b.qty <= 0 || b.status == "Blocked") return false;
+      return ExpiryMaster.isSaleAllowed(b.exp);
+    }).toList();
+
+    if (validBatches.isEmpty) return null;
+
+    validBatches.sort((a, b) {
+      final bool aNonExp = ExpiryMaster.isNonExpiryValue(a.exp);
+      final bool bNonExp = ExpiryMaster.isNonExpiryValue(b.exp);
+      if (aNonExp && bNonExp) return 0;
+      if (aNonExp) return 1;
+      if (bNonExp) return -1;
+      try {
+        var pA = a.exp.split('/');
+        var pB = b.exp.split('/');
+        DateTime dA = DateTime(2000 + int.parse(pA[1]), int.parse(pA[0]));
+        DateTime dB = DateTime(2000 + int.parse(pB[1]), int.parse(pB[0]));
+        return dA.compareTo(dB);
+      } catch (e) {
+        return 0;
+      }
+    });
+
+    return validBatches.first;
   }
 }

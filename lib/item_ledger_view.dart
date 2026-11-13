@@ -84,17 +84,40 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
     bool matchesMed(String mId) =>
         mId == widget.medicine.id ||
         (widget.medicine.identityKey.isNotEmpty && mId == widget.medicine.identityKey);
+    String bLabel(String raw) => raw.trim().isEmpty ? "NO BATCH" : raw.trim().toUpperCase();
 
     // 0. Seed Batch Opening Stock + Manual Adjustments so batch totals match ON HAND
     for (var b in (ph.batchHistory[widget.medicine.identityKey] ?? [])) {
-      final bKey = b.batch.trim().toUpperCase();
+      final bKey = bLabel(b.batch);
       batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) + b.openingQty + b.adjustmentQty;
+      if (b.openingQty != 0) {
+        history.add({
+          'date': DateTime(2000, 1, 1),
+          'type': 'OPENING',
+          'qty': b.openingQty.abs(),
+          'party': 'Opening Stock',
+          'bill': null,
+          'batch': bKey,
+          'isIn': b.openingQty > 0,
+        });
+      }
+      if (b.adjustmentQty != 0) {
+        history.add({
+          'date': b.updatedAt > 0 ? DateTime.fromMillisecondsSinceEpoch(b.updatedAt) : DateTime.now(),
+          'type': 'ADJ',
+          'qty': b.adjustmentQty.abs(),
+          'party': b.adjReason.isNotEmpty ? "Stock Adj (${b.adjReason})" : "Stock Adjustment",
+          'bill': null,
+          'batch': bKey,
+          'isIn': b.adjustmentQty > 0,
+        });
+      }
     }
 
     // 1. Trace: Purchases (Stock IN +)
     for (var p in ph.purchases.where((p) => p.isDeleted != 1)) {
       for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
-        final bKey = it.batch.trim().toUpperCase();
+        final bKey = bLabel(it.batch);
         history.add({'date': p.date, 'type': 'PUR', 'qty': it.qty + it.freeQty, 'party': p.distributorName, 'bill': p, 'batch': bKey, 'isIn': true});
         batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) + (it.qty + it.freeQty);
       }
@@ -103,7 +126,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
     // 2. Trace: Sales (Stock OUT -)
     for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active"))) {
       for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
-        final bKey = it.batch.trim().toUpperCase();
+        final bKey = bLabel(it.batch);
         history.add({'date': s.date, 'type': 'SALE', 'qty': it.qty + it.freeQty, 'party': s.partyName, 'bill': s, 'batch': bKey, 'isIn': false});
         batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) - (it.qty + it.freeQty);
       }
@@ -112,7 +135,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
     // 3. Sale Returns (CN) -> Stock IN + (If Sellable)
     for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
       for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
-        final bKey = it.batch.trim().toUpperCase();
+        final bKey = bLabel(it.batch);
         bool isSellable = it.isBreakage == false;
         history.add({'date': r.date, 'type': isSellable ? 'SR-SELL' : 'SR-EXP', 'qty': it.qty + it.freeQty, 'party': r.partyName, 'bill': r, 'batch': bKey, 'isIn': isSellable});
         if (isSellable) batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) + (it.qty + it.freeQty);
@@ -122,7 +145,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
     // 4. Purchase Returns (DN) -> Stock OUT -
     for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
       for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
-        final bKey = it.batch.trim().toUpperCase();
+        final bKey = bLabel(it.batch);
         history.add({'date': r.date, 'type': 'PR-OUT', 'qty': it.qty + it.freeQty, 'party': r.distributorName, 'bill': r, 'batch': bKey, 'isIn': false});
         batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) - (it.qty + it.freeQty);
       }

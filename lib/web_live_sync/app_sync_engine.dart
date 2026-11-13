@@ -1,3 +1,4 @@
+import '../app_date_logic.dart';
 import '../sync_core/modules/settings_sync_module.dart';
 import "sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import "../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
@@ -140,6 +141,8 @@ class AppSyncEngine {
                 if (stillInEffectiveFy) {
                   bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, effectiveFy);
                   bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, effectiveFy);
+                  bool d1SRet = D1SalesLedgerService.applyEventsToLocalSaleReturns(ph.saleReturns, edgeEvents, effectiveFy);
+                  bool d1PRet = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(ph.purchaseReturns, edgeEvents, effectiveFy);
                   bool d1Vouc = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
                   bool d1Gst = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
                   bool d1Cfg = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
@@ -152,7 +155,7 @@ class AppSyncEngine {
                     edgeEvents: edgeEvents,
                     onSeriesMutated: (updated) => ph.numberingSeries = updated,
                   );
-                  if (d1Sales || d1Purc || d1Vouc || d1Gst || d1Cfg || d1Series) d1HasChanges = true;
+                  if (d1Sales || d1Purc || d1SRet || d1PRet || d1Vouc || d1Gst || d1Cfg || d1Series) d1HasChanges = true;
                 }
                 await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
                   ph: ph,
@@ -342,17 +345,18 @@ class AppSyncEngine {
       // all newer FY folders on disk contain authoritative opening balances and stock
       // before building the multi-FY cloud vault payload!
       if (ph.activeCompany != null &&
-          ph.activeCompany!.fYears.length > 1 &&
-          ph.currentFY.isNotEmpty &&
-          ph.currentFY != ph.activeCompany!.fYears.last) {
-        final bool cascadeOk = await ph.syncOpeningBalancesFromPreviousYear(
-          startYear: ph.currentFY,
-          onStepProgress: (_, __) {},
-          reloadActiveYearAtEnd: false,
-        );
-        if (!cascadeOk) {
-          debugPrint("AppSyncEngine Notice: Aborting push because multi-year carry-forward cascade failed.");
-          return false;
+          ph.activeCompany!.fYears.length > 1) {
+        final sortedFys = AppDateLogic.sortFYList(ph.activeCompany!.fYears);
+        if (sortedFys.length > 1) {
+          final bool cascadeOk = await ph.syncOpeningBalancesFromPreviousYear(
+            startYear: sortedFys.first,
+            onStepProgress: (_, __) {},
+            reloadActiveYearAtEnd: ph.currentFY.isNotEmpty,
+          );
+          if (!cascadeOk) {
+            debugPrint("AppSyncEngine Notice: Aborting push because multi-year carry-forward cascade failed.");
+            return false;
+          }
         }
       }
 

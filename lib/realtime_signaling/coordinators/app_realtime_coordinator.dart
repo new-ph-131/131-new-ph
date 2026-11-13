@@ -30,7 +30,7 @@ class AppRealtimeCoordinator {
   /// Starts listening to real-time events from Web
   Future<void> start(PharoahManager ph) async {
     stop();
-    if (ph.activeCompany == null || ph.currentFY.isEmpty) return;
+    if (ph.activeCompany == null) return;
 
     final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
 
@@ -43,6 +43,7 @@ class AppRealtimeCoordinator {
       mySource: 'app',
       interval: const Duration(milliseconds: 2000),
       onBatchReceived: (batchOps) async {
+        if (ph.currentFY.isEmpty) return;
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phApp: ph);
         try {
           final workingDir = await ph.getWorkingPath();
@@ -61,6 +62,18 @@ class AppRealtimeCoordinator {
             );
             await File('$workingDir/p_challan.json').writeAsString(
               jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/s_return.json').writeAsString(
+              jsonEncode(ph.saleReturns.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/p_return.json').writeAsString(
+              jsonEncode(ph.purchaseReturns.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/parts.json').writeAsString(
+              jsonEncode(ph.parties.map((e) => e.toMap()).toList()),
+            );
+            await File('$workingDir/meds.json').writeAsString(
+              jsonEncode(ph.medicines.map((e) => e.toMap()).toList()),
             );
             await File('$workingDir/bats.json').writeAsString(
               jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
@@ -118,9 +131,9 @@ class AppRealtimeCoordinator {
       },
     );
 
-    // 3. Fallback Safety Net (pulls every 12s if signal missed)
+    // 3. Fallback Safety Net (pulls every 12s if signal missed, including on Control Panel for FY discovery)
     _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
-      if (ph.activeCompany != null && ph.currentFY.isNotEmpty) {
+      if (ph.activeCompany != null) {
         await FastPullEngine.pullAndMerge(ph);
       }
     });

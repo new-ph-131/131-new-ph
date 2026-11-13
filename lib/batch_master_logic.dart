@@ -1,17 +1,20 @@
+import 'inventory_logic_center.dart';
 import 'models.dart';
 
 class BatchMasterLogic {
   static List<BatchInfo> updateBatchList(List<BatchInfo> existingBatches, BatchInfo newBatch) {
     List<BatchInfo> updatedList = List.from(existingBatches);
-    
-    // Batch number check (case-insensitive)
-    int idx = updatedList.indexWhere((b) => b.batch.trim().toUpperCase() == newBatch.batch.trim().toUpperCase());
-    
+    int idx = InventoryLogicCenter.findMatchingBatchIndex(
+      updatedList,
+      batchNo: newBatch.batch,
+      exp: newBatch.exp,
+      mrp: newBatch.mrp,
+      purRate: newBatch.purRate > 0 ? newBatch.purRate : newBatch.rate,
+      exactEmptyBatchLot: true,
+    );
     if (idx != -1) {
-      // Agar batch pehle se hai, update details
       updatedList[idx] = newBatch;
     } else {
-      // Naya batch add karein
       updatedList.add(newBatch);
     }
     return updatedList;

@@ -10,6 +10,7 @@ import '../gateway/company_registry_model.dart';
 import '../inventory_logic_center.dart';
 import '../models.dart';
 import '../pharoah_manager.dart';
+import '../web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart';
 import 'd1_sales_ledger_service.dart';
 import 'modules/batch_delta_merge_module.dart';
 
@@ -535,6 +536,7 @@ class MultiFyCloudVault {
         ph.activeCompany = updatedProfile;
         await ph.saveRegistry();
         registryChanged = true;
+        ph.notifyListeners();
       }
 
       // Merge non-active FY files from vault into their respective disk directories using Record-Level LWW
@@ -637,8 +639,8 @@ class MultiFyCloudVault {
         }
       }
 
-      // If any historical FY earlier than active FY was mutated, cascade opening balances & stock forward!
-      if (mutatedHistoricalFys.isNotEmpty && ph.currentFY.isNotEmpty) {
+      // If any historical FY was mutated, cascade opening balances & stock forward!
+      if (mutatedHistoricalFys.isNotEmpty) {
         final List<String> orderedMutated = AppDateLogic.sortFYList(mutatedHistoricalFys);
         final String earliestFy = orderedMutated.first;
         final int earliestIdx = sortedFys.indexOf(earliestFy);
@@ -647,7 +649,7 @@ class MultiFyCloudVault {
           await ph.syncOpeningBalancesFromPreviousYear(
             startYear: earliestFy,
             onStepProgress: (_, __) {},
-            reloadActiveYearAtEnd: true,
+            reloadActiveYearAtEnd: ph.currentFY.isNotEmpty,
           );
           registryChanged = true;
         }
@@ -699,6 +701,14 @@ class MultiFyCloudVault {
           }
         }
       }
+      if (evFy.isEmpty && (ev['action'] ?? '').toString().toUpperCase() == 'DELETE') {
+        for (final kFy in knownFys) {
+          if (kFy != ph.currentFY) {
+            eventsByFy.putIfAbsent(kFy, () => []).add(ev);
+          }
+        }
+        continue;
+      }
       if (evFy.isEmpty || evFy == ph.currentFY || !knownFys.contains(evFy)) continue;
       eventsByFy.putIfAbsent(evFy, () => []).add(ev);
     }
@@ -720,6 +730,9 @@ class MultiFyCloudVault {
 
         final File salesFile = File('$fyDirPath/sales.json');
         final File purcFile = File('$fyDirPath/purc.json');
+        final File voucFile = File('$fyDirPath/vouc.json');
+        final File sRetFile = File('$fyDirPath/s_return.json');
+        final File pRetFile = File('$fyDirPath/p_return.json');
 
         List<Sale> fySales = [];
         if (await salesFile.exists()) {
@@ -741,8 +754,41 @@ class MultiFyCloudVault {
           } catch (_) {}
         }
 
+        List<Voucher> fyVouc = [];
+        if (await voucFile.exists()) {
+          try {
+            final raw = jsonDecode(await voucFile.readAsString());
+            if (raw is List) {
+              fyVouc = raw.map((e) => Voucher.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+            }
+          } catch (_) {}
+        }
+
+        List<SaleReturn> fySRet = [];
+        if (await sRetFile.exists()) {
+          try {
+            final raw = jsonDecode(await sRetFile.readAsString());
+            if (raw is List) {
+              fySRet = raw.map((e) => SaleReturn.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+            }
+          } catch (_) {}
+        }
+
+        List<PurchaseReturn> fyPRet = [];
+        if (await pRetFile.exists()) {
+          try {
+            final raw = jsonDecode(await pRetFile.readAsString());
+            if (raw is List) {
+              fyPRet = raw.map((e) => PurchaseReturn.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+            }
+          } catch (_) {}
+        }
+
         final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(fySales, fyEvents, targetFy);
         final bool pChanged = D1SalesLedgerService.applyEventsToLocalPurchases(fyPurc, fyEvents, targetFy);
+        final bool vChanged = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(fyVouc, fyEvents, targetFy);
+        final bool srChanged = D1SalesLedgerService.applyEventsToLocalSaleReturns(fySRet, fyEvents, targetFy);
+        final bool prChanged = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(fyPRet, fyEvents, targetFy);
 
         if (sChanged) {
           await salesFile.writeAsString(jsonEncode(fySales.map((e) => e.toMap()).toList()));
@@ -750,7 +796,16 @@ class MultiFyCloudVault {
         if (pChanged) {
           await purcFile.writeAsString(jsonEncode(fyPurc.map((e) => e.toMap()).toList()));
         }
-        if (sChanged || pChanged) {
+        if (vChanged) {
+          await voucFile.writeAsString(jsonEncode(fyVouc.map((e) => e.toMap()).toList()));
+        }
+        if (srChanged) {
+          await sRetFile.writeAsString(jsonEncode(fySRet.map((e) => e.toMap()).toList()));
+        }
+        if (prChanged) {
+          await pRetFile.writeAsString(jsonEncode(fyPRet.map((e) => e.toMap()).toList()));
+        }
+        if (sChanged || pChanged || vChanged || srChanged || prChanged) {
           anyMutated = true;
           mutatedFys.add(targetFy);
           await _rebuildDiskFyInventory(fyDirPath);

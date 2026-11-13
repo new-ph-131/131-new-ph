@@ -1,3 +1,4 @@
+import 'package:pharoah_erp/expiry_master.dart';
 // Responsive layout updated for #PH-REV-742
 // FILE: lib/web_live_sync/sub_views/web_stock/web_stock_analysis_master_view.dart
 
@@ -147,10 +148,38 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
 
   String _getNearestExpiry(PharoahWebManager webPh, Medicine med) {
     final batches = webPh.getBatchesForMedicine(med);
-    final active = batches.where((b) => b.qty > 0 && b.exp.trim().isNotEmpty).toList();
+    final active = batches.where((b) => b.qty > 0 && !ExpiryMaster.isNonExpiryValue(b.exp)).toList();
     if (active.isEmpty) return "-";
-    active.sort((a, b) => a.exp.compareTo(b.exp));
+    active.sort((a, b) => ExpiryMaster.parseToEndOfMonth(a.exp).compareTo(ExpiryMaster.parseToEndOfMonth(b.exp)));
     return active.first.exp;
+  }
+
+  double _computePurValuation(PharoahWebManager webPh, Medicine m) {
+    if (m.stock <= 0) return 0.0;
+    final active = webPh.getBatchesForMedicine(m).where((b) => b.qty > 0).toList();
+    if (active.isEmpty) return m.stock * m.purRate;
+    final double batchQtySum = active.fold(0.0, (sum, b) => sum + b.qty);
+    if ((batchQtySum - m.stock).abs() <= 0.01) {
+      return active.fold(0.0, (sum, b) {
+        final double r = (b.purRate > 0 ? b.purRate : b.rate) > 0 ? (b.purRate > 0 ? b.purRate : b.rate) : m.purRate;
+        return sum + (b.qty * r);
+      });
+    }
+    return m.stock * m.purRate;
+  }
+
+  double _computeMrpValuation(PharoahWebManager webPh, Medicine m) {
+    if (m.stock <= 0) return 0.0;
+    final active = webPh.getBatchesForMedicine(m).where((b) => b.qty > 0).toList();
+    if (active.isEmpty) return m.stock * m.mrp;
+    final double batchQtySum = active.fold(0.0, (sum, b) => sum + b.qty);
+    if ((batchQtySum - m.stock).abs() <= 0.01) {
+      return active.fold(0.0, (sum, b) {
+        final double r = b.mrp > 0 ? b.mrp : m.mrp;
+        return sum + (b.qty * r);
+      });
+    }
+    return m.stock * m.mrp;
   }
 
   void _onSort(StockColumnId col) {
@@ -253,10 +282,10 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
           cmp = a.mrp.compareTo(b.mrp);
           break;
         case StockColumnId.purValuation:
-          cmp = (a.stock * a.purRate).compareTo(b.stock * b.purRate);
+          cmp = _computePurValuation(webPh, a).compareTo(_computePurValuation(webPh, b));
           break;
         case StockColumnId.mrpValuation:
-          cmp = (a.stock * a.mrp).compareTo(b.stock * b.mrp);
+          cmp = _computeMrpValuation(webPh, a).compareTo(_computeMrpValuation(webPh, b));
           break;
         case StockColumnId.gst:
           cmp = a.gst.compareTo(b.gst);
@@ -269,8 +298,8 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
 
     // 4. Compute Totals
     double totalStockUnits = filteredList.fold(0.0, (s, m) => s + m.stock);
-    double totalPurVal = filteredList.fold(0.0, (s, m) => s + (m.stock * m.purRate));
-    double totalMrpVal = filteredList.fold(0.0, (s, m) => s + (m.stock * m.mrp));
+    double totalPurVal = filteredList.fold(0.0, (s, m) => s + _computePurValuation(webPh, m));
+    double totalMrpVal = filteredList.fold(0.0, (s, m) => s + _computeMrpValuation(webPh, m));
     double marginPct = totalMrpVal > 0 ? ((totalMrpVal - totalPurVal) / totalMrpVal) * 100 : 0.0;
 
     // 5. Partition columns into Frozen vs Scrollable based on _freezeOption
@@ -1068,11 +1097,11 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
         return _cellContainer(width, Text("₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)), isRight: true);
 
       case StockColumnId.purValuation:
-        final val = m.stock * m.purRate;
+        final val = _computePurValuation(webPh, m);
         return _cellContainer(width, Text("₹${val.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFFA78BFA), fontSize: 11, fontWeight: FontWeight.bold)), isRight: true);
 
       case StockColumnId.mrpValuation:
-        final val = m.stock * m.mrp;
+        final val = _computeMrpValuation(webPh, m);
         return _cellContainer(width, Text("₹${val.toStringAsFixed(2)}", style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)), isRight: true);
 
       case StockColumnId.batchCount:

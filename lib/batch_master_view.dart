@@ -1,3 +1,5 @@
+import 'expiry_master.dart';
+import 'inventory_logic_center.dart';
 // FILE: lib/batch_master_view.dart
 
 import 'package:flutter/material.dart';
@@ -186,23 +188,37 @@ class _BatchMasterViewState extends State<BatchMasterView> {
             onPressed: () {
               final bNo = batchNoC.text.trim().toUpperCase();
               final exp = expC.text.trim();
-              if (bNo.isEmpty || exp.isEmpty) return;
+              if (exp.isNotEmpty) {
+                final expWarn = ExpiryMaster.getValidationWarning(exp);
+                if (expWarn != null && expWarn.startsWith("Error")) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(expWarn), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+              }
 
               final medKey = med.identityKey;
               if (!ph.batchHistory.containsKey(medKey)) {
                 ph.batchHistory[medKey] = [];
               }
 
-              bool exists = ph.batchHistory[medKey]!.any((b) => b.batch.trim().toUpperCase() == bNo);
+              final mrp = double.tryParse(mrpC.text) ?? 0.0;
+              final pur = double.tryParse(rateC.text) ?? 0.0;
+              bool exists = InventoryLogicCenter.findMatchingBatchIndex(
+                ph.batchHistory[medKey]!,
+                batchNo: bNo,
+                exp: exp,
+                mrp: mrp,
+                purRate: pur,
+                exactEmptyBatchLot: true,
+              ) != -1;
               if (exists) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Error: Batch '$bNo' already exists!"), backgroundColor: Colors.red),
+                  SnackBar(content: Text("Error: Batch '${bNo.isEmpty ? "NO BATCH" : bNo}' already exists!"), backgroundColor: Colors.red),
                 );
                 return;
               }
-
-              final mrp = double.tryParse(mrpC.text) ?? 0.0;
-              final pur = double.tryParse(rateC.text) ?? 0.0;
               final q = double.tryParse(openingQtyC.text) ?? 0.0;
               final a = mrp > 0 ? mrp : pur;
 

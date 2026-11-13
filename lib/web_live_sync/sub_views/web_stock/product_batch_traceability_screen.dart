@@ -1,3 +1,5 @@
+import 'package:pharoah_erp/expiry_master.dart';
+import 'package:pharoah_erp/inventory_logic_center.dart';
 import 'dart:ui' show PointerDeviceKind;
 // FILE: lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
 // Live Revision: #PH-REV-745 (ADVANCED-STOCK-TRACEABILITY-AND-BATCH-LEDGER)
@@ -748,27 +750,41 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
             onPressed: () {
               final bNo = batchNoC.text.trim();
               final exp = expC.text.trim();
-              if (bNo.isEmpty || exp.isEmpty) return;
+              if (exp.isNotEmpty) {
+                final expWarn = ExpiryMaster.getValidationWarning(exp);
+                if (expWarn != null && expWarn.startsWith("Error")) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(expWarn), backgroundColor: Colors.redAccent),
+                  );
+                  return;
+                }
+              }
 
               final medKey = med.identityKey;
               if (!webPh.batchHistory.containsKey(medKey)) {
                 webPh.batchHistory[medKey] = [];
               }
 
-              bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim().toUpperCase() == bNo.toUpperCase());
+              double q = double.tryParse(openingQtyC.text) ?? 0.0;
+              double pur = double.tryParse(purRateC.text) ?? 0.0;
+              double m = double.tryParse(mrpC.text) ?? 0.0;
+              bool exists = InventoryLogicCenter.findMatchingBatchIndex(
+                webPh.batchHistory[medKey]!,
+                batchNo: bNo,
+                exp: exp,
+                mrp: m,
+                purRate: pur,
+                exactEmptyBatchLot: true,
+              ) != -1;
               if (exists) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text("Batch '$bNo' already exists for ${med.name}"),
+                    content: Text("Batch '${bNo.isEmpty ? "NO BATCH" : bNo}' already exists for ${med.name}"),
                     backgroundColor: Colors.redAccent,
                   ),
                 );
                 return;
               }
-
-              double q = double.tryParse(openingQtyC.text) ?? 0.0;
-              double pur = double.tryParse(purRateC.text) ?? 0.0;
-              double m = double.tryParse(mrpC.text) ?? 0.0;
               double rA = double.tryParse(rateAC.text) ?? 0.0;
               double rB = double.tryParse(rateBC.text) ?? 0.0;
               double rC = double.tryParse(rateCC.text) ?? 0.0;

@@ -828,10 +828,15 @@ class D1SalesLedgerService {
       if (rawSale is Map &&
           (rawSale["doc_type"] == "PURCHASE" ||
            rawSale["doc_type"] == "VOUCHER" ||
+           rawSale["doc_type"] == "SALE_RETURN" ||
+           rawSale["doc_type"] == "CREDIT_NOTE" ||
+           rawSale["doc_type"] == "PURCHASE_RETURN" ||
+           rawSale["doc_type"] == "DEBIT_NOTE" ||
            rawSale["doc_type"] == "GST_DIARY_SESSION" ||
            rawSale["doc_type"] == "GST_SESSION" ||
            rawSale["doc_type"] == "APP_CONFIG" ||
            rawSale["doc_type"] == "CONFIG" ||
+           rawSale.containsKey("returnType") ||
            rawSale.containsKey("distributorName") ||
            rawSale.containsKey("internalNo") ||
            rawSale.containsKey("voucherNo") ||
@@ -938,6 +943,11 @@ class D1SalesLedgerService {
 
       if (rawData is Map &&
           (rawData["doc_type"] == "VOUCHER" ||
+           rawData["doc_type"] == "SALE_RETURN" ||
+           rawData["doc_type"] == "CREDIT_NOTE" ||
+           rawData["doc_type"] == "PURCHASE_RETURN" ||
+           rawData["doc_type"] == "DEBIT_NOTE" ||
+           rawData.containsKey("returnType") ||
            rawData.containsKey("voucherNo") ||
            rawData.containsKey("depositedIn"))) {
         continue;
@@ -1032,6 +1042,281 @@ class D1SalesLedgerService {
       }
     }
 
+    return mutated;
+  }
+
+
+  static Future<bool> onSaleReturnSaved(
+    SaleReturn ret,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+    final String effFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(ret.date));
+    try {
+      unmarkPermanentlyDeleted(ret.id, ret.billNo, "", effFy);
+      recordKnownVersion(ret.id, ret.billNo, ret.version);
+      final map = ret.toMap();
+      map["doc_type"] = "SALE_RETURN";
+      map["fy"] = effFy;
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "SALE_RETURN_SAVED",
+        "fy": effFy,
+        "entityId": ret.id,
+        "unmarkedIds": [ret.id, if (ret.billNo.trim().isNotEmpty) ret.billNo.trim().toUpperCase()],
+        "sale_event": {
+          "id": ret.id,
+          "bill_no": ret.billNo,
+          "version": ret.version,
+          "action": ret.status == "Cancelled" ? "CANCEL" : "UPDATE",
+          "status": ret.status,
+          "client_source": clientSource,
+          "payload": map,
+        },
+      };
+      final res = await http.post(Uri.parse(endpoint), headers: _headers, body: jsonEncode(payload)).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> onSaleReturnDeleted(
+    String retId,
+    String billNo,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+    final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : activeFinancialYear.trim();
+    try {
+      markPermanentlyDeleted(retId, billNo, "", effFy);
+      final cleanBNo = billNo.trim().toUpperCase();
+      final scopedBNo = cleanBNo.isNotEmpty ? scopeSecondaryKey(cleanBNo, effFy) : "";
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "DELETE_SALE_RETURN",
+        "fy": effFy,
+        "deletedIds": [retId, if (scopedBNo.isNotEmpty) scopedBNo],
+        "sale_event": {
+          "id": retId,
+          "bill_no": cleanBNo,
+          "version": 999999,
+          "action": "DELETE",
+          "status": "Deleted",
+          "client_source": clientSource,
+          "payload": {
+            "doc_type": "SALE_RETURN",
+            "id": retId,
+            "billNo": cleanBNo,
+            "fy": effFy,
+            "is_deleted": 1,
+            "isDeleted": 1,
+            "status": "Deleted",
+          },
+        },
+      };
+      final res = await http.post(Uri.parse(endpoint), headers: _headers, body: jsonEncode(payload)).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool applyEventsToLocalSaleReturns(
+    List<SaleReturn> localReturns,
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
+    if (events.isEmpty) return false;
+    final String effFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+        ? targetFyOverride.trim()
+        : activeFinancialYear.trim();
+    bool mutated = false;
+    for (final ev in events) {
+      final String billId = (ev["bill_id"] ?? "").toString().trim();
+      final String billNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+      final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
+      final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
+      final dynamic rawData = ev["sale_data"];
+      final bool isSrPayload = rawData is Map &&
+          (rawData["doc_type"] == "SALE_RETURN" ||
+           rawData["doc_type"] == "CREDIT_NOTE" ||
+           (rawData.containsKey("returnType") && !rawData.containsKey("distributorName")));
+      final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
+      if (evFy.isNotEmpty && effFy.isNotEmpty && evFy != effFy) continue;
+      if (action == "DELETE") {
+        final String bNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
+        final bool matchesLocal = localReturns.any((r) => (billId.isNotEmpty && r.id.trim() == billId) || (bNo.isNotEmpty && r.billNo.trim().toUpperCase() == bNo));
+        if (isSrPayload || matchesLocal) {
+          markPermanentlyDeleted(billId, bNo, "", effFy);
+          final int before = localReturns.length;
+          localReturns.removeWhere((r) => (billId.isNotEmpty && r.id.trim() == billId) || (bNo.isNotEmpty && r.billNo.trim().toUpperCase() == bNo));
+          if (localReturns.length != before) mutated = true;
+        }
+      } else if (isSrPayload && rawData is Map<String, dynamic>) {
+        final inc = SaleReturn.fromMap(rawData);
+        if (billId.isNotEmpty) inc.id = billId;
+        inc.version = version;
+        if (!doesEventBelongToActiveFY(rawData, inc.date, effFy)) continue;
+        if (action == "CANCEL") inc.status = "Cancelled";
+        unmarkPermanentlyDeleted(inc.id, inc.billNo, "", effFy);
+        final int idx = localReturns.indexWhere((r) => r.id == inc.id || (inc.billNo.trim().isNotEmpty && r.billNo.trim().toUpperCase() == inc.billNo.trim().toUpperCase()));
+        if (idx != -1) {
+          if (inc.version >= localReturns[idx].version || inc.updatedAt >= localReturns[idx].updatedAt) {
+            localReturns[idx] = inc;
+            mutated = true;
+          }
+        } else {
+          localReturns.insert(0, inc);
+          mutated = true;
+        }
+      }
+    }
+    return mutated;
+  }
+
+  static Future<bool> onPurchaseReturnSaved(
+    PurchaseReturn ret,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+    final String effFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(ret.date));
+    try {
+      unmarkPermanentlyDeleted(ret.id, ret.billNo, "", effFy);
+      recordKnownVersion(ret.id, ret.billNo, ret.version);
+      final map = ret.toMap();
+      map["doc_type"] = "PURCHASE_RETURN";
+      map["fy"] = effFy;
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "PURCHASE_RETURN_SAVED",
+        "fy": effFy,
+        "entityId": ret.id,
+        "unmarkedIds": [ret.id, if (ret.billNo.trim().isNotEmpty) ret.billNo.trim().toUpperCase()],
+        "sale_event": {
+          "id": ret.id,
+          "bill_no": ret.billNo,
+          "version": ret.version,
+          "action": ret.status == "Cancelled" ? "CANCEL" : "UPDATE",
+          "status": ret.status,
+          "client_source": clientSource,
+          "payload": map,
+        },
+      };
+      final res = await http.post(Uri.parse(endpoint), headers: _headers, body: jsonEncode(payload)).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> onPurchaseReturnDeleted(
+    String retId,
+    String billNo,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+    final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : activeFinancialYear.trim();
+    try {
+      markPermanentlyDeleted(retId, billNo, "", effFy);
+      final cleanBNo = billNo.trim().toUpperCase();
+      final scopedBNo = cleanBNo.isNotEmpty ? scopeSecondaryKey(cleanBNo, effFy) : "";
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "DELETE_PURCHASE_RETURN",
+        "fy": effFy,
+        "deletedIds": [retId, if (scopedBNo.isNotEmpty) scopedBNo],
+        "sale_event": {
+          "id": retId,
+          "bill_no": cleanBNo,
+          "version": 999999,
+          "action": "DELETE",
+          "status": "Deleted",
+          "client_source": clientSource,
+          "payload": {
+            "doc_type": "PURCHASE_RETURN",
+            "id": retId,
+            "billNo": cleanBNo,
+            "fy": effFy,
+            "is_deleted": 1,
+            "isDeleted": 1,
+            "status": "Deleted",
+          },
+        },
+      };
+      final res = await http.post(Uri.parse(endpoint), headers: _headers, body: jsonEncode(payload)).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static bool applyEventsToLocalPurchaseReturns(
+    List<PurchaseReturn> localReturns,
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
+    if (events.isEmpty) return false;
+    final String effFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+        ? targetFyOverride.trim()
+        : activeFinancialYear.trim();
+    bool mutated = false;
+    for (final ev in events) {
+      final String billId = (ev["bill_id"] ?? "").toString().trim();
+      final String billNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+      final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
+      final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
+      final dynamic rawData = ev["sale_data"];
+      final bool isPrPayload = rawData is Map &&
+          (rawData["doc_type"] == "PURCHASE_RETURN" ||
+           rawData["doc_type"] == "DEBIT_NOTE" ||
+           (rawData.containsKey("returnType") && rawData.containsKey("distributorName")));
+      final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
+      if (evFy.isNotEmpty && effFy.isNotEmpty && evFy != effFy) continue;
+      if (action == "DELETE") {
+        final String bNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
+        final bool matchesLocal = localReturns.any((r) => (billId.isNotEmpty && r.id.trim() == billId) || (bNo.isNotEmpty && r.billNo.trim().toUpperCase() == bNo));
+        if (isPrPayload || matchesLocal) {
+          markPermanentlyDeleted(billId, bNo, "", effFy);
+          final int before = localReturns.length;
+          localReturns.removeWhere((r) => (billId.isNotEmpty && r.id.trim() == billId) || (bNo.isNotEmpty && r.billNo.trim().toUpperCase() == bNo));
+          if (localReturns.length != before) mutated = true;
+        }
+      } else if (isPrPayload && rawData is Map<String, dynamic>) {
+        final inc = PurchaseReturn.fromMap(rawData);
+        if (billId.isNotEmpty) inc.id = billId;
+        inc.version = version;
+        if (!doesEventBelongToActiveFY(rawData, inc.date, effFy)) continue;
+        if (action == "CANCEL") inc.status = "Cancelled";
+        unmarkPermanentlyDeleted(inc.id, inc.billNo, "", effFy);
+        final int idx = localReturns.indexWhere((r) => r.id == inc.id || (inc.billNo.trim().isNotEmpty && r.billNo.trim().toUpperCase() == inc.billNo.trim().toUpperCase()));
+        if (idx != -1) {
+          if (inc.version >= localReturns[idx].version || inc.updatedAt >= localReturns[idx].updatedAt) {
+            localReturns[idx] = inc;
+            mutated = true;
+          }
+        } else {
+          localReturns.insert(0, inc);
+          mutated = true;
+        }
+      }
+    }
     return mutated;
   }
 

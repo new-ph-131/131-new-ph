@@ -409,11 +409,20 @@ class BatchCascadeEngine {
       }
     }
 
-    final syncId = BatchSyncModule.getBatchSyncId(medKey, cleanBatch);
+    final syncId = BatchSyncModule.getBatchSyncId(
+      medKey,
+      cleanBatch,
+      exp: removedBatch?.exp ?? "",
+      mrp: removedBatch?.mrp ?? 0.0,
+      purRate: (removedBatch != null && removedBatch.purRate > 0) ? removedBatch.purRate : (removedBatch?.rate ?? 0.0),
+    );
 
     // Record tombstone
     if (companyId.isNotEmpty) {
-      TombstoneEngine.recordBatchTombstones(companyId, [syncId, cleanBatch]);
+      TombstoneEngine.recordBatchTombstones(companyId, [
+        syncId,
+        if (cleanBatch.isNotEmpty) cleanBatch,
+      ]);
     }
 
     // Enqueue deletion to Cloudflare D1

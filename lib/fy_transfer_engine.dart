@@ -585,6 +585,34 @@ class FYTransferEngine {
     });
 
     // 3. Re-calculate Party Closing Balances from prevFY -> targetFY opBal
+    final Set<String> prevPartyIds = prevParties.map((p) => p.id.trim()).where((s) => s.isNotEmpty).toSet();
+    final Set<String> prevPartyNames = prevParties.map((p) => p.name.trim().toUpperCase()).where((s) => s.isNotEmpty).toSet();
+    bool prevPartiesHealed = false;
+    for (final tp in targetParties) {
+      final String tId = tp.id.trim();
+      final String tName = tp.name.trim().toUpperCase();
+      if ((tId.isNotEmpty && prevPartyIds.contains(tId)) || (tName.isNotEmpty && prevPartyNames.contains(tName))) {
+        continue;
+      }
+      final bool hasPrevActivity =
+          prevSales.any((s) => s.isDeleted != 1 && ((tId.isNotEmpty && s.partyId.trim() == tId) || _sameName(s.partyName, tName))) ||
+          prevPurc.any((p) => p.isDeleted != 1 && ((tId.isNotEmpty && p.partyId.trim() == tId) || _sameName(p.distributorName, tName))) ||
+          prevSaleReturns.any((r) => r.isDeleted != 1 && _sameName(r.partyName, tName)) ||
+          prevPurReturns.any((r) => r.isDeleted != 1 && _sameName(r.distributorName, tName)) ||
+          prevVouc.any((v) => v.isDeleted != 1 && ((tId.isNotEmpty && v.partyId.trim() == tId) || _sameName(v.partyName, tName)));
+      if (hasPrevActivity) {
+        final seeded = Party.fromMap(tp.toMap());
+        seeded.opBal = 0.0;
+        prevParties.add(seeded);
+        if (tId.isNotEmpty) prevPartyIds.add(tId);
+        if (tName.isNotEmpty) prevPartyNames.add(tName);
+        prevPartiesHealed = true;
+      }
+    }
+    if (prevPartiesHealed) {
+      outPrev['parts.json'] = jsonEncode(prevParties.map((e) => e.toMap()).toList());
+    }
+
     final Map<String, double> recalculatedPartyBalsById = {};
     final Map<String, double> recalculatedPartyBalsByName = {};
     for (final p in prevParties) {
@@ -675,11 +703,21 @@ class FYTransferEngine {
         }
       }
       final List<BatchInfo> targetList = targetBatchHistory[medKey] ?? [];
+      final Set<int> matchedTargetIndices = {};
       for (final pb in prevBatches) {
         final double carriedOpening = pb.qty >= 0 ? pb.qty : 0.0;
         final String cleanBatchNo = pb.batch.trim().toUpperCase();
-        final int idx = targetList.indexWhere((tb) => tb.batch.trim().toUpperCase() == cleanBatchNo);
+        final double pbPur = pb.purRate > 0 ? pb.purRate : pb.rate;
+        final int idx = InventoryLogicCenter.findMatchingBatchIndex(
+          targetList,
+          batchNo: cleanBatchNo,
+          exp: pb.exp,
+          mrp: pb.mrp,
+          purRate: pbPur,
+          exactEmptyBatchLot: true,
+        );
         if (idx != -1) {
+          matchedTargetIndices.add(idx);
           if (targetList[idx].openingQty != carriedOpening) {
             targetList[idx].openingQty = carriedOpening;
             targetList[idx].version = (targetList[idx].version < 1 ? 1 : targetList[idx].version) + 1;
@@ -690,9 +728,22 @@ class FYTransferEngine {
           carriedCopy.openingQty = carriedOpening;
           carriedCopy.qty = carriedOpening;
           carriedCopy.adjustmentQty = 0;
+          carriedCopy.adjustmentHistory = [];
           carriedCopy.version = (carriedCopy.version < 1 ? 1 : carriedCopy.version) + 1;
           carriedCopy.updatedAt = nowTs;
           targetList.add(carriedCopy);
+          matchedTargetIndices.add(targetList.length - 1);
+        }
+      }
+      // If a batch existed in targetList with openingQty > 0 from an old carry-forward
+      // but was deleted from prevBatches in prevFY, clear its stale openingQty.
+      for (int ti = 0; ti < targetList.length; ti++) {
+        if (!matchedTargetIndices.contains(ti) && targetList[ti].openingQty != 0.0) {
+          if (prevBatches.isNotEmpty || targetList[ti].batch.trim().toUpperCase() != "OPENING") {
+            targetList[ti].openingQty = 0.0;
+            targetList[ti].version = (targetList[ti].version < 1 ? 1 : targetList[ti].version) + 1;
+            targetList[ti].updatedAt = nowTs;
+          }
         }
       }
       if (targetList.isNotEmpty) {
@@ -715,7 +766,8 @@ class FYTransferEngine {
       if (pm.stock > 0 && (prevList == null || prevList.isEmpty)) {
         final targetList = targetBatchHistory.putIfAbsent(pm.identityKey, () => []);
         final int opIdx = targetList.indexWhere((b) => b.batch.trim().toUpperCase() == "OPENING");
-        if (opIdx == -1) {
+        final bool hasNonBatchOpening = targetList.any((b) => b.batch.trim().isEmpty && b.openingQty > 0);
+        if (opIdx == -1 && !hasNonBatchOpening) {
           targetList.add(BatchInfo(
             batch: "OPENING",
             exp: "N/A",

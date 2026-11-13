@@ -1,6 +1,7 @@
 // FILE: lib/sync_core/modules/batch_sync_module.dart
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../../inventory_logic_center.dart';
 import '../../models.dart';
 import '../models/sync_envelope.dart';
 import '../outbox/sync_queue_manager.dart';
@@ -15,10 +16,25 @@ class BatchSyncModule {
   }
 
   /// Unique composite syncId for each batch
-  static String getBatchSyncId(String medIdentityKey, String batchNo) {
+  static String getBatchSyncId(
+    String medIdentityKey,
+    String batchNo, {
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
+  }) {
     final cMed = cleanString(medIdentityKey);
     final cBatch = cleanString(batchNo);
-    return "BATCH_${cMed}_$cBatch";
+    if (cBatch.isNotEmpty) {
+      return "BATCH_${cMed}_$cBatch";
+    }
+    return InventoryLogicCenter.makeSyncKey(
+      medIdentityKey,
+      '',
+      exp: exp,
+      mrp: mrp,
+      purRate: purRate,
+    );
   }
 
   /// 📤 1. D1 OUTBOX ENQUEUE: Push Batch Mutation directly to Cloudflare D1
@@ -28,9 +44,16 @@ class BatchSyncModule {
     required String storeToken,
     bool isDelete = false,
   }) {
-    if (storeToken.trim().isEmpty || medIdentityKey.trim().isEmpty || batch.batch.trim().isEmpty) return;
+    if (storeToken.trim().isEmpty || medIdentityKey.trim().isEmpty) return;
 
-    final syncId = getBatchSyncId(medIdentityKey, batch.batch);
+    final double bPur = batch.purRate > 0 ? batch.purRate : batch.rate;
+    final syncId = getBatchSyncId(
+      medIdentityKey,
+      batch.batch,
+      exp: batch.exp,
+      mrp: batch.mrp,
+      purRate: bPur,
+    );
     final int versionToPush = batch.version > 0 ? batch.version : 1;
 
     SyncQueueManager.enqueueMutation(
@@ -65,9 +88,15 @@ class BatchSyncModule {
         : Map<String, dynamic>.from(rawBatch as Map);
 
     final String batchNo = (batchMap['batch'] ?? "").toString().trim();
-    if (batchNo.isEmpty) return false;
-
-    final syncId = getBatchSyncId(medKey, batchNo);
+    final incomingPreview = BatchInfo.fromMap(batchMap);
+    final double incPur = incomingPreview.purRate > 0 ? incomingPreview.purRate : incomingPreview.rate;
+    final syncId = getBatchSyncId(
+      medKey,
+      batchNo,
+      exp: incomingPreview.exp,
+      mrp: incomingPreview.mrp,
+      purRate: incPur,
+    );
     bool isDel = envelope.isDeleted == 1 || envelope.action == "DELETE";
     final int incomingVersion = envelope.version > 0 ? envelope.version : 1;
     final int incomingTimestamp = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
@@ -80,15 +109,24 @@ class BatchSyncModule {
     }
 
     // Check Permanent Tombstones
-    if (D1SalesLedgerService.isBillDeleted(syncId, batchNo, medKey) ||
+    if ((batchNo.isNotEmpty && D1SalesLedgerService.isBillDeleted(syncId, batchNo, medKey)) ||
         (tombstoneRegistry != null && tombstoneRegistry.containsKey(syncId))) {
       if (!isDel) {
         D1SalesLedgerService.unmarkPermanentlyDeleted(syncId, batchNo, medKey);
       } else {
         if (batchHistory.containsKey(medKey)) {
-          final beforeLen = batchHistory[medKey]!.length;
-          batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == batchNo.toUpperCase());
-          return batchHistory[medKey]!.length != beforeLen;
+          final idxToRemove = InventoryLogicCenter.findMatchingBatchIndex(
+            batchHistory[medKey]!,
+            batchNo: batchNo,
+            exp: incomingPreview.exp,
+            mrp: incomingPreview.mrp,
+            purRate: incPur,
+            exactEmptyBatchLot: true,
+          );
+          if (idxToRemove != -1) {
+            batchHistory[medKey]!.removeAt(idxToRemove);
+            return true;
+          }
         }
         return false;
       }
@@ -97,7 +135,14 @@ class BatchSyncModule {
     final existingList = batchHistory[medKey];
     final int preExistingIdx = existingList == null
         ? -1
-        : existingList.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.toUpperCase());
+        : InventoryLogicCenter.findMatchingBatchIndex(
+            existingList,
+            batchNo: batchNo,
+            exp: incomingPreview.exp,
+            mrp: incomingPreview.mrp,
+            purRate: incPur,
+            exactEmptyBatchLot: true,
+          );
 
     if (preExistingIdx == -1 && isCrossFy) {
       return false;
@@ -108,7 +153,14 @@ class BatchSyncModule {
     }
 
     final list = batchHistory[medKey]!;
-    final existingIdx = list.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.toUpperCase());
+    final existingIdx = InventoryLogicCenter.findMatchingBatchIndex(
+      list,
+      batchNo: batchNo,
+      exp: incomingPreview.exp,
+      mrp: incomingPreview.mrp,
+      purRate: incPur,
+      exactEmptyBatchLot: true,
+    );
 
     if (isDel) {
       D1SalesLedgerService.markPermanentlyDeleted(syncId, batchNo, medKey);

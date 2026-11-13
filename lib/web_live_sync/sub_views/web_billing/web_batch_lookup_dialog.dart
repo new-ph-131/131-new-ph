@@ -100,6 +100,7 @@ class _WebBatchLookupDialogState extends State<WebBatchLookupDialog> {
                   Expanded(flex: 3, child: Text("BATCH NO", style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold))),
                   Expanded(flex: 2, child: Text("EXPIRY", style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold))),
                   Expanded(flex: 2, child: Text("MRP", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 2, child: Text("PUR RATE", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold))),
                   Expanded(flex: 2, child: Text("RATE A", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold))),
                   Expanded(flex: 3, child: Text("STOCK", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold))),
                 ],
@@ -142,7 +143,7 @@ class _WebBatchLookupDialogState extends State<WebBatchLookupDialog> {
                               children: [
                                 Expanded(
                                   flex: 3,
-                                  child: Text(b.batch, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5)),
+                                  child: Text(b.batch.trim().isEmpty ? "NO BATCH" : b.batch, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5)),
                                 ),
                                 Expanded(
                                   flex: 2,
@@ -164,7 +165,11 @@ class _WebBatchLookupDialogState extends State<WebBatchLookupDialog> {
                                 ),
                                 Expanded(
                                   flex: 2,
-                                  child: Text("₹${b.rateA.toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
+                                  child: Text("₹${(b.purRate > 0 ? b.purRate : b.rate).toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text("₹${(b.rateA > 0 ? b.rateA : b.mrp).toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
                                 ),
                                 Expanded(
                                   flex: 3,

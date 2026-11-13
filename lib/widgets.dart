@@ -1,3 +1,4 @@
+import 'expiry_master.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // Safe date calculations ke liye
 import 'models.dart'; // <--- YE LINE SABSE ZAROORI HAI
@@ -189,6 +190,7 @@ class _MargBatchLookupDialogState extends State<MargBatchLookupDialog> {
                   Expanded(flex: 3, child: Text("BATCH NO", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
                   Expanded(flex: 2, child: Text("EXPIRY", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
                   Expanded(flex: 2, child: Text("MRP", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
+                  Expanded(flex: 2, child: Text("PUR RATE", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
                   Expanded(flex: 2, child: Text("RATE A", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
                   Expanded(flex: 3, child: Text("LIVE STOCK", textAlign: TextAlign.right, style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold))),
                 ],
@@ -227,10 +229,11 @@ class _MargBatchLookupDialogState extends State<MargBatchLookupDialog> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(flex: 3, child: Text(b.batch, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                          Expanded(flex: 2, child: Text(b.exp, style: TextStyle(color: rowColor, fontWeight: FontWeight.bold, fontSize: 11))),
+                          Expanded(flex: 3, child: Text(b.batch.trim().isEmpty ? "NO BATCH" : b.batch, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
+                          Expanded(flex: 2, child: Text(ExpiryMaster.isNonExpiryValue(b.exp) ? "N/A" : b.exp, style: TextStyle(color: rowColor, fontWeight: FontWeight.bold, fontSize: 11))),
                           Expanded(flex: 2, child: Text("₹${b.mrp.toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
-                          Expanded(flex: 2, child: Text("₹${b.rateA.toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                          Expanded(flex: 2, child: Text("₹${(b.purRate > 0 ? b.purRate : b.rate).toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                          Expanded(flex: 2, child: Text("₹${(b.rateA > 0 ? b.rateA : b.mrp).toStringAsFixed(2)}", textAlign: TextAlign.right, style: const TextStyle(color: Colors.white70, fontSize: 11))),
                           Expanded(
                             flex: 3, 
                             child: Text(

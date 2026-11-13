@@ -167,14 +167,17 @@ class WebVoucherD1SyncService {
     if (!D1SalesLedgerService.USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
     try {
       final cleanNo = voucherNo.trim().toUpperCase();
+      final String effFy = D1SalesLedgerService.activeFinancialYear.trim();
+      final String scopedNo = cleanNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanNo, effFy) : "";
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
         "source": clientSource,
         "action": "DELETE_VOUCHER",
+        "fy": effFy,
         "entityId": voucherId,
         "deletedIds": [
           voucherId,
-          if (cleanNo.isNotEmpty) cleanNo,
+          if (scopedNo.isNotEmpty) scopedNo,
         ],
         "sale_event": {
           "id": voucherId,
@@ -187,6 +190,7 @@ class WebVoucherD1SyncService {
             "doc_type": docType,
             "id": voucherId,
             "voucherNo": cleanNo,
+            "fy": effFy,
             "is_deleted": 1,
             "isDeleted": 1,
             "status": "Deleted",
@@ -227,6 +231,13 @@ class WebVoucherD1SyncService {
            rawData.containsKey("depositedIn"));
 
       if (action == "DELETE") {
+        final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
+        final String effFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+            ? targetFyOverride.trim()
+            : D1SalesLedgerService.activeFinancialYear.trim();
+        if (evFy.isNotEmpty && effFy.isNotEmpty && evFy != effFy) {
+          continue;
+        }
         // Check if this delete belongs to a voucher or matches an existing voucher in localVouchers
         final String vNo = (rawData is Map ? (rawData["voucherNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
         final bool matchesLocalVoucher = localVouchers.any((v) =>

@@ -1,6 +1,7 @@
 // FILE: lib/sync_core/modules/batch_delta_merge_module.dart
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../../inventory_logic_center.dart';
 import '../../models.dart';
 import '../d1_sales_ledger_service.dart';
 import 'batch_sync_module.dart';
@@ -133,22 +134,28 @@ class BatchDeltaMergeModule {
         if (rawItem is! Map) continue;
         final itemMap = Map<String, dynamic>.from(rawItem);
         final batchNo = (itemMap['batch'] ?? "").toString().trim().toUpperCase();
-        if (batchNo.isEmpty) continue;
 
         // 🛡️ Tombstone Guard: Do NOT resurrect deleted batches!
-        if (isBatchTombstoned(
+        if (batchNo.isNotEmpty && isBatchTombstoned(
           productKey: cleanMedKey,
           batchNo: batchNo,
           tombstones: tombstones,
           registry: registry,
         )) {
-          // If it accidentally exists in memory, remove it immediately
           existingList.removeWhere((b) => b.batch.trim().toUpperCase() == batchNo);
           continue;
         }
 
         final incomingBatch = BatchInfo.fromMap(itemMap);
-        final idx = existingList.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo);
+        final double incPur = incomingBatch.purRate > 0 ? incomingBatch.purRate : incomingBatch.rate;
+        final idx = InventoryLogicCenter.findMatchingBatchIndex(
+          existingList,
+          batchNo: batchNo,
+          exp: incomingBatch.exp,
+          mrp: incomingBatch.mrp,
+          purRate: incPur,
+          exactEmptyBatchLot: true,
+        );
 
         if (idx != -1) {
           // Merge metadata
@@ -269,7 +276,10 @@ class BatchDeltaMergeModule {
         for (final item in list) {
           if (item is Map) {
             final batchNo = (item['batch'] ?? "").toString().trim().toUpperCase();
-            if (batchNo.isEmpty) continue;
+            if (batchNo.isEmpty) {
+              validBatches.add(item);
+              continue;
+            }
             if (isBatchTombstoned(
               productKey: cleanMedKey,
               batchNo: batchNo,

@@ -61,9 +61,19 @@ class StockExcelExportService {
       }
 
       final batches = webPh.getBatchesForMedicine(m);
-      final activeBatches = batches.where((b) => b.qty > 0).length;
-      final purVal = m.stock * m.purRate;
-      final mrpVal = m.stock * m.mrp;
+      final posBatches = batches.where((b) => b.qty > 0).toList();
+      final activeBatches = posBatches.length;
+      final double batchQtySum = posBatches.fold(0.0, (sum, b) => sum + b.qty);
+      final bool useBatchVal = posBatches.isNotEmpty && (batchQtySum - m.stock).abs() <= 0.01;
+      final purVal = useBatchVal
+          ? posBatches.fold(0.0, (sum, b) {
+              final double r = (b.purRate > 0 ? b.purRate : b.rate) > 0 ? (b.purRate > 0 ? b.purRate : b.rate) : m.purRate;
+              return sum + (b.qty * r);
+            })
+          : (m.stock * m.purRate);
+      final mrpVal = useBatchVal
+          ? posBatches.fold(0.0, (sum, b) => sum + (b.qty * (b.mrp > 0 ? b.mrp : m.mrp)))
+          : (m.stock * m.mrp);
 
       String status = "IN STOCK";
       if (m.stock <= 0) {

@@ -47,11 +47,79 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
     final medId = widget.medicine.id;
     final sysId = widget.medicine.systemId;
 
-    // 1. Gather all transaction streams
+    // 1. Gather all transaction streams (Reconciles 100% with InventoryLogicCenter & StockFlowEngine)
     List<Map<String, dynamic>> rawTxns = [];
+    String batchLabel(String raw) => raw.trim().isEmpty ? "NO BATCH" : raw.trim();
+
+    final batchesInHistory = webPh.getBatchesForMedicine(widget.medicine);
+    final DateTime openingDate = DateTime(2000, 1, 1);
+
+    // 0. Opening Stock & Manual Stock Adjustments from Batch History
+    for (var b in batchesInHistory) {
+      final bDisp = batchLabel(b.batch);
+      final double bRate = b.purRate > 0 ? b.purRate : b.rate;
+      if (b.openingQty != 0) {
+        rawTxns.add({
+          'date': openingDate,
+          'type': 'OPENING',
+          'typeLabel': 'Opening Stock',
+          'docNo': 'OPENING',
+          'party': 'Opening Balance',
+          'batch': bDisp,
+          'exp': b.exp,
+          'inQty': b.openingQty > 0 ? b.openingQty : 0.0,
+          'outQty': b.openingQty < 0 ? b.openingQty.abs() : 0.0,
+          'rate': bRate,
+          'color': const Color(0xFF06B6D4),
+          'icon': Icons.inventory_rounded,
+          'sortOrder': 0,
+        });
+      }
+      if (b.adjustmentHistory.isNotEmpty) {
+        for (var adj in b.adjustmentHistory) {
+          if (adj.adjustmentQty == 0) continue;
+          rawTxns.add({
+            'date': adj.timestamp > 0
+                ? DateTime.fromMillisecondsSinceEpoch(adj.timestamp)
+                : DateTime.now(),
+            'type': 'ADJUSTMENT',
+            'typeLabel': adj.reason.isNotEmpty ? "Stock Adj (${adj.reason})" : "Stock Adjustment",
+            'docNo': adj.id,
+            'party': adj.adjustedBy.isNotEmpty ? adj.adjustedBy : "Manual Audit",
+            'batch': bDisp,
+            'exp': b.exp,
+            'inQty': adj.adjustmentQty > 0 ? adj.adjustmentQty : 0.0,
+            'outQty': adj.adjustmentQty < 0 ? adj.adjustmentQty.abs() : 0.0,
+            'rate': bRate,
+            'color': const Color(0xFFF59E0B),
+            'icon': Icons.tune_rounded,
+            'sortOrder': 2,
+          });
+        }
+      } else if (b.adjustmentQty != 0) {
+        rawTxns.add({
+          'date': b.updatedAt > 0
+              ? DateTime.fromMillisecondsSinceEpoch(b.updatedAt)
+              : DateTime.now(),
+          'type': 'ADJUSTMENT',
+          'typeLabel': b.adjReason.isNotEmpty ? "Stock Adj (${b.adjReason})" : "Stock Adjustment",
+          'docNo': 'ADJ',
+          'party': 'Manual Audit',
+          'batch': bDisp,
+          'exp': b.exp,
+          'inQty': b.adjustmentQty > 0 ? b.adjustmentQty : 0.0,
+          'outQty': b.adjustmentQty < 0 ? b.adjustmentQty.abs() : 0.0,
+          'rate': bRate,
+          'color': const Color(0xFFF59E0B),
+          'icon': Icons.tune_rounded,
+          'sortOrder': 2,
+        });
+      }
+    }
 
     // Purchases (IN)
     for (var p in webPh.purchases) {
+      if (p.isDeleted == 1) continue;
       for (var it in p.items) {
         if (it.medicineID == medId || it.medicineID == sysId || it.name.trim().toUpperCase() == cleanMedName) {
           rawTxns.add({
@@ -60,13 +128,14 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
             'typeLabel': 'Purchase Inward',
             'docNo': p.billNo.isNotEmpty ? p.billNo : p.internalNo,
             'party': p.distributorName.isNotEmpty ? p.distributorName : 'Supplier',
-            'batch': it.batch.trim(),
+            'batch': batchLabel(it.batch),
             'exp': it.exp,
             'inQty': it.qty + it.freeQty,
             'outQty': 0.0,
             'rate': it.purchaseRate,
             'color': const Color(0xFF10B981),
             'icon': Icons.downloading_rounded,
+            'sortOrder': 1,
           });
         }
       }
@@ -74,7 +143,7 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
 
     // Sales (OUT)
     for (var s in webPh.sales) {
-      if (s.status.toUpperCase() == "CANCELLED") continue;
+      if (s.isDeleted == 1 || s.status.toUpperCase() == "CANCELLED") continue;
       for (var it in s.items) {
         if (it.medicineID == medId || it.medicineID == sysId || it.name.trim().toUpperCase() == cleanMedName) {
           rawTxns.add({
@@ -83,79 +152,39 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
             'typeLabel': 'Sale Invoice',
             'docNo': s.billNo,
             'party': s.partyName.isNotEmpty ? s.partyName : 'Counter Customer',
-            'batch': it.batch.trim(),
+            'batch': batchLabel(it.batch),
             'exp': it.exp,
             'inQty': 0.0,
             'outQty': it.qty + it.freeQty,
             'rate': it.rate,
             'color': const Color(0xFF3B82F6),
             'icon': Icons.shopping_cart_checkout_rounded,
+            'sortOrder': 1,
           });
         }
       }
     }
 
-    // Sale Challans (OUT)
-    for (var c in webPh.saleChallans) {
-      for (var it in c.items) {
-        if (it.medicineID == medId || it.medicineID == sysId || it.name.trim().toUpperCase() == cleanMedName) {
-          rawTxns.add({
-            'date': c.date,
-            'type': 'SALE_CHALLAN',
-            'typeLabel': 'Sale Challan (Out)',
-            'docNo': c.billNo,
-            'party': c.partyName,
-            'batch': it.batch.trim(),
-            'exp': it.exp,
-            'inQty': 0.0,
-            'outQty': it.qty + it.freeQty,
-            'rate': it.rate,
-            'color': const Color(0xFF14B8A6),
-            'icon': Icons.local_shipping_rounded,
-          });
-        }
-      }
-    }
-
-    // Purchase Challans (IN)
-    for (var c in webPh.purchaseChallans) {
-      for (var it in c.items) {
-        if (it.medicineID == medId || it.medicineID == sysId || it.name.trim().toUpperCase() == cleanMedName) {
-          rawTxns.add({
-            'date': c.date,
-            'type': 'PUR_CHALLAN',
-            'typeLabel': 'Purchase Challan (In)',
-            'docNo': c.billNo.isNotEmpty ? c.billNo : c.internalNo,
-            'party': c.distributorName.isNotEmpty ? c.distributorName : "Supplier",
-            'batch': it.batch.trim(),
-            'exp': it.exp,
-            'inQty': it.qty + it.freeQty,
-            'outQty': 0.0,
-            'rate': it.purchaseRate,
-            'color': const Color(0xFFF59E0B),
-            'icon': Icons.inventory_2_rounded,
-          });
-        }
-      }
-    }
-
-    // Sale Returns / Credit Notes (Customer Return = IN +)
+    // Sale Returns / Credit Notes (Sellable Return = IN +, Breakage = non-stock)
     for (var r in webPh.saleReturns) {
+      if (r.isDeleted == 1 || r.status.toUpperCase() == "CANCELLED") continue;
       for (var it in r.items) {
         if (it.medicineID == medId || it.medicineID == sysId || it.name.trim().toUpperCase() == cleanMedName) {
+          final bool isSellable = !it.isBreakage;
           rawTxns.add({
             'date': r.date,
             'type': 'CREDIT_NOTE',
-            'typeLabel': 'Credit Note (Return In +)',
+            'typeLabel': isSellable ? 'Credit Note (Return In +)' : 'Credit Note (Breakage/Exp)',
             'docNo': r.billNo,
             'party': r.partyName,
-            'batch': it.batch.trim(),
+            'batch': batchLabel(it.batch),
             'exp': it.exp,
-            'inQty': it.qty,
+            'inQty': isSellable ? (it.qty + it.freeQty) : 0.0,
             'outQty': 0.0,
             'rate': it.rate,
             'color': const Color(0xFFA855F7),
             'icon': Icons.assignment_return_rounded,
+            'sortOrder': 1,
           });
         }
       }
@@ -163,6 +192,7 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
 
     // Purchase Returns / Debit Notes (Distributor Return = OUT -)
     for (var r in webPh.purchaseReturns) {
+      if (r.isDeleted == 1 || r.status.toUpperCase() == "CANCELLED") continue;
       for (var it in r.items) {
         if (it.medicineID == medId || it.medicineID == sysId || it.name.trim().toUpperCase() == cleanMedName) {
           rawTxns.add({
@@ -171,45 +201,52 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
             'typeLabel': 'Debit Note (Return Out -)',
             'docNo': r.billNo,
             'party': r.distributorName,
-            'batch': it.batch.trim(),
+            'batch': batchLabel(it.batch),
             'exp': it.exp,
             'inQty': 0.0,
-            'outQty': it.qty,
+            'outQty': it.qty + it.freeQty,
             'rate': it.purchaseRate,
             'color': const Color(0xFFEF4444),
             'icon': Icons.remove_shopping_cart_rounded,
+            'sortOrder': 1,
           });
         }
       }
     }
 
-    // Sort chronologically ascending to compute running balance
-    rawTxns.sort((a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
+    // Sort chronologically ascending (with Opening Stock first)
+    rawTxns.sort((a, b) {
+      final int soA = (a['sortOrder'] as int?) ?? 1;
+      final int soB = (b['sortOrder'] as int?) ?? 1;
+      if (soA == 0 && soB != 0) return -1;
+      if (soB == 0 && soA != 0) return 1;
+      return (a['date'] as DateTime).compareTo(b['date'] as DateTime);
+    });
 
-    // Extract all unique batch numbers
+    // Extract all unique batch labels (including NO BATCH when present)
     final Set<String> allBatches = {};
     for (var t in rawTxns) {
       if ((t['batch'] as String).isNotEmpty) {
         allBatches.add(t['batch'] as String);
       }
     }
-    // Also include batches from batchHistory
-    final batchesInHistory = webPh.getBatchesForMedicine(widget.medicine);
     for (var b in batchesInHistory) {
-      if (b.batch.trim().isNotEmpty) {
-        allBatches.add(b.batch.trim());
-      }
+      allBatches.add(batchLabel(b.batch));
     }
 
-    // Compute Running Balance for all entries
+    // Filter by Batch first so running balance is accurate for both ALL_BATCHES and specific batch selection
+    final batchScopedTxns = _selectedBatch == "ALL_BATCHES"
+        ? rawTxns
+        : rawTxns.where((t) => t['batch'] == _selectedBatch).toList();
+
     double running = 0.0;
-    for (var t in rawTxns) {
+    for (var t in batchScopedTxns) {
       running += (t['inQty'] as double) - (t['outQty'] as double);
       t['balance'] = running;
     }
 
     // Filter by Active Tab
-    var filteredTxns = rawTxns.where((t) {
+    var filteredTxns = batchScopedTxns.where((t) {
       if (_activeTab == "IN") return (t['inQty'] as double) > 0;
       if (_activeTab == "OUT") return (t['outQty'] as double) > 0;
       if (_activeTab == "RETURNS") {
@@ -217,11 +254,6 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
       }
       return true;
     }).toList();
-
-    // Filter by Batch if selected
-    if (_selectedBatch != "ALL_BATCHES") {
-      filteredTxns = filteredTxns.where((t) => t['batch'] == _selectedBatch).toList();
-    }
 
     // Display newest transactions first
     final displayList = filteredTxns.reversed.toList();

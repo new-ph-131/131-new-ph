@@ -361,6 +361,9 @@ class PharoahWebManager with ChangeNotifier {
   void snapshotActiveFyToVault() {
     if (financialYear.trim().isNotEmpty) {
       fyVault[financialYear.trim()] = _captureCurrentMemoryToFyFilesMap();
+      if (isBackYearActive) {
+        _cascadeWebFyVaultFrom(financialYear.trim());
+      }
     }
   }
 
@@ -1353,14 +1356,21 @@ class PharoahWebManager with ChangeNotifier {
     String appliedRateType = "A",
     double qtyChange = 0.0,
     String status = "Active",
+    bool isPurchaseRate = true,
   }) {
     if (!batchHistory.containsKey(productKey)) {
       batchHistory[productKey] = [];
     }
 
     List<BatchInfo> history = batchHistory[productKey]!;
-    final String cleanBatchUpper = batchNo.trim().toUpperCase();
-    int existingIdx = history.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatchUpper);
+    int existingIdx = InventoryLogicCenter.findMatchingBatchIndex(
+      history,
+      batchNo: batchNo,
+      exp: exp,
+      mrp: mrp,
+      purRate: isPurchaseRate ? rate : 0.0,
+      exactEmptyBatchLot: isPurchaseRate,
+    );
 
     double finalRateA = rateA == 0.0 ? mrp : rateA;
     double finalRateB = rateB == 0.0 ? (rateA == 0.0 ? mrp * 0.95 : rateA * 0.95) : rateB;
@@ -1370,14 +1380,16 @@ class PharoahWebManager with ChangeNotifier {
       final existing = history[existingIdx];
       // 🛡️ LWW Protection: If batch was already configured in Master (version > 1), preserve its master pricing & expiry!
       if (existing.version <= 1) {
-        existing.exp = exp;
-        existing.mrp = mrp;
-        existing.rate = rate;
-        existing.packing = packing;
-        existing.purRate = rate;
-        existing.rateA = finalRateA;
-        existing.rateB = finalRateB;
-        existing.rateC = finalRateC;
+        if (exp.trim().isNotEmpty) existing.exp = exp;
+        if (mrp > 0) existing.mrp = mrp;
+        if (packing.trim().isNotEmpty) existing.packing = packing;
+        if (isPurchaseRate && rate > 0) {
+          existing.rate = rate;
+          existing.purRate = rate;
+        }
+        if (finalRateA > 0) existing.rateA = finalRateA;
+        if (finalRateB > 0) existing.rateB = finalRateB;
+        if (finalRateC > 0) existing.rateC = finalRateC;
         existing.rateCFormula = rateCFormula;
         existing.appliedRateType = appliedRateType;
         existing.status = status;
@@ -1391,11 +1403,11 @@ class PharoahWebManager with ChangeNotifier {
         exp: exp,
         packing: packing,
         mrp: mrp,
-        rate: rate,
+        rate: isPurchaseRate ? rate : 0.0,
         qty: qtyChange,
         openingQty: qtyChange,
         isShell: false,
-        purRate: rate,
+        purRate: isPurchaseRate ? rate : 0.0,
         rateA: finalRateA,
         rateB: finalRateB,
         rateC: finalRateC,
@@ -1411,7 +1423,6 @@ class PharoahWebManager with ChangeNotifier {
 
     void processBillItems(List<BillItem> items) {
       for (var item in items) {
-        if (item.batch.trim().isEmpty) continue;
         String resolvedKey = item.medicineID;
         try {
           final med = medicines.firstWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
@@ -1428,6 +1439,7 @@ class PharoahWebManager with ChangeNotifier {
           rate: item.rate,
           appliedRateType: item.appliedRateType,
           rateCFormula: item.rateCFormula,
+          isPurchaseRate: false,
         );
         hasUpdates = true;
       }
@@ -1435,7 +1447,6 @@ class PharoahWebManager with ChangeNotifier {
 
     void processPurchaseItems(List<PurchaseItem> items) {
       for (var item in items) {
-        if (item.batch.trim().isEmpty) continue;
         String resolvedKey = item.medicineID;
         try {
           final med = medicines.firstWhere((m) => m.id == item.medicineID || m.name.trim().toUpperCase() == item.name.trim().toUpperCase());
@@ -1517,13 +1528,40 @@ class PharoahWebManager with ChangeNotifier {
             for (var p in cascadedParts)
               if (p.name.trim().isNotEmpty) p.name.trim().toUpperCase(): p.opBal
           };
+          final int nowTs = DateTime.now().millisecondsSinceEpoch;
           for (var p in parties) {
+            double? targetOp;
             if (newOpBals.containsKey(p.id)) {
-              p.opBal = newOpBals[p.id]!;
+              targetOp = newOpBals[p.id]!;
             } else if (newOpBalsByName.containsKey(p.name.trim().toUpperCase())) {
-              p.opBal = newOpBalsByName[p.name.trim().toUpperCase()]!;
+              targetOp = newOpBalsByName[p.name.trim().toUpperCase()]!;
+            }
+            if (targetOp != null && (p.opBal - targetOp).abs() > 0.005) {
+              p.opBal = targetOp;
+              p.version += 1;
+              p.updatedAt = nowTs;
             }
           }
+          for (var cp in cascadedParts) {
+            final bool exists = parties.any((p) =>
+                (cp.id.isNotEmpty && p.id == cp.id) ||
+                (cp.name.trim().isNotEmpty && p.name.trim().toUpperCase() == cp.name.trim().toUpperCase()));
+            if (!exists) {
+              parties.add(cp);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (activeFiles.containsKey('pending_invoices.json') && activeFiles['pending_invoices.json'] != null) {
+      try {
+        final rawPend = jsonDecode(activeFiles['pending_invoices.json']!) as List?;
+        if (rawPend != null) {
+          carriedPendingInvoices = rawPend
+              .whereType<Map>()
+              .map((e) => PendingInvoiceCarryEntry.fromMap(Map<String, dynamic>.from(e)))
+              .toList();
         }
       } catch (_) {}
     }
@@ -1592,6 +1630,8 @@ class PharoahWebManager with ChangeNotifier {
         _applyEdgeEventsToFyVault(edgeEvents);
         final bool sMut = D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents, expectedFy);
         final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents, expectedFy);
+        final bool srMut = D1SalesLedgerService.applyEventsToLocalSaleReturns(saleReturns, edgeEvents, expectedFy);
+        final bool prMut = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(purchaseReturns, edgeEvents, expectedFy);
         final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents, expectedFy);
         final bool gMut = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(gstDiarySessions, edgeEvents);
         final bool cMut = SettingsSyncModule.applyEdgeEventsToLocalConfig(
@@ -1615,10 +1655,10 @@ class PharoahWebManager with ChangeNotifier {
           }
           sales = postD1Map.values.toList();
         }
-        if (sMut || pMut) {
+        if (sMut || pMut || srMut || prMut) {
           rebuildInventory();
         }
-        if (sMut || pMut || vMut || gMut || cMut || serMut) {
+        if (sMut || pMut || srMut || prMut || vMut || gMut || cMut || serMut) {
           _snapshotActiveFyToVault();
           notifyListeners();
         }
@@ -1632,13 +1672,25 @@ class PharoahWebManager with ChangeNotifier {
     final Map<String, List<Map<String, dynamic>>> eventsByFy = {};
     for (final ev in edgeEvents) {
       final dynamic rawPayload = ev["sale_data"];
+      final String explicitFy = (ev["fy"] ?? (rawPayload is Map ? rawPayload["fy"] : "") ?? "").toString().trim();
+      final String action = (ev["action"] ?? "").toString().toUpperCase();
+      if (explicitFy.isEmpty && action.contains("DELETE")) {
+        for (final vaultFy in fyVault.keys) {
+          if (vaultFy != financialYear) {
+            eventsByFy.putIfAbsent(vaultFy, () => []).add(ev);
+          }
+        }
+        continue;
+      }
       DateTime? recDate;
       if (rawPayload is Map && rawPayload["date"] != null) {
         try {
           recDate = DateTime.parse(rawPayload["date"].toString());
         } catch (_) {}
       }
-      final String eventFy = D1SalesLedgerService.extractEventFy(rawPayload, recDate);
+      final String eventFy = explicitFy.isNotEmpty
+          ? explicitFy
+          : D1SalesLedgerService.extractEventFy(rawPayload, recDate);
       if (eventFy.isEmpty || eventFy == financialYear || !fyVault.containsKey(eventFy)) {
         continue;
       }
@@ -1664,6 +1716,20 @@ class PharoahWebManager with ChangeNotifier {
             vaultPurc = raw.map((e) => Purchase.fromMap(Map<String, dynamic>.from(e as Map))).toList();
           }
         }
+        List<SaleReturn> vaultSRet = [];
+        if (targetFiles.containsKey('s_return.json') && targetFiles['s_return.json']!.trim().isNotEmpty) {
+          final raw = jsonDecode(targetFiles['s_return.json']!);
+          if (raw is List) {
+            vaultSRet = raw.map((e) => SaleReturn.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+          }
+        }
+        List<PurchaseReturn> vaultPRet = [];
+        if (targetFiles.containsKey('p_return.json') && targetFiles['p_return.json']!.trim().isNotEmpty) {
+          final raw = jsonDecode(targetFiles['p_return.json']!);
+          if (raw is List) {
+            vaultPRet = raw.map((e) => PurchaseReturn.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+          }
+        }
         List<Voucher> vaultVouc = [];
         if (targetFiles.containsKey('vouc.json') && targetFiles['vouc.json']!.trim().isNotEmpty) {
           final raw = jsonDecode(targetFiles['vouc.json']!);
@@ -1673,6 +1739,8 @@ class PharoahWebManager with ChangeNotifier {
         }
         final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(vaultSales, fyEvents, eventFy);
         final bool pChanged = D1SalesLedgerService.applyEventsToLocalPurchases(vaultPurc, fyEvents, eventFy);
+        final bool srChanged = D1SalesLedgerService.applyEventsToLocalSaleReturns(vaultSRet, fyEvents, eventFy);
+        final bool prChanged = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(vaultPRet, fyEvents, eventFy);
         final bool vChanged = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vaultVouc, fyEvents, eventFy);
         if (sChanged) {
           targetFiles['sales.json'] = jsonEncode(vaultSales.map((e) => e.toMap()).toList());
@@ -1680,10 +1748,16 @@ class PharoahWebManager with ChangeNotifier {
         if (pChanged) {
           targetFiles['purc.json'] = jsonEncode(vaultPurc.map((e) => e.toMap()).toList());
         }
+        if (srChanged) {
+          targetFiles['s_return.json'] = jsonEncode(vaultSRet.map((e) => e.toMap()).toList());
+        }
+        if (prChanged) {
+          targetFiles['p_return.json'] = jsonEncode(vaultPRet.map((e) => e.toMap()).toList());
+        }
         if (vChanged) {
           targetFiles['vouc.json'] = jsonEncode(vaultVouc.map((e) => e.toMap()).toList());
         }
-        if (sChanged || pChanged || vChanged) {
+        if (sChanged || pChanged || srChanged || prChanged || vChanged) {
           fyVault[eventFy] = targetFiles;
           mutatedFys.add(eventFy);
         }
@@ -1802,9 +1876,9 @@ class PharoahWebManager with ChangeNotifier {
       // 1. Save current active FY state into Multi-FY Vault
       fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
 
-      // 2. MARG-STYLE AUTO-CASCADE: If editing a back year on Web, automatically cascade to newer years!
-      if (isBackYearActive) {
-        _cascadeWebFyVaultFrom(financialYear);
+      // 2. MARG-STYLE AUTO-CASCADE: Cascade multi-FY vault forward so all years stay in sync!
+      if (availableFinancialYears.length > 1) {
+        _cascadeWebFyVaultFrom(availableFinancialYears.first);
       }
 
       final String latestFy = availableFinancialYears.isNotEmpty
@@ -1966,6 +2040,7 @@ class PharoahWebManager with ChangeNotifier {
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        isPurchaseRate: false,
       );
     }
     rebuildInventory();
@@ -2263,6 +2338,7 @@ class PharoahWebManager with ChangeNotifier {
        p.billNo.trim() == targetBillNo && p.partyId.trim().toUpperCase() == targetPartyId)
     );
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'DELETE_PURCHASE',
@@ -2343,6 +2419,7 @@ class PharoahWebManager with ChangeNotifier {
       item.id == voucherId ||
       (vNo.isNotEmpty && item.voucherNo.trim().toUpperCase() == vNo)
     );
+    _snapshotActiveFyToVault();
     notifyListeners();
     pushUpdatedDataToCloud();
     _autoSyncService.triggerAutoSync(
@@ -2406,6 +2483,7 @@ class PharoahWebManager with ChangeNotifier {
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        isPurchaseRate: false,
       );
     }
     rebuildInventory();
@@ -2618,6 +2696,7 @@ class PharoahWebManager with ChangeNotifier {
       saleReturns.insert(0, ret);
     }
     CreditNoteSyncModule.onCreditNoteSaved(ret, activeStoreToken);
+    D1SalesLedgerService.onSaleReturnSaved(ret, activeStoreToken, isUpdate: isUpdate, clientSource: "WEB_PORTAL", fyOverride: financialYear);
 
     for (var item in ret.items) {
       String resolvedKey = item.medicineID;
@@ -2638,6 +2717,7 @@ class PharoahWebManager with ChangeNotifier {
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        isPurchaseRate: false,
       );
     }
     rebuildInventory();
@@ -2678,6 +2758,7 @@ class PharoahWebManager with ChangeNotifier {
       purchaseReturns.insert(0, ret);
     }
     DebitNoteSyncModule.onDebitNoteSaved(ret, activeStoreToken);
+    D1SalesLedgerService.onPurchaseReturnSaved(ret, activeStoreToken, isUpdate: isUpdate, clientSource: "WEB_PORTAL", fyOverride: financialYear);
 
     for (var item in ret.items) {
       String resolvedKey = item.medicineID;
@@ -2720,6 +2801,7 @@ class PharoahWebManager with ChangeNotifier {
       final targetR = saleReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
       bNo = targetR.billNo.trim().toUpperCase();
       CreditNoteSyncModule.onCreditNoteDeleted(targetR, activeStoreToken);
+      D1SalesLedgerService.onSaleReturnDeleted(targetR, activeStoreToken, clientSource: "WEB_PORTAL", fyOverride: financialYear);
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo, "", financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
@@ -2752,6 +2834,7 @@ class PharoahWebManager with ChangeNotifier {
       final targetR = purchaseReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
       bNo = targetR.billNo.trim().toUpperCase();
       DebitNoteSyncModule.onDebitNoteDeleted(targetR, activeStoreToken);
+      D1SalesLedgerService.onPurchaseReturnDeleted(targetR, activeStoreToken, clientSource: "WEB_PORTAL", fyOverride: financialYear);
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo, "", financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
@@ -3433,6 +3516,24 @@ class PharoahWebManager with ChangeNotifier {
     if (!batchHistory.containsKey(newMed.identityKey)) {
       batchHistory[newMed.identityKey] = [];
     }
+    if (existingIdx == -1 && newMed.stock > 0 && batchHistory[newMed.identityKey]!.isEmpty) {
+      batchHistory[newMed.identityKey]!.add(BatchInfo(
+        batch: '',
+        exp: '',
+        packing: newMed.packing,
+        mrp: newMed.mrp,
+        rate: newMed.purRate,
+        purRate: newMed.purRate,
+        rateA: newMed.rateA > 0 ? newMed.rateA : newMed.mrp,
+        rateB: newMed.rateB,
+        rateC: newMed.rateC,
+        openingQty: newMed.stock,
+        qty: newMed.stock,
+        isShell: false,
+        updatedAt: nowTs,
+        version: 1,
+      ));
+    }
 
     notifyListeners();
     if (activeStoreToken.isNotEmpty) {
@@ -3678,7 +3779,12 @@ class PharoahWebManager with ChangeNotifier {
           await _pendingD1DeltaFuture;
         } catch (_) {}
       }
-      _hotSwapActiveYearMastersFromVault();
+      fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
+      if (availableFinancialYears.length > 1) {
+        _cascadeWebFyVaultFrom(availableFinancialYears.first);
+      } else {
+        _hotSwapActiveYearMastersFromVault();
+      }
       rebuildInventory();
       fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
       if (!isSilent) {
@@ -4059,6 +4165,7 @@ class PharoahWebManager with ChangeNotifier {
 
       unmarkDeletedId(realId, referenceNo: cleanVNo);
       WebVoucherD1SyncService.onVoucherCancelled(vouchers[i], activeStoreToken, clientSource: "WEB_PORTAL");
+      _snapshotActiveFyToVault();
       notifyListeners();
       pushUpdatedDataToCloud();
       _autoSyncService.triggerAutoSync(
@@ -4198,16 +4305,16 @@ class PharoahWebManager with ChangeNotifier {
       final syncId = BatchSyncModule.getBatchSyncId(med.identityKey, batchNo);
       final cleanBatch = batchNo.trim().toUpperCase();
       deletedRecordIds.add(syncId);
-      deletedRecordIds.add(cleanBatch);
+      if (cleanBatch.isNotEmpty) deletedRecordIds.add(cleanBatch);
       final nowTs = DateTime.now().millisecondsSinceEpoch;
       localTombstoneRegistry[syncId] = nowTs;
-      localTombstoneRegistry[cleanBatch] = nowTs;
+      if (cleanBatch.isNotEmpty) localTombstoneRegistry[cleanBatch] = nowTs;
       _saveLocalTombstones();
 
       _autoSyncService.triggerAutoSync(
         action: 'BATCH_DELETED',
         entityId: syncId,
-        deletedIds: [syncId, cleanBatch],
+        deletedIds: [syncId, if (cleanBatch.isNotEmpty) cleanBatch],
       );
       rebuildInventory();
       notifyListeners();

@@ -34,7 +34,7 @@ class FastPullEngine {
 
   static Future<bool> pullAndMerge(PharoahManager ph) async {
     if (_isPulling) return false;
-    if (ph.activeCompany == null || ph.currentFY.isEmpty) return false;
+    if (ph.activeCompany == null) return false;
     _isPulling = true;
     final int myEpoch = ++_pullEpoch;
     final String targetFyAtStart = ph.currentFY;
@@ -47,27 +47,63 @@ class FastPullEngine {
         ph.currentFY != targetFyAtStart;
 
     try {
+      final storeToken = await WebLiveToken.getOrCreateToken(companyId);
+      if (isStale()) return false;
+
+      // Gateway / Control Panel mode (no active FY selected yet):
+      // Discover new Financial Years created on Web and sync vault years to local disk.
+      if (targetFyAtStart.isEmpty) {
+        final pullUri = Uri.parse(
+          "${WebCloudConfig.cloudRelayEndpoint}?action=PULL_STORE_DATA"
+          "&storeToken=${Uri.encodeComponent(storeToken)}"
+          "&username=${Uri.encodeComponent(ph.activeCompany!.adminUser.toLowerCase())}"
+          "&password=${Uri.encodeComponent(ph.activeCompany!.password)}"
+        );
+        final response = await http.get(pullUri).timeout(const Duration(seconds: 15));
+        if (isStale() || response.statusCode != 200 || response.body.contains("ERROR")) {
+          return false;
+        }
+        final Map<String, dynamic> cloudData = jsonDecode(response.body);
+        if (cloudData['status'] != 'SUCCESS' || cloudData['files'] == null) {
+          return false;
+        }
+        final Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
+        final Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
+        final bool registryUpdated = await MultiFyCloudVault.syncVaultYearsToLocalDisk(
+          ph: ph,
+          cloudData: cloudData,
+          localTombstones: localTombstones,
+          localRegistry: localRegistry,
+        );
+        if (registryUpdated) {
+          ph.notifyListeners();
+        }
+        return registryUpdated;
+      }
+
       final workingDir = await ph.getWorkingPath();
       if (workingDir.isEmpty || isStale()) return false;
       D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
-      final storeToken = await WebLiveToken.getOrCreateToken(companyId);
-      if (isStale()) return false;
 
       // 1. Fetch Local Tombstone Registry & Hashes (Strictly Scoped to targetFyAtStart)
       Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
       Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId, targetFyAtStart);
 
-      // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK (SALES + PURCHASES)
+      // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK (SALES + PURCHASES + RETURNS + VOUCHERS)
+      List<Map<String, dynamic>> fetchedEdgeEvents = [];
       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
         try {
           final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
           if (isStale()) return false;
+          fetchedEdgeEvents = edgeEvents;
           D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
           if (edgeEvents.isNotEmpty) {
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, targetFyAtStart);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, targetFyAtStart);
-            bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
+            bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents, targetFyAtStart);
+            bool d1SrMutated = D1SalesLedgerService.applyEventsToLocalSaleReturns(ph.saleReturns, edgeEvents, targetFyAtStart);
+            bool d1PrMutated = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(ph.purchaseReturns, edgeEvents, targetFyAtStart);
             bool d1GstMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
             bool d1CfgMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
               currentConfig: ph.config,
@@ -78,11 +114,6 @@ class FastPullEngine {
               currentSeries: ph.numberingSeries,
               edgeEvents: edgeEvents,
               onSeriesMutated: (updated) => ph.numberingSeries = updated,
-            );
-            // Apply any cross-FY D1 edge events directly to their respective non-active FY folders on disk & cascade!
-            await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
-              ph: ph,
-              edgeEvents: edgeEvents,
             );
             final List<String> newTombKeys = [];
             final List<String> newUnmarkKeys = [];
@@ -193,8 +224,8 @@ class FastPullEngine {
               }
               await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
             }
-            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated) {
-              if (d1SalesMutated || d1PurcMutated) {
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated) {
+              if (d1SalesMutated || d1PurcMutated || d1SrMutated || d1PrMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
                   medicines: ph.medicines,
                   batchHistory: ph.batchHistory,
@@ -217,6 +248,16 @@ class FastPullEngine {
               if (d1VoucMutated) {
                 await File('$workingDir/vouc.json').writeAsString(
                   jsonEncode(ph.vouchers.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1SrMutated) {
+                await File('$workingDir/s_return.json').writeAsString(
+                  jsonEncode(ph.saleReturns.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1PrMutated) {
+                await File('$workingDir/p_return.json').writeAsString(
+                  jsonEncode(ph.purchaseReturns.map((e) => e.toMap()).toList()),
                 );
               }
               if (d1GstMutated) {
@@ -258,17 +299,31 @@ class FastPullEngine {
 
       final Map<String, dynamic> cloudData = jsonDecode(response.body);
       if (cloudData['status'] != 'SUCCESS' || cloudData['files'] == null) {
+        if (fetchedEdgeEvents.isNotEmpty) {
+          await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
+            ph: ph,
+            edgeEvents: fetchedEdgeEvents,
+          );
+        }
         return false;
       }
-      final bool registryUpdated = await MultiFyCloudVault.syncVaultYearsToLocalDisk(
-        ph: ph,
-        cloudData: cloudData,
-      );
       final Map<String, dynamic>? extractedFyFiles = MultiFyCloudVault.extractFyFilesForTargetYear(
         cloudData: cloudData,
         targetFy: ph.currentFY,
       );
       if (extractedFyFiles == null) {
+        final bool registryUpdated = await MultiFyCloudVault.syncVaultYearsToLocalDisk(
+          ph: ph,
+          cloudData: cloudData,
+          localTombstones: localTombstones,
+          localRegistry: localRegistry,
+        );
+        if (fetchedEdgeEvents.isNotEmpty) {
+          await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
+            ph: ph,
+            edgeEvents: fetchedEdgeEvents,
+          );
+        }
         if (registryUpdated) ph.notifyListeners();
         return registryUpdated;
       }
@@ -501,8 +556,28 @@ class FastPullEngine {
         await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
         await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
         await SnapshotWatcher.takeSnapshot(ph);
+      }
 
-        // 🔥 INSTANT REACTIVE NOTIFICATION TO RE-RENDER ACTIVE APP SCREENS
+      // 6. Sync non-active FYs from Cloud Vault & D1 cross-FY edge events AFTER active FY disk files are up-to-date,
+      // so any back-FY cascade into ph.currentFY is strictly authoritative and never overwritten by stale cloud snapshots!
+      final bool vaultMutated = await MultiFyCloudVault.syncVaultYearsToLocalDisk(
+        ph: ph,
+        cloudData: cloudData,
+        localTombstones: localTombstones,
+        localRegistry: localRegistry,
+      );
+      bool crossEdgeMutated = false;
+      if (fetchedEdgeEvents.isNotEmpty) {
+        crossEdgeMutated = await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
+          ph: ph,
+          edgeEvents: fetchedEdgeEvents,
+        );
+      }
+      if (vaultMutated || crossEdgeMutated) {
+        await SnapshotWatcher.takeSnapshot(ph);
+      }
+
+      if (hasChanges || vaultMutated || crossEdgeMutated) {
         ph.notifyListeners();
         debugPrint("⚡ [FastPullEngine] Successfully pulled & merged latest cloud records!");
         return true;

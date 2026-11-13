@@ -1,3 +1,4 @@
+import 'package:pharoah_erp/expiry_master.dart';
 // FILE: lib/web_live_sync/sub_views/web_returns/debit_note/ui/debit_note_cart_widget.dart
 
 import 'dart:ui';
@@ -131,11 +132,14 @@ class DebitNoteCartWidget extends StatelessWidget {
             }
 
             void executeSave() {
-              if (batchC.text.trim().isEmpty || expC.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Batch and Expiry are required!"), backgroundColor: Colors.orange),
-                );
-                return;
+              if (expC.text.trim().isNotEmpty) {
+                final expWarn = ExpiryMaster.getValidationWarning(expC.text.trim());
+                if (expWarn != null && expWarn.startsWith("Error")) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(expWarn), backgroundColor: Colors.orange),
+                  );
+                  return;
+                }
               }
 
               double q = double.tryParse(qtyC.text) ?? 0.0;

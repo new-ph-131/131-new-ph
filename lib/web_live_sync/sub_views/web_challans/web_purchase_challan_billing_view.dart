@@ -1,3 +1,4 @@
+import 'package:pharoah_erp/expiry_master.dart';
 // FILE: lib/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart
 
 import 'dart:ui';
@@ -481,11 +482,21 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                                 onPressed: () {
-                                  if (batchC.text.trim().isEmpty || expC.text.trim().isEmpty || q <= 0 || pRate <= 0) {
+                                  final double freeVal = double.tryParse(freeC.text) ?? 0.0;
+                                  if ((q <= 0 && freeVal <= 0) || pRate <= 0) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text("Batch, Expiry, Qty and Purchase Rate are required!"), backgroundColor: Colors.orange),
+                                      const SnackBar(content: Text("Qty and Purchase Rate are required!"), backgroundColor: Colors.orange),
                                     );
                                     return;
+                                  }
+                                  if (expC.text.trim().isNotEmpty) {
+                                    final expWarn = ExpiryMaster.getValidationWarning(expC.text.trim());
+                                    if (expWarn != null && expWarn.startsWith("Error")) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(expWarn), backgroundColor: Colors.orange),
+                                      );
+                                      return;
+                                    }
                                   }
 
                                   double mrp = double.tryParse(mrpC.text) ?? 0.0;

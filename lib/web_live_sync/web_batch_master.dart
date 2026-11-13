@@ -1,3 +1,5 @@
+import "../expiry_master.dart";
+import "../inventory_logic_center.dart";
 import "dart:convert";
 import "dart:typed_data";
 import "package:flutter/material.dart";
@@ -367,27 +369,41 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               onPressed: () {
                 final bNo = batchNoC.text.trim();
                 final exp = expC.text.trim();
-                if (bNo.isEmpty || exp.isEmpty) return;
+                if (exp.isNotEmpty) {
+                  final expWarn = ExpiryMaster.getValidationWarning(exp);
+                  if (expWarn != null && expWarn.startsWith("Error")) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(expWarn), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+                }
 
                 final medKey = chosenMed.identityKey;
                 if (!webPh.batchHistory.containsKey(medKey)) {
                   webPh.batchHistory[medKey] = [];
                 }
 
-                bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim() == bNo);
+                double q = double.tryParse(openingQtyC.text) ?? 0.0;
+                double pur = double.tryParse(purRateC.text) ?? 0.0;
+                double mrp = double.tryParse(mrpC.text) ?? 0.0;
+                bool exists = InventoryLogicCenter.findMatchingBatchIndex(
+                  webPh.batchHistory[medKey]!,
+                  batchNo: bNo,
+                  exp: exp,
+                  mrp: mrp,
+                  purRate: pur,
+                  exactEmptyBatchLot: true,
+                ) != -1;
                 if (exists) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text("Batch '$bNo' already exists for ${chosenMed.name}"),
+                      content: Text("Batch '${bNo.isEmpty ? "NO BATCH" : bNo}' already exists for ${chosenMed.name}"),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
                   return;
                 }
-
-                double q = double.tryParse(openingQtyC.text) ?? 0.0;
-                double pur = double.tryParse(purRateC.text) ?? 0.0;
-                double mrp = double.tryParse(mrpC.text) ?? 0.0;
                 double a = double.tryParse(rateAC.text) ?? (mrp > 0 ? mrp : pur);
                 double b = double.tryParse(rateBC.text) ?? (a * 0.95);
                 double rateCVal = double.tryParse(rateCC.text) ?? (a * 0.92);
