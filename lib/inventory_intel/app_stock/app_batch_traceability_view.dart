@@ -39,7 +39,10 @@ class _AppBatchTraceabilityViewState extends State<AppBatchTraceabilityView> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
-    final med = widget.medicine;
+    final med = ph.medicines.firstWhere(
+      (m) => (m.identityKey.isNotEmpty && m.identityKey == widget.medicine.identityKey) || m.id == widget.medicine.id,
+      orElse: () => widget.medicine,
+    );
     final companyName = AppStockAnalyticsEngine.resolveCompanyName(ph, med.companyId);
     final batches = ph.getBatchesForMedicine(med);
 
@@ -702,16 +705,31 @@ class _AppBatchTraceabilityViewState extends State<AppBatchTraceabilityView> {
                 final val = double.tryParse(qtyC.text.trim()) ?? 0.0;
                 if (val == 0) return;
 
-                // Ensure batch exists under med.identityKey if it came from fallback
-                final medKey = med.identityKey;
-                final list = ph.batchHistory.putIfAbsent(medKey, () => []);
-                final exists = list.any((x) => x.batch.trim().toUpperCase() == b.batch.trim().toUpperCase());
-                if (!exists) {
-                  list.add(b);
+                // Resolve actual owning key in batchHistory so we do not duplicate legacy-keyed batches
+                String owningKey = med.identityKey;
+                final candidates = [
+                  if (med.identityKey.trim().isNotEmpty) med.identityKey.trim(),
+                  if (med.systemId.trim().isNotEmpty) med.systemId.trim(),
+                  if (med.id.trim().isNotEmpty) med.id.trim(),
+                  if (med.name.trim().isNotEmpty) med.name.trim(),
+                  if (med.name.trim().isNotEmpty) med.name.trim().toUpperCase(),
+                ];
+                bool foundInMap = false;
+                for (final k in candidates) {
+                  final existingList = ph.batchHistory[k];
+                  if (existingList != null &&
+                      existingList.any((x) => x.batch.trim().toUpperCase() == b.batch.trim().toUpperCase())) {
+                    owningKey = k;
+                    foundInMap = true;
+                    break;
+                  }
+                }
+                if (!foundInMap) {
+                  ph.batchHistory.putIfAbsent(owningKey, () => []).add(b);
                 }
 
                 ph.adjustBatchStock(
-                  medId: medKey,
+                  medId: owningKey,
                   batchNo: b.batch,
                   adjQty: val,
                   reason: reason,
@@ -850,6 +868,7 @@ class _AppBatchTraceabilityViewState extends State<AppBatchTraceabilityView> {
                 storeToken: storeToken,
                 companyId: storeToken,
               );
+              ph.rebuildInventory();
               ph.save();
               Navigator.pop(c);
               setState(() {});

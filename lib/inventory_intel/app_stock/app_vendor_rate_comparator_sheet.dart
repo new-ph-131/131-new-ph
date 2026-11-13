@@ -19,8 +19,12 @@ class AppVendorRateComparatorSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ph = Provider.of<PharoahManager>(context, listen: false);
-    final data = AppStockAnalyticsEngine.buildVendorInwardRecords(ph, medicine);
+    final ph = Provider.of<PharoahManager>(context);
+    final med = ph.medicines.firstWhere(
+      (m) => (m.identityKey.isNotEmpty && m.identityKey == medicine.identityKey) || m.id == medicine.id,
+      orElse: () => medicine,
+    );
+    final data = AppStockAnalyticsEngine.buildVendorInwardRecords(ph, med);
     final inwardRecords = data.inwardRecords;
     final summaries = data.vendorSummaries;
     final overallMin = data.overallMinRate;
@@ -38,12 +42,12 @@ class AppVendorRateComparatorSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Vendor Rate Radar • ${medicine.name}",
+              "Vendor Rate Radar • ${med.name}",
               style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              "$companyName  •  ${medicine.packing}  •  Curr Pur: ₹${medicine.purRate.toStringAsFixed(2)}",
+              "$companyName  •  ${med.packing}  •  Curr Pur: ₹${med.purRate.toStringAsFixed(2)}",
               style: const TextStyle(fontSize: 10.5, color: Colors.white70),
               overflow: TextOverflow.ellipsis,
             ),

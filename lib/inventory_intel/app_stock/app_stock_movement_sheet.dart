@@ -40,7 +40,11 @@ class _AppStockMovementSheetState extends State<AppStockMovementSheet> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
-    final result = AppStockAnalyticsEngine.buildMovementTransactions(ph, widget.medicine);
+    final med = ph.medicines.firstWhere(
+      (m) => (m.identityKey.isNotEmpty && m.identityKey == widget.medicine.identityKey) || m.id == widget.medicine.id,
+      orElse: () => widget.medicine,
+    );
+    final result = AppStockAnalyticsEngine.buildMovementTransactions(ph, med);
     final rawTxns = result.rawTxns;
     final allBatches = result.batchLabels;
 
@@ -83,12 +87,12 @@ class _AppStockMovementSheetState extends State<AppStockMovementSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.medicine.name,
+              med.name,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              "360° Passbook • ${widget.companyName} • ${widget.medicine.packing}",
+              "360° Passbook • ${widget.companyName} • ${med.packing}",
               style: const TextStyle(fontSize: 10.5, color: Colors.white70),
               overflow: TextOverflow.ellipsis,
             ),
@@ -100,14 +104,14 @@ class _AppStockMovementSheetState extends State<AppStockMovementSheet> {
             icon: const Icon(Icons.print_rounded),
             onPressed: () async {
               final bytes = await AppStockPdfAndExport.generateItemMovementLedgerPdfBytes(
-                medicine: widget.medicine,
+                medicine: med,
                 companyName: widget.companyName,
                 movements: displayList,
                 ph: ph,
               );
               await Printing.layoutPdf(
                 onLayout: (_) async => bytes,
-                name: "Item_Passbook_${widget.medicine.name}",
+                name: "Item_Passbook_${med.name}",
               );
             },
           ),
@@ -124,10 +128,10 @@ class _AppStockMovementSheetState extends State<AppStockMovementSheet> {
               spacing: 12,
               runSpacing: 4,
               children: [
-                _headerInfo("Code", widget.medicine.systemId.isNotEmpty ? widget.medicine.systemId : widget.medicine.id),
-                _headerInfo("On Hand", "${formatQty(widget.medicine.stock)} Qty"),
-                _headerInfo("Pur Rate", "₹${widget.medicine.purRate.toStringAsFixed(2)}"),
-                _headerInfo("MRP", "₹${widget.medicine.mrp.toStringAsFixed(2)}"),
+                _headerInfo("Code", med.systemId.isNotEmpty ? med.systemId : med.id),
+                _headerInfo("On Hand", "${formatQty(med.stock)} Qty"),
+                _headerInfo("Pur Rate", "₹${med.purRate.toStringAsFixed(2)}"),
+                _headerInfo("MRP", "₹${med.mrp.toStringAsFixed(2)}"),
               ],
             ),
           ),
@@ -144,7 +148,7 @@ class _AppStockMovementSheetState extends State<AppStockMovementSheet> {
                 const SizedBox(width: 8),
                 _kpiBox(
                   _selectedBatch == "ALL_BATCHES" ? "CLOSING" : "BATCH BAL",
-                  formatQty(_selectedBatch == "ALL_BATCHES" ? widget.medicine.stock : running),
+                  formatQty(_selectedBatch == "ALL_BATCHES" ? med.stock : running),
                   MargStockTheme.codeBlue,
                   MargStockTheme.codeBlueBg,
                 ),
