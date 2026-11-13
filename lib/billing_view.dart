@@ -200,7 +200,7 @@ class _BillingViewState extends State<BillingView> {
       elevation: 2, margin: const EdgeInsets.symmetric(vertical: 5),
       child: ListTile(
         title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-        subtitle: Text("Batch: ${it.batch} | Qty: ${it.qty.toInt()} | Rate: ₹${it.rate.toStringAsFixed(2)}"),
+        subtitle: Text("Batch: ${it.batch} | Qty: ${formatQtyPair(it.qty, it.freeQty)} | Rate: ₹${it.rate.toStringAsFixed(2)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
         onTap: widget.isReadOnly ? null : () => _showItemSearchSheet(ph, itemToEdit: it),
       ),

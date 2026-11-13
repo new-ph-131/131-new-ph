@@ -248,7 +248,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
                         dense: true,
                         leading: const Icon(Icons.medication_rounded, color: Color(0xFF38BDF8), size: 18),
                         title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.5)),
-                        subtitle: Text("Pack: ${m.packing} • Stock: ${m.stock.toInt()} • MRP: ₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                        subtitle: Text("Pack: ${m.packing} • Stock: ${formatQty(m.stock)} • MRP: ₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
                         trailing: const Icon(Icons.link_rounded, color: Colors.greenAccent, size: 18),
                         onTap: () => Navigator.pop(context, m),
                       );
@@ -348,6 +348,24 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
       return;
     }
 
+    if (widget.importType == "PURCHASE") {
+      final String importBillNo = (partyInfoInFile['billNo'] ?? '').toString().trim();
+      final dup = findDuplicateSupplierPurchase(
+        purchases: webPh.purchases,
+        partyId: matchedParty!.id,
+        billNo: importBillNo,
+      );
+      if (dup != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye bill #${dup.billNo} (${matchedParty!.name}) already purchase me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => isSaving = true);
 
     DateTime adjustedDate = partyInfoInFile['date'] as DateTime;
@@ -419,7 +437,6 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
           packing: m.packing,
           mrp: (it['mrp'] as num).toDouble(),
           rate: pRate,
-          qtyChange: q + freeQ,
         );
       }
 
@@ -448,9 +465,19 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
         version: 1,
       );
 
-      webPh.unmarkDeletedId(newPur.id, referenceNo: newPur.internalNo);
-      if (newPur.billNo.isNotEmpty) webPh.unmarkDeletedId(newPur.billNo);
-      webPh.addPurchaseAndSync(newPur);
+      final bool added = webPh.addPurchaseAndSync(newPur);
+      if (!added) {
+        setState(() => isSaving = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("⚠️ Ye bill #${newPur.billNo} (${matchedParty!.name}) already purchase me entry ho chuka hai!"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
     } else {
       String nextBillNo = partyInfoInFile['billNo'];
       List<BillItem> rawItems = [];
@@ -873,7 +900,7 @@ class _WebImportReviewScreenState extends State<WebImportReviewScreen> {
   TableRow _buildRow(int i, Map<String, dynamic> it, PharoahWebManager webPh) {
     bool hasErr = (it['sysTotal'] - it['csvTotal']).abs() > 0.1 && !it['isFixed'];
     bool isLinked = it['match'] != null;
-    String qtyDisp = "${(it['qty'] as num).toInt()}${it['free'] > 0 ? ' + ${(it['free'] as num).toInt()}' : ''}";
+    String qtyDisp = formatQtyPair(it['qty'], it['free']);
 
     return TableRow(
       decoration: BoxDecoration(

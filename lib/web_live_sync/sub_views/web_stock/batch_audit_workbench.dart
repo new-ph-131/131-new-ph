@@ -416,9 +416,9 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
           final dStr = DateFormat('dd/MM/yyyy hh:mm a')
               .format(DateTime.fromMillisecondsSinceEpoch(r.timestamp))
               .toLowerCase();
-          final deltaStr = "${r.adjustmentQty > 0 ? '+' : ''}${r.adjustmentQty.toInt()}".toLowerCase();
-          final prevStr = "${r.previousQty.toInt()}";
-          final newStr = "${r.newQty.toInt()}";
+          final deltaStr = "${r.adjustmentQty > 0 ? '+' : ''}${formatQty(r.adjustmentQty)}".toLowerCase();
+          final prevStr = "${formatQty(r.previousQty)}";
+          final newStr = "${formatQty(r.newQty)}";
 
           final matches = b.batch.toLowerCase().contains(q) ||
               b.exp.toLowerCase().contains(q) ||
@@ -933,14 +933,14 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
                 _verticalDivider(isDark),
                 _topMetricTile(
                   "NET IMPACT",
-                  "${netQty >= 0 ? '+' : ''}${netQty.toInt()} Qty",
+                  "${netQty >= 0 ? '+' : ''}${formatQty(netQty)} Qty",
                   netQty >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171),
                   isDark,
                 ),
                 _verticalDivider(isDark),
-                _topMetricTile("TOTAL ADDED", "+${totalAdded.toInt()} Qty", const Color(0xFF34D399), isDark),
+                _topMetricTile("TOTAL ADDED", "+${formatQty(totalAdded)} Qty", const Color(0xFF34D399), isDark),
                 _verticalDivider(isDark),
-                _topMetricTile("TOTAL REDUCED", "-${totalReduced.toInt()} Qty", const Color(0xFFF87171), isDark),
+                _topMetricTile("TOTAL REDUCED", "-${formatQty(totalReduced)} Qty", const Color(0xFFF87171), isDark),
                 const SizedBox(width: 12),
               ],
               // Quick Freeze Toggle Button
@@ -992,14 +992,14 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
                   _verticalDivider(isDark),
                   _topMetricTile(
                     "NET IMPACT",
-                    "${netQty >= 0 ? '+' : ''}${netQty.toInt()} Qty",
+                    "${netQty >= 0 ? '+' : ''}${formatQty(netQty)} Qty",
                     netQty >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171),
                     isDark,
                   ),
                   _verticalDivider(isDark),
-                  _topMetricTile("ADDED", "+${totalAdded.toInt()} Qty", const Color(0xFF34D399), isDark),
+                  _topMetricTile("ADDED", "+${formatQty(totalAdded)} Qty", const Color(0xFF34D399), isDark),
                   _verticalDivider(isDark),
-                  _topMetricTile("REDUCED", "-${totalReduced.toInt()} Qty", const Color(0xFFF87171), isDark),
+                  _topMetricTile("REDUCED", "-${formatQty(totalReduced)} Qty", const Color(0xFFF87171), isDark),
                 ],
               ),
             ),
@@ -1077,8 +1077,8 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
               final bool isSel = selectedBatchFilter.trim().toUpperCase() == st.batchNo.trim().toUpperCase();
               final String sign = st.netDelta > 0 ? "+" : "";
               final String badgeText = st.adjustmentCount > 0
-                  ? "${st.adjustmentCount}x (${sign}${st.netDelta.toInt()})"
-                  : "0 Adj • ${st.liveQty.toInt()} Qty";
+                  ? "${st.adjustmentCount}x (${sign}${formatQty(st.netDelta)})"
+                  : "0 Adj • ${formatQty(st.liveQty)} Qty";
               final Color bColor = st.adjustmentCount == 0
                   ? Colors.grey
                   : (st.netDelta >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171));
@@ -1316,7 +1316,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
             ...widget.batches.map(
               (b) => DropdownMenuItem(
                 value: b.batch,
-                child: Text("Batch: ${b.batch} (${b.adjustmentHistory.length} Adj • ${b.qty.toInt()} Qty)"),
+                child: Text("Batch: ${b.batch} (${b.adjustmentHistory.length} Adj • ${formatQty(b.qty)} Qty)"),
               ),
             ),
           ],
@@ -1670,7 +1670,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
         return _cellContainer(
           width,
           Text(
-            "${item.currentBatchQty.toInt()} Qty",
+            "${formatQty(item.currentBatchQty)} Qty",
             style: TextStyle(
               color: item.currentBatchQty > 0 ? const Color(0xFF38BDF8) : Colors.redAccent,
               fontSize: 11,
@@ -1698,7 +1698,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
         return _cellContainer(
           width,
           Text(
-            "${item.record.previousQty.toInt()} Qty",
+            "${formatQty(item.record.previousQty)} Qty",
             style: TextStyle(
               color: isDark ? Colors.white60 : Colors.grey.shade700,
               fontSize: 11.5,
@@ -1725,7 +1725,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
               ),
             ),
             child: Text(
-              "${isPos ? '+' : ''}${item.record.adjustmentQty.toInt()} Qty",
+              "${isPos ? '+' : ''}${formatQty(item.record.adjustmentQty)} Qty",
               style: TextStyle(
                 color: isPos ? const Color(0xFF34D399) : const Color(0xFFF87171),
                 fontSize: 11,
@@ -1740,7 +1740,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
         return _cellContainer(
           width,
           Text(
-            "${item.record.newQty.toInt()} Qty",
+            "${formatQty(item.record.newQty)} Qty",
             style: TextStyle(
               color: item.record.newQty >= 0
                   ? (isDark ? Colors.white : Colors.black87)
@@ -1866,7 +1866,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
     final bool isDark = widget.isWebTheme;
     final TextEditingController qtyC = TextEditingController(
       text: item.record.adjustmentQty % 1 == 0
-          ? item.record.adjustmentQty.toInt().toString()
+          ? formatQty(item.record.adjustmentQty)
           : item.record.adjustmentQty.toString(),
     );
     final TextEditingController notesC = TextEditingController(text: item.record.notes);
@@ -1945,19 +1945,19 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
                             children: [
                               _dialogStatCol(
                                 "PREV STOCK",
-                                "${item.record.previousQty.toInt()} Qty",
+                                "${formatQty(item.record.previousQty)} Qty",
                                 isDark ? Colors.white70 : Colors.black87,
                                 isDark,
                               ),
                               _dialogStatCol(
                                 "OLD ADJ DELTA",
-                                "${item.record.adjustmentQty >= 0 ? '+' : ''}${item.record.adjustmentQty.toInt()} Qty",
+                                "${item.record.adjustmentQty >= 0 ? '+' : ''}${formatQty(item.record.adjustmentQty)} Qty",
                                 const Color(0xFFF59E0B),
                                 isDark,
                               ),
                               _dialogStatCol(
                                 "NEW ADJ DELTA",
-                                "${newDelta >= 0 ? '+' : ''}${newDelta.toInt()} Qty",
+                                "${newDelta >= 0 ? '+' : ''}${formatQty(newDelta)} Qty",
                                 newDelta >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
                                 isDark,
                               ),
@@ -1969,19 +1969,19 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
                             children: [
                               _dialogStatCol(
                                 "UPDATED ENTRY STOCK",
-                                "${updatedEntryNewQty.toInt()} Qty",
+                                "${formatQty(updatedEntryNewQty)} Qty",
                                 isDark ? Colors.white : Colors.indigo.shade900,
                                 isDark,
                               ),
                               _dialogStatCol(
                                 "CURRENT LIVE STOCK",
-                                "${item.currentBatchQty.toInt()} Qty",
+                                "${formatQty(item.currentBatchQty)} Qty",
                                 const Color(0xFF38BDF8),
                                 isDark,
                               ),
                               _dialogStatCol(
                                 "NEW LIVE STOCK",
-                                "${updatedLiveStock.toInt()} Qty",
+                                "${formatQty(updatedLiveStock)} Qty",
                                 updatedLiveStock >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
                                 isDark,
                               ),
@@ -2220,7 +2220,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "• Adjustment Entry: $sign${item.record.adjustmentQty.toInt()} Qty (${item.record.reason})",
+                      "• Adjustment Entry: $sign${formatQty(item.record.adjustmentQty)} Qty (${item.record.reason})",
                       style: const TextStyle(
                         color: Color(0xFFF87171),
                         fontSize: 11.5,
@@ -2229,7 +2229,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "• Live Batch Stock: ${item.currentBatchQty.toInt()} Qty  ➔  After Cancel: ${revertedLiveStock.toInt()} Qty",
+                      "• Live Batch Stock: ${formatQty(item.currentBatchQty)} Qty  ➔  After Cancel: ${formatQty(revertedLiveStock)} Qty",
                       style: const TextStyle(
                         color: Color(0xFF34D399),
                         fontSize: 11.5,
@@ -2266,7 +2266,7 @@ class _BatchAuditWorkbenchState extends State<BatchAuditWorkbench> {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    "🗑️ Canceled adjustment ($sign${item.record.adjustmentQty.toInt()} Qty) for Batch ${item.batchNo}. Stock reverted & synced!",
+                    "🗑️ Canceled adjustment ($sign${formatQty(item.record.adjustmentQty)} Qty) for Batch ${item.batchNo}. Stock reverted & synced!",
                   ),
                   backgroundColor: const Color(0xFFDC2626),
                 ),

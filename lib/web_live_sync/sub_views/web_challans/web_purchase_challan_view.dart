@@ -1329,9 +1329,44 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
 
   // --- PROCEED BUTTON ---
   Widget _buildProceedButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    final dupChallan = (!widget.isReadOnly && selectedSupplier != null && supplierRefC.text.trim().isNotEmpty)
+        ? findDuplicateSupplierChallan(
+            challans: webPh.purchaseChallans,
+            partyId: selectedSupplier!.id,
+            billNo: supplierRefC.text.trim(),
+            excludeId: widget.existingRecord?.id,
+            excludeInternalNo: widget.existingRecord?.internalNo,
+          )
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (dupChallan != null)
+          Container(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: const Color(0x33DC2626),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "⚠️ DUPLICATE CHALLAN: Ye challan #${dupChallan.billNo} (${selectedSupplier!.name}) already purchase challan me entry ho chuka hai (${dupChallan.internalNo}).",
+                    style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFD97706),
           foregroundColor: Colors.white,
@@ -1349,6 +1384,15 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                 content: Text(
                   "Supplier Challan / Ref No is required for inward tracking!",
                 ),
+                backgroundColor: Colors.red,
+              ),
+            );
+            return;
+          }
+          if (!widget.isReadOnly && dupChallan != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("⚠️ Ye challan #${dupChallan.billNo} (${selectedSupplier!.name}) already purchase challan me entry ho chuka hai!"),
                 backgroundColor: Colors.red,
               ),
             );
@@ -1382,7 +1426,9 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
             letterSpacing: 0.8,
           ),
         ),
-      ),
+          ),
+        ),
+      ],
     );
   }
 

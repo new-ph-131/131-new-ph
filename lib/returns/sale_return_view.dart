@@ -136,7 +136,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
                         title: Text("Bill: ${h['billNo']} | ${DateFormat('dd/MM/yy').format(h['date'])}"),
                         subtitle: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                           _miniInfo("BATCH", h['batch']),
-                          _miniInfo("LAST QTY", "${h['qty'].toInt()} + ${h['free'].toInt()}", isBold: true),
+                          _miniInfo("LAST QTY", "${formatQty(h['qty'])} + ${formatQty(h['free'])}", isBold: true),
                           _miniInfo("RATE", "₹${h['rate']}"),
                         ]),
                       ),
@@ -255,7 +255,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
           const SizedBox(width: 8),
           Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         ]),
-        subtitle: Text("Batch: ${it.batch} | Qty: ${it.qty.toInt()} + ${it.freeQty.toInt()}"),
+        subtitle: Text("Batch: ${it.batch} | Qty: ${formatQty(it.qty)} + ${formatQty(it.freeQty)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: themeColor)),
         onLongPress: () => setState(() => items.removeAt(index)),
       ),

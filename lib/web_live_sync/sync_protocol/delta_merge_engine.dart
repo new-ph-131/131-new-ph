@@ -150,16 +150,17 @@ class DeltaMergeEngine {
 
         // 🛡️ Multi-Key Anti-Zombie Check: ID + FY-Scoped Secondary Keys (InternalNo, BillNo, CompositeKey)
         final String activeFy = ph.currentFY.trim();
-        String bNoKey = billNo.toUpperCase();
+        final bool isCompositeDoc = getCloudCompositeKey != null;
+        String bNoKey = isCompositeDoc ? billNo : billNo.toUpperCase();
         String intNoKey = internalNo.toUpperCase();
         String partyIdKey = (cloudMap["partyId"] ?? "").toString().trim().toUpperCase();
         String compKey2 = (partyIdKey.isNotEmpty && bNoKey.isNotEmpty) ? "${partyIdKey}_$bNoKey" : "";
-        final compositeKey = getCloudCompositeKey?.call(cloudMap).trim().toUpperCase() ?? "";
+        final compositeKey = getCloudCompositeKey?.call(cloudMap).trim() ?? "";
 
-        final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNoKey, activeFy);
+        final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNoKey, activeFy, isCompositeDoc);
         final String scopedIntNo = D1SalesLedgerService.scopeSecondaryKey(intNoKey, activeFy);
-        final String scopedComp2 = D1SalesLedgerService.scopeSecondaryKey(compKey2, activeFy);
-        final String scopedComp3 = D1SalesLedgerService.scopeSecondaryKey(compositeKey, activeFy);
+        final String scopedComp2 = D1SalesLedgerService.scopeSecondaryKey(compKey2, activeFy, true);
+        final String scopedComp3 = D1SalesLedgerService.scopeSecondaryKey(compositeKey, activeFy, true);
 
         // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Scoped by activeFy so series numbers never collide across FYs)
         if (getCloudCompositeKey != null) {
@@ -190,10 +191,10 @@ class DeltaMergeEngine {
         // Match in active local list
         int idx = localList.indexWhere((e) {
           if (getId(e) == id) return true;
-          final localBNo = getBillNo(e).trim().toUpperCase();
+          final localBNo = isCompositeDoc ? getBillNo(e).trim() : getBillNo(e).trim().toUpperCase();
           if (compositeKey.isNotEmpty && localBNo == compositeKey) return true;
           if (intNoKey.isNotEmpty && (localBNo == intNoKey || localBNo == "INT:$intNoKey" || localBNo.endsWith("_$intNoKey"))) return true;
-          if (getCloudCompositeKey == null && bNoKey.isNotEmpty && localBNo == bNoKey) return true;
+          if (!isCompositeDoc && bNoKey.isNotEmpty && localBNo == bNoKey) return true;
           return false;
         });
 
@@ -236,7 +237,7 @@ class DeltaMergeEngine {
       List<T> nonBillItems = [];
 
       for (var item in localList) {
-        String bNo = getBillNo(item).trim().toUpperCase();
+        String bNo = getCloudCompositeKey != null ? getBillNo(item).trim() : getBillNo(item).trim().toUpperCase();
         String itemId = getId(item).trim();
         String dedupKey = bNo.isNotEmpty ? bNo : (itemId.isNotEmpty ? "ID:$itemId" : "");
 
@@ -312,12 +313,23 @@ class DeltaMergeEngine {
       (e) => e.toMap()
     );
     bool cPCh = mergeList<PurchaseChallan>(
-      decodeJson("p_challan.json"), 
-      ph.purchaseChallans, 
-      (e) => e.id, 
-      (e) => e.internalNo.isNotEmpty ? e.internalNo : "${e.partyId.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}", 
-      (m) => PurchaseChallan.fromMap(m), 
-      (e) => e.toMap()
+      decodeJson("p_challan.json"),
+      ph.purchaseChallans,
+      (e) => e.id,
+      (e) {
+        final comp = PurchaseChallanSyncModule.makeCompositeKey(e.partyId, e.billNo, e.internalNo);
+        if (comp.isNotEmpty) return comp;
+        final intNo = e.internalNo.trim().toUpperCase();
+        if (intNo.isNotEmpty) return "INT:$intNo";
+        return "ID:${e.id}";
+      },
+      (m) => PurchaseChallan.fromMap(m),
+      (e) => e.toMap(),
+      (m) => PurchaseChallanSyncModule.makeCompositeKey(
+        (m["partyId"] ?? "").toString(),
+        (m["billNo"] ?? "").toString(),
+        (m["internalNo"] ?? "").toString(),
+      ),
     );
     bool cSRet = mergeList<SaleReturn>(
       decodeJson("s_return.json"), 
@@ -331,7 +343,7 @@ class DeltaMergeEngine {
       decodeJson("p_return.json"), 
       ph.purchaseReturns, 
       (e) => e.id, 
-      (e) => "${e.distributorName.trim().toUpperCase()}_${e.billNo.trim().toUpperCase()}", 
+      (e) => "${e.distributorName.trim().toUpperCase()}_${e.billNo.trim()}", 
       (m) => PurchaseReturn.fromMap(m), 
       (e) => e.toMap()
     );

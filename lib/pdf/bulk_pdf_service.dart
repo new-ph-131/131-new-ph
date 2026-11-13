@@ -199,8 +199,8 @@ class BulkPdfService {
               return pw.Container(
                 decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
                 child: pw.Row(children: [
-                  _cell("${start + pageItems.indexOf(i) + 1}", 25), _cell(i.qty.toStringAsFixed(0), 45),
-                  _cell(i.freeQty.toStringAsFixed(0), 35), _cell(i.packing, 45),
+                  _cell("${start + pageItems.indexOf(i) + 1}", 25), _cell(formatQty(i.qty), 45),
+                  _cell(formatQty(i.freeQty), 35), _cell(i.packing, 45),
                   pw.Container(width: 215, padding: const pw.EdgeInsets.only(left: 5), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: const pw.TextStyle(fontSize: 7.5))),
                   _cell(i.batch, 80), _cell(i.exp, 45), _cell(i.hsn, 50),
                   _cell(i.mrp.toStringAsFixed(2), 60), _cell(i.purchaseRate.toStringAsFixed(2), 60), _cell("${i.gstRate}%", 50), _cell(i.total.toStringAsFixed(2), 90),

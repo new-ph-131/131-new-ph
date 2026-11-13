@@ -81,13 +81,13 @@ class StockExcelExportService {
         cName.toUpperCase(),
         m.rackNo.isNotEmpty ? m.rackNo : "-",
         "${m.gst.toInt()}%",
-        m.stock.toInt(),
+        formatQty(m.stock),
         m.purRate.toStringAsFixed(2),
         m.mrp.toStringAsFixed(2),
         purVal.toStringAsFixed(2),
         mrpVal.toStringAsFixed(2),
         activeBatches,
-        m.reorderLevel.toInt(),
+        formatQty(m.reorderLevel),
         status
       ]);
     }

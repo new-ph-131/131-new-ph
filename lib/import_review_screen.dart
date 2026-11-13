@@ -251,7 +251,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   Widget LibraryListTile(Medicine m, BuildContext context) {
     return ListTile(
       title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      subtitle: Text("Pack: ${m.packing} | Stock: ${m.stock.toInt()}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+      subtitle: Text("Pack: ${m.packing} | Stock: ${formatQty(m.stock)}", style: const TextStyle(color: Colors.white54, fontSize: 11)),
       trailing: const Icon(Icons.link_rounded, color: Colors.greenAccent, size: 18),
       onTap: () {
         Navigator.pop(context, m);
@@ -584,6 +584,23 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   void _handleFinalImport(PharoahManager ph) async {
     if (matchedParty == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link/Create Party first!"))); return; }
     if (reviewedItems.any((it) => it['isSelected'] && it['match'] == null)) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link all products first!"))); return; }
+    final String preCleanBillNo = (partyInfoInFile['billNo']?.toString() ?? "").trim();
+    if (widget.importType == "PURCHASE" && preCleanBillNo.isNotEmpty) {
+      final dup = findDuplicateSupplierPurchase(
+        purchases: ph.purchases,
+        partyId: matchedParty!.id,
+        billNo: preCleanBillNo,
+      );
+      if (dup != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye bill #${dup.billNo} (${matchedParty!.name}) already purchase me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
     setState(() => isLoading = true);
 
     bool isLoc = matchedParty!.state.toLowerCase() == (ph.activeCompany?.state.toLowerCase() ?? "rajasthan");
@@ -599,7 +616,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
     }
 
     final String cleanBillNo = (partyInfoInFile['billNo']?.toString() ?? "").trim();
-    if (ph.activeCompany != null && cleanBillNo.isNotEmpty) {
+    if (widget.importType != "PURCHASE" && ph.activeCompany != null && cleanBillNo.isNotEmpty) {
       final wPath = await ph.getWorkingPath();
       await SyncTombstoneHub.unmarkDeleted(
         workingDir: wPath,
@@ -682,7 +699,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         isLocal: isLoc,
       );
 
-      await ph.finalizePurchase(
+      final bool saved = await ph.finalizePurchase(
         internalNo: "MIR-PUR-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}", 
         billNo: cleanBillNo.isNotEmpty ? cleanBillNo : "DRAFT", 
         date: adjustedBillDate, 
@@ -695,8 +712,18 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
         extraDiscount: summary.extraDiscount,
         roundOff: summary.roundOff,
       );
-      
-      AppRealtimeCoordinator.instance.notifyAppMutation(ph, action: 'DATA_SAVED', entityId: cleanBillNo, unmarkedIds: [cleanBillNo]);
+      if (!saved) {
+        setState(() => isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("⚠️ Ye bill #$cleanBillNo (${matchedParty!.name}) already purchase me entry ho chuka hai!"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
     } else {
       List<BillItem> rawItems = [];
       int sNo = 1;

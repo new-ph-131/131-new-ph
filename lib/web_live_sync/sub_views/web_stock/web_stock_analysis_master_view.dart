@@ -505,7 +505,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
                 children: [
                   _topMetricTile("ITEMS", "${filteredList.length}", const Color(0xFF38BDF8)),
                   _verticalDivider(),
-                  _topMetricTile("TOTAL STOCK", "${totalStockUnits.toInt()}", Colors.greenAccent),
+                  _topMetricTile("TOTAL STOCK", "${formatQty(totalStockUnits)}", Colors.greenAccent),
                   _verticalDivider(),
                   _topMetricTile("PUR. VALUATION", "₹${totalPurVal.toStringAsFixed(0)}", const Color(0xFFA78BFA)),
                   _verticalDivider(),
@@ -563,7 +563,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
           // 📊 METRICS TILES
           _topMetricTile("ITEMS", "${filteredList.length}", const Color(0xFF38BDF8)),
           _verticalDivider(),
-          _topMetricTile("TOTAL STOCK", "${totalStockUnits.toInt()}", Colors.greenAccent),
+          _topMetricTile("TOTAL STOCK", "${formatQty(totalStockUnits)}", Colors.greenAccent),
           _verticalDivider(),
           _topMetricTile("PUR. VALUATION", "₹${totalPurVal.toStringAsFixed(0)}", const Color(0xFFA78BFA)),
           _verticalDivider(),
@@ -1057,7 +1057,7 @@ class _WebStockAnalysisMasterViewState extends State<WebStockAnalysisMasterView>
         }
         return _cellContainer(
           width,
-          Text("${m.stock.toInt()} Qty", style: TextStyle(color: sColor, fontSize: 11.5, fontWeight: FontWeight.bold)),
+          Text("${formatQty(m.stock)} Qty", style: TextStyle(color: sColor, fontSize: 11.5, fontWeight: FontWeight.bold)),
           isRight: true,
         );
 

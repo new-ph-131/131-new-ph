@@ -252,7 +252,7 @@ class _ChallanSignatureViewState extends State<ChallanSignatureView> {
         _cell("Rate", 55, true), _cell("GST%", 30, true), _cell("Net Total", 155, true)
       ])),
       ...pageItems.map((it) => Row(children: [
-        _cell(it.srNo.toString(), 25, false), _cell("${it.qty.toInt()} + ${it.freeQty.toInt()}", 55, false), _cell(it.packing, 45, false), _cell(it.name, 210, false, true), 
+        _cell(it.srNo.toString(), 25, false), _cell("${formatQty(it.qty)} + ${formatQty(it.freeQty)}", 55, false), _cell(it.packing, 45, false), _cell(it.name, 210, false, true), 
         _cell(it.batch, 75, false), _cell(it.exp, 45, false), _cell(it.hsn, 50, false), _cell(it.mrp.toStringAsFixed(2), 55, false), 
         _cell(it.rate.toStringAsFixed(2), 55, false), _cell("${it.gstRate.toInt()}%", 30, false), _cell(it.total.toStringAsFixed(2), 155, false)
       ])).toList(),

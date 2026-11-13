@@ -46,7 +46,7 @@ class PurchaseViewOnly extends StatelessWidget {
                 return Card(
                   child: ListTile(
                     title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${it.qty.toInt()}"),
+                    subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${formatQtyPair(it.qty, it.freeQty)}"),
                     trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 );

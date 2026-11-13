@@ -194,7 +194,7 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF92400E))),
-        subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${it.qty.toInt()} + ${it.freeQty.toInt()}"),
+        subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${formatQty(it.qty)} + ${formatQty(it.freeQty)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
         onTap: widget.isReadOnly ? null : () => _showItemSearchSheet(ph, itemToEdit: it),
       ),
@@ -294,12 +294,31 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
 
   Widget _row(String l, String v, {bool bold = false, double size = 15, Color? color}) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(l, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal)), Text(v, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.normal, fontSize: size, color: color))]);
 
-  void _handleSave(PharoahManager ph, double itemTotal, double extraDisc, double roundOffVal, double finalGrandTotal) {
+  void _handleSave(PharoahManager ph, double itemTotal, double extraDisc, double roundOffVal, double finalGrandTotal) async {
+    final cleanBill = distBillNoC.text.trim();
+    final dup = findDuplicateSupplierPurchase(
+      purchases: ph.purchases,
+      partyId: widget.distributor.id,
+      billNo: cleanBill,
+      excludeId: widget.modifyPurchaseId,
+      excludeInternalNo: widget.modifyPurchaseId != null ? internalNoC.text : null,
+    );
+    if (dup != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Ye bill #${dup.billNo} (${widget.distributor.name}) already purchase me entry ho chuka hai! Duplicate entry blocked."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     List<String> links = widget.linkedChallanIds ?? [];
-    ph.finalizePurchase(
+    final bool ok = await ph.finalizePurchase(
       existingId: widget.modifyPurchaseId,
       internalNo: internalNoC.text, 
-      billNo: distBillNoC.text.trim(), 
+      billNo: cleanBill, 
       date: selectedBillDate, 
       entryDate: widget.entryDate, 
       party: widget.distributor, 
@@ -310,7 +329,20 @@ class _PurchaseBillingViewState extends State<PurchaseBillingView> {
       extraDiscount: extraDisc, // 🆕 Mapped
       roundOff: roundOffVal,     // 🆕 Mapped
     );
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Ye bill #$cleanBill (${widget.distributor.name}) already purchase me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 }
 

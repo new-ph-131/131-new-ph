@@ -345,7 +345,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                         Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
                         const Spacer(),
                         Text(
-                          "Stock: ${med.stock.toInt()} Qty",
+                          "Stock: ${formatQty(med.stock)} Qty",
                           style: TextStyle(color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
                         ),
                       ],
@@ -405,7 +405,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                     ),
                     ...items.asMap().entries.map((entry) {
                       int idx = entry.key; BillItem it = entry.value;
-                      String qtyDisp = "${(it.qty % 1 == 0 ? it.qty.toInt().toString() : it.qty.toStringAsFixed(1))}${it.freeQty > 0 ? ' + ${(it.freeQty % 1 == 0 ? it.freeQty.toInt().toString() : it.freeQty.toStringAsFixed(1))}' : ''}";
+                      String qtyDisp = formatQtyPair(it.qty, it.freeQty);
                       return TableRow(
                         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
                         children: [

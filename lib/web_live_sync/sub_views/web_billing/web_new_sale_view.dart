@@ -819,7 +819,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                           Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
                           const Spacer(),
                           Text(
-                            "Stock: ${med.stock.toInt()} Qty",
+                            "Stock: ${formatQty(med.stock)} Qty",
                             style: TextStyle(
                               color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent,
                               fontWeight: FontWeight.bold,
@@ -936,7 +936,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
                     ...billItems.asMap().entries.map((entry) {
                       int idx = entry.key;
                       BillItem it = entry.value;
-                      String qtyDisp = "${it.qty.toInt()}${it.freeQty > 0 ? ' + ${it.freeQty.toInt()}' : ''}";
+                      String qtyDisp = formatQtyPair(it.qty, it.freeQty);
 
                       return TableRow(
                         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),

@@ -234,7 +234,7 @@ class _MargBatchLookupDialogState extends State<MargBatchLookupDialog> {
                           Expanded(
                             flex: 3, 
                             child: Text(
-                              "${b.qty.toInt()} ($statusText)", 
+                              "${formatQty(b.qty)} ($statusText)", 
                               textAlign: TextAlign.right, 
                               style: TextStyle(color: rowColor, fontWeight: FontWeight.bold, fontSize: 11),
                             ),

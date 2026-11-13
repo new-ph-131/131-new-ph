@@ -948,7 +948,7 @@ class _WebSaltMasterViewState extends State<WebSaltMasterView> {
                           ),
                         ),
                         subtitle: Text(
-                          "Co: $compName • Pack: ${m.packing} • Stock: ${m.stock.toStringAsFixed(0)}",
+                          "Co: $compName • Pack: ${m.packing} • Stock: ${formatQty(m.stock)}",
                           style: TextStyle(color: subCol, fontSize: 11),
                         ),
                         trailing: Text(

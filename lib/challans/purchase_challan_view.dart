@@ -114,8 +114,9 @@ class _PurchaseChallanViewState extends State<PurchaseChallanView> {
                       Expanded(
                         child: TextField(
                           controller: supplierChallanNoC, 
-                          textCapitalization: TextCapitalization.characters, 
-                          decoration: const InputDecoration(labelText: "SUPPLIER REF NO", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)
+                          textCapitalization: TextCapitalization.none,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(labelText: "SUPPLIER REF NO", hintText: "Enter Ref # (Case-Sensitive)", border: OutlineInputBorder(), filled: true, fillColor: Colors.white)
                         )
                       ),
                     ],
@@ -158,6 +159,39 @@ class _PurchaseChallanViewState extends State<PurchaseChallanView> {
                 : _buildSupplierList(ph),
             ),
 
+            if (!widget.isReadOnly && selectedDistributor != null && supplierChallanNoC.text.trim().isNotEmpty)
+              Builder(builder: (context) {
+                final dup = findDuplicateSupplierChallan(
+                  challans: ph.purchaseChallans,
+                  partyId: selectedDistributor!.id,
+                  billNo: supplierChallanNoC.text.trim(),
+                  excludeId: widget.existingRecord?.id,
+                  excludeInternalNo: widget.existingRecord?.internalNo,
+                );
+                if (dup == null) return const SizedBox.shrink();
+                return Container(
+                  margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.red.shade400),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Duplicate Challan: Ye challan #${dup.billNo} (${selectedDistributor!.name}) already purchase challan me entry ho chuka hai (${dup.internalNo}).",
+                          style: TextStyle(color: Colors.red.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
             // --- PROCEED BUTTON ---
             if (selectedDistributor != null)
               Padding(
@@ -172,6 +206,24 @@ class _PurchaseChallanViewState extends State<PurchaseChallanView> {
                     if (supplierChallanNoC.text.trim().isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter Supplier Ref No!"), backgroundColor: Colors.red));
                       return;
+                    }
+                    if (!widget.isReadOnly) {
+                      final dup = findDuplicateSupplierChallan(
+                        challans: ph.purchaseChallans,
+                        partyId: selectedDistributor!.id,
+                        billNo: supplierChallanNoC.text.trim(),
+                        excludeId: widget.existingRecord?.id,
+                        excludeInternalNo: widget.existingRecord?.internalNo,
+                      );
+                      if (dup != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text("Ye challan #${dup.billNo} (${selectedDistributor!.name}) already purchase challan me entry ho chuka hai!"),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
                     }
                     Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseChallanBillingView(
                       distributor: selectedDistributor!,

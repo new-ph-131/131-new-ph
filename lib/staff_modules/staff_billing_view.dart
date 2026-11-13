@@ -202,7 +202,7 @@ class _StaffBillingViewState extends State<StaffBillingView> {
       child: ListTile(
         leading: CircleAvatar(backgroundColor: Colors.teal.shade50, child: Text("${it.srNo}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
         title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
-        subtitle: Text("Batch: ${it.batch} | Qty: ${it.qty.toInt()} | Rate: ₹${it.rate.toStringAsFixed(2)}"),
+        subtitle: Text("Batch: ${it.batch} | Qty: ${formatQtyPair(it.qty, it.freeQty)} | Rate: ₹${it.rate.toStringAsFixed(2)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
         onTap: () => _showItemSearch(ph, itemToEdit: it),
       ),

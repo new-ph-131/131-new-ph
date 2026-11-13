@@ -149,7 +149,7 @@ class ArchitectBulkService {
                 color: isShaded ? PdfColors.grey50 : PdfColors.white,
                 decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
                 child: pw.Row(children: [
-                  _cell("${start + idx + 1}", 25), _cell((i.qty + i.freeQty).toInt().toString(), 50), _cell(i.packing, 45), 
+                  _cell("${start + idx + 1}", 25), _cell(formatQty(i.qty + i.freeQty), 50), _cell(i.packing, 45), 
                   pw.Container(width: 250, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                   _cell(i.batch, 70), _cell(i.exp, 40), _cell(i.hsn, 40), _cell(i.mrp.toStringAsFixed(2), 50), _cell(i.rate.toStringAsFixed(2), 50), 
                   _cell(i.discountRupees.toStringAsFixed(1), 30), _cell("${(i.gstRate/2).toStringAsFixed(1)}%", 45), _cell("${(i.gstRate/2).toStringAsFixed(1)}%", 45), 
@@ -244,8 +244,8 @@ class ArchitectBulkService {
                 color: isShaded ? PdfColors.grey50 : PdfColors.white,
                 decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
                 child: pw.Row(children: [
-                  _cell("${start + idx + 1}", 25), _cell(i.qty.toStringAsFixed(0), 45),
-                  _cell(i.freeQty.toStringAsFixed(0), 35), _cell(i.packing, 45),
+                  _cell("${start + idx + 1}", 25), _cell(formatQty(i.qty), 45),
+                  _cell(formatQty(i.freeQty), 35), _cell(i.packing, 45),
                   pw.Container(width: 215, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                   _cell(i.batch, 80), _cell(i.exp, 45), _cell(i.hsn, 50),
                   _cell(i.mrp.toStringAsFixed(2), 60), _cell(i.purchaseRate.toStringAsFixed(2), 60), _cell("${i.gstRate}%", 50), _cell(i.total.toStringAsFixed(2), 90),

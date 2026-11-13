@@ -16,7 +16,7 @@ class PurchaseSyncModule {
 
   static String makeCompositeKey(String partyId, String billNo, [String internalNo = ""]) {
     final cleanParty = partyId.trim().toUpperCase();
-    final cleanBill = billNo.trim().toUpperCase();
+    final cleanBill = billNo.trim(); // Exact case preserved for supplier invoice numbers
     final cleanInt = internalNo.trim().toUpperCase();
     if (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty) {
       return "${cleanParty}_${cleanBill}_$cleanInt";
@@ -80,8 +80,8 @@ class PurchaseSyncModule {
   static bool _sameSupplierInvoice(Purchase a, Purchase b) {
     final aParty = a.partyId.trim().toUpperCase();
     final bParty = b.partyId.trim().toUpperCase();
-    final aBill = a.billNo.trim().toUpperCase();
-    final bBill = b.billNo.trim().toUpperCase();
+    final aBill = a.billNo.trim();
+    final bBill = b.billNo.trim();
     return aParty.isNotEmpty && bParty.isNotEmpty &&
         aBill.isNotEmpty && bBill.isNotEmpty &&
         aParty == bParty && aBill == bBill;

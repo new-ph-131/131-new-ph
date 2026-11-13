@@ -10,7 +10,7 @@ import '../models.dart';
 
 /// Web-specific Helper Extensions
 extension WebMedicineExtension on Medicine {
-  String get displayStock => "${stock.toInt()} $packing";
+  String get displayStock => "${formatQty(stock)} $packing";
 }
 
 extension WebPartyExtension on Party {

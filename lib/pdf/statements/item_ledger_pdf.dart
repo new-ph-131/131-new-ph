@@ -81,9 +81,9 @@ class ItemLedgerPdf {
           DateFormat('dd/MM/yy').format(row['date']),
           row['party'],
           row['type'],
-          row['in'] > 0 ? row['in'].toInt().toString() : "",
-          row['out'] > 0 ? row['out'].toInt().toString() : "",
-          pw.Text(row['bal'].toInt().toString(), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          row['in'] > 0 ? formatQty(row['in']) : "",
+          row['out'] > 0 ? formatQty(row['out']) : "",
+          pw.Text(formatQty(row['bal']), style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         ];
       }).toList(),
     );
@@ -93,7 +93,7 @@ class ItemLedgerPdf {
     return pw.Container(
       alignment: pw.Alignment.centerRight,
       child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-        pw.Text("CLOSING STOCK ON HAND: ${med.stock.toInt()} UNITS", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
+        pw.Text("CLOSING STOCK ON HAND: ${formatQty(med.stock)} UNITS", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900)),
         pw.SizedBox(height: 20),
         pw.Text("Verified by $shopName", style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
       ]),

@@ -286,7 +286,7 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
       child: ListTile(
         leading: CircleAvatar(backgroundColor: Colors.amber.shade50, child: Text("${it.srNo}", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber.shade900))),
         title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.brown)),
-        subtitle: Text("Batch: ${it.batch} | Qty: ${it.qty.toInt()} | Rate: ₹${it.purchaseRate.toStringAsFixed(2)}"),
+        subtitle: Text("Batch: ${it.batch} | Qty: ${formatQtyPair(it.qty, it.freeQty)} | Rate: ₹${it.purchaseRate.toStringAsFixed(2)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
         onTap: widget.isReadOnly ? null : () => _showItemSearchSheet(ph, itemToEdit: it),
       ),
@@ -338,9 +338,27 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
         ),
       );
 
-  void _handleSave(PharoahManager ph) {
+  void _handleSave(PharoahManager ph) async {
+    final dup = findDuplicateSupplierChallan(
+      challans: ph.purchaseChallans,
+      partyId: widget.distributor.id,
+      billNo: widget.supplierChallanNo,
+      excludeId: widget.existingRecord?.id,
+      excludeInternalNo: widget.existingRecord?.internalNo,
+    );
+    if (dup != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Ye challan #${dup.billNo} (${widget.distributor.name}) already purchase challan me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
-    ph.finalizePurchaseChallan(
+    final bool ok = await ph.finalizePurchaseChallan(
       billNo: widget.supplierChallanNo,
       internalNo: widget.internalNo,
       date: widget.challanDate,
@@ -351,7 +369,20 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
       partyId: widget.distributor.id,
       existingId: widget.existingRecord?.id,
     );
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Purchase Challan Saved Successfully!"), backgroundColor: Colors.green));
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Ye challan #${widget.supplierChallanNo} (${widget.distributor.name}) already purchase challan me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Purchase Challan Saved Successfully!"), backgroundColor: Colors.green));
+    }
   }
 }

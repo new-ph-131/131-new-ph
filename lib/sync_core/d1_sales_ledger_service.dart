@@ -135,13 +135,31 @@ class D1SalesLedgerService {
 
   /// Scopes a secondary/series key (e.g. INV-1, PUR-1, PARTY_BILL) to the target Financial Year
   /// so bill numbers that reset to #1 in a new FY never collide with or delete old FY bills.
-  static String scopeSecondaryKey(String secKey, [String? fy]) {
-    final clean = secKey.trim().toUpperCase();
+  static String scopeSecondaryKey(String secKey, [String? fy, bool preserveCase = false]) {
+    final clean = preserveCase ? secKey.trim() : secKey.trim().toUpperCase();
     if (clean.isEmpty) return "";
     if (clean.contains("::")) return clean;
     final effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : activeFinancialYear.trim();
     if (effFy.isEmpty) return clean;
     return "$effFy::$clean";
+  }
+
+  /// Scopes a purchase/challan composite key preserving exact case of supplier [billNo].
+  static String scopePurchaseKey(String partyId, String billNo, [String internalNo = "", String? fy]) {
+    final p = partyId.trim().toUpperCase();
+    final b = billNo.trim();
+    final i = internalNo.trim().toUpperCase();
+    String raw = "";
+    if (p.isNotEmpty && b.isNotEmpty && i.isNotEmpty) {
+      raw = "${p}_${b}_$i";
+    } else if (p.isNotEmpty && b.isNotEmpty) {
+      raw = "${p}_$b";
+    } else if (i.isNotEmpty) {
+      raw = i;
+    } else {
+      return "";
+    }
+    return scopeSecondaryKey(raw, fy, true);
   }
 
   static bool isBillDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
@@ -181,11 +199,12 @@ class D1SalesLedgerService {
     }
   }
 
-  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
+  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy, bool preserveCase = false]) {
     final cleanId = id.trim();
-    final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
-    final String cleanSec = scopeSecondaryKey(secondaryKey, fy);
-    final String cleanTer = scopeSecondaryKey(tertiaryKey, fy);
+    final bool keepIdCase = preserveCase || cleanId.contains("_");
+    final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy, keepIdCase) : cleanId;
+    final String cleanSec = scopeSecondaryKey(secondaryKey, fy, preserveCase || secondaryKey.contains("_"));
+    final String cleanTer = scopeSecondaryKey(tertiaryKey, fy, preserveCase || tertiaryKey.contains("_"));
     if (idKey.isNotEmpty) _permanentDeletedKeys.add(idKey);
     if (cleanSec.isNotEmpty) _permanentDeletedKeys.add(cleanSec);
     if (cleanTer.isNotEmpty) _permanentDeletedKeys.add(cleanTer);
@@ -201,34 +220,46 @@ class D1SalesLedgerService {
     } catch (_) {}
   }
 
-  static void unmarkPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy]) {
+  static void unmarkPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy, bool preserveCase = false]) {
     final cleanId = id.trim();
-    final cleanSecRaw = secondaryKey.trim().toUpperCase();
-    final cleanTerRaw = tertiaryKey.trim().toUpperCase();
-    final scopedId = scopeSecondaryKey(cleanId, fy);
-    final scopedSec = scopeSecondaryKey(cleanSecRaw, fy);
-    final scopedTer = scopeSecondaryKey(cleanTerRaw, fy);
+    final bool keepSecCase = preserveCase || secondaryKey.contains("_");
+    final bool keepTerCase = preserveCase || tertiaryKey.contains("_");
+    final cleanSecRaw = keepSecCase ? secondaryKey.trim() : secondaryKey.trim().toUpperCase();
+    final cleanTerRaw = keepTerCase ? tertiaryKey.trim() : tertiaryKey.trim().toUpperCase();
+    final scopedId = scopeSecondaryKey(cleanId, fy, preserveCase || cleanId.contains("_"));
+    final scopedSec = scopeSecondaryKey(cleanSecRaw, fy, keepSecCase);
+    final scopedTer = scopeSecondaryKey(cleanTerRaw, fy, keepTerCase);
 
-    void removeEverywhere(String k) {
+    void removeEverywhere(String k, {bool exactOnly = false}) {
       if (k.isEmpty) return;
       _permanentDeletedKeys.remove(k);
-      _permanentDeletedKeys.remove(k.toUpperCase());
       _knownBillVersions.remove(k);
-      _knownBillVersions.remove(k.toUpperCase());
+      if (!exactOnly) {
+        _permanentDeletedKeys.remove(k.toUpperCase());
+        _knownBillVersions.remove(k.toUpperCase());
+      }
     }
 
-    removeEverywhere(cleanId);
-    removeEverywhere(scopedId);
-    removeEverywhere(cleanSecRaw);
-    removeEverywhere(scopedSec);
-    removeEverywhere(cleanTerRaw);
-    removeEverywhere(scopedTer);
+    removeEverywhere(cleanId, exactOnly: preserveCase || cleanId.contains("_"));
+    removeEverywhere(scopedId, exactOnly: preserveCase || scopedId.contains("_"));
+    removeEverywhere(cleanSecRaw, exactOnly: keepSecCase);
+    removeEverywhere(scopedSec, exactOnly: keepSecCase);
+    removeEverywhere(cleanTerRaw, exactOnly: keepTerCase);
+    removeEverywhere(scopedTer, exactOnly: keepTerCase);
 
     try {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
         final set = existing.where((k) => !isUnscopedSeriesKey(k)).toSet();
-        for (final k in [cleanId, cleanId.toUpperCase(), scopedId, cleanSecRaw, scopedSec, cleanTerRaw, scopedTer]) {
+        for (final k in [
+          cleanId,
+          if (!preserveCase && !cleanId.contains("_")) cleanId.toUpperCase(),
+          scopedId,
+          cleanSecRaw,
+          scopedSec,
+          cleanTerRaw,
+          scopedTer,
+        ]) {
           if (k.isNotEmpty) set.remove(k);
         }
         prefs.setStringList("d1_permanent_gravestones", set.toList());
@@ -247,12 +278,12 @@ class D1SalesLedgerService {
     }
     final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
-    final cleanBill = billNo.trim().toUpperCase();
+    final cleanBill = billNo.trim();
     final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
-        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy, true)
         : "";
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
-        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy, true)
         : "";
     return (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
            (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
@@ -266,12 +297,12 @@ class D1SalesLedgerService {
     }
     final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
-    final cleanBill = billNo.trim().toUpperCase();
+    final cleanBill = billNo.trim();
     final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
-        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy, true)
         : "";
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
-        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy, true)
         : "";
     int maxV = 0;
     if (cleanInt.isNotEmpty && (_knownBillVersions[cleanInt] ?? 0) > maxV) {
@@ -290,12 +321,12 @@ class D1SalesLedgerService {
     final cleanId = id.trim();
     final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
-    final cleanBill = billNo.trim().toUpperCase();
+    final cleanBill = billNo.trim();
     final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
-        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy, true)
         : "";
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
-        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy, true)
         : "";
     if (cleanId.isNotEmpty) {
       _knownBillVersions[cleanId] = version;
@@ -331,7 +362,7 @@ class D1SalesLedgerService {
       purMap["doc_type"] = "PURCHASE";
       purMap["fy"] = activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(purchase.date);
       final String cleanParty = purchase.partyId.trim().toUpperCase();
-      final String cleanBill = purchase.billNo.trim().toUpperCase();
+      final String cleanBill = purchase.billNo.trim();
       final String cleanInt = purchase.internalNo.trim().toUpperCase();
       final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
       final String compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
@@ -347,7 +378,6 @@ class D1SalesLedgerService {
         "unmarkedIds": [
           purchase.id,
           if (cleanInt.isNotEmpty) cleanInt,
-          if (cleanBill.isNotEmpty) cleanBill,
           if (compKey2.isNotEmpty) compKey2,
           if (compKey3.isNotEmpty) compKey3,
         ],
@@ -430,12 +460,12 @@ class D1SalesLedgerService {
     if (storeToken.trim().isEmpty) return false;
     try {
       final cleanParty = partyId.trim().toUpperCase();
-      final cleanBill = billNo.trim().toUpperCase();
+      final cleanBill = billNo.trim();
       final cleanInt = internalNo.trim().toUpperCase();
       final scopedInt = cleanInt.isNotEmpty ? scopeSecondaryKey(cleanInt, effFy) : "";
-      final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? scopeSecondaryKey("${cleanParty}_$cleanBill", effFy) : "";
+      final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? scopeSecondaryKey("${cleanParty}_$cleanBill", effFy, true) : "";
       final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
-          ? scopeSecondaryKey("${cleanParty}_${cleanBill}_$cleanInt", effFy)
+          ? scopeSecondaryKey("${cleanParty}_${cleanBill}_$cleanInt", effFy, true)
           : "";
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
@@ -492,29 +522,28 @@ class D1SalesLedgerService {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
-    final cleanBill = billNo.trim().toUpperCase();
+    final cleanBill = billNo.trim();
     final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    markPermanentlyDeleted(cleanId, cleanInt, compKey2, fy);
+    markPermanentlyDeleted(cleanId, cleanInt, compKey2, fy, true);
     if (cleanId.isNotEmpty) markPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy);
-    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3, "", "", fy);
+    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3, "", "", fy, true);
   }
 
   static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
-    final cleanBill = billNo.trim().toUpperCase();
+    final cleanBill = billNo.trim();
     final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey2, fy);
+    unmarkPermanentlyDeleted(cleanId, cleanInt, compKey2, fy, true);
     if (cleanId.isNotEmpty) unmarkPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy);
-    if (compKey3.isNotEmpty) unmarkPermanentlyDeleted(compKey3, "", "", fy);
-    if (cleanBill.isNotEmpty) unmarkPermanentlyDeleted(cleanBill, "", "", fy);
+    if (compKey3.isNotEmpty) unmarkPermanentlyDeleted(compKey3, "", "", fy, true);
   }
 
   static Future<void> loadPersistedGravestones() async {
@@ -932,7 +961,7 @@ class D1SalesLedgerService {
 
       if (action == "DELETE") {
         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
-        final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
+        final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
         final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
         final bool hasActiveNewPur = localPurchases.any((p) => p.id != billId && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo && p.isDeleted != 1);
         if (billId.isNotEmpty) {
@@ -949,7 +978,7 @@ class D1SalesLedgerService {
           return (!hasActiveNewPur && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo) ||
                  (!hasActiveNewPur && partyId.isNotEmpty && pBillNo.isNotEmpty &&
                   p.partyId.trim().toUpperCase() == partyId &&
-                  p.billNo.trim().toUpperCase() == pBillNo);
+                  p.billNo.trim() == pBillNo);
         });
         if (localPurchases.length != initialLen) mutated = true;
       } else if (isPurchasePayload && rawData is Map<String, dynamic>) {
@@ -983,7 +1012,7 @@ class D1SalesLedgerService {
             if (incomingPur.partyId.trim().isNotEmpty && p.partyId.trim().isNotEmpty &&
                 incomingPur.billNo.trim().isNotEmpty && p.billNo.trim().isNotEmpty) {
               return p.partyId.trim().toUpperCase() == incomingPur.partyId.trim().toUpperCase() &&
-                     p.billNo.trim().toUpperCase() == incomingPur.billNo.trim().toUpperCase();
+                     p.billNo.trim() == incomingPur.billNo.trim();
             }
             return incomingPur.id.trim().isEmpty && p.id.trim().isEmpty;
           }

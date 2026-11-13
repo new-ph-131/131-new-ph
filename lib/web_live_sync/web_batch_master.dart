@@ -186,7 +186,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                                   ),
                                   subtitle: Text(
-                                    "Pack: ${m.packing} • MRP ₹${m.mrp.toStringAsFixed(2)} • Pur ₹${m.purRate.toStringAsFixed(2)} • Stock: ${m.stock.toInt()} Units",
+                                    "Pack: ${m.packing} • MRP ₹${m.mrp.toStringAsFixed(2)} • Pur ₹${m.purRate.toStringAsFixed(2)} • Stock: ${formatQty(m.stock)} Units",
                                     style: const TextStyle(color: Colors.white54, fontSize: 11),
                                   ),
                                   trailing: Container(
@@ -304,7 +304,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                                     style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold),
                                   ),
                                   Text(
-                                    "${chosenMed.name} (${chosenMed.systemId}) • Stock: ${chosenMed.stock.toInt()}",
+                                    "${chosenMed.name} (${chosenMed.systemId}) • Stock: ${formatQty(chosenMed.stock)}",
                                     style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -808,7 +808,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                           style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${rec.qty.toInt()} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
+                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${formatQty(rec.qty)} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
                           style: const TextStyle(color: Colors.white54, fontSize: 10),
                         ),
                       );
@@ -929,7 +929,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                     style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                   Text(
-                    "${med.name} (${med.systemId}) • Stock: ${b.qty.toInt()} • Expiry: ${b.exp}",
+                    "${med.name} (${med.systemId}) • Stock: ${formatQty(b.qty)} • Expiry: ${b.exp}",
                     style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                   ),
                 ],
@@ -974,7 +974,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 icon: Icons.exposure_rounded,
                 iconColor: const Color(0xFFF59E0B),
                 title: "STOCK ADJUSTMENT",
-                subtitle: "Physical verification discrepancy correction (current stock: ${b.qty.toInt()}).",
+                subtitle: "Physical verification discrepancy correction (current stock: ${formatQty(b.qty)}).",
                 onTap: () {
                   Navigator.pop(ctx);
                   _showAdjustmentDialog(webPh, med, b);
@@ -1102,7 +1102,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Current Live Stock: ${b.qty.toInt()} Qty",
+                    "Current Live Stock: ${formatQty(b.qty)} Qty",
                     style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                   if (true) ...[
@@ -1129,7 +1129,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty — Click to Modify / Cancel Entry",
+                                "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${formatQty(b.adjustmentQty)} Qty — Click to Modify / Cancel Entry",
                                 style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 11, fontWeight: FontWeight.bold),
                               ),
                             ),
@@ -1265,7 +1265,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
         b.rateA.toStringAsFixed(2),
         b.rateB.toStringAsFixed(2),
         b.rateC.toStringAsFixed(2),
-        b.qty.toInt(),
+        formatQty(b.qty),
         valuation.toStringAsFixed(2),
         fyStatus,
       ]);
@@ -1895,7 +1895,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   Text(
-                                    "Pack: ${med.packing} • MRP ₹${med.mrp.toStringAsFixed(2)} • Pur ₹${med.purRate.toStringAsFixed(2)} • Stock: ${med.stock.toInt()} Units",
+                                    "Pack: ${med.packing} • MRP ₹${med.mrp.toStringAsFixed(2)} • Pur ₹${med.purRate.toStringAsFixed(2)} • Stock: ${formatQty(med.stock)} Units",
                                     style: const TextStyle(color: Colors.white54, fontSize: 10),
                                   ),
                                 ],
@@ -2083,7 +2083,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                   ],
                 ),
                 Text(
-                  "PACK: ${med.packing} • CONV: ${med.conversion} • HSN: ${med.hsnCode} • TOTAL STOCK: ${med.stock.toInt()} Units",
+                  "PACK: ${med.packing} • CONV: ${med.conversion} • HSN: ${med.hsnCode} • TOTAL STOCK: ${formatQty(med.stock)} Units",
                   style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                 ),
               ],
@@ -2345,7 +2345,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          "${b.qty.toInt()} Qty",
+                          "${formatQty(b.qty)} Qty",
                           style: TextStyle(
                             color: b.qty > 0 ? const Color(0xFF6EE7B7) : const Color(0xFFFCA5A5),
                             fontWeight: FontWeight.w900,
@@ -2553,7 +2553,7 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
               ),
               const SizedBox(height: 6),
               Text(
-                "System ID: ${selectedMed!.systemId} • Pack: ${selectedMed!.packing} • Current Stock: ${selectedMed!.stock.toInt()} Units",
+                "System ID: ${selectedMed!.systemId} • Pack: ${selectedMed!.packing} • Current Stock: ${formatQty(selectedMed!.stock)} Units",
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white54, fontSize: 11),
               ),

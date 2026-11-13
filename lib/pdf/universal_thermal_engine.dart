@@ -146,7 +146,7 @@ class UniversalThermalEngine {
     return pw.Column(children: List.generate(items.length, (index) {
       final i = items[index];
       bool isShaded = config.useZebraShading && (index % 2 != 0);
-      String qtyStr = "${i.qty.toInt()}${i.freeQty > 0 ? ' + ${i.freeQty.toInt()}' : ''}";
+      String qtyStr = formatQtyPair(i.qty, i.freeQty);
 
       return pw.Container(
         padding: const pw.EdgeInsets.all(3),

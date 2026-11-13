@@ -192,6 +192,25 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
       return;
     }
 
+    if (!widget.isReadOnly) {
+      final dup = findDuplicateSupplierPurchase(
+        purchases: webPh.purchases,
+        partyId: widget.supplier.id,
+        billNo: widget.supplierBillNo,
+        excludeId: widget.existingPurchase?.id,
+        excludeInternalNo: widget.existingPurchase?.internalNo,
+      );
+      if (dup != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye bill #${dup.billNo} (${widget.supplier.name}) already purchase me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => isSaving = true);
 
     String id = widget.existingPurchase?.id ?? "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}";
@@ -246,6 +265,24 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
         }
         widget.onCompleted();
       }
+    } else if (mounted) {
+      final bool isDupNow = findDuplicateSupplierPurchase(
+        purchases: webPh.purchases,
+        partyId: widget.supplier.id,
+        billNo: widget.supplierBillNo,
+        excludeId: widget.existingPurchase?.id,
+        excludeInternalNo: widget.existingPurchase?.internalNo,
+      ) != null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isDupNow
+                ? "⚠️ Ye bill #${widget.supplierBillNo} (${widget.supplier.name}) already purchase me entry ho chuka hai!"
+                : "⚠️ Cloud sync failed. Please check internet connection and retry.",
+          ),
+          backgroundColor: isDupNow ? Colors.red : Colors.orange,
+        ),
+      );
     }
   }
 
@@ -469,7 +506,7 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
                       const SizedBox(width: 8),
                       Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
                       const Spacer(),
-                      Text("Stock: ${med.stock.toInt()} Qty", style: TextStyle(color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent, fontSize: 10.5, fontWeight: FontWeight.bold)),
+                      Text("Stock: ${formatQty(med.stock)} Qty", style: TextStyle(color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent, fontSize: 10.5, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   subtitle: Text("MRP: ₹${med.mrp.toStringAsFixed(2)} • Last Pur Rate: ₹${med.purRate.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),

@@ -144,7 +144,7 @@ class StockVendorRateComparatorModal extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        "Company: $companyName  •  MRP: ₹${medicine.mrp.toStringAsFixed(2)}  •  Live Stock: ${medicine.stock.toInt()} Units  •  Code: ${medicine.systemId}",
+                        "Company: $companyName  •  MRP: ₹${medicine.mrp.toStringAsFixed(2)}  •  Live Stock: ${formatQty(medicine.stock)} Units  •  Code: ${medicine.systemId}",
                         style: const TextStyle(color: Colors.white54, fontSize: 11),
                       ),
                     ],
@@ -360,7 +360,7 @@ class StockVendorRateComparatorModal extends StatelessWidget {
                                                 crossAxisAlignment: CrossAxisAlignment.end,
                                                 children: [
                                                   const Text("TOTAL INWARD", style: TextStyle(color: Colors.white38, fontSize: 8.5, fontWeight: FontWeight.bold)),
-                                                  Text("${totalUnits.toInt()} Units (${recs.length} bills)", style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                                                  Text("${formatQty(totalUnits)} Units (${recs.length} bills)", style: const TextStyle(color: Colors.white70, fontSize: 11)),
                                                 ],
                                               ),
                                             ],
@@ -483,8 +483,8 @@ class StockVendorRateComparatorModal extends StatelessWidget {
                                               _td("${r['batch']} (${r['exp']})"),
                                               _td(
                                                 (r['freeQty'] as double) > 0
-                                                    ? "${(r['qty'] as double).toInt()}+${(r['freeQty'] as double).toInt()}"
-                                                    : "${(r['qty'] as double).toInt()}",
+                                                    ? formatQtyPair(r['qty'], r['freeQty'])
+                                                    : formatQty(r['qty']),
                                                 isRight: true,
                                                 isBold: true,
                                               ),

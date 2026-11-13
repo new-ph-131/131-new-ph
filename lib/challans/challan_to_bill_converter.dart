@@ -205,7 +205,7 @@ class _ChallanToBillConverterState extends State<ChallanToBillConverter> {
                     return ListTile(
                       dense: true,
                       title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text("Qty: ${it.qty.toInt()} | Ref: ${it.sourceChallanNo}"),
+                      subtitle: Text("Qty: ${formatQtyPair(it.qty, it.freeQty)} | Ref: ${it.sourceChallanNo}"),
                       trailing: Text("₹${it.total.toStringAsFixed(2)}"),
                     );
                   },

@@ -168,7 +168,7 @@ class _WebBatchLookupDialogState extends State<WebBatchLookupDialog> {
                                 ),
                                 Expanded(
                                   flex: 3,
-                                  child: Text("${b.qty.toInt()} Qty", textAlign: TextAlign.right, style: TextStyle(color: b.qty > 0 ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10.5)),
+                                  child: Text("${formatQty(b.qty)} Qty", textAlign: TextAlign.right, style: TextStyle(color: b.qty > 0 ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10.5)),
                                 ),
                               ],
                             ),

@@ -132,7 +132,7 @@ class _StockHealthReportsState extends State<StockHealthReports> {
           ...meds.map((m) => ListTile(
             dense: true,
             title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("Stock: ${m.stock.toInt()} ${m.packing} | Last Sold: ${_getLastSaleInfo(m)}"),
+            subtitle: Text("Stock: ${formatQty(m.stock)} ${m.packing} | Last Sold: ${_getLastSaleInfo(m)}"),
             trailing: Text("₹${(m.stock * m.purRate).toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.purple)),
           )),
         ],

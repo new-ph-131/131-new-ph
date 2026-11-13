@@ -229,13 +229,13 @@ class CompanyStockPdf {
               tableRows.add([
                 m.name,
                 m.packing,
-                opStock.toInt().toString(),
+                formatQty(opStock),
                 opVal.toStringAsFixed(2),
-                recQty.toInt().toString(),
+                formatQty(recQty),
                 recVal.toStringAsFixed(2),
-                issueQty.toInt().toString(),
+                formatQty(issueQty),
                 issueVal.toStringAsFixed(2),
-                cloStock.toInt().toString(),
+                formatQty(cloStock),
                 cloVal.toStringAsFixed(2),
               ]);
             }
@@ -243,13 +243,13 @@ class CompanyStockPdf {
             tableRows.add([
               "TOTAL",
               "-",
-              totalOpStock.toInt().toString(),
+              formatQty(totalOpStock),
               totalOpVal.toStringAsFixed(2),
-              totalRecQty.toInt().toString(),
+              formatQty(totalRecQty),
               totalRecVal.toStringAsFixed(2),
-              totalIssueQty.toInt().toString(),
+              formatQty(totalIssueQty),
               totalIssueVal.toStringAsFixed(2),
-              totalCloStock.toInt().toString(),
+              formatQty(totalCloStock),
               totalCloVal.toStringAsFixed(2),
             ]);
 
@@ -343,13 +343,13 @@ class CompanyStockPdf {
               tableRows.add([
                 m.name,
                 m.packing,
-                opStock.toInt().toString(),
+                formatQty(opStock),
                 opVal.toStringAsFixed(2),
-                recQty.toInt().toString(),
+                formatQty(recQty),
                 recVal.toStringAsFixed(2),
-                issueQty.toInt().toString(),
+                formatQty(issueQty),
                 issueVal.toStringAsFixed(2),
-                cloStock.toInt().toString(),
+                formatQty(cloStock),
                 cloVal.toStringAsFixed(2),
               ]);
             }
@@ -357,13 +357,13 @@ class CompanyStockPdf {
             tableRows.add([
               "TOTAL",
               "-",
-              totalOpStock.toInt().toString(),
+              formatQty(totalOpStock),
               totalOpVal.toStringAsFixed(2),
-              totalRecQty.toInt().toString(),
+              formatQty(totalRecQty),
               totalRecVal.toStringAsFixed(2),
-              totalIssueQty.toInt().toString(),
+              formatQty(totalIssueQty),
               totalIssueVal.toStringAsFixed(2),
-              totalCloStock.toInt().toString(),
+              formatQty(totalCloStock),
               totalCloVal.toStringAsFixed(2),
             ]);
 

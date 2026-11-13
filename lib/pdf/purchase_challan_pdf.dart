@@ -81,7 +81,7 @@ class PurchaseChallanPdf {
                     decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
                     child: pw.Row(children: [
                       _cell("${challan.items.indexOf(i) + 1}", 30), _cell(i.name, 300, isLeft: true), _cell(i.packing, 60),
-                      _cell(i.batch, 90), _cell(i.exp, 60), _cell(i.qty.toInt().toString(), 60),
+                      _cell(i.batch, 90), _cell(i.exp, 60), _cell(formatQty(i.qty), 60),
                       _cell(i.purchaseRate.toStringAsFixed(2), 100), _cell(i.total.toStringAsFixed(2), 100),
                     ]),
                   )).toList())),

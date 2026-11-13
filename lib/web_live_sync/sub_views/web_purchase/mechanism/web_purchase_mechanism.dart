@@ -20,6 +20,17 @@ class WebPurchaseMechanism {
     required List<String> linkedChallanIds,
     String? existingId,
   }) async {
+    final duplicate = findDuplicateSupplierPurchase(
+      purchases: webPh.purchases,
+      partyId: supplier.id,
+      billNo: billNo,
+      excludeId: existingId ?? purchaseId,
+      excludeInternalNo: existingId != null ? internalNo : null,
+    );
+    if (duplicate != null) {
+      return false;
+    }
+
     int currentVer = 1;
     String finalInternalNo = internalNo.trim();
     if (existingId != null && existingId.isNotEmpty) {
@@ -69,7 +80,8 @@ class WebPurchaseMechanism {
     webPh.unmarkDeletedId(purchaseId, referenceNo: finalInternalNo);
     if (compKey.isNotEmpty) webPh.unmarkDeletedId(compKey);
 
-    webPh.addPurchaseAndSync(newPurchase);
+    final bool added = webPh.addPurchaseAndSync(newPurchase);
+    if (!added) return false;
 
     // 2-Way Batch Inventory Activity + Medicine Master L.P.R. Update
     for (var item in items) {
@@ -102,7 +114,6 @@ class WebPurchaseMechanism {
         rateC: item.rateC,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
-        qtyChange: item.qty + item.freeQty,
       );
     }
 

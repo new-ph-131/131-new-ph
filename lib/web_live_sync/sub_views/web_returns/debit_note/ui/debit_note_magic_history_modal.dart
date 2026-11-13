@@ -158,7 +158,7 @@ class DebitNoteMagicHistoryModal extends StatelessWidget {
                               ],
                             ),
                             subtitle: Text(
-                              "Date: $dateStr • Inward Qty: ${h['qty'].toInt()} + ${h['free'].toInt()} Free • MRP: ₹${(h['mrp'] as double).toStringAsFixed(2)} • GST: ${h['gst'].toInt()}%",
+                              "Date: $dateStr • Inward Qty: ${formatQty(h['qty'])} + ${formatQty(h['free'])} Free • MRP: ₹${(h['mrp'] as double).toStringAsFixed(2)} • GST: ${h['gst'].toInt()}%",
                               style: const TextStyle(color: Colors.white38, fontSize: 10),
                             ),
                             trailing: const Icon(Icons.touch_app_rounded, color: Color(0xFFFBBF24), size: 18),

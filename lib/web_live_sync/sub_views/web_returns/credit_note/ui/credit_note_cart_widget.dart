@@ -190,7 +190,7 @@ class CreditNoteCartWidget extends StatelessWidget {
                       dense: true,
                       leading: const Icon(Icons.medication_rounded, color: Color(0xFFF87171), size: 18),
                       title: Text(med.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      subtitle: Text("Pack: ${med.packing} • MRP: ₹${med.mrp.toStringAsFixed(2)} • Stock: ${med.stock.toInt()}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
+                      subtitle: Text("Pack: ${med.packing} • MRP: ₹${med.mrp.toStringAsFixed(2)} • Stock: ${formatQty(med.stock)}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
                       trailing: const Icon(Icons.auto_fix_high_rounded, color: Color(0xFFF87171), size: 16),
                       onTap: () {
                         controller.productSearchC.clear();
@@ -284,7 +284,7 @@ class CreditNoteCartWidget extends StatelessWidget {
                         ...controller.items.asMap().entries.map((entry) {
                           int idx = entry.key;
                           BillItem it = entry.value;
-                          String qtyDisp = "${(it.qty % 1 == 0 ? it.qty.toInt().toString() : it.qty.toStringAsFixed(1))}${it.freeQty > 0 ? ' + ${(it.freeQty % 1 == 0 ? it.freeQty.toInt().toString() : it.freeQty.toStringAsFixed(1))}' : ''}";
+                          String qtyDisp = formatQtyPair(it.qty, it.freeQty);
                           bool isExp = it.isBreakage;
 
                           return Dismissible(

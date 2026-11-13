@@ -125,27 +125,30 @@ export async function onRequestPost(context: any) {
             const delIds: string[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
             const unmIds: string[] = Array.isArray(body.unmarkedIds) ? body.unmarkedIds : [];
 
+            const isPurchaseEvt = (body.action || "").toString().toUpperCase().includes("PURCHASE");
             if (evAction === "DELETE") {
               if (billId) tSet.add(billId);
               for (const d of delIds) {
                 if (d && typeof d === "string" && d.trim()) {
-                  tSet.add(d.trim());
-                  tSet.add(d.trim().toUpperCase());
+                  const dk = d.trim();
+                  tSet.add(dk);
+                  if (!dk.includes("_")) tSet.add(dk.toUpperCase());
                 }
               }
             } else {
               if (billId) {
                 tSet.delete(billId);
-                tSet.delete(billId.toUpperCase());
+                if (!billId.includes("_")) tSet.delete(billId.toUpperCase());
               }
-              if (billNo) {
+              if (billNo && !isPurchaseEvt) {
                 tSet.delete(billNo);
                 tSet.delete(billNo.toUpperCase());
               }
               for (const u of unmIds) {
                 if (u && typeof u === "string" && u.trim()) {
-                  tSet.delete(u.trim());
-                  tSet.delete(u.trim().toUpperCase());
+                  const uk = u.trim();
+                  tSet.delete(uk);
+                  if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
                 }
               }
             }
@@ -201,10 +204,12 @@ export async function onRequestPost(context: any) {
         const sId = (op.sync_id || "").toString().trim();
         const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
         const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+        const dType = (op.document_type || "SALE").toString().toUpperCase();
+        const isPurchaseDoc = dType === "PURCHASE" || dType === "PURCHASE_CHALLAN";
         const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();
         const rawParty = ((op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId) || "").toString().trim();
         const rawInt = ((op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo) || "").toString().trim();
-        const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill.toUpperCase()}` : "";
+        const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill}` : "";
 
         if (isDel === 1) {
           if (sId) extractedBatchDeletedIds.push(sId);
@@ -214,7 +219,7 @@ export async function onRequestPost(context: any) {
           if (sId) extractedBatchUnmarkedIds.push(sId);
           if (rawInt) extractedBatchUnmarkedIds.push(rawInt.toUpperCase());
           if (compKey) extractedBatchUnmarkedIds.push(compKey);
-          if (rawBill) extractedBatchUnmarkedIds.push(rawBill.toUpperCase());
+          if (rawBill && !isPurchaseDoc) extractedBatchUnmarkedIds.push(rawBill.toUpperCase());
         }
       }
     }
@@ -286,11 +291,14 @@ export async function onRequestPost(context: any) {
         if (!channelData.tombstones) channelData.tombstones = [];
         const tSet = new Set(channelData.tombstones);
 
+        const isPurchaseSignal = (record.entityType || "").toUpperCase().includes("PURCHASE") ||
+          action.includes("PURCHASE");
         if (isDeleteAction) {
           for (const d of mergedDeletedIds) {
             if (d && typeof d === "string" && d.trim().length > 0) {
-              tSet.add(d.trim());
-              tSet.add(d.trim().toUpperCase());
+              const dk = d.trim();
+              tSet.add(dk);
+              if (!dk.includes("_")) tSet.add(dk.toUpperCase());
             }
           }
           if (record.entityId && record.entityId.length > 0) {
@@ -299,10 +307,10 @@ export async function onRequestPost(context: any) {
         } else {
           if (record.entityId && record.entityId.length > 0) {
             tSet.delete(record.entityId);
-            tSet.delete(record.entityId.toUpperCase());
+            if (!record.entityId.includes("_")) tSet.delete(record.entityId.toUpperCase());
           }
           if (record.payload && typeof record.payload === "object") {
-            if (record.payload.billNo) {
+            if (record.payload.billNo && !isPurchaseSignal) {
               const b = record.payload.billNo.toString().trim();
               tSet.delete(b);
               tSet.delete(b.toUpperCase());
@@ -318,7 +326,7 @@ export async function onRequestPost(context: any) {
               tSet.delete(pid.toUpperCase());
             }
             if (record.payload.partyId && record.payload.billNo) {
-              const ck = `${record.payload.partyId.toString().trim().toUpperCase()}_${record.payload.billNo.toString().trim().toUpperCase()}`;
+              const ck = `${record.payload.partyId.toString().trim().toUpperCase()}_${record.payload.billNo.toString().trim()}`;
               tSet.delete(ck);
             }
           }
@@ -326,14 +334,16 @@ export async function onRequestPost(context: any) {
 
         for (const u of mergedUnmarkedIds) {
           if (u && typeof u === "string" && u.trim().length > 0) {
-            tSet.delete(u.trim());
-            tSet.delete(u.trim().toUpperCase());
+            const uk = u.trim();
+            tSet.delete(uk);
+            if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
           }
         }
         for (const d of extractedBatchDeletedIds) {
           if (d && typeof d === "string" && d.trim().length > 0) {
-            tSet.add(d.trim());
-            tSet.add(d.trim().toUpperCase());
+            const dk = d.trim();
+            tSet.add(dk);
+            if (!dk.includes("_")) tSet.add(dk.toUpperCase());
           }
         }
 
@@ -363,10 +373,11 @@ export async function onRequestPost(context: any) {
               const uAt = Math.max(parseInt(op.updated_at || 0, 10), Date.now());
               const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
               const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+              const isPurchaseOp = dType === "PURCHASE" || dType === "PURCHASE_CHALLAN";
               const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();
               const rawParty = ((op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId) || "").toString().trim();
               const rawInt = ((op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo) || "").toString().trim();
-              const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill.toUpperCase()}` : "";
+              const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill}` : "";
 
               if (isDel === 1) {
                 tSet.add(sId);
@@ -374,13 +385,13 @@ export async function onRequestPost(context: any) {
                 if (compKey) tSet.add(compKey);
               } else {
                 tSet.delete(sId);
-                tSet.delete(sId.toUpperCase());
+                if (!sId.includes("_")) tSet.delete(sId.toUpperCase());
                 if (rawInt) {
                   tSet.delete(rawInt);
                   tSet.delete(rawInt.toUpperCase());
                 }
                 if (compKey) tSet.delete(compKey);
-                if (rawBill) {
+                if (rawBill && !isPurchaseOp) {
                   tSet.delete(rawBill);
                   tSet.delete(rawBill.toUpperCase());
                 }

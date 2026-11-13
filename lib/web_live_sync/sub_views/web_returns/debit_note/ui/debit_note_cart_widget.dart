@@ -76,13 +76,13 @@ class DebitNoteCartWidget extends StatelessWidget {
 
     final qtyC = TextEditingController(
       text: itemToEdit != null
-          ? itemToEdit.qty.toInt().toString()
-          : ((historyData?['qty'] as num?)?.toDouble() ?? 1.0).toInt().toString(),
+          ? formatQty(itemToEdit.qty)
+          : formatQty((historyData?['qty'] as num?)?.toDouble() ?? 1.0),
     );
     final freeC = TextEditingController(
       text: itemToEdit != null
-          ? itemToEdit.freeQty.toInt().toString()
-          : ((historyData?['free'] as num?)?.toDouble() ?? 0.0).toInt().toString(),
+          ? formatQty(itemToEdit.freeQty)
+          : formatQty((historyData?['free'] as num?)?.toDouble() ?? 0.0),
     );
     final gstC = TextEditingController(
       text: itemToEdit != null
@@ -540,7 +540,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                       dense: true,
                       leading: const Icon(Icons.medication_rounded, color: Color(0xFFFBBF24), size: 18),
                       title: Text(med.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      subtitle: Text("Pack: ${med.packing} • Pur.Rate: ₹${med.purRate.toStringAsFixed(2)} • Stock: ${med.stock.toInt()}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
+                      subtitle: Text("Pack: ${med.packing} • Pur.Rate: ₹${med.purRate.toStringAsFixed(2)} • Stock: ${formatQty(med.stock)}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
                       trailing: const Icon(Icons.auto_fix_high_rounded, color: Color(0xFFFBBF24), size: 16),
                       onTap: () {
                         controller.productSearchC.clear();
@@ -634,7 +634,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                         ...controller.items.asMap().entries.map((entry) {
                           int idx = entry.key;
                           PurchaseItem it = entry.value;
-                          String qtyDisp = "${(it.qty % 1 == 0 ? it.qty.toInt().toString() : it.qty.toStringAsFixed(1))}${it.freeQty > 0 ? ' + ${(it.freeQty % 1 == 0 ? it.freeQty.toInt().toString() : it.freeQty.toStringAsFixed(1))}' : ''}";
+                          String qtyDisp = formatQtyPair(it.qty, it.freeQty);
                           bool isExp = it.isBreakage;
 
                           return Dismissible(

@@ -57,8 +57,8 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
       expC.text = i.exp;
       mrpC.text = i.mrp.toStringAsFixed(2);
       purRateC.text = i.purchaseRate.toStringAsFixed(2);
-      qtyC.text = i.qty.toInt().toString();
-      freeC.text = i.freeQty.toInt().toString();
+      qtyC.text = formatQty(i.qty);
+      freeC.text = formatQty(i.freeQty);
       gstC.text = i.gstRate.toString();
       rateAC.text = i.rateA.toStringAsFixed(2);
       rateBC.text = i.rateB.toStringAsFixed(2);

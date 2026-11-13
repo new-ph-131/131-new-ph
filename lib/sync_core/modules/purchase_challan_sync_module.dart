@@ -12,7 +12,7 @@ class PurchaseChallanSyncModule {
   /// Generate composite key: partyId_billNo_internalNo to prevent collisions across suppliers
   static String makeCompositeKey(String partyId, String billNo, String internalNo) {
     final p = partyId.trim().toUpperCase();
-    final b = billNo.trim().toUpperCase();
+    final b = billNo.trim(); // Exact case preserved for supplier challan ref
     final i = internalNo.trim().toUpperCase();
     if (p.isNotEmpty && b.isNotEmpty && i.isNotEmpty) return "${p}_${b}_$i";
     if (p.isNotEmpty && b.isNotEmpty) return "${p}_$b";
@@ -65,14 +65,22 @@ class PurchaseChallanSyncModule {
   /// Apply mutation with Monotonic Versioning and LWW Clock Auditing
   static bool applyPurchaseChallanMutation(List<PurchaseChallan> currentList, PurchaseChallan incoming) {
     final cleanInt = incoming.internalNo.trim().toUpperCase();
-    final cleanBill = incoming.billNo.trim().toUpperCase();
+    final cleanBill = incoming.billNo.trim();
     final cleanParty = incoming.partyId.trim().toUpperCase();
 
     final idx = currentList.indexWhere((c) {
-      if (c.id == incoming.id) return true;
-      if (cleanInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanInt) return true;
+      if (incoming.id.trim().isNotEmpty && c.id.trim().isNotEmpty) {
+        return c.id.trim() == incoming.id.trim();
+      }
+      if (cleanInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanInt) {
+        if (cleanBill.isNotEmpty && cleanParty.isNotEmpty &&
+            c.billNo.trim().isNotEmpty && c.partyId.trim().isNotEmpty) {
+          return c.billNo.trim() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty;
+        }
+        return incoming.id.trim().isEmpty && c.id.trim().isEmpty;
+      }
       if (cleanBill.isNotEmpty && cleanParty.isNotEmpty &&
-          c.billNo.trim().toUpperCase() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty) {
+          c.billNo.trim() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty) {
         return true;
       }
       return false;

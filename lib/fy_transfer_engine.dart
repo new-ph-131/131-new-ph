@@ -267,7 +267,38 @@ class FYTransferEngine {
     final List<Bank> oldBanks = (loadJson('banks.json') as List?)?.map((e) => Bank.fromMap(e)).toList() ?? [];
     final Map<String, dynamic> oldBatchesRaw = (loadJson('bats.json') is Map) ? Map<String, dynamic>.from(loadJson('bats.json')) : {};
 
-    // STEP 0: Rebuild source year inventory first so every batch closing qty is 100% accurate
+    // STEP 0: Capture pre-rebuild loose stocks and identify items with zero active transactions
+    final Map<String, double> preRebuildStocks = {
+      for (final m in oldMeds) m.identityKey: m.stock,
+    };
+    final Set<String> medKeysWithTxns = {};
+    void collectTxnMeds(Iterable<dynamic> items) {
+      for (final it in items) {
+        final String id = (it.medicineID ?? '').toString().trim();
+        final String nameU = (it.name ?? '').toString().trim().toUpperCase();
+        for (final m in oldMeds) {
+          if ((id.isNotEmpty && (m.id.trim() == id || m.identityKey.trim() == id)) ||
+              (nameU.isNotEmpty && m.name.trim().toUpperCase() == nameU)) {
+            medKeysWithTxns.add(m.identityKey);
+            break;
+          }
+        }
+      }
+    }
+    for (final p in oldPurc.where((e) => e.isDeleted != 1)) {
+      collectTxnMeds(p.items);
+    }
+    for (final s in oldSales.where((e) => e.isDeleted != 1 && (e.status.isEmpty || e.status == "Active"))) {
+      collectTxnMeds(s.items);
+    }
+    for (final sr in oldSaleReturns.where((e) => e.isDeleted != 1 && (e.status.isEmpty || e.status == "Active"))) {
+      collectTxnMeds(sr.items);
+    }
+    for (final pr in oldPurReturns.where((e) => e.isDeleted != 1 && (e.status.isEmpty || e.status == "Active"))) {
+      collectTxnMeds(pr.items);
+    }
+
+    // Rebuild source year inventory first so every batch closing qty is 100% accurate
     final Map<String, List<BatchInfo>> sourceBatchHistory = {};
     oldBatchesRaw.forEach((medKey, bList) {
       if (bList is List) {
@@ -282,6 +313,19 @@ class FYTransferEngine {
       saleReturns: oldSaleReturns,
       purchaseReturns: oldPurReturns,
     );
+
+    // Preserve unbatched / zero-batch loose positive stock (e.g. 0.5) when item had NO transactions
+    // and NO explicit batch opening/adjustments that would otherwise legitimately zero it out.
+    for (final m in oldMeds) {
+      final double preStock = preRebuildStocks[m.identityKey] ?? 0.0;
+      if (preStock > 0 && m.stock <= 0 && !medKeysWithTxns.contains(m.identityKey)) {
+        final batches = sourceBatchHistory[m.identityKey] ?? [];
+        final bool hasExplicitBatchHistory = batches.any((b) => b.openingQty != 0.0 || b.adjustmentQty != 0.0);
+        if (!hasExplicitBatchHistory) {
+          m.stock = preStock;
+        }
+      }
+    }
 
     // 1. CALCULATE NEW PARTY OPENING BALANCES (Includes Sales, Purchases, Returns & Vouchers)
     final int nowTs = DateTime.now().millisecondsSinceEpoch;
@@ -323,6 +367,24 @@ class FYTransferEngine {
     final DateTime today = DateTime.now();
 
     sourceBatchHistory.forEach((medKey, batches) {
+      // Offset any negative batch deficits against positive batches of the same medicine
+      // so split batches (e.g. +1.5 and -1.0 -> net 0.5) do not inflate closing stock.
+      double negDeficit = 0.0;
+      for (final bObj in batches) {
+        if (bObj.qty < 0) {
+          negDeficit += (-bObj.qty);
+          bObj.qty = 0.0;
+        }
+      }
+      if (negDeficit > 0) {
+        for (final bObj in batches) {
+          if (bObj.qty > 0 && negDeficit > 0) {
+            final double take = bObj.qty >= negDeficit ? negDeficit : bObj.qty;
+            bObj.qty -= take;
+            negDeficit -= take;
+          }
+        }
+      }
       final List<Map<String, dynamic>> processedBatches = [];
       for (final bObj in batches) {
         if (bObj.qty < 0) bObj.qty = 0;
@@ -369,8 +431,8 @@ class FYTransferEngine {
         m.stock = totalStock >= 0 ? totalStock : 0.0;
       } else {
         final bool hadSourceBatches = sourceBatchHistory.containsKey(key) && sourceBatchHistory[key]!.isNotEmpty;
-        if (!hadSourceBatches && m.stock > 0 && !filterZeroStock) {
-          // Medicine had loose/opening stock without explicit batch rows: synthesize an OPENING non-expiry batch
+        // Any positive stock (e.g. 0.5) is NON-ZERO and must be preserved even when filterZeroStock == true!
+        if (m.stock > 0 && (!hadSourceBatches || !medKeysWithTxns.contains(key))) {
           final BatchInfo openingBatch = BatchInfo(
             batch: "OPENING",
             exp: "N/A",
@@ -596,6 +658,22 @@ class FYTransferEngine {
 
     // 5. Cascade Batch Opening Stock (`openingQty`) into targetFY while preserving targetFY new batches & adjustments!
     prevBatchHistory.forEach((medKey, prevBatches) {
+      double negDeficit = 0.0;
+      for (final pb in prevBatches) {
+        if (pb.qty < 0) {
+          negDeficit += (-pb.qty);
+          pb.qty = 0.0;
+        }
+      }
+      if (negDeficit > 0) {
+        for (final pb in prevBatches) {
+          if (pb.qty > 0 && negDeficit > 0) {
+            final double take = pb.qty >= negDeficit ? negDeficit : pb.qty;
+            pb.qty -= take;
+            negDeficit -= take;
+          }
+        }
+      }
       final List<BatchInfo> targetList = targetBatchHistory[medKey] ?? [];
       for (final pb in prevBatches) {
         final double carriedOpening = pb.qty >= 0 ? pb.qty : 0.0;
@@ -632,6 +710,33 @@ class FYTransferEngine {
         clonedMed.version = (clonedMed.version < 1 ? 1 : clonedMed.version) + 1;
         clonedMed.updatedAt = nowTs;
         updatedMeds.add(clonedMed);
+      }
+      final prevList = prevBatchHistory[pm.identityKey];
+      if (pm.stock > 0 && (prevList == null || prevList.isEmpty)) {
+        final targetList = targetBatchHistory.putIfAbsent(pm.identityKey, () => []);
+        final int opIdx = targetList.indexWhere((b) => b.batch.trim().toUpperCase() == "OPENING");
+        if (opIdx == -1) {
+          targetList.add(BatchInfo(
+            batch: "OPENING",
+            exp: "N/A",
+            packing: pm.packing,
+            mrp: pm.mrp,
+            rate: pm.purRate > 0 ? pm.purRate : pm.rateA,
+            qty: pm.stock,
+            openingQty: pm.stock,
+            adjustmentQty: 0,
+            purRate: pm.purRate,
+            rateA: pm.rateA > 0 ? pm.rateA : pm.mrp,
+            rateB: pm.rateB,
+            rateC: pm.rateC,
+            version: 1,
+            updatedAt: nowTs,
+          ));
+        } else if (targetList[opIdx].openingQty != pm.stock) {
+          targetList[opIdx].openingQty = pm.stock;
+          targetList[opIdx].version = (targetList[opIdx].version < 1 ? 1 : targetList[opIdx].version) + 1;
+          targetList[opIdx].updatedAt = nowTs;
+        }
       }
     }
 

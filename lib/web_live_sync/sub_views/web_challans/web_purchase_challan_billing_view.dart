@@ -111,8 +111,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     final expC = TextEditingController(text: itemToEdit?.exp ?? "12/28");
     final mrpC = TextEditingController(text: itemToEdit?.mrp.toStringAsFixed(2) ?? med.mrp.toStringAsFixed(2));
     final purRateC = TextEditingController(text: autoPurRate > 0 ? autoPurRate.toStringAsFixed(2) : (med.purRate > 0 ? med.purRate.toStringAsFixed(2) : "0.00"));
-    final qtyC = TextEditingController(text: itemToEdit?.qty.toInt().toString() ?? "1");
-    final freeC = TextEditingController(text: itemToEdit?.freeQty.toInt().toString() ?? "0");
+    final qtyC = TextEditingController(text: itemToEdit != null ? formatQty(itemToEdit.qty) : "1");
+    final freeC = TextEditingController(text: itemToEdit != null ? formatQty(itemToEdit.freeQty) : "0");
     final gstC = TextEditingController(text: itemToEdit?.gstRate.toString() ?? med.gst.toString());
 
     final rateAC = TextEditingController(text: itemToEdit?.rateA.toStringAsFixed(2) ?? med.rateA.toStringAsFixed(2));
@@ -594,6 +594,25 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       return;
     }
 
+    if (!widget.isReadOnly) {
+      final dup = findDuplicateSupplierChallan(
+        challans: webPh.purchaseChallans,
+        partyId: widget.supplier.id,
+        billNo: widget.supplierRefNo,
+        excludeId: widget.existingRecord?.id,
+        excludeInternalNo: widget.existingRecord?.internalNo,
+      );
+      if (dup != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye challan #${dup.billNo} (${widget.supplier.name}) already purchase challan me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => isSaving = true);
 
     final newChallan = PurchaseChallan(
@@ -609,7 +628,19 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Stock inward verified.",
     );
 
-    webPh.addPurchaseChallanAndSync(newChallan);
+    final bool ok = webPh.addPurchaseChallanAndSync(newChallan);
+    if (!ok) {
+      setState(() => isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye challan #${widget.supplierRefNo} (${widget.supplier.name}) already purchase challan me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 
@@ -883,7 +914,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                     ...items.asMap().entries.map((entry) {
                       int idx = entry.key;
                       PurchaseItem it = entry.value;
-                      String qtyDisp = "${it.qty.toInt()}${it.freeQty > 0 ? ' + ${it.freeQty.toInt()}' : ''}";
+                      String qtyDisp = formatQtyPair(it.qty, it.freeQty);
                       String discDisp = it.discountRupees > 0 
                           ? "₹${it.discountRupees.toStringAsFixed(1)}" 
                           : (it.discountPer > 0 ? "${it.discountPer}%" : "-");

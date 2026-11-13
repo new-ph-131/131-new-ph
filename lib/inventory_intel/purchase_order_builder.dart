@@ -142,7 +142,7 @@ class _PurchaseOrderBuilderState extends State<PurchaseOrderBuilder> {
               IconButton(icon: const Icon(Icons.remove_circle_outline, color: Colors.red), onPressed: () {
                 setState(() { if(orderList[index]['qty'] > 1) orderList[index]['qty']--; });
               }),
-              Text(item['qty'].toInt().toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(formatQty(item['qty']), style: const TextStyle(fontWeight: FontWeight.bold)),
               IconButton(icon: const Icon(Icons.add_circle_outline, color: Colors.green), onPressed: () {
                 setState(() { orderList[index]['qty']++; });
               }),

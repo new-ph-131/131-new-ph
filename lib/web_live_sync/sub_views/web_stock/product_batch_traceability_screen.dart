@@ -227,7 +227,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
             color: const Color(0xFF1E293B).withOpacity(0.6),
             child: Row(
               children: [
-                _metricCard("Total Stock Qty", "${totalQty.toInt()} Units", Icons.layers_rounded, const Color(0xFF3B82F6)),
+                _metricCard("Total Stock Qty", "${formatQty(totalQty)} Units", Icons.layers_rounded, const Color(0xFF3B82F6)),
                 const SizedBox(width: 16),
                 _metricCard("Purchase Valuation", "₹${totalPurVal.toStringAsFixed(2)}", Icons.account_balance_wallet_rounded, const Color(0xFF10B981)),
                 const SizedBox(width: 16),
@@ -372,7 +372,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                                       style: TextStyle(color: isExpired ? Colors.redAccent : Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 12),
                                     ),
                                   )),
-                                  DataCell(Text("${b.qty.toInt()}", style: TextStyle(color: b.qty > 0 ? const Color(0xFF60A5FA) : Colors.white38, fontWeight: FontWeight.bold, fontSize: 13))),
+                                  DataCell(Text("${formatQty(b.qty)}", style: TextStyle(color: b.qty > 0 ? const Color(0xFF60A5FA) : Colors.white38, fontWeight: FontWeight.bold, fontSize: 13))),
                                   DataCell(Text("₹${b.purRate.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white70, fontSize: 12))),
                                   DataCell(Text("₹${b.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
                                   DataCell(Text("₹${b.rateA.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white70, fontSize: 12))),
@@ -589,7 +589,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                     children: [
                       _auditItem("Batch No", batch.batch),
                       _auditItem("Expiry", batch.exp),
-                      _auditItem("Initial Qty", "${batch.qty.toInt()}"),
+                      _auditItem("Initial Qty", "${formatQty(batch.qty)}"),
                       _auditItem("MRP", "₹${batch.mrp.toStringAsFixed(2)}"),
                       _auditItem("Pur. Rate", "₹${batch.purRate.toStringAsFixed(2)}"),
                     ],
@@ -1040,7 +1040,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                           style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${rec.qty.toInt()} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
+                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${formatQty(rec.qty)} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
                           style: const TextStyle(color: Colors.white54, fontSize: 10),
                         ),
                       );
@@ -1208,7 +1208,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                           children: [
                             const Text("CURRENT LIVE STOCK", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 2),
-                            Text("${b.qty.toInt()} Qty", style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold)),
+                            Text("${formatQty(b.qty)} Qty", style: const TextStyle(color: Color(0xFF38BDF8), fontSize: 13, fontWeight: FontWeight.bold)),
                           ],
                         ),
                         const Icon(Icons.arrow_forward_rounded, color: Colors.white38, size: 16),
@@ -1218,7 +1218,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                             const Text("NEW PROJECTED STOCK", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 2),
                             Text(
-                              "${previewQty.toInt()} Qty",
+                              "${formatQty(previewQty)} Qty",
                               style: TextStyle(
                                 color: previewQty >= 0 ? const Color(0xFF34D399) : const Color(0xFFF87171),
                                 fontSize: 13,
@@ -1254,7 +1254,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty — Click to Modify / Cancel Entry",
+                                "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${formatQty(b.adjustmentQty)} Qty — Click to Modify / Cancel Entry",
                                 style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 11, fontWeight: FontWeight.bold),
                               ),
                             ),

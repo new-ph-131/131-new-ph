@@ -111,7 +111,7 @@ class _WebShortageRegisterViewState extends State<WebShortageRegisterView> {
                                 dense: true,
                                 leading: const Icon(Icons.medication_rounded, color: Color(0xFFF87171), size: 18),
                                 title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                                subtitle: Text("Pack: ${m.packing} • Current Stock: ${m.stock.toInt()} Qty", style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                                subtitle: Text("Pack: ${m.packing} • Current Stock: ${formatQty(m.stock)} Qty", style: const TextStyle(color: Colors.white54, fontSize: 10)),
                                 onTap: () => setDialogState(() => selectedMed = m),
                               );
                             },
@@ -139,7 +139,7 @@ class _WebShortageRegisterViewState extends State<WebShortageRegisterView> {
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
                                   ),
                                   Text(
-                                    "Live Stock: ${selectedMed!.stock.toInt()} Qty • MRP: ₹${selectedMed!.mrp.toStringAsFixed(2)}",
+                                    "Live Stock: ${formatQty(selectedMed!.stock)} Qty • MRP: ₹${selectedMed!.mrp.toStringAsFixed(2)}",
                                     style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                                   ),
                                 ],
@@ -522,7 +522,7 @@ class _WebShortageRegisterViewState extends State<WebShortageRegisterView> {
                             style: const TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            "TOTAL UNITS TO ORDER: ${filteredShortages.fold(0.0, (sum, s) => sum + s.qtyRequired).toInt()} Qty",
+                            "TOTAL UNITS TO ORDER: ${formatQty(filteredShortages.fold(0.0, (sum, s) => sum + s.qtyRequired))} Qty",
                             style: const TextStyle(color: Color(0xFFF87171), fontSize: 13, fontWeight: FontWeight.w900),
                           ),
                         ],

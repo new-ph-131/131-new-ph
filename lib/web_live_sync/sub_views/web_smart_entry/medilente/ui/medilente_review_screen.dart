@@ -461,6 +461,21 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       return;
     }
 
+    final dup = findDuplicateSupplierPurchase(
+      purchases: webPh.purchases,
+      partyId: matchedSupplier!.id,
+      billNo: widget.bill.invoiceNo,
+    );
+    if (dup != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("⚠️ Ye bill #${dup.billNo} (${matchedSupplier!.name}) already purchase me entry ho chuka hai! Duplicate entry blocked."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => isSaving = true);
 
     String internalNo = WebPharoahNumberingEngine.getNextNumber(
@@ -518,7 +533,6 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
         rateB: raw.netMrp * 0.95,
         rateC: raw.netMrp * 0.92,
         appliedRateType: "A",
-        qtyChange: raw.qty + raw.freeQty,
       );
     }
 
@@ -539,9 +553,19 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
       sourceTag: isDateShifted ? "WEB-PORTAL SHIFTED-FY" : "WEB-PORTAL",
     );
 
-    webPh.purchases.removeWhere((p) => p.billNo.trim().toUpperCase() == widget.bill.invoiceNo.trim().toUpperCase());
-    webPh.purchases.add(newPurchase);
-    webPh.rebuildInventory();
+    final bool added = webPh.addPurchaseAndSync(newPurchase);
+    if (!added) {
+      setState(() => isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye bill #${newPurchase.billNo} (${matchedSupplier!.name}) already purchase me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
 
     bool pushed = await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
@@ -757,7 +781,7 @@ class _MedilenteReviewScreenState extends State<MedilenteReviewScreen> {
               ],
             ),
             subtitle: Text(
-              "Batch: ${raw.batch} • Mfg: ${raw.mfg} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} ${raw.pack} • Pur.Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.netMrp.toStringAsFixed(2)}",
+              "Batch: ${raw.batch} • Mfg: ${raw.mfg} • Exp: ${raw.exp} • Qty: ${formatQty(raw.qty)} ${raw.pack} • Pur.Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.netMrp.toStringAsFixed(2)}",
               style: const TextStyle(color: Colors.white54, fontSize: 10.5),
             ),
             trailing: isLinked

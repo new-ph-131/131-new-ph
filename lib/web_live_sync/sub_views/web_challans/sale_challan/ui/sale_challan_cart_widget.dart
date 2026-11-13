@@ -143,7 +143,7 @@ class SaleChallanCartWidget extends StatelessWidget {
                       dense: true,
                       leading: const Icon(Icons.medication_rounded, color: Color(0xFF2DD4BF), size: 18),
                       title: Text(med.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                      subtitle: Text("Pack: ${med.packing} | MRP: ₹${med.mrp.toStringAsFixed(2)} | Stock: ${med.stock.toInt()}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
+                      subtitle: Text("Pack: ${med.packing} | MRP: ₹${med.mrp.toStringAsFixed(2)} | Stock: ${formatQty(med.stock)}", style: const TextStyle(color: Colors.white38, fontSize: 9.5)),
                       onTap: () {
                         controller.productSearchC.clear();
                         _openItemEntryDialog(context, med);
@@ -216,7 +216,7 @@ class SaleChallanCartWidget extends StatelessWidget {
                     ...controller.items.asMap().entries.map((entry) {
                       int idx = entry.key;
                       BillItem it = entry.value;
-                      String qtyDisp = "${(it.qty % 1 == 0 ? it.qty.toInt().toString() : it.qty.toStringAsFixed(1))}${it.freeQty > 0 ? ' + ${(it.freeQty % 1 == 0 ? it.freeQty.toInt().toString() : it.freeQty.toStringAsFixed(1))}' : ''}";
+                      String qtyDisp = formatQtyPair(it.qty, it.freeQty);
 
                       return TableRow(
                         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),

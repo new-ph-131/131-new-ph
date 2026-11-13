@@ -154,7 +154,7 @@ class _ShortageRegisterState extends State<ShortageRegister> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text("ORDER", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.red)),
-              Text(item.qtyRequired.toInt().toString(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.red)),
+              Text(formatQty(item.qtyRequired), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.red)),
             ],
           ),
         ),

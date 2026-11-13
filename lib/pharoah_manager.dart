@@ -734,7 +734,7 @@ Future<void> finalizeSale({
     notifyListeners();
   }
 
-Future<void> finalizePurchase({
+Future<bool> finalizePurchase({
     required String internalNo, 
     required String billNo, 
     required DateTime date, 
@@ -752,7 +752,20 @@ Future<void> finalizePurchase({
     final String pId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final cleanIntNo = internalNo.trim().toUpperCase();
-    final cleanBillNo = billNo.trim().toUpperCase();
+    final cleanBillNo = billNo.trim();
+    final int existingIdx = purchases.indexWhere((p) => 
+      p.id == pId || 
+      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
+    );
+    final Purchase? dupPurchase = findDuplicateSupplierPurchase(
+      purchases: purchases,
+      partyId: party.id,
+      partyName: party.name,
+      billNo: billNo,
+      excludeId: existingIdx != -1 ? purchases[existingIdx].id : pId,
+      excludeInternalNo: existingIdx != -1 ? purchases[existingIdx].internalNo : internalNo,
+    );
+    if (dupPurchase != null) return false;
     if (!parties.any((pt) => pt.id == party.id)) {
       saveOrUpdateParty(party);
     }
@@ -762,7 +775,6 @@ Future<void> finalizePurchase({
     if (activeCompany != null) {
       await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: pId, secondaryKey: compKey, fy: currentFY);
       if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: currentFY);
-      if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo, fy: currentFY);
       if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo, fy: currentFY);
       SyncTombstoneHub.unmarkDeleted(
         companyId: activeCompany!.id,
@@ -770,20 +782,15 @@ Future<void> finalizePurchase({
         referenceNo: compKey,
         fy: currentFY,
       );
-      if (cleanBillNo.isNotEmpty) {
+      if (compKey2.isNotEmpty) {
         SyncTombstoneHub.unmarkDeleted(
           companyId: activeCompany!.id,
-          id: cleanBillNo,
+          id: compKey2,
           fy: currentFY,
         );
       }
     }
     D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(pId, party.id, billNo, internalNo, currentFY);
-    if (cleanBillNo.isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(cleanBillNo, "", "", currentFY);
-    final int existingIdx = purchases.indexWhere((p) => 
-      p.id == pId || 
-      (cleanIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanIntNo)
-    );
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
     }
@@ -884,15 +891,15 @@ Future<void> finalizePurchase({
       unmarkedIds: [
         pId,
         if (cleanIntNo.isNotEmpty) cleanIntNo,
-        if (cleanBillNo.isNotEmpty) cleanBillNo,
         if (compKey2.isNotEmpty) compKey2,
         if (compKey.isNotEmpty) compKey,
       ],
     );
     notifyListeners();
+    return true;
   }
 
-  Future<void> updatePurchase({
+  Future<bool> updatePurchase({
     required String id, 
     required String internalNo, 
     required String billNo, 
@@ -907,18 +914,26 @@ Future<void> finalizePurchase({
     double roundOff = 0.0,      // 🆕 Mapped
   }) async { 
     int idx = purchases.indexWhere((p) => p.id == id || (internalNo.isNotEmpty && p.internalNo.trim().toUpperCase() == internalNo.trim().toUpperCase())); 
-    if (idx == -1) return; 
+    if (idx == -1) return false;
+    final Purchase? dupPurchase = findDuplicateSupplierPurchase(
+      purchases: purchases,
+      partyId: party.id,
+      partyName: party.name,
+      billNo: billNo,
+      excludeId: purchases[idx].id,
+      excludeInternalNo: purchases[idx].internalNo,
+    );
+    if (dupPurchase != null) return false;
     String t = purchases[idx].sourceTag; 
     final cleanIntNo = internalNo.trim().toUpperCase();
-    final cleanBillNo = billNo.trim().toUpperCase();
+    final cleanBillNo = billNo.trim();
     final cleanPartyId = party.id.trim().toUpperCase();
     final compKey2 = (cleanPartyId.isNotEmpty && cleanBillNo.isNotEmpty) ? "${cleanPartyId}_$cleanBillNo" : "";
     final compKey = PurchaseSyncModule.makeCompositeKey(party.id, billNo, internalNo);
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: id, secondaryKey: compKey);
-      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2);
-      if (cleanBillNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBillNo);
-      if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: id, secondaryKey: compKey, fy: currentFY);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: currentFY);
+      if (cleanIntNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanIntNo, fy: currentFY);
     }
     D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(id, party.id, billNo, internalNo);
     int maxKnown = D1SalesLedgerService.getPurchaseKnownVersion(id, party.id, billNo, internalNo);
@@ -988,12 +1003,12 @@ Future<void> finalizePurchase({
       unmarkedIds: [
         id,
         if (cleanIntNo.isNotEmpty) cleanIntNo,
-        if (cleanBillNo.isNotEmpty) cleanBillNo,
         if (compKey2.isNotEmpty) compKey2,
         if (compKey.isNotEmpty) compKey,
       ],
     );
     notifyListeners();
+    return true;
   }
 
   Future<void> finalizeBatchSales(List<Sale> batch) async { 
@@ -1140,7 +1155,7 @@ Future<void> finalizePurchase({
     );
   }
 
-  Future<void> finalizePurchaseChallan({
+  Future<bool> finalizePurchaseChallan({
     required String billNo, 
     required String internalNo, 
     required DateTime date, 
@@ -1155,20 +1170,27 @@ Future<void> finalizePurchase({
     int currentVer = 1;
     final cleanINo = internalNo.trim().toUpperCase();
     final int existingIdx = purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
+    final PurchaseChallan? dupChallan = findDuplicateSupplierChallan(
+      challans: purchaseChallans,
+      partyId: partyId,
+      partyName: party.name,
+      billNo: billNo,
+      excludeId: existingIdx != -1 ? purchaseChallans[existingIdx].id : cId,
+      excludeInternalNo: existingIdx != -1 ? purchaseChallans[existingIdx].internalNo : internalNo,
+    );
+    if (dupChallan != null) return false;
     if (existingIdx != -1) {
       currentVer = purchaseChallans[existingIdx].version + 1;
     }
-    final cleanBNo = billNo.trim().toUpperCase();
+    final cleanBNo = billNo.trim();
     final cleanPId = partyId.trim().toUpperCase();
     final compKey2 = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
     final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo);
-      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2);
-      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3);
-      if (cleanBNo.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cleanBNo);
-      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo);
-      D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo, internalNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo, fy: currentFY);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: currentFY);
+      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: currentFY);
+      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, currentFY);
     }
     purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
     final newPChallan = PurchaseChallan(
@@ -1218,8 +1240,14 @@ Future<void> finalizePurchase({
       this,
       action: 'PURCHASE_CHALLAN_SAVED',
       entityId: cId,
-      unmarkedIds: [cId, if (internalNo.isNotEmpty) internalNo, if (billNo.isNotEmpty) billNo],
+      unmarkedIds: [
+        cId,
+        if (internalNo.isNotEmpty) internalNo,
+        if (compKey2.isNotEmpty) compKey2,
+        if (compKey3.isNotEmpty) compKey3,
+      ],
     );
+    return true;
   }
   
   // --- NEW CODE ---
@@ -2766,7 +2794,7 @@ void registerBatchActivity({
       }
       final String pId = p.id;
       final String intNo = p.internalNo.trim().toUpperCase();
-      final String bNo = p.billNo.trim().toUpperCase();
+      final String bNo = p.billNo.trim();
       final String partyId = p.partyId.trim().toUpperCase();
       final String compKey2 = (partyId.isNotEmpty && bNo.isNotEmpty) ? "${partyId}_$bNo" : "";
       final String compKey3 = PurchaseSyncModule.makeCompositeKey(partyId, bNo, intNo);
@@ -2774,7 +2802,7 @@ void registerBatchActivity({
         x.id == pId || 
         (intNo.isNotEmpty && x.internalNo.trim().toUpperCase() == intNo) ||
         (bNo.isNotEmpty && partyId.isNotEmpty && 
-         x.billNo.trim().toUpperCase() == bNo && x.partyId.trim().toUpperCase() == partyId)
+         x.billNo.trim() == bNo && x.partyId.trim().toUpperCase() == partyId)
       );
       D1SalesLedgerService.markPurchasePermanentlyDeleted(pId, partyId, bNo, intNo, currentFY);
       try {
@@ -2851,7 +2879,7 @@ void registerBatchActivity({
       final c = purchaseChallans.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
       final cId = c.id;
       final iNo = c.internalNo.trim().toUpperCase();
-      final bNo = c.billNo.trim().toUpperCase();
+      final bNo = c.billNo.trim();
       final pId = c.partyId.trim().toUpperCase();
       final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
       final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
@@ -2861,13 +2889,13 @@ void registerBatchActivity({
         if (compKey2.isNotEmpty) compKey2,
         if (compKey3.isNotEmpty) compKey3,
       ];
-      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId, pId, bNo, iNo);
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId, pId, bNo, iNo, currentFY);
 
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys);
+        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
         AppRealtimeCoordinator.instance.notifyAppMutation(
           this,
           action: 'DELETE_PURCHASE_CHALLAN',
@@ -2878,7 +2906,7 @@ void registerBatchActivity({
       purchaseChallans.removeWhere((x) =>
         x.id == cId ||
         (iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) ||
-        (pId.isNotEmpty && bNo.isNotEmpty && x.partyId.trim().toUpperCase() == pId && x.billNo.trim().toUpperCase() == bNo)
+        (pId.isNotEmpty && bNo.isNotEmpty && x.partyId.trim().toUpperCase() == pId && x.billNo.trim() == bNo)
       );
       save();
       notifyListeners();

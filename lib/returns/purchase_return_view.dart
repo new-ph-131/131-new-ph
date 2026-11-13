@@ -163,7 +163,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
                         subtitle: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                           _miniInfo("BATCH", h['batch']),
                           // 🔥 Qty + Free History View
-                          _miniInfo("LAST INWARD", "${h['qty'].toInt()} + ${h['free'].toInt()}", isBold: true),
+                          _miniInfo("LAST INWARD", "${formatQty(h['qty'])} + ${formatQty(h['free'])}", isBold: true),
                           _miniInfo("RATE", "₹${h['rate']}"),
                           _miniInfo("MRP", "₹${h['mrp']}"),
                         ]),
@@ -291,7 +291,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           const SizedBox(width: 8),
           Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         ]),
-        subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${it.qty.toInt()} + ${it.freeQty.toInt()}"),
+        subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${formatQty(it.qty)} + ${formatQty(it.freeQty)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: themeColor)),
         onLongPress: () => setState(() => items.removeAt(index)),
       ),

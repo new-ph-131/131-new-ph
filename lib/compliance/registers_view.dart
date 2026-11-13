@@ -71,7 +71,7 @@ class RegistersView extends StatelessWidget {
                     DataCell(Text(data['party'])),
                     DataCell(Text(data['item'], style: const TextStyle(fontWeight: FontWeight.bold))),
                     DataCell(Text(data['batch'])),
-                    DataCell(Text(data['qty'].toInt().toString())),
+                    DataCell(Text(formatQty(data['qty']))),
                   ])).toList(),
                 ),
               ),

@@ -185,7 +185,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
                               dense: true,
                               leading: const Icon(Icons.medication_rounded, color: Color(0xFFF59E0B)),
                               title: Text(m.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                              subtitle: Text("Pack: ${m.packing} | Stock: ${m.stock.toInt()} | MRP: ₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+                              subtitle: Text("Pack: ${m.packing} | Stock: ${formatQty(m.stock)} | MRP: ₹${m.mrp.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
                               trailing: const Icon(Icons.link_rounded, color: Colors.greenAccent, size: 20),
                               onTap: () => Navigator.pop(context, m),
                             );
@@ -294,6 +294,21 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
       return;
     }
 
+    final dup = findDuplicateSupplierPurchase(
+      purchases: webPh.purchases,
+      partyId: matchedSupplier!.id,
+      billNo: widget.bill.invoiceNo,
+    );
+    if (dup != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("⚠️ Ye bill #${dup.billNo} (${matchedSupplier!.name}) already purchase me entry ho chuka hai! Duplicate entry blocked."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => isSaving = true);
 
     String internalNo = WebPharoahNumberingEngine.getNextNumber(
@@ -351,7 +366,6 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
         rateB: raw.mrp * 0.95,
         rateC: raw.mrp * 0.92,
         appliedRateType: "A",
-        qtyChange: raw.qty + raw.freeQty,
       );
     }
 
@@ -372,9 +386,19 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
       sourceTag: "WEB-PORTAL AMAGEN",
     );
 
-    webPh.purchases.removeWhere((p) => p.billNo.trim().toUpperCase() == widget.bill.invoiceNo.trim().toUpperCase());
-    webPh.purchases.add(newPurchase);
-    webPh.rebuildInventory();
+    final bool added = webPh.addPurchaseAndSync(newPurchase);
+    if (!added) {
+      setState(() => isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("⚠️ Ye bill #${newPurchase.billNo} (${matchedSupplier!.name}) already purchase me entry ho chuka hai!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
 
     await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
@@ -639,7 +663,7 @@ class _AmazonReviewScreenState extends State<AmazonReviewScreen> {
                         ],
                       ),
                       subtitle: Text(
-                        "Batch: ${raw.batch} • Exp: ${raw.exp} • Qty: ${raw.qty.toInt()} + ${raw.freeQty.toInt()} Free • Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.mrp.toStringAsFixed(2)} • GST: ${raw.totalTaxRate.toStringAsFixed(1)}% (CGST+SGST)",
+                        "Batch: ${raw.batch} • Exp: ${raw.exp} • Qty: ${formatQty(raw.qty)} + ${formatQty(raw.freeQty)} Free • Rate: ₹${raw.rate.toStringAsFixed(2)} • MRP: ₹${raw.mrp.toStringAsFixed(2)} • GST: ${raw.totalTaxRate.toStringAsFixed(1)}% (CGST+SGST)",
                         style: const TextStyle(color: Colors.white54, fontSize: 10.5),
                       ),
                       trailing: isLinked

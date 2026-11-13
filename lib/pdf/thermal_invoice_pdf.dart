@@ -66,7 +66,7 @@ class ThermalInvoicePdf {
                   children: [
                     pw.Text(it.name, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
                     pw.Row(children: [
-                      pw.Text("Qty: ${it.qty.toInt()} x ${it.rate.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 7)),
+                      pw.Text("Qty: ${formatQty(it.qty)} x ${it.rate.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 7)),
                       pw.Spacer(),
                       pw.Text(it.total.toStringAsFixed(2), style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
                     ]),

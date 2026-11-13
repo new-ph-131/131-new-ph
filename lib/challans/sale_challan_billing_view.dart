@@ -286,7 +286,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
       child: ListTile(
         leading: CircleAvatar(backgroundColor: Colors.blueGrey.shade50, child: Text("${it.srNo}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
         title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-        subtitle: Text("Batch: ${it.batch} | Qty: ${it.qty.toInt()} | Rate: ₹${it.rate.toStringAsFixed(2)}"),
+        subtitle: Text("Batch: ${it.batch} | Qty: ${formatQtyPair(it.qty, it.freeQty)} | Rate: ₹${it.rate.toStringAsFixed(2)}"),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(fontWeight: FontWeight.bold)),
         onTap: widget.isReadOnly ? null : () => _showItemSearchSheet(ph, itemToEdit: it),
       ),

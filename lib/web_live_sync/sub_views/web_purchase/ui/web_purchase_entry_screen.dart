@@ -75,17 +75,14 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
   }
 
   Purchase? _checkDuplicateBill(PharoahWebManager webPh) {
-    if (selectedSupplier == null || supplierBillNoC.text.trim().isEmpty) return null;
-    String cleanNo = supplierBillNoC.text.trim().toUpperCase();
-    try {
-      return webPh.purchases.firstWhere((p) =>
-        (p.partyId == selectedSupplier!.id || p.distributorName.trim().toUpperCase() == selectedSupplier!.name.trim().toUpperCase()) &&
-        p.billNo.trim().toUpperCase() == cleanNo &&
-        (widget.existingPurchase == null || p.id != widget.existingPurchase!.id)
-      );
-    } catch (_) {
-      return null;
-    }
+    if (widget.isReadOnly || selectedSupplier == null || supplierBillNoC.text.trim().isEmpty) return null;
+    return findDuplicateSupplierPurchase(
+      purchases: webPh.purchases,
+      partyId: selectedSupplier!.id,
+      billNo: supplierBillNoC.text.trim(),
+      excludeId: widget.existingPurchase?.id,
+      excludeInternalNo: widget.existingPurchase?.internalNo,
+    );
   }
 
   bool _isCreditorGroup(String group) {
@@ -235,11 +232,11 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
                     child: TextField(
                       controller: supplierBillNoC,
                       readOnly: widget.isReadOnly,
-                      textCapitalization: TextCapitalization.characters,
+                      textCapitalization: TextCapitalization.none,
                       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
                       decoration: InputDecoration(
                         labelText: "SUPPLIER BILL NO *",
-                        hintText: "Enter Bill No",
+                        hintText: "Enter Bill No (Case-Sensitive)",
                         hintStyle: const TextStyle(color: Colors.white24, fontSize: 11),
                         labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
                         filled: true,
@@ -268,7 +265,7 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "⚠️ DUPLICATE INVOICE: Bill #${duplicateBill.billNo} was already recorded on ${DateFormat('dd/MM/yyyy').format(duplicateBill.date)} (₹${duplicateBill.totalAmount.toStringAsFixed(2)}).",
+                          "⚠️ DUPLICATE BILL: Ye bill #${duplicateBill.billNo} already purchase me entry ho chuka hai (${DateFormat('dd/MM/yyyy').format(duplicateBill.date)} • ₹${duplicateBill.totalAmount.toStringAsFixed(2)}).",
                           style: const TextStyle(color: Colors.redAccent, fontSize: 10.5, fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -388,6 +385,18 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
                     const SnackBar(content: Text("Supplier Bill Number is mandatory to proceed!"), backgroundColor: Colors.red),
                   );
                   return;
+                }
+                if (!widget.isReadOnly) {
+                  final dup = _checkDuplicateBill(webPh);
+                  if (dup != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("⚠️ Ye bill #${dup.billNo} (${selectedSupplier!.name}) already purchase me entry ho chuka hai! Duplicate entry allowed nahi hai."),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
                 }
                 Navigator.push(
                   context,

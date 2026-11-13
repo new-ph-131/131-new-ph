@@ -477,7 +477,7 @@ class _WebCompanyMasterViewState extends State<WebCompanyMasterView> {
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: Text(
-                                          "${m.stock.toInt()} Units",
+                                          "${formatQty(m.stock)} Units",
                                           style: TextStyle(color: m.stock > 0 ? const Color(0xFF34D399) : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10.5),
                                         ),
                                       ),
@@ -928,7 +928,7 @@ class _WebCompanyMasterViewState extends State<WebCompanyMasterView> {
                                             Expanded(
                                               flex: 2,
                                               child: Text(
-                                                "${st.totalStockUnits.toInt()} Units",
+                                                "${formatQty(st.totalStockUnits)} Units",
                                                 style: TextStyle(
                                                   color: st.totalStockUnits > 0 ? const Color(0xFF34D399) : Colors.white38,
                                                   fontSize: 11.5,

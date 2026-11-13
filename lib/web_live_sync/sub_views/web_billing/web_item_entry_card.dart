@@ -61,8 +61,8 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
       expC.text = i.exp;
       mrpC.text = i.mrp.toStringAsFixed(2);
       rateC.text = i.rate.toStringAsFixed(2);
-      qtyC.text = i.qty.toInt().toString();
-      freeC.text = i.freeQty.toInt().toString();
+      qtyC.text = formatQty(i.qty);
+      freeC.text = formatQty(i.freeQty);
       gstC.text = i.gstRate.toString();
       selectedRateType = i.appliedRateType;
       rateCDiscC.text = i.rateCFormula.toString();
@@ -440,7 +440,7 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             elevation: 0,
                           ),
-                          onPressed: !isSaleAllowed || qtyC.text.isEmpty || qtyC.text == "0"
+                          onPressed: !isSaleAllowed || qtyC.text.isEmpty || (double.tryParse(qtyC.text) ?? 0.0) <= 0
                               ? null
                               : () {
                                   double q = double.tryParse(qtyC.text) ?? 1;

@@ -203,16 +203,19 @@ class MultiFyCloudVault {
     final String sec = _secondarySeriesKeyForMap(fileName, m);
     final int recUpd = int.tryParse((m['updatedAt'] ?? m['updated_at'] ?? '0').toString()) ?? 0;
 
-    bool checkKeyTombstone(String key) {
+    bool checkKeyTombstone(String key, {bool preserveCase = false}) {
       if (key.isEmpty) return false;
+      final bool exactOnly = preserveCase || key.contains('_');
       if (localRegistry != null) {
-        final int? delTs = localRegistry[key] ?? localRegistry[key.toUpperCase()];
+        final int? delTs = exactOnly
+            ? localRegistry[key]
+            : (localRegistry[key] ?? localRegistry[key.toUpperCase()]);
         if (delTs != null) {
           return recUpd == 0 || delTs >= recUpd;
         }
       }
       if (localTombstones != null) {
-        if (localTombstones.contains(key) || localTombstones.contains(key.toUpperCase())) {
+        if (localTombstones.contains(key) || (!exactOnly && localTombstones.contains(key.toUpperCase()))) {
           return true;
         }
       }
@@ -230,13 +233,13 @@ class MultiFyCloudVault {
 
     if (fileName == 'purc.json' || fileName == 'p_challan.json') {
       final String pId = (m['partyId'] ?? '').toString().trim().toUpperCase();
-      final String bNo = (m['billNo'] ?? '').toString().trim().toUpperCase();
+      final String bNo = (m['billNo'] ?? '').toString().trim();
       if (pId.isNotEmpty && bNo.isNotEmpty) {
-        final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', fy);
-        if (checkKeyTombstone(comp2)) return true;
+        final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', fy, true);
+        if (checkKeyTombstone(comp2, preserveCase: true)) return true;
         if (sec.isNotEmpty) {
-          final String comp3 = D1SalesLedgerService.scopeSecondaryKey('${pId}_${bNo}_$sec', fy);
-          if (checkKeyTombstone(comp3)) return true;
+          final String comp3 = D1SalesLedgerService.scopeSecondaryKey('${pId}_${bNo}_$sec', fy, true);
+          if (checkKeyTombstone(comp3, preserveCase: true)) return true;
         }
       }
       return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, fy);
@@ -261,7 +264,7 @@ class MultiFyCloudVault {
       final String candId = (candidate['id'] ?? '').toString().trim();
       final String candInt = (candidate['internalNo'] ?? '').toString().trim().toUpperCase();
       final String candParty = (candidate['partyId'] ?? '').toString().trim().toUpperCase();
-      final String candBill = (candidate['billNo'] ?? '').toString().trim().toUpperCase();
+      final String candBill = (candidate['billNo'] ?? '').toString().trim();
 
       if (candId.isNotEmpty && keyToIdx.containsKey(candId)) {
         final int idx = keyToIdx[candId]!;
@@ -276,7 +279,7 @@ class MultiFyCloudVault {
         final String exId = (existing['id'] ?? '').toString().trim();
         final String exInt = (existing['internalNo'] ?? '').toString().trim().toUpperCase();
         final String exParty = (existing['partyId'] ?? '').toString().trim().toUpperCase();
-        final String exBill = (existing['billNo'] ?? '').toString().trim().toUpperCase();
+        final String exBill = (existing['billNo'] ?? '').toString().trim();
 
         if (candId.isNotEmpty && exId.isNotEmpty) {
           if (candId == exId) return i;

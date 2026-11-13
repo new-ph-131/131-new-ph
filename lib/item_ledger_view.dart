@@ -137,7 +137,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
       body: Column(children: [
         Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.only(bottomLeft: Radius.circular(20), bottomRight: Radius.circular(20))), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [_sumCol("ON HAND", widget.medicine.stock, Colors.blue.shade900)])),
         
-        SizedBox(height: 65, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), children: [ChoiceChip(label: const Text("ALL BATCHES"), selected: selectedBatch == "ALL", onSelected: (v)=>setState(()=>selectedBatch="ALL")), ...batchStockMap.entries.map((e) => Padding(padding: const EdgeInsets.only(left: 8), child: ChoiceChip(label: Text("${e.key} (${e.value.toInt()})"), selected: selectedBatch == e.key, onSelected: (v) => setState(() => selectedBatch = e.key)))).toList()])),
+        SizedBox(height: 65, child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), children: [ChoiceChip(label: const Text("ALL BATCHES"), selected: selectedBatch == "ALL", onSelected: (v)=>setState(()=>selectedBatch="ALL")), ...batchStockMap.entries.map((e) => Padding(padding: const EdgeInsets.only(left: 8), child: ChoiceChip(label: Text("${e.key} (${formatQty(e.value)})"), selected: selectedBatch == e.key, onSelected: (v) => setState(() => selectedBatch = e.key)))).toList()])),
         
         Expanded(child: displayHistory.isEmpty ? const Center(child: Text("No transactions found")) : ListView.builder(padding: const EdgeInsets.all(10), itemCount: displayHistory.length, itemBuilder: (c, i) {
               final h = displayHistory[i];
@@ -162,11 +162,11 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
                   Expanded(child: Text(h['party'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
                 ]),
                 subtitle: Text("${DateFormat('dd/MM/yy').format(h['date'])} | Batch: ${h['batch']}"),
-                trailing: Text("${isIn ? '+' : '-'} ${h['qty'].toInt()}", style: TextStyle(fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
+                trailing: Text("${isIn ? '+' : '-'} ${formatQty(h['qty'])}", style: TextStyle(fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
               ));
             }))
       ]),
     );
   }
-  Widget _sumCol(String t, double v, Color c) => Column(children: [Text(t, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)), Text(v.toInt().toString(), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: c))]);
+  Widget _sumCol(String t, double v, Color c) => Column(children: [Text(t, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)), Text(formatQty(v), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: c))]);
 }

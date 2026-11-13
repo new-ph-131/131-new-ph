@@ -125,7 +125,7 @@ class _PurchaseEntryViewState extends State<PurchaseEntryView> {
             Row(children: [
               Expanded(child: TextField(controller: internalEntryNoC, readOnly: true, decoration: const InputDecoration(labelText: "INTERNAL ID", border: OutlineInputBorder(), filled: true, fillColor: Color(0xFFF5F5F5)))),
               const SizedBox(width: 15),
-              Expanded(child: TextField(controller: supplierBillNoC, textCapitalization: TextCapitalization.characters, decoration: const InputDecoration(labelText: "SUPPLIER BILL NO", border: OutlineInputBorder(), hintText: "Enter Bill #"))),
+              Expanded(child: TextField(controller: supplierBillNoC, textCapitalization: TextCapitalization.none, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: "SUPPLIER BILL NO", border: OutlineInputBorder(), hintText: "Enter Bill # (Case-Sensitive)"))),
             ]),
             const SizedBox(height: 15),
             Row(children: [
@@ -160,6 +160,40 @@ class _PurchaseEntryViewState extends State<PurchaseEntryView> {
             ),
           ),
 
+          // --- LIVE DUPLICATE INVOICE WARNING ---
+          if (!widget.isReadOnly && selectedDistributor != null && supplierBillNoC.text.trim().isNotEmpty)
+            Builder(builder: (context) {
+              final dup = findDuplicateSupplierPurchase(
+                purchases: ph.purchases,
+                partyId: selectedDistributor!.id,
+                billNo: supplierBillNoC.text.trim(),
+                excludeId: widget.existingPurchase?.id,
+                excludeInternalNo: widget.existingPurchase?.internalNo,
+              );
+              if (dup == null) return const SizedBox.shrink();
+              return Container(
+                margin: const EdgeInsets.fromLTRB(15, 0, 15, 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.shade400),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.red.shade700, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Duplicate Bill: Ye bill #${dup.billNo} (${selectedDistributor!.name}) already purchase me entry ho chuka hai (Entry ${dup.internalNo}, Date: ${DateFormat('dd/MM/yyyy').format(dup.date)}).",
+                        style: TextStyle(color: Colors.red.shade800, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+
           // --- SUPPLIER SELECTION ---
           Expanded(child: selectedDistributor != null ? _buildSupplierCard() : _buildSearchList(ph)),
 
@@ -168,9 +202,27 @@ class _PurchaseEntryViewState extends State<PurchaseEntryView> {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 60), backgroundColor: widget.isReadOnly ? Colors.purple : Colors.orange.shade800, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))), 
               onPressed: () {
-                  if (supplierBillNoC.text.isEmpty) {
+                  if (supplierBillNoC.text.trim().isEmpty) {
                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Supplier Bill No is required!"), backgroundColor: Colors.red));
                      return;
+                  }
+                  if (!widget.isReadOnly) {
+                    final dup = findDuplicateSupplierPurchase(
+                      purchases: ph.purchases,
+                      partyId: selectedDistributor!.id,
+                      billNo: supplierBillNoC.text.trim(),
+                      excludeId: widget.existingPurchase?.id,
+                      excludeInternalNo: widget.existingPurchase?.internalNo,
+                    );
+                    if (dup != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Ye bill #${dup.billNo} (${selectedDistributor!.name}) already purchase me entry ho chuka hai! Duplicate entry allowed nahi hai."),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                      return;
+                    }
                   }
                   Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseBillingView(
                     distributor: selectedDistributor!, 

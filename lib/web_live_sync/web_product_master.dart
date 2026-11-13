@@ -538,7 +538,7 @@ class _WebProductMasterViewState extends State<WebProductMasterView> {
                                 _td("₹${m.mrp.toStringAsFixed(2)}"),
                                 _td("₹${m.rateA.toStringAsFixed(2)}"),
                                 _td("${m.gst.toInt()}%"),
-                                _td("${m.stock.toInt()} Qty", isBold: true, color: m.stock > 0 ? Colors.greenAccent : Colors.redAccent),
+                                _td("${formatQty(m.stock)} Qty", isBold: true, color: m.stock > 0 ? Colors.greenAccent : Colors.redAccent),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [

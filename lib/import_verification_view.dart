@@ -125,7 +125,9 @@ class _ImportVerificationViewState extends State<ImportVerificationView> {
               String bNo = billNumbers[i];
               var rows = groupedBills[bNo]!;
               double total = rows.fold(0, (sum, r) => sum + (double.tryParse(r[17].toString()) ?? 0));
-              bool alreadyExists = widget.importType == "SALE" ? ph.sales.any((s) => s.billNo == bNo) : ph.purchases.any((p) => p.billNo == bNo);
+              bool alreadyExists = widget.importType == "SALE"
+                  ? ph.sales.any((s) => s.billNo == bNo)
+                  : ph.purchases.any((p) => p.isDeleted != 1 && p.distributorName.trim().toUpperCase() == rows[0][2].toString().trim().toUpperCase() && isSameSupplierInvoiceNo(p.billNo, bNo));
               return Card(child: ListTile(title: Text(bNo, style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text("Party: ${rows[0][2]}\nItems: ${rows.length} | ₹${total.toStringAsFixed(2)}"), trailing: ElevatedButton(onPressed: alreadyExists ? null : () => _startSingleBillWizard(bNo), child: Text(alreadyExists ? "EXISTS" : "VERIFY"))));
             })),
       ]);
@@ -181,7 +183,34 @@ class _ImportVerificationViewState extends State<ImportVerificationView> {
         Medicine m = _getOrCreateMed(ph, it);
         pItems.add(PurchaseItem(id: DateTime.now().toString(), srNo: pItems.length + 1, medicineID: m.id, name: m.name, packing: m.packing, batch: it['batch'], exp: it['exp'], hsn: it['hsn'], mrp: it['mrp'], qty: it['qty'], freeQty: it['free'], purchaseRate: it['rate'], gstRate: it['gst'], total: it['total']));
       }
-      ph.finalizePurchase(internalNo: "IMP-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}", billNo: billNoC.text, date: selectedDate, entryDate: DateTime.now(), party: targetParty, items: pItems, total: pItems.fold(0, (s, i) => s + i.total), mode: "CREDIT");
+      final dup = findDuplicateSupplierPurchase(
+        purchases: ph.purchases,
+        partyId: targetParty.id,
+        billNo: billNoC.text.trim(),
+      );
+      if (dup != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("⚠️ Ye bill #${dup.billNo} (${targetParty.name}) already purchase me entry ho chuka hai!"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      final bool saved = await ph.finalizePurchase(internalNo: "IMP-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}", billNo: billNoC.text.trim(), date: selectedDate, entryDate: DateTime.now(), party: targetParty, items: pItems, total: pItems.fold(0, (s, i) => s + i.total), mode: "CREDIT");
+      if (!saved) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("⚠️ Ye bill #${billNoC.text.trim()} (${targetParty.name}) already purchase me entry ho chuka hai!"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
     }
     await ph.save();
     setState(() { _groupCsvData(); isShowingOverview = true; });

@@ -302,7 +302,7 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        "Code: ${widget.medicine.systemId}  •  Current Stock: ${widget.medicine.stock.toInt()} Units  •  Pur Rate: ₹${widget.medicine.purRate.toStringAsFixed(2)}  •  MRP: ₹${widget.medicine.mrp.toStringAsFixed(2)}",
+                        "Code: ${widget.medicine.systemId}  •  Current Stock: ${formatQty(widget.medicine.stock)} Units  •  Pur Rate: ₹${widget.medicine.purRate.toStringAsFixed(2)}  •  MRP: ₹${widget.medicine.mrp.toStringAsFixed(2)}",
                         style: const TextStyle(color: Colors.white54, fontSize: 11),
                       ),
                     ],
@@ -528,20 +528,20 @@ class _StockMovementLedgerModalState extends State<StockMovementLedgerModal> {
                                   _td(t['party'].toString(), isLeft: true),
                                   _td(t['batch'].toString()),
                                   _td(
-                                    (t['inQty'] as double) > 0 ? "+${(t['inQty'] as double).toInt()}" : "-",
+                                    (t['inQty'] as double) > 0 ? "+${formatQty(t['inQty'])}" : "-",
                                     isRight: true,
                                     isBold: (t['inQty'] as double) > 0,
                                     color: Colors.greenAccent,
                                   ),
                                   _td(
-                                    (t['outQty'] as double) > 0 ? "-${(t['outQty'] as double).toInt()}" : "-",
+                                    (t['outQty'] as double) > 0 ? "-${formatQty(t['outQty'])}" : "-",
                                     isRight: true,
                                     isBold: (t['outQty'] as double) > 0,
                                     color: Colors.orangeAccent,
                                   ),
                                   _td("₹${(t['rate'] as double).toStringAsFixed(2)}", isRight: true),
                                   _td(
-                                    "${(t['balance'] as double).toInt()} Qty",
+                                    "${formatQty(t['balance'])} Qty",
                                     isRight: true,
                                     isBold: true,
                                     color: (t['balance'] as double) > 0 ? const Color(0xFF38BDF8) : Colors.redAccent,

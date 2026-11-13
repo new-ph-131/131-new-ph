@@ -358,9 +358,9 @@ class ProductIntegrityService {
       return ProductDeleteCheckResult(
         canDelete: false,
         reason: "Active Inventory Stock Exists",
-        details: "'${med.name}' currently has ${med.stock.toInt()} unit(s) in active inventory stock. Adjust stock to 0 before deletion.",
+        details: "'${med.name}' currently has ${formatQty(med.stock)} unit(s) in active inventory stock. Adjust stock to 0 before deletion.",
         totalReferences: totalCount + 1,
-        sampleReferences: ["Active Stock (${med.stock.toInt()})", ...sampleRefs],
+        sampleReferences: ["Active Stock (${formatQty(med.stock)})", ...sampleRefs],
       );
     }
 

@@ -65,14 +65,14 @@ class SyncTombstoneHub {
         final uKey = "unmarked_tombstones_$companyId";
         final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
         uList.remove(cleanId);
-        uList.remove(cleanId.toUpperCase());
+        if (!cleanId.contains('_')) uList.remove(cleanId.toUpperCase());
         if (scopedRef.isNotEmpty) {
           uList.remove(scopedRef);
-          uList.remove(scopedRef.toUpperCase());
+          if (!scopedRef.contains('_')) uList.remove(scopedRef.toUpperCase());
         }
         if (rawRef.isNotEmpty) {
           uList.remove(rawRef);
-          uList.remove(rawRef.toUpperCase());
+          if (!rawRef.contains('_')) uList.remove(rawRef.toUpperCase());
         }
         await prefs.setStringList(uKey, uList.toList());
       } catch (_) {}
@@ -109,15 +109,15 @@ class SyncTombstoneHub {
         final localList = (prefs.getStringList(key) ?? <String>[]).toSet();
         if (cleanId.isNotEmpty) {
           localList.remove(cleanId);
-          localList.remove(cleanId.toUpperCase());
+          if (!cleanId.contains('_')) localList.remove(cleanId.toUpperCase());
         }
         if (scopedRef.isNotEmpty) {
           localList.remove(scopedRef);
-          localList.remove(scopedRef.toUpperCase());
+          if (!scopedRef.contains('_')) localList.remove(scopedRef.toUpperCase());
         }
         if (rawRef.isNotEmpty) {
           localList.remove(rawRef);
-          localList.remove(rawRef.toUpperCase());
+          if (!rawRef.contains('_')) localList.remove(rawRef.toUpperCase());
         }
         await prefs.setStringList(key, localList.toList());
 
@@ -125,15 +125,15 @@ class SyncTombstoneHub {
         final uList = (prefs.getStringList(uKey) ?? <String>[]).toSet();
         if (cleanId.isNotEmpty) {
           uList.add(cleanId);
-          uList.add(cleanId.toUpperCase());
+          if (!cleanId.contains('_')) uList.add(cleanId.toUpperCase());
         }
         if (scopedRef.isNotEmpty) {
           uList.add(scopedRef);
-          uList.add(scopedRef.toUpperCase());
+          if (!scopedRef.contains('_')) uList.add(scopedRef.toUpperCase());
         }
         if (rawRef.isNotEmpty) {
           uList.add(rawRef);
-          uList.add(rawRef.toUpperCase());
+          if (!rawRef.contains('_')) uList.add(rawRef.toUpperCase());
         }
         await prefs.setStringList(uKey, uList.toList());
       } catch (_) {}
@@ -143,15 +143,15 @@ class SyncTombstoneHub {
       final diskSet = await loadFromDisk(workingDir);
       if (cleanId.isNotEmpty) {
         diskSet.remove(cleanId);
-        diskSet.remove(cleanId.toUpperCase());
+        if (!cleanId.contains('_')) diskSet.remove(cleanId.toUpperCase());
       }
       if (scopedRef.isNotEmpty) {
         diskSet.remove(scopedRef);
-        diskSet.remove(scopedRef.toUpperCase());
+        if (!scopedRef.contains('_')) diskSet.remove(scopedRef.toUpperCase());
       }
       if (rawRef.isNotEmpty) {
         diskSet.remove(rawRef);
-        diskSet.remove(rawRef.toUpperCase());
+        if (!rawRef.contains('_')) diskSet.remove(rawRef.toUpperCase());
       }
       await saveToDisk(workingDir, diskSet);
     }
@@ -160,21 +160,22 @@ class SyncTombstoneHub {
   /// Checks if a record ID or reference number has been marked as deleted (#PH-REV-807).
   static bool isDeleted(Set<String> tombstones, String id, {String? referenceNo, String? fy}) {
     final cleanId = id.trim();
-    if (cleanId.isNotEmpty && (tombstones.contains(cleanId) || tombstones.contains(cleanId.toUpperCase()))) {
+    if (cleanId.isNotEmpty && (tombstones.contains(cleanId) || (!cleanId.contains('_') && tombstones.contains(cleanId.toUpperCase())))) {
       return true;
     }
     if (referenceNo != null && referenceNo.trim().isNotEmpty) {
       final cleanRef = referenceNo.trim();
+      final bool keepCase = cleanRef.contains('_');
       if (fy != null && fy.trim().isNotEmpty) {
         final scopedRef = "$fy::$cleanRef";
-        if (tombstones.contains(scopedRef) || tombstones.contains(scopedRef.toUpperCase())) {
+        if (tombstones.contains(scopedRef) || (!keepCase && tombstones.contains(scopedRef.toUpperCase()))) {
           return true;
         }
         // 🛡️ MULTI-FY SHIELD: If financial year is given, NEVER match a naked unscoped reference key!
         // Back-year deletion of "W-1" or "INV-1" can NEVER delete a bill in a different year!
         return false;
       }
-      if (tombstones.contains(cleanRef) || tombstones.contains(cleanRef.toUpperCase())) {
+      if (tombstones.contains(cleanRef) || (!keepCase && tombstones.contains(cleanRef.toUpperCase()))) {
         return true;
       }
     }

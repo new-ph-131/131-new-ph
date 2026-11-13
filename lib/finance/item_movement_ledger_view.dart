@@ -93,7 +93,7 @@ class _ItemMovementLedgerViewState extends State<ItemMovementLedgerView> {
   Widget _buildProductQuickStats() => Container(
     padding: const EdgeInsets.all(10), color: Colors.blue.shade900,
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-      _quickStat("STOCK", "${selectedMed!.stock.toInt()}"),
+      _quickStat("STOCK", "${formatQty(selectedMed!.stock)}"),
       _quickStat("MRP", "₹${selectedMed!.mrp}"),
     ]),
   );

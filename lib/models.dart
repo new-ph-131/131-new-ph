@@ -979,3 +979,103 @@ class Voucher {
 class ChequeEntry { String id, partyName, billNo, chequeNo, partyBank, depositBank, status, remark; DateTime date, chequeDate; double amount; ChequeEntry({required this.id, required this.partyName, this.billNo = "", required this.amount, required this.chequeNo, required this.date, required this.chequeDate, this.partyBank = "", this.depositBank = "", this.status = "Received", this.remark = ""}); Map<String, dynamic> toMap() => {'id': id, 'partyName': partyName, 'billNo': billNo, 'amount': amount, 'chequeNo': chequeNo, 'date': date.toIso8601String(), 'chequeDate': chequeDate.toIso8601String(), 'partyBank': partyBank, 'depositBank': depositBank, 'status': status, 'remark': remark}; factory ChequeEntry.fromMap(Map<String, dynamic> map) => ChequeEntry(id: map['id'] ?? "", partyName: map['partyName'] ?? "", billNo: map['billNo'] ?? "", amount: (map['amount'] ?? 0.0).toDouble(), chequeNo: map['chequeNo'] ?? "", date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), chequeDate: DateTime.parse(map['chequeDate'] ?? DateTime.now().toIso8601String()), partyBank: map['partyBank'] ?? "", depositBank: map['depositBank'] ?? "", status: map['status'] ?? "Received", remark: map['remark'] ?? ""); }
 class ShortageItem { String id, medicineId, medicineName, companyName, distributorName, customerName, source; double qtyRequired, currentStock; DateTime date; Map<String, dynamic> toMap() => {'id': id, 'medicineId': medicineId, 'medicineName': medicineName, 'companyName': companyName, 'distributorName': distributorName, 'customerName': customerName, 'source': source, 'qtyRequired': qtyRequired, 'currentStock': currentStock, 'date': date.toIso8601String()}; ShortageItem({required this.id, required this.medicineId, required this.medicineName, required this.companyName, this.distributorName = "", this.customerName = "", this.source = "Manual", required this.qtyRequired, required this.currentStock, required this.date}); factory ShortageItem.fromMap(Map<String, dynamic> map) => ShortageItem(id: map['id'] ?? "", medicineId: map['medicineId'] ?? "", medicineName: map['medicineName'] ?? "", companyName: map['companyId'] ?? "N/A", distributorName: map['distributorName'] ?? "", customerName: map['customerName'] ?? "", source: map['source'] ?? "Manual", qtyRequired: (map['qtyRequired'] ?? 0.0).toDouble(), currentStock: (map['currentStock'] ?? 0.0).toDouble(), date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String())); }
 class ModuleAction { final String title; final IconData icon; final Color color; final Widget? targetScreen; final String? navModule; ModuleAction({required this.title, required this.icon, required this.color, this.targetScreen, this.navModule}); }
+
+// ===========================================================================
+// DECIMAL QUANTITY & SUPPLIER INVOICE DUPLICATE HELPERS
+// ===========================================================================
+
+/// Formats fractional quantities cleanly (e.g. 0.5 -> "0.5", 1.0 -> "1", 2.25 -> "2.25")
+/// without floating-point noise or integer truncation.
+String formatQty(dynamic val) {
+  final double d = (val is num)
+      ? val.toDouble()
+      : (double.tryParse(val?.toString() ?? '') ?? 0.0);
+  if (d.isNaN || d.isInfinite) return "0";
+  final double rounded = (d * 10000).roundToDouble() / 10000;
+  if (rounded == 0) return "0";
+  if (rounded == rounded.truncateToDouble()) {
+    return rounded.toInt().toString();
+  }
+  return rounded
+      .toStringAsFixed(4)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
+}
+
+String formatQtyPair(dynamic qty, [dynamic freeQty = 0.0]) {
+  final double fq = (freeQty is num)
+      ? freeQty.toDouble()
+      : (double.tryParse(freeQty?.toString() ?? '') ?? 0.0);
+  final String qStr = formatQty(qty);
+  return fq > 0 ? "$qStr + ${formatQty(fq)}" : qStr;
+}
+
+/// Exact case-sensitive & punctuation-preserving comparison for supplier bill numbers.
+/// Rules:
+/// - "ax1" vs "ax1"  -> true (DUPLICATE)
+/// - "ax1" vs "Ax1"  -> false (ALLOWED)
+/// - "ax1" vs "aX1"  -> false (ALLOWED)
+/// - "ax1" vs "ax-1" -> false (ALLOWED)
+bool isSameSupplierInvoiceNo(String a, String b) {
+  final String ca = a.trim();
+  final String cb = b.trim();
+  return ca.isNotEmpty && cb.isNotEmpty && ca == cb;
+}
+
+Purchase? findDuplicateSupplierPurchase({
+  required List<Purchase> purchases,
+  required String partyId,
+  required String billNo,
+  String? partyName,
+  String? excludeId,
+  String? excludeInternalNo,
+}) {
+  final String cleanParty = partyId.trim().toUpperCase();
+  final String cleanPartyName = (partyName ?? '').trim().toUpperCase();
+  final String cleanBill = billNo.trim();
+  final String cleanExId = (excludeId ?? '').trim();
+  final String cleanExInt = (excludeInternalNo ?? '').trim().toUpperCase();
+  if ((cleanParty.isEmpty && cleanPartyName.isEmpty) || cleanBill.isEmpty) return null;
+  for (final p in purchases) {
+    if (p.isDeleted == 1) continue;
+    if (cleanExId.isNotEmpty && p.id.trim() == cleanExId) continue;
+    if (cleanExInt.isNotEmpty && p.internalNo.trim().toUpperCase() == cleanExInt) continue;
+    final String pParty = p.partyId.trim().toUpperCase();
+    final bool sameParty = (cleanParty.isNotEmpty && pParty.isNotEmpty)
+        ? pParty == cleanParty
+        : (cleanPartyName.isNotEmpty && p.distributorName.trim().toUpperCase() == cleanPartyName);
+    if (sameParty && isSameSupplierInvoiceNo(p.billNo, cleanBill)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+PurchaseChallan? findDuplicateSupplierChallan({
+  required List<PurchaseChallan> challans,
+  required String partyId,
+  required String billNo,
+  String? partyName,
+  String? excludeId,
+  String? excludeInternalNo,
+}) {
+  final String cleanParty = partyId.trim().toUpperCase();
+  final String cleanPartyName = (partyName ?? '').trim().toUpperCase();
+  final String cleanBill = billNo.trim();
+  final String cleanExId = (excludeId ?? '').trim();
+  final String cleanExInt = (excludeInternalNo ?? '').trim().toUpperCase();
+  if ((cleanParty.isEmpty && cleanPartyName.isEmpty) || cleanBill.isEmpty) return null;
+  for (final c in challans) {
+    if (c.isDeleted == 1) continue;
+    if (cleanExId.isNotEmpty && c.id.trim() == cleanExId) continue;
+    if (cleanExInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanExInt) continue;
+    final String cParty = c.partyId.trim().toUpperCase();
+    final bool sameParty = (cleanParty.isNotEmpty && cParty.isNotEmpty)
+        ? cParty == cleanParty
+        : (cleanPartyName.isNotEmpty && c.distributorName.trim().toUpperCase() == cleanPartyName);
+    if (sameParty && isSameSupplierInvoiceNo(c.billNo, cleanBill)) {
+      return c;
+    }
+  }
+  return null;
+}

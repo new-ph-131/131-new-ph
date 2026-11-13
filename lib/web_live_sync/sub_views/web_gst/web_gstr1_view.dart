@@ -356,7 +356,7 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
               decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white10))),
               children: [
                 _td(entry.key, isLeft: true, isBold: true, color: const Color(0xFF38BDF8)),
-                _td("${entry.value['qty'].toInt()} Units", isRight: true),
+                _td("${formatQty(entry.value['qty'])} Units", isRight: true),
                 _td("₹${(entry.value['taxable'] as double).toStringAsFixed(2)}", isRight: true),
                 _td("₹${(entry.value['tax'] as double).toStringAsFixed(2)}", isRight: true, color: Colors.orangeAccent),
                 _td("₹${(entry.value['total'] as double).toStringAsFixed(2)}", isRight: true, isBold: true, color: Colors.greenAccent),

@@ -546,7 +546,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${rec.qty.toInt()} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
+                          "Date: ${AppDateLogic.format(rec.date)} | Qty: ${formatQty(rec.qty)} | Rate: ₹${rec.rate.toStringAsFixed(2)}",
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
                         ),
                       );
@@ -663,7 +663,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Current Live Stock: ${b.qty.toInt()} Qty", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                Text("Current Live Stock: ${formatQty(b.qty)} Qty", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo)),
                 if (b.adjustmentHistory.isNotEmpty || b.adjustmentQty != 0) ...[
                   const SizedBox(height: 8),
                   InkWell(
@@ -685,7 +685,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${b.adjustmentQty.toInt()} Qty — Tap to Modify / Cancel",
+                              "Past Adjustments (${b.adjustmentHistory.isNotEmpty ? b.adjustmentHistory.length : 1}) • Net: ${b.adjustmentQty >= 0 ? '+' : ''}${formatQty(b.adjustmentQty)} Qty — Tap to Modify / Cancel",
                               style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F766E)),
                             ),
                           ),
@@ -851,7 +851,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                   itemBuilder: (c, i) => ListTile(
                     dense: true,
                     title: Text(filteredMeds[i].name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    subtitle: Text("ID: ${filteredMeds[i].systemId} • Pack: ${filteredMeds[i].packing} • Stock: ${filteredMeds[i].stock.toInt()}"),
+                    subtitle: Text("ID: ${filteredMeds[i].systemId} • Pack: ${filteredMeds[i].packing} • Stock: ${formatQty(filteredMeds[i].stock)}"),
                     trailing: const Icon(Icons.chevron_right, size: 16),
                     onTap: () {
                       setState(() {
@@ -880,7 +880,7 @@ class _BatchMasterViewState extends State<BatchMasterView> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(selectedMed!.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        Text("ID: ${selectedMed!.systemId} • Pack: ${selectedMed!.packing} • Total Stock: ${selectedMed!.stock.toInt()}", style: TextStyle(color: Colors.grey.shade700, fontSize: 11)),
+                        Text("ID: ${selectedMed!.systemId} • Pack: ${selectedMed!.packing} • Total Stock: ${formatQty(selectedMed!.stock)}", style: TextStyle(color: Colors.grey.shade700, fontSize: 11)),
                       ],
                     ),
                   ),
