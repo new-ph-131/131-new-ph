@@ -1049,12 +1049,15 @@ class D1SalesLedgerService {
   static Future<bool> onSaleReturnSaved(
     SaleReturn ret,
     String storeToken, {
+    bool isUpdate = true,
     String clientSource = "APP_MOBILE",
     String? fy,
+    String? fyOverride,
   }) async {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
-    final String effFy = (fy != null && fy.trim().isNotEmpty)
-        ? fy.trim()
+    final String? chosenFy = (fyOverride != null && fyOverride.trim().isNotEmpty) ? fyOverride : fy;
+    final String effFy = (chosenFy != null && chosenFy.trim().isNotEmpty)
+        ? chosenFy.trim()
         : (activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(ret.date));
     try {
       unmarkPermanentlyDeleted(ret.id, ret.billNo, "", effFy);
@@ -1087,12 +1090,23 @@ class D1SalesLedgerService {
   }
 
   static Future<bool> onSaleReturnDeleted(
-    String retId,
-    String billNo,
-    String storeToken, {
+    dynamic retOrId,
+    String storeTokenOrBillNo, [
+    String? maybeStoreToken,
+  ]) async {
+    return _onSaleReturnDeletedInternal(retOrId, storeTokenOrBillNo, maybeStoreToken);
+  }
+
+  static Future<bool> _onSaleReturnDeletedInternal(
+    dynamic retOrId,
+    String storeTokenOrBillNo, [
+    String? maybeStoreToken,
     String clientSource = "APP_MOBILE",
     String? fy,
-  }) async {
+  ]) async {
+    final String retId = retOrId is SaleReturn ? retOrId.id : retOrId.toString();
+    final String billNo = retOrId is SaleReturn ? retOrId.billNo : (maybeStoreToken != null ? storeTokenOrBillNo : "");
+    final String storeToken = maybeStoreToken ?? storeTokenOrBillNo;
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
     final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : activeFinancialYear.trim();
     try {
@@ -1186,12 +1200,15 @@ class D1SalesLedgerService {
   static Future<bool> onPurchaseReturnSaved(
     PurchaseReturn ret,
     String storeToken, {
+    bool isUpdate = true,
     String clientSource = "APP_MOBILE",
     String? fy,
+    String? fyOverride,
   }) async {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
-    final String effFy = (fy != null && fy.trim().isNotEmpty)
-        ? fy.trim()
+    final String? chosenFy = (fyOverride != null && fyOverride.trim().isNotEmpty) ? fyOverride : fy;
+    final String effFy = (chosenFy != null && chosenFy.trim().isNotEmpty)
+        ? chosenFy.trim()
         : (activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(ret.date));
     try {
       unmarkPermanentlyDeleted(ret.id, ret.billNo, "", effFy);
@@ -1224,12 +1241,23 @@ class D1SalesLedgerService {
   }
 
   static Future<bool> onPurchaseReturnDeleted(
-    String retId,
-    String billNo,
-    String storeToken, {
+    dynamic retOrId,
+    String storeTokenOrBillNo, [
+    String? maybeStoreToken,
+  ]) async {
+    return _onPurchaseReturnDeletedInternal(retOrId, storeTokenOrBillNo, maybeStoreToken);
+  }
+
+  static Future<bool> _onPurchaseReturnDeletedInternal(
+    dynamic retOrId,
+    String storeTokenOrBillNo, [
+    String? maybeStoreToken,
     String clientSource = "APP_MOBILE",
     String? fy,
-  }) async {
+  ]) async {
+    final String retId = retOrId is PurchaseReturn ? retOrId.id : retOrId.toString();
+    final String billNo = retOrId is PurchaseReturn ? retOrId.billNo : (maybeStoreToken != null ? storeTokenOrBillNo : "");
+    final String storeToken = maybeStoreToken ?? storeTokenOrBillNo;
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
     final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : activeFinancialYear.trim();
     try {

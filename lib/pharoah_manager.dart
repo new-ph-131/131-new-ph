@@ -1997,8 +1997,8 @@ void registerBatchActivity({
     }
     if (existingIdx == -1 && med.stock > 0 && batchHistory[med.identityKey]!.isEmpty) {
       batchHistory[med.identityKey]!.add(BatchInfo(
-        batch: ,
-        exp: ,
+        batch: "",
+        exp: "",
         packing: med.packing,
         mrp: med.mrp,
         rate: med.purRate,
@@ -2974,7 +2974,7 @@ void registerBatchActivity({
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
             CreditNoteSyncModule.onCreditNoteDeleted(r, t);
-            D1SalesLedgerService.onSaleReturnDeleted(r, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+            D1SalesLedgerService.onSaleReturnDeleted(r, t);
           }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
@@ -3008,7 +3008,7 @@ void registerBatchActivity({
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
             DebitNoteSyncModule.onDebitNoteDeleted(r, t);
-            D1SalesLedgerService.onPurchaseReturnDeleted(r, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
+            D1SalesLedgerService.onPurchaseReturnDeleted(r, t);
           }
         });
         TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);

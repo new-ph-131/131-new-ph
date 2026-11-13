@@ -1,3 +1,4 @@
+import "../inventory_logic_center.dart";
 import '../sync_core/modules/settings_sync_module.dart';
 import '../gst/gst_diary/services/gst_diary_d1_sync_service.dart';
 import '../sync_core/modules/gst_diary_sync_module.dart';
@@ -1560,7 +1561,7 @@ class PharoahWebManager with ChangeNotifier {
         if (rawPend != null) {
           carriedPendingInvoices = rawPend
               .whereType<Map>()
-              .map((e) => PendingInvoiceCarryEntry.fromMap(Map<String, dynamic>.from(e)))
+              .map((e) => Map<String, dynamic>.from(e))
               .toList();
         }
       } catch (_) {}
@@ -2801,7 +2802,7 @@ class PharoahWebManager with ChangeNotifier {
       final targetR = saleReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
       bNo = targetR.billNo.trim().toUpperCase();
       CreditNoteSyncModule.onCreditNoteDeleted(targetR, activeStoreToken);
-      D1SalesLedgerService.onSaleReturnDeleted(targetR, activeStoreToken, clientSource: "WEB_PORTAL", fyOverride: financialYear);
+      D1SalesLedgerService.onSaleReturnDeleted(targetR, activeStoreToken);
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo, "", financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
@@ -2834,7 +2835,7 @@ class PharoahWebManager with ChangeNotifier {
       final targetR = purchaseReturns.firstWhere((item) => item.id == returnId || item.billNo == returnId);
       bNo = targetR.billNo.trim().toUpperCase();
       DebitNoteSyncModule.onDebitNoteDeleted(targetR, activeStoreToken);
-      D1SalesLedgerService.onPurchaseReturnDeleted(targetR, activeStoreToken, clientSource: "WEB_PORTAL", fyOverride: financialYear);
+      D1SalesLedgerService.onPurchaseReturnDeleted(targetR, activeStoreToken);
     } catch (_) {}
     D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo, "", financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;

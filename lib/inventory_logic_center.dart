@@ -5,6 +5,36 @@ import 'models.dart';
 import 'expiry_master.dart';
 
 class InventoryLogicCenter {
+  /// 1. DASHBOARD VALUATION ENGINE
+  static double calculateTotalStockValue({
+    required Map<String, List<BatchInfo>> batchHistory,
+    required List<Medicine> medicines,
+  }) {
+    double grandTotal = 0;
+    batchHistory.forEach((medKey, batches) {
+      Medicine? parentMed;
+      try {
+        parentMed = medicines.firstWhere(
+          (m) =>
+              m.identityKey == medKey ||
+              m.id == medKey ||
+              m.name.trim().toUpperCase() == medKey.trim().toUpperCase(),
+        );
+      } catch (e) {
+        parentMed = null;
+      }
+      double gstRate = parentMed?.gst ?? 12.0;
+      for (var batch in batches) {
+        if (batch.qty > 0) {
+          double baseRate = batch.purRate > 0 ? batch.purRate : batch.rate;
+          double taxableRate = baseRate / (1 + (gstRate / 100));
+          grandTotal += (batch.qty * taxableRate);
+        }
+      }
+    });
+    return grandTotal;
+  }
+
   /// Normalizes an expiry string for lot identity comparisons.
   /// Empty or non-expiry sentinels ("N/A", "NONE", "00/00", etc.) normalize to "".
   static String normalizeExpKey(String exp) {

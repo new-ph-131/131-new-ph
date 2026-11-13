@@ -73,4 +73,89 @@ class WebBatchResolver {
 
     return result;
   }
+
+  /// Normalizes all keys in [batchHistory] to match `med.identityKey` for all known [medicines],
+  /// and preserves `openingQty` when a batch has `qty > 0` and `openingQty == 0` with no inward purchases.
+  static void normalizeAndHealBatchHistory({
+    required List<Medicine> medicines,
+    required Map<String, List<BatchInfo>> batchHistory,
+    required List<Purchase> purchases,
+  }) {
+    for (final med in medicines) {
+      final String primaryKey = med.identityKey.trim();
+      if (primaryKey.isEmpty) continue;
+      final Set<String> altKeys = {
+        if (med.id.trim().isNotEmpty && med.id.trim() != primaryKey) med.id.trim(),
+        if (med.name.trim().isNotEmpty && med.name.trim() != primaryKey) med.name.trim(),
+        if (med.name.trim().isNotEmpty && med.name.trim().toUpperCase() != primaryKey)
+          med.name.trim().toUpperCase(),
+      };
+      for (final alt in altKeys) {
+        if (batchHistory.containsKey(alt)) {
+          final altList = batchHistory.remove(alt);
+          if (altList != null && altList.isNotEmpty) {
+            final primaryList = batchHistory.putIfAbsent(primaryKey, () => []);
+            for (final ab in altList) {
+              final idx = InventoryLogicCenter.findMatchingBatchIndex(
+                primaryList,
+                batchNo: ab.batch,
+                exp: ab.exp,
+                mrp: ab.mrp,
+                purRate: ab.purRate > 0 ? ab.purRate : ab.rate,
+                exactEmptyBatchLot: true,
+              );
+              if (idx == -1) {
+                primaryList.add(ab);
+              } else if (primaryList[idx].qty <= 0 && ab.qty > 0) {
+                primaryList[idx] = ab;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    final Set<String> purchasedBatchKeys = {};
+    for (final pur in purchases) {
+      if (pur.isDeleted == 1) continue;
+      for (final item in pur.items) {
+        String medKey = item.medicineID.trim();
+        try {
+          final m = medicines.firstWhere(
+            (m) =>
+                m.id == item.medicineID ||
+                m.identityKey == item.medicineID ||
+                m.name.trim().toUpperCase() == item.name.trim().toUpperCase(),
+          );
+          medKey = m.identityKey;
+        } catch (_) {}
+        final lotKey = InventoryLogicCenter.makeLotKey(
+          item.batch,
+          exp: item.exp,
+          mrp: item.mrp,
+          purRate: item.purchaseRate,
+        );
+        purchasedBatchKeys.add("${medKey}_$lotKey");
+      }
+    }
+
+    batchHistory.forEach((medKey, list) {
+      for (final b in list) {
+        final lotKey = InventoryLogicCenter.makeLotKey(
+          b.batch,
+          exp: b.exp,
+          mrp: b.mrp,
+          purRate: b.purRate > 0 ? b.purRate : b.rate,
+        );
+        if (b.legacyOpeningHealPending &&
+            b.qty > 0 &&
+            b.openingQty == 0.0 &&
+            b.adjustmentQty == 0.0 &&
+            !purchasedBatchKeys.contains("${medKey}_$lotKey")) {
+          b.openingQty = b.qty;
+        }
+        b.legacyOpeningHealPending = false;
+      }
+    });
+  }
 }
