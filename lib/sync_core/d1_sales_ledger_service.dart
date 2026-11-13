@@ -863,7 +863,7 @@ class D1SalesLedgerService {
 
       recordKnownVersion(billId, billNo, version, effFy);
 
-      if (action == "DELETE") {
+      if (action == "DELETE" || action.startsWith("DELETE_")) {
         if (billId.isNotEmpty) markPermanentlyDeleted(billId, "", "", effFy);
         final cleanBNo = billNo.trim().toUpperCase();
         final bool hasActiveNewSale = localSales.any((s) => s.id != billId && cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
@@ -969,7 +969,7 @@ class D1SalesLedgerService {
         continue;
       }
 
-      if (action == "DELETE") {
+      if (action == "DELETE" || action.startsWith("DELETE_")) {
         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
         final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
@@ -1166,7 +1166,7 @@ class D1SalesLedgerService {
            (rawData.containsKey("returnType") && !rawData.containsKey("distributorName")));
       final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
       if (evFy.isNotEmpty && effFy.isNotEmpty && evFy != effFy) continue;
-      if (action == "DELETE") {
+      if (action == "DELETE" || action.startsWith("DELETE_")) {
         final String bNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
         final bool matchesLocal = localReturns.any((r) => (billId.isNotEmpty && r.id.trim() == billId) || (bNo.isNotEmpty && r.billNo.trim().toUpperCase() == bNo));
         if (isSrPayload || matchesLocal) {
@@ -1317,7 +1317,7 @@ class D1SalesLedgerService {
            (rawData.containsKey("returnType") && rawData.containsKey("distributorName")));
       final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
       if (evFy.isNotEmpty && effFy.isNotEmpty && evFy != effFy) continue;
-      if (action == "DELETE") {
+      if (action == "DELETE" || action.startsWith("DELETE_")) {
         final String bNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
         final bool matchesLocal = localReturns.any((r) => (billId.isNotEmpty && r.id.trim() == billId) || (bNo.isNotEmpty && r.billNo.trim().toUpperCase() == bNo));
         if (isPrPayload || matchesLocal) {

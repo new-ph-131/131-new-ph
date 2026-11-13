@@ -230,7 +230,7 @@ class WebVoucherD1SyncService {
            rawData.containsKey("voucherNo") ||
            rawData.containsKey("depositedIn"));
 
-      if (action == "DELETE") {
+      if (action == "DELETE" || action.startsWith("DELETE_")) {
         final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
         final String effFy = (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
             ? targetFyOverride.trim()

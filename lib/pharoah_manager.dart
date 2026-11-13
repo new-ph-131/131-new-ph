@@ -323,7 +323,22 @@ class PharoahManager with ChangeNotifier {
   Future<void> loginToCompany(CompanyProfile c, String fy) async { 
     AppRealtimeCoordinator.instance.stop();
     FastPullEngine.invalidateInFlightPulls();
-    activeCompany = c; 
+    final Set<String> mergedFys = {
+      ...c.fYears.map((e) => e.trim()).where((e) => e.isNotEmpty),
+      if (activeCompany != null && activeCompany!.id == c.id)
+        ...activeCompany!.fYears.map((e) => e.trim()).where((e) => e.isNotEmpty),
+      for (final regComp in companiesRegistry.where((rc) => rc.id == c.id))
+        ...regComp.fYears.map((e) => e.trim()).where((e) => e.isNotEmpty),
+      if (fy.trim().isNotEmpty) fy.trim(),
+    };
+    final List<String> sortedFys = AppDateLogic.sortFYList(mergedFys);
+    final map = c.toMap();
+    map['fYears'] = sortedFys;
+    activeCompany = CompanyProfile.fromMap(map);
+    final int regIdx = companiesRegistry.indexWhere((rc) => rc.id == c.id);
+    if (regIdx != -1) {
+      companiesRegistry[regIdx] = activeCompany!;
+    }
     currentFY = fy.trim(); 
     activeModule = "HOME";
     D1SalesLedgerService.activeFinancialYear = currentFY;
