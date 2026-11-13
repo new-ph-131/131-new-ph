@@ -13,6 +13,7 @@ import "dart:convert";
 import "../../../pharoah_manager.dart";
 import "../../../models.dart";
 import "../../sync_core/modules/purchase_sync_module.dart";
+import "../../sync_core/modules/purchase_challan_sync_module.dart";
 
 /// 🛡️ THE ENHANCED DELTA MERGE ENGINE RECONCILER
 /// Bridges Google Drive snapshots and D1 JSON batch inputs without ghost overwrites.
