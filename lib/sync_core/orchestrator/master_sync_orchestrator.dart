@@ -313,6 +313,11 @@ class MasterSyncOrchestrator {
           final String medKey = (bData['medKey'] ?? '').toString().trim();
           final dynamic rawBatch = bData['batch'];
           final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
+          final String batchEnvFy = (bData['fy'] ?? (rawBatch is Map ? rawBatch['fy'] : '') ?? '').toString().trim();
+          if (batchEnvFy.isNotEmpty && targetFy.isNotEmpty && batchEnvFy != targetFy &&
+              (envelope.isDeleted == 1 || envelope.action == 'DELETE')) {
+            break;
+          }
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
             D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
             if (phApp.activeCompany != null) {
@@ -647,6 +652,11 @@ class MasterSyncOrchestrator {
           final String medKey = (bData['medKey'] ?? '').toString().trim();
           final dynamic rawBatch = bData['batch'];
           final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
+          final String batchEnvFy = (bData['fy'] ?? (rawBatch is Map ? rawBatch['fy'] : '') ?? '').toString().trim();
+          if (batchEnvFy.isNotEmpty && targetFy.isNotEmpty && batchEnvFy != targetFy &&
+              (envelope.isDeleted == 1 || envelope.action == 'DELETE')) {
+            break;
+          }
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
             D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
             phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
@@ -788,6 +798,7 @@ class MasterSyncOrchestrator {
           saleReturns: phApp.saleReturns,
           purchaseReturns: phApp.purchaseReturns,
         );
+        phApp.save();
         phApp.notifyListeners();
       }
       if (phWeb != null) {

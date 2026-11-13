@@ -156,6 +156,51 @@ function doPost(e) {
             }
             request.files["tombstones.json"] = JSON.stringify(Object.keys(mergedTombMap));
           }
+          // Cumulative Tombstone Registry Protection: Keep max deletion timestamp per key
+          if (existingContent.files && (existingContent.files["tombstone_registry.json"] || request.files["tombstone_registry.json"])) {
+            var existingReg = {};
+            var incomingReg = {};
+            try {
+              if (existingContent.files["tombstone_registry.json"]) {
+                existingReg = JSON.parse(existingContent.files["tombstone_registry.json"]) || {};
+              }
+            } catch (_) {}
+            try {
+              if (request.files["tombstone_registry.json"]) {
+                incomingReg = JSON.parse(request.files["tombstone_registry.json"]) || {};
+              }
+            } catch (_) {}
+            var mergedReg = {};
+            for (var ek in existingReg) {
+              if (Object.prototype.hasOwnProperty.call(existingReg, ek)) {
+                mergedReg[ek] = Number(existingReg[ek]) || 0;
+              }
+            }
+            for (var ik in incomingReg) {
+              if (Object.prototype.hasOwnProperty.call(incomingReg, ik)) {
+                var incTs = Number(incomingReg[ik]) || 0;
+                var prevTs = Number(mergedReg[ik]) || 0;
+                if (incTs >= prevTs) {
+                  mergedReg[ik] = incTs;
+                }
+              }
+            }
+            request.files["tombstone_registry.json"] = JSON.stringify(mergedReg);
+          }
+          // Preserve any Financial Year vault slices from existing Drive snapshot that are absent from incoming payload
+          if (existingContent.files && existingContent.files["fy_vault.json"] && request.files["fy_vault.json"]) {
+            try {
+              var existingVault = JSON.parse(existingContent.files["fy_vault.json"]) || {};
+              var incomingVault = JSON.parse(request.files["fy_vault.json"]) || {};
+              for (var fyKey in existingVault) {
+                if (Object.prototype.hasOwnProperty.call(existingVault, fyKey) &&
+                    !Object.prototype.hasOwnProperty.call(incomingVault, fyKey)) {
+                  incomingVault[fyKey] = existingVault[fyKey];
+                }
+              }
+              request.files["fy_vault.json"] = JSON.stringify(incomingVault);
+            } catch (_) {}
+          }
         } catch(mergeErr) {}
       }
 

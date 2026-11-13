@@ -182,10 +182,20 @@ class FYTransferEngine {
     final List<Map<String, dynamic>> pendingInvoices = [];
     final activeVouchers = vouchers.where((v) => v.isDeleted != 1 && v.status == "Active").toList();
 
-    for (final s in sales.where((s) => s.isDeleted != 1 && s.status == "Active" && s.paymentMode.toUpperCase() == "CREDIT")) {
+    bool voucherMatchesParty(Voucher v, String partyId, String partyName) {
+      final cleanId = partyId.trim();
+      if (cleanId.isNotEmpty && v.partyId.trim() == cleanId) return true;
+      return _sameName(v.partyName, partyName);
+    }
+
+    for (final s in sales.where((s) =>
+        s.isDeleted != 1 &&
+        (s.status.isEmpty || s.status == "Active") &&
+        s.paymentMode.trim().toUpperCase() == "CREDIT")) {
       final double billTotal = s.totalAmount;
       double totalSettled = 0.0;
       for (final v in activeVouchers) {
+        if (!voucherMatchesParty(v, s.partyId, s.partyName)) continue;
         totalSettled += v.getAllocatedAmount(s.billNo);
       }
       final double remainingDue = billTotal - totalSettled;
@@ -201,10 +211,11 @@ class FYTransferEngine {
       }
     }
 
-    for (final p in purchases.where((p) => p.isDeleted != 1 && p.paymentMode.toUpperCase() == "CREDIT")) {
+    for (final p in purchases.where((p) => p.isDeleted != 1 && p.paymentMode.trim().toUpperCase() == "CREDIT")) {
       final double billTotal = p.totalAmount;
       double totalSettled = 0.0;
       for (final v in activeVouchers) {
+        if (!voucherMatchesParty(v, p.partyId, p.distributorName)) continue;
         totalSettled += v.getAllocatedAmount(p.billNo);
       }
       final double remainingDue = billTotal - totalSettled;

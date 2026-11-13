@@ -150,7 +150,10 @@ class _CollectionSheetViewState extends State<CollectionSheetView> {
 
   Widget _buildSummaryFooter(PharoahManager ph, List<Party> list) {
     double total = 0;
-    for (var p in list) { total += _calcOutstanding(ph, p); }
+    for (var p in list) {
+      final bal = _calcOutstanding(ph, p);
+      if (bal > 0) total += bal;
+    }
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -171,26 +174,9 @@ class _CollectionSheetViewState extends State<CollectionSheetView> {
     );
   }
 
-  // --- LOGIC: CALCULATION (FIXED) ---
+  // --- LOGIC: CALCULATION (SHARED CANONICAL LEDGER ENGINE) ---
   double _calcOutstanding(PharoahManager ph, Party p) {
-    double bal = p.opBal;
-    
-    // 1. Add Active Sales
-    for (var s in ph.sales.where((x) => x.partyName == p.name && x.status == "Active")) {
-      bal += s.totalAmount;
-    }
-    
-    // 2. Subtract Receipts
-    for (var v in ph.vouchers.where((x) => x.partyName == p.name && x.type == "Receipt")) {
-      bal -= v.amount;
-    }
-    
-    // 3. Subtract Sales Returns (FIXED TYPE CASTING)
-    for (var r in ph.saleReturns.where((x) => x.partyName == p.name)) {
-      bal -= r.totalAmount;
-    }
-    
-    return bal;
+    return ph.calculatePartyBalance(p);
   }
 
   Widget _buildEmptyState() {

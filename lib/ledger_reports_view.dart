@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'pharoah_manager.dart';
 import 'models.dart';
 import 'finance/party_ledger_statement_view.dart';
+import 'logic/app_accounts_calculator.dart';
 
 class LedgerReportsView extends StatefulWidget {
   const LedgerReportsView({super.key});
@@ -108,29 +109,26 @@ class SingleLedgerDetailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
-    List<Map<String, dynamic>> history = [];
+    final rawStmt = AppAccountsCalculator.getPartyStatementData(
+      party: party,
+      fromDate: DateTime(2000, 1, 1),
+      toDate: DateTime(2100, 12, 31),
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+    );
 
-    // Data collect karna (Same logic as Daybook but for 1 party)
-    history.add({'date': DateTime(2024), 'desc': "Opening Balance", 'dr': party.opBal > 0 ? party.opBal : 0.0, 'cr': party.opBal < 0 ? party.opBal.abs() : 0.0});
-    
-    for (var s in ph.sales.where((s) => s.partyName == party.name && s.status == "Active")) {
-      history.add({'date': s.date, 'desc': "Sale Bill #${s.billNo}", 'dr': s.totalAmount, 'cr': 0.0});
-    }
-    for (var pur in ph.purchases.where((pur) => pur.distributorName == party.name)) {
-      history.add({'date': pur.date, 'desc': "Pur Bill #${pur.billNo}", 'dr': 0.0, 'cr': pur.totalAmount});
-    }
-    for (var v in ph.vouchers.where((v) => v.partyName == party.name)) {
-      history.add({'date': v.date, 'desc': "${v.type} (${v.paymentMode})", 'dr': v.type == "Payment" ? v.amount : 0.0, 'cr': v.type == "Receipt" ? v.amount : 0.0});
-    }
+    final List<Map<String, dynamic>> history = rawStmt.map((item) => {
+      'date': item['date'],
+      'desc': item['particulars'] ?? item['type'] ?? '',
+      'dr': (item['dr'] as num?)?.toDouble() ?? 0.0,
+      'cr': (item['cr'] as num?)?.toDouble() ?? 0.0,
+      'bal': (item['balance'] as num?)?.toDouble() ?? (item['bal'] as num?)?.toDouble() ?? 0.0,
+    }).toList();
 
-    history.sort((a, b) => a['date'].compareTo(b['date']));
-
-    // Running Balance Calculation
-    double running = 0;
-    for (var item in history) {
-      running += (item['dr'] - item['cr']);
-      item['bal'] = running;
-    }
+    final double running = ph.calculatePartyBalance(party);
 
     return Scaffold(
       appBar: AppBar(

@@ -16,16 +16,44 @@ class _ProfitLossViewState extends State<ProfitLossView> {
   @override Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
     double sales = 0, cogs = 0, expenses = 0;
+    final DateTime startBound = DateTime(fromDate.year, fromDate.month, fromDate.day);
+    final DateTime endBound = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59, 999);
 
-    for (var s in ph.sales.where((s) => s.status == "Active" && s.date.isAfter(fromDate.subtract(const Duration(days: 1))) && s.date.isBefore(toDate.add(const Duration(days: 1))))) {
+    for (var s in ph.sales.where((s) =>
+        s.isDeleted != 1 &&
+        (s.status.isEmpty || s.status == "Active") &&
+        !s.date.isBefore(startBound) &&
+        !s.date.isAfter(endBound))) {
       sales += s.totalAmount;
       for (var it in s.items) {
-        var m = ph.medicines.firstWhere((med) => med.id == it.medicineID, orElse: () => Medicine(id: '0', name: '', packing: '', mrp: 0, rateA: 0, rateB: 0, rateC: 0));
+        var m = ph.medicines.firstWhere(
+          (med) => med.id == it.medicineID || (med.identityKey.isNotEmpty && med.identityKey == it.medicineID),
+          orElse: () => Medicine(id: '0', name: '', packing: '', mrp: 0, rateA: 0, rateB: 0, rateC: 0),
+        );
         cogs += (m.purRate * (it.qty + it.freeQty));
       }
     }
-    for (var v in ph.vouchers.where((v) => v.type == "Expense" && v.date.isAfter(fromDate.subtract(const Duration(days: 1))) && v.date.isBefore(toDate.add(const Duration(days: 1))))) {
-       expenses += v.amount;
+    for (var r in ph.saleReturns.where((r) =>
+        r.isDeleted != 1 &&
+        (r.status.isEmpty || r.status == "Active") &&
+        !r.date.isBefore(startBound) &&
+        !r.date.isAfter(endBound))) {
+      sales -= r.totalAmount;
+      for (var it in r.items.where((it) => !it.isBreakage)) {
+        var m = ph.medicines.firstWhere(
+          (med) => med.id == it.medicineID || (med.identityKey.isNotEmpty && med.identityKey == it.medicineID),
+          orElse: () => Medicine(id: '0', name: '', packing: '', mrp: 0, rateA: 0, rateB: 0, rateC: 0),
+        );
+        cogs -= (m.purRate * (it.qty + it.freeQty));
+      }
+    }
+    for (var v in ph.vouchers.where((v) =>
+        v.isDeleted != 1 &&
+        v.status == "Active" &&
+        v.type.trim().toUpperCase() == "EXPENSE" &&
+        !v.date.isBefore(startBound) &&
+        !v.date.isAfter(endBound))) {
+      expenses += v.amount;
     }
 
     return Scaffold(

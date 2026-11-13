@@ -755,7 +755,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
                 webPh.batchHistory[medKey] = [];
               }
 
-              bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim() == bNo);
+              bool exists = webPh.batchHistory[medKey]!.any((b) => b.batch.trim().toUpperCase() == bNo.toUpperCase());
               if (exists) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -776,6 +776,7 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
               final newBatch = BatchInfo(
                 batch: bNo,
                 exp: exp,
+                openingQty: q,
                 qty: q,
                 mrp: m,
                 rate: pur,

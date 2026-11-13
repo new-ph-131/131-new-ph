@@ -71,6 +71,13 @@ class BatchSyncModule {
     bool isDel = envelope.isDeleted == 1 || envelope.action == "DELETE";
     final int incomingVersion = envelope.version > 0 ? envelope.version : 1;
     final int incomingTimestamp = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+    final String envFy = (rawData['fy'] ?? batchMap['fy'] ?? '').toString().trim();
+    final String activeFy = D1SalesLedgerService.activeFinancialYear.trim();
+    final bool isCrossFy = envFy.isNotEmpty && activeFy.isNotEmpty && envFy != activeFy;
+
+    if (isCrossFy && isDel) {
+      return false;
+    }
 
     // Check Permanent Tombstones
     if (D1SalesLedgerService.isBillDeleted(syncId, batchNo, medKey) ||
@@ -85,6 +92,15 @@ class BatchSyncModule {
         }
         return false;
       }
+    }
+
+    final existingList = batchHistory[medKey];
+    final int preExistingIdx = existingList == null
+        ? -1
+        : existingList.indexWhere((b) => b.batch.trim().toUpperCase() == batchNo.toUpperCase());
+
+    if (preExistingIdx == -1 && isCrossFy) {
+      return false;
     }
 
     if (!batchHistory.containsKey(medKey)) {
@@ -128,9 +144,7 @@ class BatchSyncModule {
       existing.rateCFormula = incomingBatch.rateCFormula;
       existing.appliedRateType = incomingBatch.appliedRateType;
       existing.status = incomingBatch.status;
-      final String envFy = (rawData['fy'] ?? batchMap['fy'] ?? '').toString().trim();
-      final String activeFy = D1SalesLedgerService.activeFinancialYear.trim();
-      final bool isSameOrUnscopedFy = envFy.isEmpty || activeFy.isEmpty || envFy == activeFy;
+      final bool isSameOrUnscopedFy = !isCrossFy;
       final bool isNewerVersion = incomingVersion >= existing.version;
       existing.version = incomingVersion;
       existing.updatedAt = incomingTimestamp;

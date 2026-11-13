@@ -48,19 +48,34 @@ class _ItemMovementLedgerViewState extends State<ItemMovementLedgerView> {
   }
 
   List<Map<String, dynamic>> _calculateMovement(PharoahManager ph) {
+    bool matchesMed(String mId) =>
+        mId == selectedMed!.id ||
+        (selectedMed!.identityKey.isNotEmpty && mId == selectedMed!.identityKey);
+
     List<Map<String, dynamic>> history = [];
-    for (var p in ph.purchases) {
-      for (var it in p.items.where((it) => it.medicineID == selectedMed!.id)) {
+    for (var p in ph.purchases.where((p) => p.isDeleted != 1)) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
         history.add({'date': p.date, 'type': 'PURCHASE', 'party': p.distributorName, 'in': it.qty + it.freeQty, 'out': 0.0, 'batch': it.batch, 'ref': p.billNo});
       }
     }
-    for (var s in ph.sales.where((s) => s.status == "Active")) {
-      for (var it in s.items.where((it) => it.medicineID == selectedMed!.id)) {
+    for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active"))) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
         history.add({'date': s.date, 'type': 'SALE', 'party': s.partyName, 'in': 0.0, 'out': it.qty + it.freeQty, 'batch': it.batch, 'ref': s.billNo});
       }
     }
+    for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
+        history.add({'date': r.date, 'type': 'SALE RETURN', 'party': r.partyName, 'in': it.qty + it.freeQty, 'out': 0.0, 'batch': it.batch, 'ref': r.billNo});
+      }
+    }
+    for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+        history.add({'date': r.date, 'type': 'PURCHASE RETURN', 'party': r.distributorName, 'in': 0.0, 'out': it.qty + it.freeQty, 'batch': it.batch, 'ref': r.billNo});
+      }
+    }
     history.sort((a, b) => a['date'].compareTo(b['date']));
-    double runningStock = 0;
+    final batches = ph.batchHistory[selectedMed!.identityKey] ?? [];
+    double runningStock = batches.fold(0.0, (sum, b) => sum + b.openingQty + b.adjustmentQty);
     for (var entry in history) {
       runningStock += (entry['in'] - entry['out']);
       entry['bal'] = runningStock;

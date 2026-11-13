@@ -86,17 +86,19 @@ class InventoryLogicCenter {
     }
 
     // STEP A: RESET - Base Stock (Opening + Adjustments) par reset karein
-    // 🛡️ OPENING STOCK HEAL: Agar kisi batch me qty > 0 hai par openingQty == 0 hai aur is saal
-    // uska koi purchase bill nahi hai (jaise manual/carried-forward batch), to openingQty = qty preserve karein!
+    // 🛡️ OPENING STOCK HEAL: Sirf pre-openingQty legacy JSON records ke liye heal karein;
+    // normal/deleted purchase batches par kabhi phantom openingQty generate na ho!
     batchHistory.forEach((key, list) {
       for (var b in list) {
         final String cleanBatch = b.batch.trim().toUpperCase();
-        if (b.qty > 0 &&
+        if (b.legacyOpeningHealPending &&
+            b.qty > 0 &&
             b.openingQty == 0.0 &&
             b.adjustmentQty == 0.0 &&
             !purchasedBatchKeys.contains("${key}_$cleanBatch")) {
           b.openingQty = b.qty;
         }
+        b.legacyOpeningHealPending = false;
         b.qty = b.openingQty + b.adjustmentQty;
       }
     });
@@ -169,7 +171,7 @@ class InventoryLogicCenter {
 
     // --- 🛡️ STEP F: FINAL SYNC WITH LOOSE STOCK GUARD ---
     for (var med in medicines) {
-      if (batchHistory.containsKey(med.identityKey) && batchHistory[med.identityKey]!.isNotEmpty) {
+      if (batchHistory.containsKey(med.identityKey)) {
         double total = 0;
         for (var b in batchHistory[med.identityKey]!) {
           total += b.qty;

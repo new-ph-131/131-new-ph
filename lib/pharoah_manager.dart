@@ -97,6 +97,7 @@ class PharoahManager with ChangeNotifier {
   List<SaleReturn> saleReturns = []; 
   List<PurchaseReturn> purchaseReturns = [];
   List<Voucher> vouchers = []; 
+  List<Map<String, dynamic>> carriedPendingInvoices = [];
   List<LogEntry> logs = []; 
   Map<String, List<BatchInfo>> batchHistory = {};
   AppConfig config = AppConfig(); 
@@ -560,6 +561,11 @@ class PharoahManager with ChangeNotifier {
         systemUsers = loadedUsers;
       }
 
+      carriedPendingInvoices = (load('pending_invoices.json') as List?)
+              ?.whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList() ??
+          [];
       batchHistory.clear();
       var bD = load('bats.json');
       if (bD is Map) {
@@ -1022,8 +1028,8 @@ Future<void> finalizePurchase({
       String p = l.split(RegExp(r'\d')).first; 
       await PharoahNumberingEngine.updateSeriesCounter(type: "SALE", companyID: activeCompany!.id, usedNumber: l, prefix: p); 
     } 
-    await save(); 
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
+    await save(); 
     notifyListeners(); 
   }
 
@@ -1054,8 +1060,8 @@ Future<void> finalizePurchase({
         });
       }
     } 
-    await save(); 
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
+    await save(); 
     notifyListeners(); 
   }
 
@@ -1754,70 +1760,16 @@ void registerBatchActivity({
   // ===========================================================================
 
   List<Map<String, dynamic>> getPendingBills(String partyId, bool isReceipt, {String? excludeVoucherId}) {
-    List<Map<String, dynamic>> pending = [];
-    DateTime now = DateTime.now();
-
-    final activeVouchers = vouchers.where((v) {
-      if (v.status != 'Active' || v.isDeleted != 0) return false;
-      if (excludeVoucherId != null &&
-          excludeVoucherId.isNotEmpty &&
-          (v.id == excludeVoucherId || v.voucherNo == excludeVoucherId)) {
-        return false;
-      }
-      return true;
-    }).toList();
-
-    if (isReceipt) {
-      for (var s in sales.where((s) => s.partyId == partyId && s.paymentMode == "CREDIT" && s.status == "Active")) {
-        double billTotal = s.totalAmount;
-        double totalSettled = 0.0;
-        for (var v in activeVouchers) {
-          totalSettled += v.getAllocatedAmount(s.billNo);
-        }
-        if (totalSettled > billTotal) totalSettled = billTotal;
-        double remainingDue = billTotal - totalSettled;
-        remainingDue = double.parse(remainingDue.toStringAsFixed(2));
-
-        if (remainingDue > 0.01) {
-          int days = now.difference(s.date).inDays;
-          pending.add({
-            'date': s.date,
-            'billNo': s.billNo,
-            'amount': remainingDue,
-            'totalAmount': billTotal,
-            'paidAmount': totalSettled,
-            'dueDays': days,
-            'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
-          });
-        }
-      }
-    } else {
-      for (var p in purchases.where((p) => p.partyId == partyId && p.paymentMode == "CREDIT")) {
-        double billTotal = p.totalAmount;
-        double totalSettled = 0.0;
-        for (var v in activeVouchers) {
-          totalSettled += v.getAllocatedAmount(p.billNo);
-        }
-        if (totalSettled > billTotal) totalSettled = billTotal;
-        double remainingDue = billTotal - totalSettled;
-        remainingDue = double.parse(remainingDue.toStringAsFixed(2));
-
-        if (remainingDue > 0.01) {
-          int days = now.difference(p.date).inDays;
-          pending.add({
-            'date': p.date,
-            'billNo': p.billNo,
-            'amount': remainingDue,
-            'totalAmount': billTotal,
-            'paidAmount': totalSettled,
-            'dueDays': days,
-            'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
-          });
-        }
-      }
-    }
-    pending.sort((a, b) => a['date'].compareTo(b['date']));
-    return pending;
+    return AppAccountsCalculator.getPendingBills(
+      partyId: partyId,
+      isReceipt: isReceipt,
+      sales: sales,
+      purchases: purchases,
+      vouchers: vouchers,
+      excludeVoucherId: excludeVoucherId,
+      parties: parties,
+      carriedPendingInvoices: carriedPendingInvoices,
+    );
   }
   
   List<BankTransaction> getBankStatement(String bankName, DateTime from, DateTime to) {
@@ -2569,12 +2521,12 @@ void registerBatchActivity({
         });
       }
       
-      await save(); 
       InventoryLogicCenter.rebuildAllInventory(
         medicines: medicines, batchHistory: batchHistory, 
         purchases: purchases, sales: sales, 
         saleReturns: saleReturns, purchaseReturns: purchaseReturns
       );
+      await save(); 
       notifyListeners();
     }
   }
@@ -2597,12 +2549,12 @@ void registerBatchActivity({
         });
       }
 
-      await save();
       InventoryLogicCenter.rebuildAllInventory(
         medicines: medicines, batchHistory: batchHistory, 
         purchases: purchases, sales: sales, 
         saleReturns: saleReturns, purchaseReturns: purchaseReturns
       );
+      await save();
       notifyListeners();
     }
   }
@@ -2639,30 +2591,71 @@ void registerBatchActivity({
   void updateChequeStatus(String id, String s, String r) { int i = cheques.indexWhere((c) => c.id == id); if(i != -1) { cheques[i].status = s; cheques[i].remark = r; save(); } }
   
   void cancelReturn(String id, bool isSaleReturn) {
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
     if (isSaleReturn) {
       int i = saleReturns.indexWhere((r) => r.id == id);
-      if (i != -1) saleReturns[i].status = "Cancelled";
+      if (i != -1) {
+        saleReturns[i].status = "Cancelled";
+        saleReturns[i].version += 1;
+        saleReturns[i].updatedAt = nowTs;
+        if (activeCompany != null) {
+          final ret = saleReturns[i];
+          WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+            if (t.isNotEmpty) ReturnsSyncModule.onSaleReturnSaved(ret, t);
+          });
+        }
+      }
     } else {
       int i = purchaseReturns.indexWhere((r) => r.id == id);
-      if (i != -1) purchaseReturns[i].status = "Cancelled";
+      if (i != -1) {
+        purchaseReturns[i].status = "Cancelled";
+        purchaseReturns[i].version += 1;
+        purchaseReturns[i].updatedAt = nowTs;
+        if (activeCompany != null) {
+          final ret = purchaseReturns[i];
+          WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+            if (t.isNotEmpty) DebitNoteSyncModule.onDebitNoteSaved(ret, t);
+          });
+        }
+      }
     }
+    InventoryLogicCenter.rebuildAllInventory(
+      medicines: medicines,
+      batchHistory: batchHistory,
+      purchases: purchases,
+      sales: sales,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+    );
+    notifyListeners();
     save().then((_) => loadAllData());
   }
 
-  
   void cancelBill(String id) {
     int i = sales.indexWhere((x) => x.id == id);
     if (i != -1) {
       sales[i].status = "Cancelled";
+      sales[i].version += 1;
+      sales[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
+      InventoryLogicCenter.rebuildAllInventory(
+        medicines: medicines,
+        batchHistory: batchHistory,
+        purchases: purchases,
+        sales: sales,
+        saleReturns: saleReturns,
+        purchaseReturns: purchaseReturns,
+      );
       if (activeCompany != null) {
+        final s = sales[i];
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
-            D1SalesLedgerService.onSaleCancelled(sales[i], t, clientSource: "APP_MOBILE");
+            SalesSyncModule.onSaleSaved(s, t);
+            D1SalesLedgerService.onSaleCancelled(s, t, clientSource: "APP_MOBILE");
           }
         });
       }
-      save().then((_) => loadAllData());
       notifyListeners();
+      save().then((_) => loadAllData());
     }
   }
 
@@ -2731,6 +2724,14 @@ void registerBatchActivity({
           unmarkedIds: allUnmarked,
         );
       }
+      InventoryLogicCenter.rebuildAllInventory(
+        medicines: medicines,
+        batchHistory: batchHistory,
+        purchases: purchases,
+        sales: sales,
+        saleReturns: saleReturns,
+        purchaseReturns: purchaseReturns,
+      );
       save();
       notifyListeners();
     } catch (e) {}
@@ -2908,9 +2909,13 @@ void registerBatchActivity({
         );
       }
       saleReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
+      notifyListeners();
       save().then((_) => loadAllData());
     } catch (_) {
       saleReturns.removeWhere((r) => r.id == id);
+      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
+      notifyListeners();
       save().then((_) => loadAllData());
     }
   }
@@ -2935,9 +2940,13 @@ void registerBatchActivity({
         );
       }
       purchaseReturns.removeWhere((x) => x.id == rId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
+      notifyListeners();
       save().then((_) => loadAllData());
     } catch (_) {
       purchaseReturns.removeWhere((r) => r.id == id);
+      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
+      notifyListeners();
       save().then((_) => loadAllData());
     }
   }

@@ -106,6 +106,7 @@ class MedicineSyncModule {
       if (incomingVersion > local.version || incomingTimestamp >= local.updatedAt) {
         incomingMed.id = local.id; // preserve local primary key
         if (incomingMed.systemId.isEmpty) incomingMed.systemId = local.systemId;
+        incomingMed.stock = local.stock; // preserve active-FY computed stock
         localMedList[existingIdx] = incomingMed;
         return true;
       }

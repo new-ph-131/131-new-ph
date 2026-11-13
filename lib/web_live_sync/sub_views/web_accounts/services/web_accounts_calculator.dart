@@ -74,15 +74,15 @@ class WebAccountsCalculator {
     if (pName == 'CASH' || pName == 'CASH IN HAND' || pGroup == 'cash in hand' || party.id == 'cash') {
       double cashBal = party.opBal;
       // Inward: Cash Sales
-      for (var s in sales.where((s) => s.status == 'Active' && s.paymentMode.trim().toUpperCase() == 'CASH')) {
+      for (var s in sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == 'Active') && s.paymentMode.trim().toUpperCase() == 'CASH')) {
         cashBal += s.totalAmount;
       }
       // Outward: Cash Purchases
-      for (var p in purchases.where((p) => p.paymentMode.trim().toUpperCase() == 'CASH')) {
+      for (var p in purchases.where((p) => p.isDeleted != 1 && p.paymentMode.trim().toUpperCase() == 'CASH')) {
         cashBal -= p.totalAmount;
       }
       // Vouchers: Receipts, Payments, Contras
-      for (var v in vouchers.where((v) => v.status == 'Active')) {
+      for (var v in vouchers.where((v) => v.isDeleted != 1 && v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
         if (v.chequeInstruments.isNotEmpty && (type == 'RECEIPT' || type == 'PAYMENT' || type == 'EXPENSE')) {
           for (var inst in v.chequeInstruments) {
@@ -122,7 +122,7 @@ class WebAccountsCalculator {
       double bankBal = party.opBal;
       final bankModes = {'BANK', 'ONLINE', 'UPI', 'CHEQUE', 'CARD', 'NEFT', 'RTGS'};
 
-      for (var v in vouchers.where((v) => v.status == 'Active')) {
+      for (var v in vouchers.where((v) => v.isDeleted != 1 && v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
         if (v.chequeInstruments.isNotEmpty && (type == 'RECEIPT' || type == 'PAYMENT' || type == 'EXPENSE')) {
           for (var inst in v.chequeInstruments) {
@@ -150,10 +150,10 @@ class WebAccountsCalculator {
           if (isThisBankSrc) bankBal -= v.amount; // Outward withdrawal
         }
       }
-      for (var s in sales.where((s) => s.status == 'Active' && bankModes.contains(s.paymentMode.trim().toUpperCase()))) {
+      for (var s in sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == 'Active') && bankModes.contains(s.paymentMode.trim().toUpperCase()))) {
         bankBal += s.totalAmount;
       }
-      for (var p in purchases.where((p) => bankModes.contains(p.paymentMode.trim().toUpperCase()))) {
+      for (var p in purchases.where((p) => p.isDeleted != 1 && bankModes.contains(p.paymentMode.trim().toUpperCase()))) {
         bankBal -= p.totalAmount;
       }
       return bankBal;
@@ -164,27 +164,36 @@ class WebAccountsCalculator {
     final String pId = party.id;
 
     for (var s in sales.where((s) =>
-        (s.partyId == pId || s.partyName.trim().toUpperCase() == pName) && s.status == 'Active')) {
+        s.isDeleted != 1 &&
+        (s.partyId == pId || s.partyName.trim().toUpperCase() == pName) &&
+        (s.status.isEmpty || s.status == 'Active'))) {
       if (s.paymentMode.trim().toUpperCase() == 'CREDIT') {
         total += s.totalAmount;
       }
     }
     for (var pur in purchases.where((pur) =>
+        pur.isDeleted != 1 &&
         (pur.partyId == pId || pur.distributorName.trim().toUpperCase() == pName))) {
       if (pur.paymentMode.trim().toUpperCase() == 'CREDIT') {
         total -= pur.totalAmount;
       }
     }
     for (var sr in saleReturns.where((r) =>
-        r.partyName.trim().toUpperCase() == pName && r.status == 'Active')) {
+        r.isDeleted != 1 &&
+        r.partyName.trim().toUpperCase() == pName &&
+        (r.status.isEmpty || r.status == 'Active'))) {
       total -= sr.totalAmount;
     }
     for (var pr in purchaseReturns.where((r) =>
-        r.distributorName.trim().toUpperCase() == pName && r.status == 'Active')) {
+        r.isDeleted != 1 &&
+        r.distributorName.trim().toUpperCase() == pName &&
+        (r.status.isEmpty || r.status == 'Active'))) {
       total += pr.totalAmount;
     }
     for (var v in vouchers.where((v) =>
-        (v.partyId == pId || v.partyName.trim().toUpperCase() == pName) && v.status == 'Active')) {
+        v.isDeleted != 1 &&
+        (v.partyId == pId || v.partyName.trim().toUpperCase() == pName) &&
+        v.status == 'Active')) {
       final type = v.type.trim().toUpperCase();
       if (type == 'RECEIPT') {
         total -= v.amount;
@@ -215,7 +224,7 @@ class WebAccountsCalculator {
     // 💵 1. CASH IN HAND STATEMENT
     if (pName == 'CASH' || pName == 'CASH IN HAND' || pGroup == 'cash in hand' || pId == 'cash') {
       // Cash Sales (Dr Inward)
-      for (var s in sales.where((s) => s.status == 'Active' && s.paymentMode.trim().toUpperCase() == 'CASH')) {
+      for (var s in sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == 'Active') && s.paymentMode.trim().toUpperCase() == 'CASH')) {
         allTxns.add({
           'date': s.date,
           'ref': s.billNo,
@@ -227,7 +236,7 @@ class WebAccountsCalculator {
         });
       }
       // Cash Purchases (Cr Outward)
-      for (var p in purchases.where((p) => p.paymentMode.trim().toUpperCase() == 'CASH')) {
+      for (var p in purchases.where((p) => p.isDeleted != 1 && p.paymentMode.trim().toUpperCase() == 'CASH')) {
         allTxns.add({
           'date': p.date,
           'ref': p.billNo,
@@ -239,7 +248,7 @@ class WebAccountsCalculator {
         });
       }
       // Cash Vouchers
-      for (var v in vouchers.where((v) => v.status == 'Active')) {
+      for (var v in vouchers.where((v) => v.isDeleted != 1 && v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
         final mode = v.paymentMode.trim().toUpperCase();
         final dep = v.depositedIn.trim().toUpperCase();
@@ -296,7 +305,7 @@ class WebAccountsCalculator {
     else if (pGroup == 'bank accounts' || pGroup == 'bank') {
       final bankModes = {'BANK', 'ONLINE', 'UPI', 'CHEQUE', 'CARD', 'NEFT', 'RTGS'};
 
-      for (var v in vouchers.where((v) => v.status == 'Active')) {
+      for (var v in vouchers.where((v) => v.isDeleted != 1 && v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
         if (v.chequeInstruments.isNotEmpty && (type == 'RECEIPT' || type == 'PAYMENT' || type == 'EXPENSE')) {
           for (var inst in v.chequeInstruments) {
@@ -369,7 +378,7 @@ class WebAccountsCalculator {
           }
         }
       }
-      for (var s in sales.where((s) => s.status == 'Active' && bankModes.contains(s.paymentMode.trim().toUpperCase()))) {
+      for (var s in sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == 'Active') && bankModes.contains(s.paymentMode.trim().toUpperCase()))) {
         allTxns.add({
           'date': s.date,
           'ref': s.billNo,
@@ -380,7 +389,7 @@ class WebAccountsCalculator {
           'obj': s,
         });
       }
-      for (var p in purchases.where((p) => bankModes.contains(p.paymentMode.trim().toUpperCase()))) {
+      for (var p in purchases.where((p) => p.isDeleted != 1 && bankModes.contains(p.paymentMode.trim().toUpperCase()))) {
         allTxns.add({
           'date': p.date,
           'ref': p.billNo,
@@ -396,16 +405,19 @@ class WebAccountsCalculator {
     else {
       // Sales
       for (var s in sales.where((s) =>
-          (s.partyId == pId || s.partyName.trim().toUpperCase() == pName) && s.status == 'Active')) {
-        final isCash = s.paymentMode.trim().toUpperCase() == 'CASH';
-        if (isCash) {
+          s.isDeleted != 1 &&
+          (s.partyId == pId || s.partyName.trim().toUpperCase() == pName) &&
+          (s.status.isEmpty || s.status == 'Active'))) {
+        final modeUp = s.paymentMode.trim().toUpperCase();
+        final isImmediatePaid = modeUp.isNotEmpty && modeUp != 'CREDIT';
+        if (isImmediatePaid) {
           allTxns.add({
             'date': s.date,
             'ref': s.billNo,
-            'type': 'SALE (CASH)',
+            'type': 'SALE ($modeUp)',
             'dr': s.totalAmount,
             'cr': 0.0,
-            'particulars': "Sale Invoice #${s.billNo} [CASH SALE]",
+            'particulars': "Sale Invoice #${s.billNo} [$modeUp SALE]",
             'obj': s,
           });
           allTxns.add({
@@ -414,7 +426,7 @@ class WebAccountsCalculator {
             'type': 'CASH SETTLEMENT',
             'dr': 0.0,
             'cr': s.totalAmount,
-            'particulars': "Immediate Cash Cleared at Counter #${s.billNo}",
+            'particulars': "Immediate $modeUp Cleared at Counter #${s.billNo}",
             'obj': s,
           });
         } else {
@@ -432,16 +444,18 @@ class WebAccountsCalculator {
 
       // Purchases
       for (var p in purchases.where((p) =>
+          p.isDeleted != 1 &&
           (p.partyId == pId || p.distributorName.trim().toUpperCase() == pName))) {
-        final isCash = p.paymentMode.trim().toUpperCase() == 'CASH';
-        if (isCash) {
+        final modeUp = p.paymentMode.trim().toUpperCase();
+        final isImmediatePaid = modeUp.isNotEmpty && modeUp != 'CREDIT';
+        if (isImmediatePaid) {
           allTxns.add({
             'date': p.date,
             'ref': p.billNo,
-            'type': 'PURCHASE (CASH)',
+            'type': 'PURCHASE ($modeUp)',
             'dr': 0.0,
             'cr': p.totalAmount,
-            'particulars': "Purchase Inward #${p.billNo} [CASH PURCHASE]",
+            'particulars': "Purchase Inward #${p.billNo} [$modeUp PURCHASE]",
             'obj': p,
           });
           allTxns.add({
@@ -450,7 +464,7 @@ class WebAccountsCalculator {
             'type': 'CASH SETTLEMENT',
             'dr': p.totalAmount,
             'cr': 0.0,
-            'particulars': "Immediate Cash Paid to Supplier #${p.billNo}",
+            'particulars': "Immediate $modeUp Paid to Supplier #${p.billNo}",
             'obj': p,
           });
         } else {
@@ -468,7 +482,9 @@ class WebAccountsCalculator {
 
       // Returns
       for (var sr in saleReturns.where((r) =>
-          r.partyName.trim().toUpperCase() == pName && r.status == 'Active')) {
+          r.isDeleted != 1 &&
+          r.partyName.trim().toUpperCase() == pName &&
+          (r.status.isEmpty || r.status == 'Active'))) {
         allTxns.add({
           'date': sr.date,
           'ref': sr.billNo,
@@ -480,7 +496,9 @@ class WebAccountsCalculator {
         });
       }
       for (var pr in purchaseReturns.where((r) =>
-          r.distributorName.trim().toUpperCase() == pName && r.status == 'Active')) {
+          r.isDeleted != 1 &&
+          r.distributorName.trim().toUpperCase() == pName &&
+          (r.status.isEmpty || r.status == 'Active'))) {
         allTxns.add({
           'date': pr.date,
           'ref': pr.billNo,
@@ -494,15 +512,18 @@ class WebAccountsCalculator {
 
       // Vouchers
       for (var v in vouchers.where((v) =>
-          (v.partyId == pId || v.partyName.trim().toUpperCase() == pName) && v.status == 'Active')) {
-        final isPay = v.type.toUpperCase() == 'PAYMENT' || v.type.toUpperCase() == 'EXPENSE';
+          v.isDeleted != 1 &&
+          (v.partyId == pId || v.partyName.trim().toUpperCase() == pName) &&
+          v.status == 'Active')) {
+        final vTypeUp = v.type.trim().toUpperCase();
+        final isPay = vTypeUp == 'PAYMENT' || vTypeUp == 'EXPENSE';
         allTxns.add({
           'date': v.date,
           'ref': v.voucherNo,
-          'type': v.type.toUpperCase(),
+          'type': vTypeUp,
           'dr': isPay ? v.amount : 0.0,
           'cr': isPay ? 0.0 : v.amount,
-          'particulars': "${v.type.toUpperCase()} (${v.paymentMode})",
+          'particulars': "$vTypeUp (${v.paymentMode})",
           'obj': v,
         });
       }
@@ -512,10 +533,12 @@ class WebAccountsCalculator {
     sortTransactionsMargOrder(allTxns);
 
     // Calculate opening balance before fromDate
+    final DateTime startOfFromDate = DateTime(fromDate.year, fromDate.month, fromDate.day);
+    final DateTime endOfToDate = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59, 999);
     double runningBal = party.opBal;
     for (var item in allTxns) {
       DateTime dt = item['date'] as DateTime;
-      if (dt.isBefore(fromDate)) {
+      if (dt.isBefore(startOfFromDate)) {
         runningBal += (item['dr'] as double);
         runningBal -= (item['cr'] as double);
       }
@@ -535,7 +558,7 @@ class WebAccountsCalculator {
 
     for (var item in allTxns) {
       DateTime dt = item['date'] as DateTime;
-      if (!dt.isBefore(fromDate) && !dt.isAfter(toDate.add(const Duration(days: 1)))) {
+      if (!dt.isBefore(startOfFromDate) && !dt.isAfter(endOfToDate)) {
         runningBal += (item['dr'] as double);
         runningBal -= (item['cr'] as double);
         item['balance'] = runningBal;
@@ -562,7 +585,7 @@ class WebAccountsCalculator {
             v.date.day == today.day &&
             v.date.month == today.month &&
             v.date.year == today.year &&
-            v.status == 'Active')
+            v.isDeleted != 1 && v.status == 'Active')
         .fold(0.0, (sum, v) => sum + v.amount);
     return (todayTotal + newAmount) > 200000;
   }
@@ -579,12 +602,29 @@ class WebAccountsCalculator {
     required List<Purchase> purchases,
     required List<Voucher> vouchers,
     String? excludeVoucherId,
+    List<Party> parties = const [],
+    List<Map<String, dynamic>> carriedPendingInvoices = const [],
   }) {
     List<Map<String, dynamic>> pending = [];
     DateTime now = DateTime.now();
+    final String cleanPartyId = partyId.trim();
+    String partyNameUpper = cleanPartyId.toUpperCase();
+    for (final p in parties) {
+      if (p.id.trim() == cleanPartyId || p.name.trim().toUpperCase() == partyNameUpper) {
+        partyNameUpper = p.name.trim().toUpperCase();
+        break;
+      }
+    }
+
+    bool matchesParty(String recPartyId, String recPartyName) {
+      if (cleanPartyId.isNotEmpty && recPartyId.trim() == cleanPartyId) return true;
+      final rNameUp = recPartyName.trim().toUpperCase();
+      return partyNameUpper.isNotEmpty && rNameUp == partyNameUpper;
+    }
 
     final activeVouchers = vouchers.where((v) {
       if (v.status != 'Active' || v.isDeleted != 0) return false;
+      if (!matchesParty(v.partyId, v.partyName)) return false;
       if (excludeVoucherId != null &&
           excludeVoucherId.isNotEmpty &&
           (v.id == excludeVoucherId || v.voucherNo == excludeVoucherId)) {
@@ -593,11 +633,16 @@ class WebAccountsCalculator {
       return true;
     }).toList();
 
+    final Set<String> seenBills = {};
+
     if (isReceipt) {
       for (var s in sales.where((s) =>
-          (s.partyId == partyId || s.partyName == partyId) &&
-          s.paymentMode == 'CREDIT' &&
-          s.status == 'Active')) {
+          s.isDeleted != 1 &&
+          matchesParty(s.partyId, s.partyName) &&
+          s.paymentMode.trim().toUpperCase() == 'CREDIT' &&
+          (s.status.isEmpty || s.status == 'Active'))) {
+        final bKey = s.billNo.trim().toUpperCase();
+        if (bKey.isNotEmpty) seenBills.add(bKey);
         double billTotal = s.totalAmount;
         double totalSettled = 0.0;
 
@@ -624,8 +669,11 @@ class WebAccountsCalculator {
       }
     } else {
       for (var p in purchases.where((p) =>
-          (p.partyId == partyId || p.distributorName == partyId) &&
-          p.paymentMode == 'CREDIT')) {
+          p.isDeleted != 1 &&
+          matchesParty(p.partyId, p.distributorName) &&
+          p.paymentMode.trim().toUpperCase() == 'CREDIT')) {
+        final bKey = p.billNo.trim().toUpperCase();
+        if (bKey.isNotEmpty) seenBills.add(bKey);
         double billTotal = p.totalAmount;
         double totalSettled = 0.0;
 
@@ -649,6 +697,45 @@ class WebAccountsCalculator {
             'status': totalSettled > 0.01 ? 'PARTIAL' : 'UNSETTLED',
           });
         }
+      }
+    }
+
+    // Include prior-FY unpaid credit invoices carried forward via pending_invoices.json
+    final String expectedType = isReceipt ? 'SALE' : 'PURCHASE';
+    for (final inv in carriedPendingInvoices) {
+      final String invType = (inv['type'] ?? '').toString().trim().toUpperCase();
+      if (invType.isNotEmpty && invType != expectedType) continue;
+      final String invPartyId = (inv['partyId'] ?? '').toString();
+      final String invPartyName = (inv['partyName'] ?? '').toString();
+      if (!matchesParty(invPartyId, invPartyName)) continue;
+
+      final String invBillNo = (inv['billNo'] ?? '').toString().trim();
+      final String invKey = invBillNo.toUpperCase();
+      if (invBillNo.isEmpty || seenBills.contains(invKey)) continue;
+
+      final double carriedDue = (inv['amount'] as num?)?.toDouble() ?? 0.0;
+      if (carriedDue <= 0.01) continue;
+
+      double settledInCurrentFy = 0.0;
+      for (var v in activeVouchers) {
+        settledInCurrentFy += v.getAllocatedAmount(invBillNo);
+      }
+      if (settledInCurrentFy > carriedDue) settledInCurrentFy = carriedDue;
+      final double remainingDue = double.parse((carriedDue - settledInCurrentFy).toStringAsFixed(2));
+      if (remainingDue > 0.01) {
+        final DateTime invDate = DateTime.tryParse((inv['date'] ?? '').toString()) ?? now;
+        final int days = now.difference(invDate).inDays;
+        seenBills.add(invKey);
+        pending.add({
+          'date': invDate,
+          'billNo': invBillNo,
+          'amount': remainingDue,
+          'totalAmount': carriedDue,
+          'paidAmount': settledInCurrentFy,
+          'dueDays': days,
+          'status': settledInCurrentFy > 0.01 ? 'PARTIAL' : 'UNSETTLED',
+          'isCarriedForward': true,
+        });
       }
     }
 

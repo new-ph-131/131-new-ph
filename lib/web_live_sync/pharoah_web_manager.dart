@@ -51,6 +51,9 @@ class PharoahWebManager with ChangeNotifier {
   bool isAutoLoggingIn = true;
   bool isAuthenticated = false;
   bool isCloudPushInProgress = false;
+  String _lastRemoteSyncedAt = "";
+  int _fyParseGeneration = 0;
+  Future<void>? _pendingD1DeltaFuture;
   String errorMessage = "";
   String successMessage = "";
 
@@ -84,6 +87,7 @@ class PharoahWebManager with ChangeNotifier {
   List<GstDiarySession> gstDiarySessions = [];
   List<Purchase> purchases = [];
   List<Voucher> vouchers = [];
+  List<Map<String, dynamic>> carriedPendingInvoices = [];
   List<SaleChallan> saleChallans = [];
   List<PurchaseChallan> purchaseChallans = [];
   List<SaleReturn> saleReturns = [];
@@ -320,6 +324,7 @@ class PharoahWebManager with ChangeNotifier {
       'banks.json': jsonEncode(banks.map((e) => e.toMap()).toList()),
       'series.json': jsonEncode(numberingSeries.map((e) => e.toMap()).toList()),
       'gst_sessions.json': jsonEncode(gstDiarySessions.map((e) => e.toMap()).toList()),
+      'pending_invoices.json': jsonEncode(carriedPendingInvoices),
       'config.json': jsonEncode(appConfig.toMap()),
       'bats.json': jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
     };
@@ -330,9 +335,11 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void _clearYearScopedMemory() {
+    _fyParseGeneration++;
     sales.clear();
     purchases.clear();
     vouchers.clear();
+    carriedPendingInvoices.clear();
     saleChallans.clear();
     purchaseChallans.clear();
     saleReturns.clear();
@@ -507,6 +514,7 @@ class PharoahWebManager with ChangeNotifier {
   }
 
   void _populateDataFromCloud(String token, String user, String pass, Map<String, dynamic> result) {
+    _lastRemoteSyncedAt = (result['syncedAt'] ?? '').toString().trim();
     activeStoreToken = token.trim().toUpperCase();
     activeUsername = user.trim();
     activePassword = pass.trim();
@@ -582,6 +590,11 @@ class PharoahWebManager with ChangeNotifier {
         }
       }
       return null;
+    }
+
+    var rawPending = decodeJson('pending_invoices.json');
+    if (rawPending is List) {
+      carriedPendingInvoices = rawPending.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     }
 
     var tData = decodeJson('tombstones.json');
@@ -925,42 +938,12 @@ class PharoahWebManager with ChangeNotifier {
 
     // 🚀 UNIFIED D1 EDGE REAL-TIME DELTAS HARVEST (SALES + PURCHASES + VOUCHERS)
     if (D1SalesLedgerService.USE_D1_EDGE_LEDGER && activeStoreToken.isNotEmpty) {
-      D1SalesLedgerService.fetchSaleDeltas(activeStoreToken).then((edgeEvents) {
-        if (edgeEvents.isNotEmpty) {
-          _applyEdgeEventsToFyVault(edgeEvents);
-          final bool sMut = D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents);
-          final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents);
-          final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents);
-          final bool gMut = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(gstDiarySessions, edgeEvents);
-          final bool cMut = SettingsSyncModule.applyEdgeEventsToLocalConfig(
-            currentConfig: appConfig,
-            edgeEvents: edgeEvents,
-            onConfigMutated: (cfg) => appConfig = cfg,
-          );
-          final bool serMut = SettingsSyncModule.applyEdgeEventsToLocalSeries(
-            currentSeries: numberingSeries,
-            edgeEvents: edgeEvents,
-            onSeriesMutated: (serList) => numberingSeries = serList,
-          );
-          if (sMut) {
-            Map<String, Sale> postD1Map = {};
-            for (var s in sales) {
-              String key = s.billNo.trim().toUpperCase();
-              if (key.isEmpty) key = s.id.trim();
-              if (!postD1Map.containsKey(key) || s.version >= postD1Map[key]!.version) {
-                postD1Map[key] = s;
-              }
-            }
-            sales = postD1Map.values.toList();
-          }
-          if (sMut || pMut) {
-            rebuildInventory();
-          }
-          if (sMut || pMut || vMut || gMut || cMut || serMut) {
-            notifyListeners();
-          }
-        }
-      }).catchError((_) {});
+      final int expectedGen = _fyParseGeneration;
+      final String expectedFy = financialYear;
+      _pendingD1DeltaFuture = _harvestD1EdgeDeltas(
+        expectedGen: expectedGen,
+        expectedFy: expectedFy,
+      );
     }
 
     // 4. Sale Challans Sync with Anti-Zombie Multi-Key Protection & Chronological LWW Guard
@@ -1333,7 +1316,8 @@ class PharoahWebManager with ChangeNotifier {
     }
 
     List<BatchInfo> history = batchHistory[productKey]!;
-    int existingIdx = history.indexWhere((b) => b.batch.trim() == batchNo.trim());
+    final String cleanBatchUpper = batchNo.trim().toUpperCase();
+    int existingIdx = history.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatchUpper);
 
     double finalRateA = rateA == 0.0 ? mrp : rateA;
     double finalRateB = rateB == 0.0 ? (rateA == 0.0 ? mrp * 0.95 : rateA * 0.95) : rateB;
@@ -1552,6 +1536,53 @@ class PharoahWebManager with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _harvestD1EdgeDeltas({
+    required int expectedGen,
+    required String expectedFy,
+  }) async {
+    try {
+      final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(activeStoreToken);
+      if (expectedGen != _fyParseGeneration || financialYear != expectedFy) {
+        return; // Aborted: FY switched while D1 pull was in-flight
+      }
+      if (edgeEvents.isNotEmpty) {
+        _applyEdgeEventsToFyVault(edgeEvents);
+        final bool sMut = D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents, expectedFy);
+        final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents, expectedFy);
+        final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents, expectedFy);
+        final bool gMut = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(gstDiarySessions, edgeEvents);
+        final bool cMut = SettingsSyncModule.applyEdgeEventsToLocalConfig(
+          currentConfig: appConfig,
+          edgeEvents: edgeEvents,
+          onConfigMutated: (cfg) => appConfig = cfg,
+        );
+        final bool serMut = SettingsSyncModule.applyEdgeEventsToLocalSeries(
+          currentSeries: numberingSeries,
+          edgeEvents: edgeEvents,
+          onSeriesMutated: (serList) => numberingSeries = serList,
+        );
+        if (sMut) {
+          Map<String, Sale> postD1Map = {};
+          for (var s in sales) {
+            String key = s.billNo.trim().toUpperCase();
+            if (key.isEmpty) key = s.id.trim();
+            if (!postD1Map.containsKey(key) || s.version >= postD1Map[key]!.version) {
+              postD1Map[key] = s;
+            }
+          }
+          sales = postD1Map.values.toList();
+        }
+        if (sMut || pMut) {
+          rebuildInventory();
+        }
+        if (sMut || pMut || vMut || gMut || cMut || serMut) {
+          _snapshotActiveFyToVault();
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
   void _applyEdgeEventsToFyVault(List<Map<String, dynamic>> edgeEvents) {
     if (edgeEvents.isEmpty || fyVault.isEmpty) return;
     final Set<String> mutatedFys = {};
@@ -1590,15 +1621,26 @@ class PharoahWebManager with ChangeNotifier {
             vaultPurc = raw.map((e) => Purchase.fromMap(Map<String, dynamic>.from(e as Map))).toList();
           }
         }
+        List<Voucher> vaultVouc = [];
+        if (targetFiles.containsKey('vouc.json') && targetFiles['vouc.json']!.trim().isNotEmpty) {
+          final raw = jsonDecode(targetFiles['vouc.json']!);
+          if (raw is List) {
+            vaultVouc = raw.map((e) => Voucher.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+          }
+        }
         final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(vaultSales, fyEvents, eventFy);
         final bool pChanged = D1SalesLedgerService.applyEventsToLocalPurchases(vaultPurc, fyEvents, eventFy);
+        final bool vChanged = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vaultVouc, fyEvents, eventFy);
         if (sChanged) {
           targetFiles['sales.json'] = jsonEncode(vaultSales.map((e) => e.toMap()).toList());
         }
         if (pChanged) {
           targetFiles['purc.json'] = jsonEncode(vaultPurc.map((e) => e.toMap()).toList());
         }
-        if (sChanged || pChanged) {
+        if (vChanged) {
+          targetFiles['vouc.json'] = jsonEncode(vaultVouc.map((e) => e.toMap()).toList());
+        }
+        if (sChanged || pChanged || vChanged) {
           fyVault[eventFy] = targetFiles;
           mutatedFys.add(eventFy);
         }
@@ -1667,6 +1709,52 @@ class PharoahWebManager with ChangeNotifier {
     if (!isAuthenticated || activeStoreToken.isEmpty) return false;
     isCloudPushInProgress = true;
     try {
+      if (_pendingD1DeltaFuture != null) {
+        try {
+          await _pendingD1DeltaFuture;
+        } catch (_) {}
+      }
+
+      // 0. Pre-Push Optimistic Concurrency Check: fetch & merge concurrent remote changes before uploading
+      try {
+        final remoteCheck = await WebSyncEngine.fetchStoreData(
+          storeToken: activeStoreToken,
+          username: activeUsername,
+          password: activePassword,
+        );
+        if (remoteCheck['success'] == true) {
+          final String remoteSyncedAt = (remoteCheck['syncedAt'] ?? '').toString().trim();
+          final Map<String, dynamic> remoteFiles = (remoteCheck['files'] is Map)
+              ? Map<String, dynamic>.from(remoteCheck['files'])
+              : {};
+          if (remoteSyncedAt.isNotEmpty && remoteSyncedAt != _lastRemoteSyncedAt && remoteFiles.isNotEmpty) {
+            final String? remoteTopFy = remoteCheck['fy']?.toString();
+            final remoteVaultMap = _extractAndSyncFyVaultFromCloud(
+              remoteFiles,
+              cloudTopFy: remoteTopFy,
+              overwriteActiveYearInVault: false,
+            );
+            if (remoteVaultMap.containsKey(financialYear) && remoteVaultMap[financialYear]!.isNotEmpty) {
+              final Map<String, dynamic> scopedRemote = Map<String, dynamic>.from(remoteVaultMap[financialYear]!);
+              scopedRemote['_targetFy'] = financialYear;
+              if (remoteFiles.containsKey('tombstones.json')) scopedRemote['tombstones.json'] = remoteFiles['tombstones.json'];
+              if (remoteFiles.containsKey('tombstone_registry.json')) scopedRemote['tombstone_registry.json'] = remoteFiles['tombstone_registry.json'];
+              _parseDownloadedFiles(scopedRemote);
+            } else if (remoteTopFy == null || remoteTopFy.trim().isEmpty || remoteTopFy.trim() == financialYear) {
+              final Map<String, dynamic> rootRemote = Map<String, dynamic>.from(remoteFiles);
+              rootRemote['_targetFy'] = remoteTopFy ?? financialYear;
+              _parseDownloadedFiles(rootRemote);
+            }
+            if (_pendingD1DeltaFuture != null) {
+              try {
+                await _pendingD1DeltaFuture;
+              } catch (_) {}
+            }
+            rebuildInventory();
+            _lastRemoteSyncedAt = remoteSyncedAt;
+          }
+        }
+      } catch (_) {}
 
       // 1. Save current active FY state into Multi-FY Vault
       fyVault[financialYear] = _captureCurrentMemoryToFyFilesMap();
@@ -1712,7 +1800,16 @@ class PharoahWebManager with ChangeNotifier {
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 25));
 
-      return response.statusCode == 200 || response.body.contains("SUCCESS");
+      final bool ok = response.statusCode == 200 || response.body.contains("SUCCESS");
+      if (ok) {
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map && decoded['syncedAt'] != null) {
+            _lastRemoteSyncedAt = decoded['syncedAt'].toString().trim();
+          }
+        } catch (_) {}
+      }
+      return ok;
     } catch (e) {
       debugPrint("Web push error: $e");
       return false;
@@ -1913,12 +2010,17 @@ class PharoahWebManager with ChangeNotifier {
     int i = sales.indexWhere((x) => x.id == saleId || x.billNo == saleId);
     if (i != -1) {
       sales[i].status = "Cancelled";
+      sales[i].version += 1;
+      sales[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
       rebuildInventory();
+      _snapshotActiveFyToVault();
       notifyListeners();
+      SalesSyncModule.onSaleSaved(sales[i], activeStoreToken);
       D1SalesLedgerService.onSaleCancelled(sales[i], activeStoreToken, clientSource: "WEB_PORTAL");
       _autoSyncService.triggerAutoSync(
         action: 'CANCEL_SALE',
         entityId: sales[i].id,
+        fy: financialYear,
       );
     }
   }
@@ -2460,7 +2562,6 @@ class PharoahWebManager with ChangeNotifier {
         resolvedKey = med.identityKey;
       } catch (_) {}
 
-      double qtyChange = item.isBreakage ? 0.0 : (item.qty + item.freeQty);
       registerBatchActivity(
         productKey: resolvedKey,
         batchNo: item.batch,
@@ -2473,10 +2574,10 @@ class PharoahWebManager with ChangeNotifier {
         rateC: item.appliedRateType == "C" ? item.rate : 0.0,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
-        qtyChange: qtyChange,
       );
     }
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
 
     _autoSyncService.triggerAutoSync(
@@ -2533,10 +2634,10 @@ class PharoahWebManager with ChangeNotifier {
         rateC: item.rateC,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
-        qtyChange: -(item.qty + item.freeQty),
       );
     }
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
 
     _autoSyncService.triggerAutoSync(
@@ -2556,7 +2657,7 @@ class PharoahWebManager with ChangeNotifier {
       bNo = targetR.billNo.trim().toUpperCase();
       CreditNoteSyncModule.onCreditNoteDeleted(targetR, activeStoreToken);
     } catch (_) {}
-    D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo);
+    D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo, "", financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
     final List<String> delKeys = [returnId, if (scopedBNo.isNotEmpty) scopedBNo];
@@ -2570,6 +2671,8 @@ class PharoahWebManager with ChangeNotifier {
     }
     _saveLocalTombstones();
     saleReturns.removeWhere((item) => item.id == returnId || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
+    rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'DELETE_SALE_RETURN',
@@ -2586,7 +2689,7 @@ class PharoahWebManager with ChangeNotifier {
       bNo = targetR.billNo.trim().toUpperCase();
       DebitNoteSyncModule.onDebitNoteDeleted(targetR, activeStoreToken);
     } catch (_) {}
-    D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo);
+    D1SalesLedgerService.markPermanentlyDeleted(returnId, bNo, "", financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
     final List<String> delKeys = [returnId, if (scopedBNo.isNotEmpty) scopedBNo];
@@ -2600,6 +2703,8 @@ class PharoahWebManager with ChangeNotifier {
     }
     _saveLocalTombstones();
     purchaseReturns.removeWhere((item) => item.id == returnId || (bNo.isNotEmpty && item.billNo.trim().toUpperCase() == bNo));
+    rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
     _autoSyncService.triggerAutoSync(
       action: 'DELETE_PURCHASE_RETURN',
@@ -3399,6 +3504,18 @@ class PharoahWebManager with ChangeNotifier {
     } else if ((type == "PURCHASE_RETURN" || type == "DEBIT_NOTE") && (prefix.trim().toUpperCase() == "DN-" || prefix.trim().toUpperCase() == "PR-")) {
       prefix = "WDN-";
       start = 1;
+    } else if ((type == "RECEIPT" || type == "RCT") && prefix.trim().toUpperCase() == "RCT-") {
+      prefix = "WRCT-";
+      start = 1;
+    } else if ((type == "PAYMENT" || type == "PAY") && prefix.trim().toUpperCase() == "PAY-") {
+      prefix = "WPAY-";
+      start = 1;
+    } else if ((type == "CONTRA" || type == "CNT") && prefix.trim().toUpperCase() == "CNT-") {
+      prefix = "WCNT-";
+      start = 1;
+    } else if ((type == "EXPENSE" || type == "EXP") && prefix.trim().toUpperCase() == "EXP-") {
+      prefix = "WEXP-";
+      start = 1;
     }
 
     List<dynamic> targetList;
@@ -3439,6 +3556,8 @@ class PharoahWebManager with ChangeNotifier {
     );
 
     if (result['success'] == true) {
+      final String syncedAtStr = (result['syncedAt'] ?? '').toString().trim();
+      if (syncedAtStr.isNotEmpty) _lastRemoteSyncedAt = syncedAtStr;
       final String prevActiveFy = financialYear;
       final Map<String, dynamic> files = (result['files'] is Map)
           ? Map<String, dynamic>.from(result['files'])
@@ -3489,6 +3608,11 @@ class PharoahWebManager with ChangeNotifier {
         final Map<String, dynamic> rootScoped = Map<String, dynamic>.from(files);
         rootScoped['_targetFy'] = cloudTopFy ?? financialYear;
         _parseDownloadedFiles(rootScoped);
+      }
+      if (_pendingD1DeltaFuture != null) {
+        try {
+          await _pendingD1DeltaFuture;
+        } catch (_) {}
       }
       _hotSwapActiveYearMastersFromVault();
       rebuildInventory();
@@ -3831,6 +3955,8 @@ class PharoahWebManager with ChangeNotifier {
       purchases: purchases,
       vouchers: vouchers,
       excludeVoucherId: excludeVoucherId,
+      parties: parties,
+      carriedPendingInvoices: carriedPendingInvoices,
     );
   }
 
@@ -3889,6 +4015,9 @@ class PharoahWebManager with ChangeNotifier {
     if (!batchHistory.containsKey(medKey)) {
       batchHistory[medKey] = [];
     }
+    if (newBatch.openingQty == 0.0 && newBatch.adjustmentQty == 0.0 && newBatch.qty > 0) {
+      newBatch.openingQty = newBatch.qty;
+    }
     newBatch.version = 1;
     newBatch.updatedAt = DateTime.now().millisecondsSinceEpoch;
     batchHistory[medKey]!.add(newBatch);
@@ -3910,6 +4039,7 @@ class PharoahWebManager with ChangeNotifier {
       unmarkedIds: [syncId, newBatch.batch],
     );
     rebuildInventory();
+    _snapshotActiveFyToVault();
     notifyListeners();
     pushUpdatedDataToCloud();
   }

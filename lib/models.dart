@@ -241,6 +241,7 @@ class BatchInfo {
   String status; // 'Active', 'Hold', 'Blocked'
   int version;
   int updatedAt;
+  bool legacyOpeningHealPending;
   List<BatchAdjustmentRecord> adjustmentHistory;
 
   BatchInfo({
@@ -265,6 +266,7 @@ class BatchInfo {
     this.status = "Active",
     this.version = 1,
     this.updatedAt = 0,
+    this.legacyOpeningHealPending = false,
     List<BatchAdjustmentRecord>? adjustmentHistory,
   }) : adjustmentHistory = adjustmentHistory ?? [];
 
@@ -315,6 +317,10 @@ class BatchInfo {
     status: map['status'] ?? "Active",
     version: map['version'] is int ? map['version'] : (int.tryParse(map['version']?.toString() ?? "1") ?? 1),
     updatedAt: map['updatedAt'] is int ? map['updatedAt'] : (int.tryParse(map['updatedAt']?.toString() ?? "0") ?? 0),
+    legacyOpeningHealPending: !map.containsKey('openingQty') &&
+        ((map['qty'] ?? 0.0) as num).toDouble() > 0 &&
+        ((map['adjustmentQty'] ?? 0.0) as num).toDouble() == 0.0 &&
+        map['isShell'] != true,
     adjustmentHistory: map['adjustmentHistory'] != null && map['adjustmentHistory'] is List
         ? (map['adjustmentHistory'] as List)
             .map((e) => BatchAdjustmentRecord.fromMap(Map<String, dynamic>.from(e as Map)))

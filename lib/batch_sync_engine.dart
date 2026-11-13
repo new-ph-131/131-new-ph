@@ -35,9 +35,10 @@ class BatchSyncEngine {
 
     List<BatchInfo> history = ph.batchHistory[productKey]!;
     
-    // CASE SENSITIVE MATCHING (DL-101 != dl-101)
+    // CASE-INSENSITIVE MATCHING (consistent with InventoryLogicCenter & Sync)
+    final String cleanBatchUpper = batchNo.trim().toUpperCase();
     int existingIdx = history.indexWhere(
-      (b) => b.batch.trim() == batchNo.trim()
+      (b) => b.batch.trim().toUpperCase() == cleanBatchUpper
     );
 
     // Fallbacks to handle legacy files smoothly

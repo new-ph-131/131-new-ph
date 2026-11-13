@@ -128,17 +128,18 @@ class WebBatchResolver {
       }
     }
 
-    // 3. Heal batches that have qty > 0, openingQty == 0, adjustmentQty == 0, and NO purchase in this FY
-    // (e.g. Opening Stock / Carried Forward / Manual Batches where only qty was stored)
+    // 3. Heal ONLY legacy pre-openingQty batches (never resurrect deleted purchases as phantom opening stock)
     batchHistory.forEach((medKey, list) {
       for (final b in list) {
         final cleanBatch = b.batch.trim().toUpperCase();
-        if (b.qty > 0 &&
+        if (b.legacyOpeningHealPending &&
+            b.qty > 0 &&
             b.openingQty == 0.0 &&
             b.adjustmentQty == 0.0 &&
             !purchasedBatchKeys.contains("${medKey}_$cleanBatch")) {
           b.openingQty = b.qty;
         }
+        b.legacyOpeningHealPending = false;
       }
     });
   }

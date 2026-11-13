@@ -152,8 +152,9 @@ class _OutstandingAgeingViewState extends State<OutstandingAgeingView> {
 
   Widget _ageingSegment(String label, double val, double total, Color c) {
     if (val <= 0 || total <= 0) return const SizedBox();
+    final int flexVal = ((val / total) * 100).round().clamp(1, 100);
     return Expanded(
-      flex: (val / total * 100).toInt(),
+      flex: flexVal,
       child: Container(
         height: 25,
         margin: const EdgeInsets.only(right: 2),
@@ -165,27 +166,42 @@ class _OutstandingAgeingViewState extends State<OutstandingAgeingView> {
   }
 
   Map<String, double> _calculatePartyAgeing(PharoahManager ph, Party p) {
+    final double total = ph.calculatePartyBalance(p);
+    if (total <= 0) {
+      return {'total': total, 'b1': 0, 'b2': 0, 'b3': 0, 'b4': 0};
+    }
+
+    final String pName = p.name.trim().toUpperCase();
+    final partyBills = ph.sales.where((s) =>
+        s.isDeleted != 1 &&
+        (s.status.isEmpty || s.status == "Active") &&
+        s.paymentMode.trim().toUpperCase() == "CREDIT" &&
+        (s.partyId == p.id || s.partyName.trim().toUpperCase() == pName)).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
     double b1 = 0; // 0-30
     double b2 = 0; // 31-60
     double b3 = 0; // 61-90
     double b4 = 0; // 90+
-    double total = p.opBal;
+    double remaining = total;
+    final DateTime now = DateTime.now();
 
-    final partyBills = ph.sales.where((s) => s.partyName == p.name && s.status == "Active").toList();
-    DateTime now = DateTime.now();
-
+    // FIFO allocation: oldest dues are settled first, so remaining receivable rests on newest bills (and then opening balance -> b4)
     for (var bill in partyBills) {
-      int diff = now.difference(bill.date).inDays;
-      double amt = bill.totalAmount;
-      if (diff <= 30) b1 += amt;
-      else if (diff <= 60) b2 += amt;
-      else if (diff <= 90) b3 += amt;
-      else b4 += amt;
-      total += amt;
+      if (remaining <= 0.01) break;
+      final double take = remaining < bill.totalAmount ? remaining : bill.totalAmount;
+      if (take <= 0) continue;
+      final int diff = now.difference(bill.date).inDays;
+      if (diff <= 30) b1 += take;
+      else if (diff <= 60) b2 += take;
+      else if (diff <= 90) b3 += take;
+      else b4 += take;
+      remaining -= take;
     }
 
-    final receipts = ph.vouchers.where((v) => v.partyName == p.name && v.type == "Receipt").fold(0.0, (sum, v) => sum + v.amount);
-    total -= receipts;
+    if (remaining > 0.01) {
+      b4 += remaining;
+    }
 
     return {'total': total, 'b1': b1, 'b2': b2, 'b3': b3, 'b4': b4};
   }

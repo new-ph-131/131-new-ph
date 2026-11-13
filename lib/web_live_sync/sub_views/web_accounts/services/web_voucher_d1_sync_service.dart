@@ -208,8 +208,9 @@ class WebVoucherD1SyncService {
   /// Merges incoming D1 Edge Ledger events (from fetchSaleDeltas) into local Vouchers list
   static bool applyEdgeEventsToLocalVouchers(
     List<Voucher> localVouchers,
-    List<Map<String, dynamic>> events,
-  ) {
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
     if (events.isEmpty) return false;
     bool mutated = false;
 
@@ -233,7 +234,7 @@ class WebVoucherD1SyncService {
           (vNo.isNotEmpty && v.voucherNo.trim().toUpperCase() == vNo)
         );
         if (isVoucherPayload || matchesLocalVoucher) {
-          D1SalesLedgerService.markPermanentlyDeleted(billId, vNo);
+          D1SalesLedgerService.markPermanentlyDeleted(billId, vNo, "", targetFyOverride);
           D1SalesLedgerService.recordKnownVersion(billId, vNo, 999999);
           final int beforeLen = localVouchers.length;
           localVouchers.removeWhere((v) =>
@@ -248,14 +249,14 @@ class WebVoucherD1SyncService {
         final incoming = Voucher.fromMap(rawData);
         if (billId.isNotEmpty) incoming.id = billId;
         incoming.version = version;
-        if (!D1SalesLedgerService.doesEventBelongToActiveFY(rawData, incoming.date)) {
+        if (!D1SalesLedgerService.doesEventBelongToActiveFY(rawData, incoming.date, targetFyOverride)) {
           continue;
         }
         if (action == "CANCEL") {
           incoming.status = "Cancelled";
           incoming.isDeleted = 0;
         }
-        D1SalesLedgerService.unmarkPermanentlyDeleted(incoming.id, incoming.voucherNo);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(incoming.id, incoming.voucherNo, "", targetFyOverride);
         D1SalesLedgerService.recordKnownVersion(incoming.id, incoming.voucherNo, incoming.version);
         if (VoucherSyncModule.applyVoucherMutation(localVouchers, incoming)) {
           mutated = true;

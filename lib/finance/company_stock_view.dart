@@ -101,34 +101,39 @@ class _CompanyStockViewState extends State<CompanyStockView> {
   }) {
     double baseOpening = 0.0;
     
+    bool matchesMed(String mId) =>
+        mId == med.id || (med.identityKey.isNotEmpty && mId == med.identityKey);
+    final DateTime fromStart = DateTime(from.year, from.month, from.day);
+    final DateTime toEnd = DateTime(to.year, to.month, to.day, 23, 59, 59, 999);
+
     if (partySelectionType == "Single") {
       baseOpening = 0.0;
     } else {
       final batches = ph.batchHistory[med.identityKey] ?? [];
       if (batches.isNotEmpty) {
         baseOpening = batches.fold(0.0, (sum, b) => sum + b.openingQty + b.adjustmentQty);
-      } else {
+      } else if (!ph.batchHistory.containsKey(med.identityKey)) {
         double totalPur = 0.0;
         double totalSale = 0.0;
         double totalCN = 0.0;
         double totalDN = 0.0;
-        for (var p in ph.purchases) {
-          for (var it in p.items.where((it) => it.medicineID == med.id)) {
+        for (var p in ph.purchases.where((p) => p.isDeleted != 1)) {
+          for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
             totalPur += (it.qty + it.freeQty);
           }
         }
-        for (var s in ph.sales.where((s) => s.status == "Active")) {
-          for (var it in s.items.where((it) => it.medicineID == med.id)) {
+        for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active"))) {
+          for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
             totalSale += (it.qty + it.freeQty);
           }
         }
-        for (var r in ph.saleReturns.where((r) => r.status == "Active")) {
-          for (var it in r.items.where((it) => it.medicineID == med.id && !it.isBreakage)) {
+        for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
+          for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
             totalCN += (it.qty + it.freeQty);
           }
         }
-        for (var r in ph.purchaseReturns.where((r) => r.status == "Active")) {
-          for (var it in r.items.where((it) => it.medicineID == med.id && !it.isBreakage)) {
+        for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
+          for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
             totalDN += (it.qty + it.freeQty);
           }
         }
@@ -141,30 +146,30 @@ class _CompanyStockViewState extends State<CompanyStockView> {
     double cnBefore = 0.0;
     double dnBefore = 0.0;
 
-    for (var p in ph.purchases.where((p) => p.date.isBefore(from))) {
+    for (var p in ph.purchases.where((p) => p.isDeleted != 1 && p.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && p.partyId != selectedPartyId) continue;
-      for (var it in p.items.where((it) => it.medicineID == med.id)) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
         purBefore += (it.qty + it.freeQty);
       }
     }
 
-    for (var s in ph.sales.where((s) => s.status == "Active" && s.date.isBefore(from))) {
+    for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active") && s.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && s.partyId != selectedPartyId) continue;
-      for (var it in s.items.where((it) => it.medicineID == med.id)) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
         saleBefore += (it.qty + it.freeQty);
       }
     }
 
-    for (var r in ph.saleReturns.where((r) => r.status == "Active" && r.date.isBefore(from))) {
+    for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && r.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && r.partyName != selectedParty) continue;
-      for (var it in r.items.where((it) => it.medicineID == med.id && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
         cnBefore += (it.qty + it.freeQty);
       }
     }
 
-    for (var r in ph.purchaseReturns.where((r) => r.status == "Active" && r.date.isBefore(from))) {
+    for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && r.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && r.distributorName != selectedParty) continue;
-      for (var it in r.items.where((it) => it.medicineID == med.id && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
         dnBefore += (it.qty + it.freeQty);
       }
     }
@@ -176,33 +181,30 @@ class _CompanyStockViewState extends State<CompanyStockView> {
     double cnInPeriod = 0.0;
     double dnInPeriod = 0.0;
 
-    DateTime fromLimit = from.subtract(const Duration(seconds: 1));
-    DateTime toLimit = to.add(const Duration(days: 1));
-
-    for (var p in ph.purchases.where((p) => p.date.isAfter(fromLimit) && p.date.isBefore(toLimit))) {
+    for (var p in ph.purchases.where((p) => p.isDeleted != 1 && !p.date.isBefore(fromStart) && !p.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && p.partyId != selectedPartyId) continue;
-      for (var it in p.items.where((it) => it.medicineID == med.id)) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
         purInPeriod += (it.qty + it.freeQty);
       }
     }
 
-    for (var s in ph.sales.where((s) => s.status == "Active" && s.date.isAfter(fromLimit) && s.date.isBefore(toLimit))) {
+    for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active") && !s.date.isBefore(fromStart) && !s.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && s.partyId != selectedPartyId) continue;
-      for (var it in s.items.where((it) => it.medicineID == med.id)) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
         saleInPeriod += (it.qty + it.freeQty);
       }
     }
 
-    for (var r in ph.saleReturns.where((r) => r.status == "Active" && r.date.isAfter(fromLimit) && r.date.isBefore(toLimit))) {
+    for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && !r.date.isBefore(fromStart) && !r.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && r.partyName != selectedParty) continue;
-      for (var it in r.items.where((it) => it.medicineID == med.id && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
         cnInPeriod += (it.qty + it.freeQty);
       }
     }
 
-    for (var r in ph.purchaseReturns.where((r) => r.status == "Active" && r.date.isAfter(fromLimit) && r.date.isBefore(toLimit))) {
+    for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && !r.date.isBefore(fromStart) && !r.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && r.distributorName != selectedParty) continue;
-      for (var it in r.items.where((it) => it.medicineID == med.id && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
         dnInPeriod += (it.qty + it.freeQty);
       }
     }
