@@ -784,7 +784,7 @@ class FYTransferEngine {
             version: 1,
             updatedAt: nowTs,
           ));
-        } else if (targetList[opIdx].openingQty != pm.stock) {
+        } else if (opIdx != -1 && targetList[opIdx].openingQty != pm.stock) {
           targetList[opIdx].openingQty = pm.stock;
           targetList[opIdx].version = (targetList[opIdx].version < 1 ? 1 : targetList[opIdx].version) + 1;
           targetList[opIdx].updatedAt = nowTs;

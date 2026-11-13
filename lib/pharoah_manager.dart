@@ -3718,13 +3718,17 @@ void registerBatchActivity({
         for (final entry in cascaded.healedTargetFiles.entries) {
           await File('$targetPath/${entry.key}').writeAsString(entry.value);
         }
-
-        addLog("SYSTEM", "Marg-Grade Multi-Year Cascade: synced opening balances & rebuilt live stock from $prevFY to $targetFY.");
       }
 
       if (reloadActiveYearAtEnd && currentFY.isNotEmpty) {
         await loadAllData();
       }
+      logs.add(LogEntry(
+        id: DateTime.now().toString(),
+        action: "SYSTEM",
+        details: "Marg-Grade Multi-Year Cascade: synced opening balances & rebuilt live stock from $startYear.",
+        time: DateTime.now(),
+      ));
       return true;
     } catch (e) {
       debugPrint("Provisional Cascade Sync Failed: $e");
