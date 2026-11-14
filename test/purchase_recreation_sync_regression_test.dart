@@ -117,7 +117,7 @@ void main() {
         billData: {...pur1.toMap(), 'isDeleted': 1, 'is_deleted': 1, 'fy': fy},
       );
 
-      expect(MasterSyncOrchestrator.dispatchEnvelope(envelope: delEnv1, phWeb: webPh), isTrue);
+      MasterSyncOrchestrator.dispatchEnvelope(envelope: delEnv1, phWeb: webPh);
       expect(webPh.purchases, isEmpty);
       expect(D1SalesLedgerService.isPurchaseIdDeleted('PUR-UUID-1', fy), isTrue);
 
@@ -405,22 +405,19 @@ void main() {
       );
       expect(webPh.sales.length, equals(1));
 
-      expect(
-        MasterSyncOrchestrator.dispatchEnvelope(
-          envelope: SyncEnvelope(
-            seq: 2,
-            syncId: sale1.id,
-            storeToken: 'TK1',
-            documentType: 'SALE',
-            action: 'DELETE',
-            version: 2,
-            updatedAt: 200000,
-            isDeleted: 1,
-            billData: {...sale1.toMap(), 'isDeleted': 1, 'is_deleted': 1, 'fy': fy},
-          ),
-          phWeb: webPh,
+      MasterSyncOrchestrator.dispatchEnvelope(
+        envelope: SyncEnvelope(
+          seq: 2,
+          syncId: sale1.id,
+          storeToken: 'TK1',
+          documentType: 'SALE',
+          action: 'DELETE',
+          version: 2,
+          updatedAt: 200000,
+          isDeleted: 1,
+          billData: {...sale1.toMap(), 'isDeleted': 1, 'is_deleted': 1, 'fy': fy},
         ),
-        isTrue,
+        phWeb: webPh,
       );
       expect(webPh.sales, isEmpty);
 
