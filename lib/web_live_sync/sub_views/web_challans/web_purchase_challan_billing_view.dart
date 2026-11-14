@@ -295,22 +295,22 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                             ),
                             const SizedBox(height: 12),
 
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 6,
-                              runSpacing: 6,
+                            Row(
                               children: [
                                 const Text("RATE SCHEME:", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
+                                const SizedBox(width: 10),
                                 _rateSegment("RATE A", selectedRateType == "A", () {
                                   setDialogState(() {
                                     selectedRateType = "A";
                                   });
                                 }),
+                                const SizedBox(width: 6),
                                 _rateSegment("RATE B", selectedRateType == "B", () {
                                   setDialogState(() {
                                     selectedRateType = "B";
                                   });
                                 }),
+                                const SizedBox(width: 6),
                                 _rateSegment("RATE C", selectedRateType == "C", () {
                                   setDialogState(() {
                                     selectedRateType = "C";
