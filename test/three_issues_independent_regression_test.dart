@@ -142,7 +142,7 @@ void main() {
     test('Issue C: WebBatchResolver returns BOTH distinct NO BATCH MRP lots without collapse (normal + post-FY zero purRate)', () {
       final med = _buildTestMed();
       final Map<String, List<BatchInfo>> batchHistory = {};
-      final purchases = _buildTwoNoBatchMrpPurchases(dt: DateTime(2026, 5, 10));
+      final purchases = _buildTwoNoBatchMrpPurchases(dt: DateTime(2025, 5, 10));
 
       InventoryLogicCenter.rebuildAllInventory(
         medicines: [med],
@@ -163,7 +163,7 @@ void main() {
     test('Issue A: Two NO BATCH MRP lots (100 & 50, qty 10 each) survive FY1 -> FY2 carry-forward, rebuild, and WebBatchResolver', () async {
       final med = _buildTestMed();
       final Map<String, List<BatchInfo>> fy1Batches = {};
-      final fy1Purchases = _buildTwoNoBatchMrpPurchases(dt: DateTime(2026, 5, 10));
+      final fy1Purchases = _buildTwoNoBatchMrpPurchases(dt: DateTime(2025, 5, 10));
 
       InventoryLogicCenter.rebuildAllInventory(
         medicines: [med],
