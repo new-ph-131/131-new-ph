@@ -650,8 +650,8 @@ void main() {
       await tester.pumpWidget(
         ChangeNotifierProvider<PharoahWebManager>.value(
           value: webPh,
-          child: const MaterialApp(
-            home: Scaffold(body: WebSaleChallanView()),
+          child: MaterialApp(
+            home: Scaffold(body: WebSaleChallanView(onBack: () {})),
           ),
         ),
       );

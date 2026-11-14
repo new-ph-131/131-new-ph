@@ -705,8 +705,7 @@ Future<void> finalizeSale({
         newFinalSale,
         activeToken,
         isUpdate: existingIdx != -1,
-        clientSource: APP_MOBILE,
-        fy: currentFY,
+        clientSource: "APP_MOBILE",
       );
     }
 
@@ -724,8 +723,8 @@ Future<void> finalizeSale({
         final c = saleChallans[i];
         if (allSaleChallanLinks.contains(c.id.trim().toUpperCase()) ||
             (c.billNo.trim().isNotEmpty && allSaleChallanLinks.contains(c.billNo.trim().toUpperCase()))) {
-          if (c.status != Billed) {
-            c.status = Billed;
+          if (c.status != "Billed") {
+            c.status = "Billed";
             c.version += 1;
             c.updatedAt = DateTime.now().millisecondsSinceEpoch;
             if (activeToken.isNotEmpty) {
@@ -877,7 +876,7 @@ Future<bool> finalizePurchase({
         : '';
     if (activeToken.isNotEmpty) {
       PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, activeToken);
-      D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, activeToken, isUpdate: isModify, clientSource: APP_MOBILE, fy: currentFY);
+      D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, activeToken, isUpdate: isModify, clientSource: "APP_MOBILE", fy: currentFY);
     }
 
     final Set<String> allPurChallanLinks = {
@@ -895,8 +894,8 @@ Future<bool> finalizePurchase({
         if (allPurChallanLinks.contains(c.id.trim().toUpperCase()) ||
             (c.internalNo.trim().isNotEmpty && allPurChallanLinks.contains(c.internalNo.trim().toUpperCase())) ||
             (c.billNo.trim().isNotEmpty && allPurChallanLinks.contains(c.billNo.trim().toUpperCase()))) {
-          if (c.status != Billed) {
-            c.status = Billed;
+          if (c.status != "Billed") {
+            c.status = "Billed";
             c.version += 1;
             c.updatedAt = DateTime.now().millisecondsSinceEpoch;
             if (activeToken.isNotEmpty) {
