@@ -295,22 +295,22 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                             ),
                             const SizedBox(height: 12),
 
-                            Row(
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 6,
+                              runSpacing: 6,
                               children: [
                                 const Text("RATE SCHEME:", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
-                                const SizedBox(width: 10),
                                 _rateSegment("RATE A", selectedRateType == "A", () {
                                   setDialogState(() {
                                     selectedRateType = "A";
                                   });
                                 }),
-                                const SizedBox(width: 6),
                                 _rateSegment("RATE B", selectedRateType == "B", () {
                                   setDialogState(() {
                                     selectedRateType = "B";
                                   });
                                 }),
-                                const SizedBox(width: 6),
                                 _rateSegment("RATE C", selectedRateType == "C", () {
                                   setDialogState(() {
                                     selectedRateType = "C";
@@ -441,8 +441,11 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(color: const Color(0x33F59E0B)),
                               ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 10,
+                                runSpacing: 6,
                                 children: [
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1037,21 +1040,21 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                       ],
                     ),
                     if (!widget.isReadOnly)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
                           ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                             onPressed: isSaving ? null : () => _savePurchaseChallan(webPh, andPrint: false),
-                            icon: isSaving ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, size: 16),
-                            label: Text(isSaving ? "SAVING..." : "SAVE INWARD", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                            icon: isSaving ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, size: 15),
+                            label: Text(isSaving ? "SAVING..." : "SAVE INWARD", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5)),
                           ),
-                          const SizedBox(width: 8),
                           OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFBBF24), side: const BorderSide(color: Color(0xFFFBBF24), width: 1.5), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFBBF24), side: const BorderSide(color: Color(0xFFFBBF24), width: 1.5), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                             onPressed: isSaving ? null : () => _savePurchaseChallan(webPh, andPrint: true),
-                            icon: const Icon(Icons.print_rounded, size: 16),
-                            label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.5)),
+                            icon: const Icon(Icons.print_rounded, size: 15),
+                            label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
                           ),
                         ],
                       ),

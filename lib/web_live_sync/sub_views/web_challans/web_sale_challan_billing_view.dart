@@ -457,49 +457,109 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: TextField(
-              controller: remarksC,
-              readOnly: widget.isReadOnly,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: InputDecoration(
-                labelText: "DISPATCH REMARKS / VEHICLE INFO",
-                labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
-                prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 18),
-                filled: true,
-                fillColor: Colors.black26,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-              ),
-            ),
-          ),
-          const SizedBox(width: 30),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isCompact = constraints.maxWidth < 700;
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: remarksC,
+                  readOnly: widget.isReadOnly,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: "DISPATCH REMARKS / VEHICLE INFO",
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
+                    prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 18),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                        Text("₹${totalAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 20, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    if (!widget.isReadOnly)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F766E), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            onPressed: isSaving ? null : () => _saveSaleChallan(webPh, andPrint: false),
+                            icon: isSaving ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, size: 15),
+                            label: Text(isSaving ? "SAVING..." : "SAVE CHALLAN", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5)),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF2DD4BF), side: const BorderSide(color: Color(0xFF2DD4BF), width: 1.5), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            onPressed: isSaving ? null : () => _saveSaleChallan(webPh, andPrint: true),
+                            icon: const Icon(Icons.print_rounded, size: 15),
+                            label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
+            );
+          }
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-              Text("₹${totalAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 24, fontWeight: FontWeight.w900)),
+              Expanded(
+                child: TextField(
+                  controller: remarksC,
+                  readOnly: widget.isReadOnly,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: "DISPATCH REMARKS / VEHICLE INFO",
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
+                    prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 18),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 30),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text("NET CHALLAN VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                  Text("₹${totalAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFF2DD4BF), fontSize: 24, fontWeight: FontWeight.w900)),
+                ],
+              ),
+              const SizedBox(width: 25),
+              if (!widget.isReadOnly) ...[
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F766E), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: isSaving ? null : () => _saveSaleChallan(webPh, andPrint: false),
+                  icon: isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, size: 18),
+                  label: Text(isSaving ? "SAVING..." : "SAVE CHALLAN", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF2DD4BF), side: const BorderSide(color: Color(0xFF2DD4BF), width: 1.5), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: isSaving ? null : () => _saveSaleChallan(webPh, andPrint: true),
+                  icon: const Icon(Icons.print_rounded, size: 18),
+                  label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                ),
+              ],
             ],
-          ),
-          const SizedBox(width: 25),
-          if (!widget.isReadOnly) ...[
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F766E), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: isSaving ? null : () => _saveSaleChallan(webPh, andPrint: false),
-              icon: isSaving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, size: 18),
-              label: Text(isSaving ? "SAVING..." : "SAVE CHALLAN", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-            ),
-            const SizedBox(width: 10),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF2DD4BF), side: const BorderSide(color: Color(0xFF2DD4BF), width: 1.5), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: isSaving ? null : () => _saveSaleChallan(webPh, andPrint: true),
-              icon: const Icon(Icons.print_rounded, size: 18),
-              label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-            ),
-          ],
-        ],
+          );
+        },
       ),
     );
   }
