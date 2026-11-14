@@ -46,9 +46,16 @@ class WebRealtimeCoordinator {
         final bool isSameFy = eventFy.isEmpty || activeFy.isEmpty || eventFy == activeFy;
         debugPrint("🔔 [WebRealtimeCoordinator] App activity detected (${event.action}, FY: $eventFy, activeFY: $activeFy). Processing...");
 
+        final String targetFy = eventFy.isNotEmpty ? eventFy : activeFy;
         if (event.unmarkedIds.isNotEmpty) {
           for (final u in event.unmarkedIds) {
-            webManager.unmarkDeletedId(u);
+            final cleanU = u.trim();
+            if (cleanU.isEmpty) continue;
+            webManager.unmarkDeletedId(cleanU, preserveCase: cleanU.contains('_'), fy: targetFy);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(cleanU, "", "", targetFy, cleanU.contains('_'));
+            if (!cleanU.contains('_')) {
+              D1SalesLedgerService.unmarkPermanentlyDeleted(cleanU.toUpperCase(), "", "", targetFy);
+            }
           }
         }
         // 🛡️ STRICT CROSS-FY ISOLATION GUARD (#PH-REV-800 & #PH-REV-809):

@@ -233,8 +233,12 @@ class FastPullEngine {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                   final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                  if (isPurcEvt && D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, targetFyAtStart)) {
-                    continue;
+                  if (isPurcEvt) {
+                    final bool idBlocked = bId.isNotEmpty
+                        ? D1SalesLedgerService.isPurchaseIdDeleted(bId, targetFyAtStart)
+                        : D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, targetFyAtStart);
+                    if (idBlocked) continue;
+                    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(bId, pId, pBill, iNo, targetFyAtStart);
                   }
                   final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
                   final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, targetFyAtStart);
@@ -511,9 +515,13 @@ class FastPullEngine {
                 final partyId = (item["partyId"] ?? "").toString();
                 final billNo = (item["billNo"] ?? "").toString();
                 final intNo = (item["internalNo"] ?? "").toString();
-                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, targetFyAtStart)) continue;
+                final int itemUpd = int.tryParse((item["updatedAt"] ?? item["updated_at"] ?? "0").toString()) ?? 0;
+                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, targetFyAtStart, itemUpd)) continue;
                 final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
-                if (D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo, targetFyAtStart) > itemVer) continue;
+                final int knownV = pId.trim().isNotEmpty
+                    ? D1SalesLedgerService.getPurchaseIdKnownVersion(pId, targetFyAtStart)
+                    : D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo, targetFyAtStart);
+                if (knownV > itemVer) continue;
                 filtered.add(item);
                 continue;
               }

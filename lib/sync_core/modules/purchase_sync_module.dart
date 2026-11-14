@@ -116,21 +116,42 @@ class PurchaseSyncModule {
     });
 
     if (incoming.isDeleted == 1) {
-      D1SalesLedgerService.markPurchasePermanentlyDeleted(
-        incoming.id,
-        incoming.partyId,
-        incoming.billNo,
-        incoming.internalNo,
-        effFy,
-      );
-      D1SalesLedgerService.recordPurchaseKnownVersion(
-        incoming.id,
-        incoming.partyId,
-        incoming.billNo,
-        999999,
-        incoming.internalNo,
-        effFy,
-      );
+      final bool hasActiveDifferentEntity = cleanIntNo.isNotEmpty &&
+          currentPurchases.any((p) =>
+              p.id.trim() != incoming.id.trim() &&
+              p.internalNo.trim().toUpperCase() == cleanIntNo &&
+              p.isDeleted != 1 &&
+              (incoming.updatedAt == 0 || p.updatedAt > incoming.updatedAt));
+      if (hasActiveDifferentEntity) {
+        if (incoming.id.trim().isNotEmpty) {
+          D1SalesLedgerService.markPermanentlyDeleted(
+            incoming.id,
+            "",
+            "",
+            effFy,
+            false,
+            incoming.updatedAt > 0 ? incoming.updatedAt : null,
+          );
+          D1SalesLedgerService.recordKnownVersion(incoming.id, "", 999999, effFy);
+        }
+      } else {
+        D1SalesLedgerService.markPurchasePermanentlyDeleted(
+          incoming.id,
+          incoming.partyId,
+          incoming.billNo,
+          incoming.internalNo,
+          effFy,
+          incoming.updatedAt > 0 ? incoming.updatedAt : null,
+        );
+        D1SalesLedgerService.recordPurchaseKnownVersion(
+          incoming.id,
+          incoming.partyId,
+          incoming.billNo,
+          999999,
+          incoming.internalNo,
+          effFy,
+        );
+      }
       if (idx == -1) return false;
       final local = currentPurchases[idx];
       if (incoming.updatedAt < local.updatedAt &&
@@ -142,24 +163,43 @@ class PurchaseSyncModule {
       return true;
     }
 
-    if (D1SalesLedgerService.isPurchaseDeleted(
-      incoming.id,
-      incoming.partyId,
-      incoming.billNo,
-      incoming.internalNo,
-      effFy,
-    )) {
-      return false;
-    }
-    final int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(
-      incoming.id,
-      incoming.partyId,
-      incoming.billNo,
-      incoming.internalNo,
-      effFy,
-    );
-    if (knownVer >= 99999 || incoming.version < knownVer) {
-      return false;
+    if (incoming.id.trim().isNotEmpty) {
+      if (D1SalesLedgerService.isPurchaseIdDeleted(incoming.id, effFy)) {
+        return false;
+      }
+      final int knownIdVer = D1SalesLedgerService.getPurchaseIdKnownVersion(incoming.id, effFy);
+      if (knownIdVer >= 99999 || incoming.version < knownIdVer) {
+        return false;
+      }
+      final int secDelTs = D1SalesLedgerService.getPurchaseSecondaryDeleteTimestamp(
+        incoming.partyId,
+        incoming.billNo,
+        incoming.internalNo,
+        effFy,
+      );
+      if (secDelTs > 0 && incoming.updatedAt > 0 && incoming.updatedAt <= secDelTs) {
+        return false;
+      }
+    } else {
+      if (D1SalesLedgerService.isPurchaseDeleted(
+        incoming.id,
+        incoming.partyId,
+        incoming.billNo,
+        incoming.internalNo,
+        effFy,
+      )) {
+        return false;
+      }
+      final int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(
+        incoming.id,
+        incoming.partyId,
+        incoming.billNo,
+        incoming.internalNo,
+        effFy,
+      );
+      if (knownVer >= 99999 || incoming.version < knownVer) {
+        return false;
+      }
     }
 
     if (idx != -1) {

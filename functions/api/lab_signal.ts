@@ -38,6 +38,18 @@ const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 };
 
+function inferFyFromDateStr(dateStr: any): string {
+  if (!dateStr || typeof dateStr !== "string") return "";
+  const dt = new Date(dateStr.trim());
+  if (isNaN(dt.getTime())) return "";
+  const y = dt.getUTCFullYear();
+  const m = dt.getUTCMonth() + 1;
+  if (m >= 4) {
+    return `${y}-${String(y + 1).slice(-2)}`;
+  }
+  return `${y - 1}-${String(y).slice(-2)}`;
+}
+
 async function ensureSignalTables(db: any) {
   await db.batch([
     db.prepare("CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"),
@@ -260,7 +272,30 @@ export async function onRequestPost(context: any) {
             }
           } else {
             if (billId) atomicUnmKeys.push(billId);
-            if (billNo && !isPurchaseEvt) atomicUnmKeys.push(billNo);
+            if (billNo && !isPurchaseEvt) {
+              atomicUnmKeys.push(billNo);
+              if (evFy) atomicUnmKeys.push(`${evFy}::${billNo.toUpperCase()}`);
+            }
+            if (isPurchaseEvt && evPayloadObj && typeof evPayloadObj === "object") {
+              const pParty = (evPayloadObj.partyId || "").toString().trim().toUpperCase();
+              const pBill = (evPayloadObj.billNo || "").toString().trim();
+              const pInt = (evPayloadObj.internalNo || "").toString().trim().toUpperCase();
+              const effEvFy = evFy || inferFyFromDateStr(evPayloadObj.date);
+              if (pInt) {
+                atomicUnmKeys.push(pInt);
+                if (effEvFy) atomicUnmKeys.push(`${effEvFy}::${pInt}`);
+              }
+              if (pParty && pBill) {
+                const c2 = `${pParty}_${pBill}`;
+                atomicUnmKeys.push(c2);
+                if (effEvFy) atomicUnmKeys.push(`${effEvFy}::${c2}`);
+                if (pInt) {
+                  const c3 = `${pParty}_${pBill}_${pInt}`;
+                  atomicUnmKeys.push(c3);
+                  if (effEvFy) atomicUnmKeys.push(`${effEvFy}::${c3}`);
+                }
+              }
+            }
             for (const u of unmIds) {
               if (u && typeof u === "string" && u.trim()) atomicUnmKeys.push(u.trim());
             }
@@ -341,20 +376,38 @@ export async function onRequestPost(context: any) {
         const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
         const dType = (op.document_type || "SALE").toString().toUpperCase();
         const isPurchaseDoc = dType === "PURCHASE" || dType === "PURCHASE_CHALLAN";
-        const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();
-        const rawParty = ((op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId) || "").toString().trim();
-        const rawInt = ((op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo) || "").toString().trim();
+        const rawPayload = op.bill_data || op.data || {};
+        const rawBill = (rawPayload.billNo || "").toString().trim();
+        const rawParty = (rawPayload.partyId || "").toString().trim();
+        const rawInt = (rawPayload.internalNo || "").toString().trim().toUpperCase();
+        const opFy = (op.fy || rawPayload.fy || reqFy || inferFyFromDateStr(rawPayload.date) || "").toString().trim();
         const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill}` : "";
+        const compKey3 = (rawParty && rawBill && rawInt) ? `${rawParty.toUpperCase()}_${rawBill}_${rawInt}` : "";
+        const scopedInt = (rawInt && opFy) ? `${opFy}::${rawInt}` : "";
+        const scopedComp2 = (compKey && opFy) ? `${opFy}::${compKey}` : "";
+        const scopedComp3 = (compKey3 && opFy) ? `${opFy}::${compKey3}` : "";
+        const scopedBill = (rawBill && opFy) ? `${opFy}::${rawBill.toUpperCase()}` : "";
 
         if (isDel === 1) {
           if (sId) extractedBatchDeletedIds.push(sId);
-          if (rawInt) extractedBatchDeletedIds.push(rawInt.toUpperCase());
-          if (compKey) extractedBatchDeletedIds.push(compKey);
+          if (scopedInt) extractedBatchDeletedIds.push(scopedInt);
+          else if (rawInt) extractedBatchDeletedIds.push(rawInt);
+          if (scopedComp2) extractedBatchDeletedIds.push(scopedComp2);
+          else if (compKey) extractedBatchDeletedIds.push(compKey);
+          if (scopedComp3) extractedBatchDeletedIds.push(scopedComp3);
+          else if (compKey3) extractedBatchDeletedIds.push(compKey3);
         } else {
           if (sId) extractedBatchUnmarkedIds.push(sId);
-          if (rawInt) extractedBatchUnmarkedIds.push(rawInt.toUpperCase());
+          if (rawInt) extractedBatchUnmarkedIds.push(rawInt);
+          if (scopedInt) extractedBatchUnmarkedIds.push(scopedInt);
           if (compKey) extractedBatchUnmarkedIds.push(compKey);
-          if (rawBill && !isPurchaseDoc) extractedBatchUnmarkedIds.push(rawBill.toUpperCase());
+          if (scopedComp2) extractedBatchUnmarkedIds.push(scopedComp2);
+          if (compKey3) extractedBatchUnmarkedIds.push(compKey3);
+          if (scopedComp3) extractedBatchUnmarkedIds.push(scopedComp3);
+          if (rawBill && !isPurchaseDoc) {
+            extractedBatchUnmarkedIds.push(rawBill.toUpperCase());
+            if (scopedBill) extractedBatchUnmarkedIds.push(scopedBill);
+          }
         }
       }
     }

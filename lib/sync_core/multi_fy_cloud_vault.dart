@@ -243,7 +243,7 @@ class MultiFyCloudVault {
           if (checkKeyTombstone(comp3, preserveCase: true)) return true;
         }
       }
-      return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, fy);
+      return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, fy, recUpd);
     }
     if (id.isNotEmpty || sec.isNotEmpty) {
       return D1SalesLedgerService.isBillDeleted(id, sec, "", fy);

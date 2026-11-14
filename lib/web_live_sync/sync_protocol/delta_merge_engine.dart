@@ -165,7 +165,7 @@ class DeltaMergeEngine {
 
         // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Scoped by activeFy so series numbers never collide across FYs)
         if (getCloudCompositeKey != null) {
-          if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo, activeFy)) {
+          if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo, activeFy, cloudTimestamp)) {
             continue;
           }
         } else {
@@ -192,6 +192,12 @@ class DeltaMergeEngine {
           // Secondary key in this FY was deleted at or after this record timestamp — block stale snapshot record
           continue;
         }
+        if (getCloudCompositeKey != null && secDelTs > 0 && cloudTimestamp > secDelTs && cloudIsDeleted == 0) {
+          D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy);
+          for (final rk in [scopedIntNo, scopedComp2, scopedComp3, scopedComp2Upper, scopedComp3Upper]) {
+            if (rk.isNotEmpty) tombstoneRegistry.remove(rk);
+          }
+        }
 
         // Match in active local list
         int idx = localList.indexWhere((e) {
@@ -216,9 +222,9 @@ class DeltaMergeEngine {
           if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = delTs;
           if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = delTs;
           if (getCloudCompositeKey != null) {
-            D1SalesLedgerService.markPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy);
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy, delTs);
           } else {
-            D1SalesLedgerService.markPermanentlyDeleted(id, billNo, internalNo, activeFy);
+            D1SalesLedgerService.markPermanentlyDeleted(id, billNo, internalNo, activeFy, false, delTs);
           }
           continue;
         }

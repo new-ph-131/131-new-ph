@@ -243,9 +243,13 @@ class AppSyncEngine {
                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                       final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                      if (D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, effectiveFy)) {
+                      final bool blocked = bId.isNotEmpty
+                          ? D1SalesLedgerService.isPurchaseIdDeleted(bId, effectiveFy)
+                          : D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, effectiveFy);
+                      if (blocked) {
                         continue;
                       }
+                      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(bId, pId, pBill, iNo, effectiveFy);
                     }
                     if (bId.isNotEmpty) {
                       localRegistry.remove(bId);

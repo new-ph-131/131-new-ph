@@ -81,6 +81,10 @@ class D1SalesLedgerService {
   /// 🛡️ PERMANENT GRAVESTONES: Once marked deleted in D1, Google Drive can NEVER resurrect
   static final Set<String> _permanentDeletedKeys = {};
 
+  /// 🕒 Deletion timestamps for gravestones (ms since epoch) so brand-new re-created entities
+  /// with a distinct UUID can supersede an older secondary/series tombstone without resurrecting the deleted UUID.
+  static final Map<String, int> _permanentDeletedTimestamps = {};
+
   /// 🛡️ MASTER KNOWN VERSIONS: Google Drive can NEVER downgrade a known higher version
   static final Map<String, int> _knownBillVersions = {};
 
@@ -200,15 +204,22 @@ class D1SalesLedgerService {
     }
   }
 
-  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy, bool preserveCase = false]) {
+  static void markPermanentlyDeleted(String id, [String secondaryKey = "", String tertiaryKey = "", String? fy, bool preserveCase = false, int? deletedAtMs]) {
     final cleanId = id.trim();
     final bool keepIdCase = preserveCase || cleanId.contains("_");
     final String idKey = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy, keepIdCase) : cleanId;
     final String cleanSec = scopeSecondaryKey(secondaryKey, fy, preserveCase || secondaryKey.contains("_"));
     final String cleanTer = scopeSecondaryKey(tertiaryKey, fy, preserveCase || tertiaryKey.contains("_"));
-    if (idKey.isNotEmpty) _permanentDeletedKeys.add(idKey);
-    if (cleanSec.isNotEmpty) _permanentDeletedKeys.add(cleanSec);
-    if (cleanTer.isNotEmpty) _permanentDeletedKeys.add(cleanTer);
+    final int delTs = (deletedAtMs != null && deletedAtMs > 0) ? deletedAtMs : DateTime.now().millisecondsSinceEpoch;
+    void recordKey(String k) {
+      if (k.isEmpty) return;
+      _permanentDeletedKeys.add(k);
+      final prev = _permanentDeletedTimestamps[k] ?? 0;
+      if (delTs >= prev) _permanentDeletedTimestamps[k] = delTs;
+    }
+    recordKey(idKey);
+    recordKey(cleanSec);
+    recordKey(cleanTer);
     try {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
@@ -217,6 +228,22 @@ class D1SalesLedgerService {
         if (cleanSec.isNotEmpty) set.add(cleanSec);
         if (cleanTer.isNotEmpty) set.add(cleanTer);
         prefs.setStringList("d1_permanent_gravestones", set.toList());
+        final rawTs = prefs.getString("d1_permanent_gravestone_ts");
+        final Map<String, int> tsMap = {};
+        if (rawTs != null && rawTs.isNotEmpty) {
+          try {
+            (jsonDecode(rawTs) as Map).forEach((k, v) {
+              final ks = k.toString().trim();
+              if (ks.isNotEmpty && !isUnscopedSeriesKey(ks)) {
+                tsMap[ks] = int.tryParse(v.toString()) ?? 0;
+              }
+            });
+          } catch (_) {}
+        }
+        if (idKey.isNotEmpty) tsMap[idKey] = _permanentDeletedTimestamps[idKey] ?? delTs;
+        if (cleanSec.isNotEmpty) tsMap[cleanSec] = _permanentDeletedTimestamps[cleanSec] ?? delTs;
+        if (cleanTer.isNotEmpty) tsMap[cleanTer] = _permanentDeletedTimestamps[cleanTer] ?? delTs;
+        prefs.setString("d1_permanent_gravestone_ts", jsonEncode(tsMap));
       });
     } catch (_) {}
   }
@@ -234,9 +261,11 @@ class D1SalesLedgerService {
     void removeEverywhere(String k, {bool exactOnly = false}) {
       if (k.isEmpty) return;
       _permanentDeletedKeys.remove(k);
+      _permanentDeletedTimestamps.remove(k);
       _knownBillVersions.remove(k);
       if (!exactOnly) {
         _permanentDeletedKeys.remove(k.toUpperCase());
+        _permanentDeletedTimestamps.remove(k.toUpperCase());
         _knownBillVersions.remove(k.toUpperCase());
       }
     }
@@ -252,7 +281,7 @@ class D1SalesLedgerService {
       SharedPreferences.getInstance().then((prefs) {
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
         final set = existing.where((k) => !isUnscopedSeriesKey(k)).toSet();
-        for (final k in [
+        final toRemove = <String>{
           cleanId,
           if (!preserveCase && !cleanId.contains("_")) cleanId.toUpperCase(),
           scopedId,
@@ -260,10 +289,22 @@ class D1SalesLedgerService {
           scopedSec,
           cleanTerRaw,
           scopedTer,
-        ]) {
-          if (k.isNotEmpty) set.remove(k);
-        }
+        }..removeWhere((e) => e.isEmpty);
+        set.removeAll(toRemove);
         prefs.setStringList("d1_permanent_gravestones", set.toList());
+        final rawTs = prefs.getString("d1_permanent_gravestone_ts");
+        if (rawTs != null && rawTs.isNotEmpty) {
+          try {
+            final Map<String, int> tsMap = {};
+            (jsonDecode(rawTs) as Map).forEach((k, v) {
+              final ks = k.toString().trim();
+              if (ks.isNotEmpty && !toRemove.contains(ks) && !isUnscopedSeriesKey(ks)) {
+                tsMap[ks] = int.tryParse(v.toString()) ?? 0;
+              }
+            });
+            prefs.setString("d1_permanent_gravestone_ts", jsonEncode(tsMap));
+          } catch (_) {}
+        }
       });
     } catch (_) {}
   }
@@ -271,15 +312,60 @@ class D1SalesLedgerService {
   // =========================================================================
   // 🛡️ PURCHASE COMPOSITE CONCURRENCY & GRAVESTONES (PARTY_ID + BILL_NO + INTERNAL_NO)
   // =========================================================================
-  static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
+  /// Checks ONLY whether the immutable Purchase UUID [id] itself was permanently deleted.
+  /// Never matches reused series/composite keys so a newly re-created Purchase entity
+  /// cannot be poisoned by a previously deleted Purchase's PUR-* number.
+  static bool isPurchaseIdDeleted(String id, [String? fy]) {
     final cleanId = id.trim();
-    if (cleanId.isNotEmpty) {
-      final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
-      if (_permanentDeletedKeys.contains(cleanId) ||
-          _permanentDeletedKeys.contains(cleanId.toUpperCase()) ||
-          (scopedId.isNotEmpty && (_permanentDeletedKeys.contains(scopedId) || _permanentDeletedKeys.contains(scopedId.toUpperCase())))) {
-        return true;
+    if (cleanId.isEmpty) return false;
+    final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    return _permanentDeletedKeys.contains(cleanId) ||
+        _permanentDeletedKeys.contains(cleanId.toUpperCase()) ||
+        (scopedId.isNotEmpty &&
+            (_permanentDeletedKeys.contains(scopedId) ||
+             _permanentDeletedKeys.contains(scopedId.toUpperCase())));
+  }
+
+  /// Returns the highest known deletion timestamp (ms) recorded against any secondary
+  /// key (`internalNo`, `party_billNo`, `party_billNo_internalNo`) for a Purchase in [fy].
+  static int getPurchaseSecondaryDeleteTimestamp(
+    String partyId,
+    String billNo, [
+    String internalNo = "",
+    String? fy,
+  ]) {
+    final cleanInt = scopeSecondaryKey(internalNo, fy);
+    final cleanParty = partyId.trim().toUpperCase();
+    final cleanBill = billNo.trim();
+    final compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_$cleanBill", fy, true)
+        : "";
+    final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
+        ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy, true)
+        : "";
+    final compKey2Upper = compKey2.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}", fy, true) : "";
+    final compKey3Upper = compKey3.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}_${internalNo.trim().toUpperCase()}", fy, true) : "";
+    int maxTs = 0;
+    for (final k in [cleanInt, compKey2, compKey3, compKey2Upper, compKey3Upper]) {
+      if (k.isNotEmpty && _permanentDeletedKeys.contains(k)) {
+        final t = _permanentDeletedTimestamps[k] ?? 0;
+        if (t > maxTs) maxTs = t;
       }
+    }
+    return maxTs;
+  }
+
+  static bool isPurchaseDeleted(
+    String id,
+    String partyId,
+    String billNo, [
+    String internalNo = "",
+    String? fy,
+    int? recordUpdatedAt,
+  ]) {
+    final cleanId = id.trim();
+    if (isPurchaseIdDeleted(cleanId, fy)) {
+      return true;
     }
     final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
@@ -292,11 +378,41 @@ class D1SalesLedgerService {
         : "";
     final compKey2Upper = compKey2.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}", fy, true) : "";
     final compKey3Upper = compKey3.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}_${internalNo.trim().toUpperCase()}", fy, true) : "";
-    return (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
+
+    final bool hasSecTomb = (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
            (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
            (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3)) ||
            (compKey2Upper.isNotEmpty && _permanentDeletedKeys.contains(compKey2Upper)) ||
            (compKey3Upper.isNotEmpty && _permanentDeletedKeys.contains(compKey3Upper));
+    if (!hasSecTomb) return false;
+
+    // If caller provides a non-empty distinct UUID AND a valid record timestamp strictly newer
+    // than every secondary gravestone timestamp, allow the re-created Purchase entity.
+    if (cleanId.isNotEmpty && recordUpdatedAt != null && recordUpdatedAt > 0) {
+      int maxSecDelTs = 0;
+      for (final k in [cleanInt, compKey2, compKey3, compKey2Upper, compKey3Upper]) {
+        if (k.isNotEmpty && _permanentDeletedKeys.contains(k)) {
+          final ts = _permanentDeletedTimestamps[k] ?? 0;
+          if (ts == 0) {
+            return true; // Timestamp unknown -> conservative block
+          }
+          if (ts > maxSecDelTs) maxSecDelTs = ts;
+        }
+      }
+      if (maxSecDelTs > 0 && recordUpdatedAt > maxSecDelTs) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static int getPurchaseIdKnownVersion(String id, [String? fy]) {
+    final cleanId = id.trim();
+    if (cleanId.isEmpty) return 0;
+    final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    final v1 = _knownBillVersions[cleanId] ?? 0;
+    final v2 = scopedId.isNotEmpty ? (_knownBillVersions[scopedId] ?? 0) : 0;
+    return v1 > v2 ? v1 : v2;
   }
 
   static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
@@ -547,7 +663,7 @@ class D1SalesLedgerService {
     return false;
   }
 
-  static void markPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
+  static void markPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy, int? deletedAtMs]) {
     final cleanId = id.trim();
     final cleanInt = internalNo.trim().toUpperCase();
     final cleanParty = partyId.trim().toUpperCase();
@@ -556,9 +672,9 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
-    markPermanentlyDeleted(cleanId, cleanInt, compKey2, fy, true);
-    if (cleanId.isNotEmpty) markPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy);
-    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3, "", "", fy, true);
+    markPermanentlyDeleted(cleanId, cleanInt, compKey2, fy, true, deletedAtMs);
+    if (cleanId.isNotEmpty) markPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy, false, deletedAtMs);
+    if (compKey3.isNotEmpty) markPermanentlyDeleted(compKey3, "", "", fy, true, deletedAtMs);
   }
 
   static void unmarkPurchasePermanentlyDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
@@ -570,9 +686,17 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
         ? "${cleanParty}_${cleanBill}_$cleanInt"
         : "";
+    final compKey2Upper = compKey2.isNotEmpty ? "${cleanParty}_${cleanBill.toUpperCase()}" : "";
+    final compKey3Upper = compKey3.isNotEmpty ? "${cleanParty}_${cleanBill.toUpperCase()}_$cleanInt" : "";
     unmarkPermanentlyDeleted(cleanId, cleanInt, compKey2, fy, true);
     if (cleanId.isNotEmpty) unmarkPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy);
     if (compKey3.isNotEmpty) unmarkPermanentlyDeleted(compKey3, "", "", fy, true);
+    if (compKey2Upper.isNotEmpty && compKey2Upper != compKey2) {
+      unmarkPermanentlyDeleted(compKey2Upper, "", "", fy, true);
+    }
+    if (compKey3Upper.isNotEmpty && compKey3Upper != compKey3) {
+      unmarkPermanentlyDeleted(compKey3Upper, "", "", fy, true);
+    }
   }
 
   static Future<void> loadPersistedGravestones() async {
@@ -585,6 +709,18 @@ class D1SalesLedgerService {
         ..addAll(sanitized);
       if (sanitized.length != list.length) {
         await prefs.setStringList("d1_permanent_gravestones", sanitized);
+      }
+      _permanentDeletedTimestamps.clear();
+      final rawTs = prefs.getString("d1_permanent_gravestone_ts");
+      if (rawTs != null && rawTs.isNotEmpty) {
+        try {
+          (jsonDecode(rawTs) as Map).forEach((k, v) {
+            final ks = k.toString().trim();
+            if (ks.isNotEmpty && !isUnscopedSeriesKey(ks)) {
+              _permanentDeletedTimestamps[ks] = int.tryParse(v.toString()) ?? 0;
+            }
+          });
+        } catch (_) {}
       }
     } catch (_) {}
   }
@@ -1037,13 +1173,18 @@ class D1SalesLedgerService {
         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
         final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
+        final int delTs = int.tryParse((rawData is Map ? (rawData["updatedAt"] ?? rawData["updated_at"]) : null)?.toString() ?? ev["created_at"]?.toString() ?? "0") ?? 0;
         final bool hasActiveNewPur = localPurchases.any((p) => p.id != billId && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo && p.isDeleted != 1);
         if (billId.isNotEmpty) {
-          markPermanentlyDeleted(billId, "", "", effFy);
-          recordPurchaseKnownVersion(billId, partyId, pBillNo, version > 99999 ? version : 999999, intNo, effFy);
+          markPermanentlyDeleted(billId, "", "", effFy, false, delTs > 0 ? delTs : null);
+          if (hasActiveNewPur) {
+            recordKnownVersion(billId, "", version > 99999 ? version : 999999, effFy);
+          } else {
+            recordPurchaseKnownVersion(billId, partyId, pBillNo, version > 99999 ? version : 999999, intNo, effFy);
+          }
         }
         if (!hasActiveNewPur && (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty)) {
-          markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo, effFy);
+          markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo, effFy, delTs > 0 ? delTs : null);
         }
         final initialLen = localPurchases.length;
         localPurchases.removeWhere((p) {
@@ -1063,18 +1204,30 @@ class D1SalesLedgerService {
         if (!doesEventBelongToActiveFY(rawData, incomingPur.date, effFy)) {
           continue;
         }
-        if (isPurchaseDeleted(incomingPur.id, incomingPur.partyId, incomingPur.billNo, incomingPur.internalNo, effFy)) {
-          continue;
-        }
-        final int knownVer = getPurchaseKnownVersion(
-          incomingPur.id,
-          incomingPur.partyId,
-          incomingPur.billNo,
-          incomingPur.internalNo,
-          effFy,
-        );
-        if (knownVer >= 99999 || version < knownVer) {
-          continue;
+        if (incomingPur.id.trim().isNotEmpty) {
+          // Only block if this exact Purchase UUID itself was deleted; never block a brand-new UUID
+          // re-created after an older Purchase with the same series/supplier billNo was deleted.
+          if (isPurchaseIdDeleted(incomingPur.id, effFy)) {
+            continue;
+          }
+          final int knownIdVer = getPurchaseIdKnownVersion(incomingPur.id, effFy);
+          if (knownIdVer >= 99999 || version < knownIdVer) {
+            continue;
+          }
+        } else {
+          if (isPurchaseDeleted(incomingPur.id, incomingPur.partyId, incomingPur.billNo, incomingPur.internalNo, effFy)) {
+            continue;
+          }
+          final int knownVer = getPurchaseKnownVersion(
+            incomingPur.id,
+            incomingPur.partyId,
+            incomingPur.billNo,
+            incomingPur.internalNo,
+            effFy,
+          );
+          if (knownVer >= 99999 || version < knownVer) {
+            continue;
+          }
         }
         unmarkPurchasePermanentlyDeleted(
           incomingPur.id,

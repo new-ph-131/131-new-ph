@@ -204,6 +204,7 @@ class PharoahWebManager with ChangeNotifier {
     });
 
     purchases.removeWhere((p) {
+      final cleanId = p.id.trim();
       final iNo = p.internalNo.trim().toUpperCase();
       final bNo = p.billNo.trim();
       final party = p.partyId.trim().toUpperCase();
@@ -212,11 +213,17 @@ class PharoahWebManager with ChangeNotifier {
       final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
       final scopedComp = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, financialYear, true) : "";
       final scopedComp3 = compKey3.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey3, financialYear, true) : "";
-      final bool idMatch = set.contains(p.id) || upperSet.contains(p.id.toUpperCase());
+      final bool idMatch = cleanId.isNotEmpty && (set.contains(cleanId) || upperSet.contains(cleanId.toUpperCase()));
+      if (idMatch) return true;
+      // Do not allow stale secondary keys from an older deleted Purchase to wipe out
+      // a distinct re-created Purchase entity whose own UUID is NOT tombstoned and was freshly unmarked.
+      if (cleanId.isNotEmpty && unmarkedRecordIds.contains(cleanId)) {
+        return false;
+      }
       final bool scopedMatch = (scopedINo.isNotEmpty && (set.contains(scopedINo) || upperSet.contains(scopedINo))) ||
                                (scopedComp.isNotEmpty && set.contains(scopedComp)) ||
                                (scopedComp3.isNotEmpty && set.contains(scopedComp3));
-      return idMatch || scopedMatch;
+      return scopedMatch;
     });
 
     saleChallans.removeWhere((c) {
@@ -460,6 +467,7 @@ class PharoahWebManager with ChangeNotifier {
                         final int isDel = int.tryParse((m['isDeleted'] ?? m['is_deleted'] ?? '0').toString()) ?? 0;
                         if (isDel == 1) return true;
                         final String id = (m['id'] ?? '').toString().trim();
+                        final int itemUpd = int.tryParse((m['updatedAt'] ?? m['updated_at'] ?? '0').toString()) ?? 0;
                         if (fname == 'purc.json' || fname == 'p_challan.json') {
                           return D1SalesLedgerService.isPurchaseDeleted(
                             id,
@@ -467,6 +475,7 @@ class PharoahWebManager with ChangeNotifier {
                             (m['billNo'] ?? '').toString(),
                             (m['internalNo'] ?? '').toString(),
                             cleanFy,
+                            itemUpd,
                           );
                         }
                         final String sec = (m['billNo'] ?? m['voucherNo'] ?? '').toString().trim();
@@ -823,13 +832,16 @@ class PharoahWebManager with ChangeNotifier {
         final String cleanPartyId = p.partyId.trim().toUpperCase();
         final String compKey = PurchaseSyncModule.makeCompositeKey(p.partyId, p.billNo, p.internalNo);
 
-        // 🛡️ D1 MASTER GRAVESTONE SHIELD: If deleted in D1, Google Drive can NEVER resurrect!
-        if (D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo)) {
+        // 🛡️ D1 MASTER GRAVESTONE SHIELD: If deleted in D1, Google Drive can NEVER resurrect,
+        // while a brand-new UUID re-created after secondary tombstone can supersede it!
+        if (D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, financialYear, p.updatedAt)) {
           continue;
         }
 
         // 🛡️ D1 MASTER VERSION SHIELD: If D1 has higher version, Google Drive can NEVER downgrade!
-        final int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(p.id, p.partyId, p.billNo, p.internalNo);
+        final int knownVer = p.id.trim().isNotEmpty
+            ? D1SalesLedgerService.getPurchaseIdKnownVersion(p.id, financialYear)
+            : D1SalesLedgerService.getPurchaseKnownVersion(p.id, p.partyId, p.billNo, p.internalNo, financialYear);
         if (knownVer > p.version) {
           continue;
         }
@@ -862,15 +874,20 @@ class PharoahWebManager with ChangeNotifier {
         }
 
         // Newer record re-created: clean stale series tombstones (exact case for composite keys!)
+        D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(p.id, p.partyId, p.billNo, p.internalNo, financialYear);
         if (scopedIntNo.isNotEmpty) {
           deletedRecordIds.remove(scopedIntNo);
           deletedRecordIds.remove(scopedIntNo.toUpperCase());
+          localTombstoneRegistry.remove(scopedIntNo);
+          localTombstoneRegistry.remove(scopedIntNo.toUpperCase());
         }
         if (scopedCompKey.isNotEmpty) {
           deletedRecordIds.remove(scopedCompKey);
+          localTombstoneRegistry.remove(scopedCompKey);
         }
         if (scopedRawCompKey.isNotEmpty) {
           deletedRecordIds.remove(scopedRawCompKey);
+          localTombstoneRegistry.remove(scopedRawCompKey);
         }
 
         int idx = purchases.indexWhere((lp) => 
@@ -909,7 +926,7 @@ class PharoahWebManager with ChangeNotifier {
         final iNo = p.internalNo.trim().toUpperCase();
         final comp2 = (p.partyId.isNotEmpty && p.billNo.trim().isNotEmpty) ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim()}" : "";
         final comp3 = PurchaseSyncModule.makeCompositeKey(p.partyId, p.billNo, p.internalNo);
-        if (D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo)) return false;
+        if (D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, financialYear, p.updatedAt)) return false;
         if (p.id.isNotEmpty && (deletedRecordIds.contains(p.id) || deletedRecordIds.contains(p.id.toUpperCase()))) return false;
 
         int secDelTs = 0;
@@ -1682,6 +1699,19 @@ class PharoahWebManager with ChangeNotifier {
           }
           sales = postD1Map.values.toList();
         }
+        if (pMut) {
+          for (final p in purchases) {
+            if (p.isDeleted != 1 && p.id.trim().isNotEmpty && !D1SalesLedgerService.isPurchaseIdDeleted(p.id, expectedFy)) {
+              final c2 = (p.partyId.trim().isNotEmpty && p.billNo.trim().isNotEmpty)
+                  ? "${p.partyId.trim().toUpperCase()}_${p.billNo.trim()}"
+                  : "";
+              final c3 = PurchaseSyncModule.makeCompositeKey(p.partyId, p.billNo, p.internalNo);
+              unmarkDeletedId(p.id, referenceNo: p.internalNo.isNotEmpty ? p.internalNo : null, fy: expectedFy);
+              if (c2.isNotEmpty) unmarkDeletedId(c2, preserveCase: true, fy: expectedFy);
+              if (c3.isNotEmpty) unmarkDeletedId(c3, preserveCase: true, fy: expectedFy);
+            }
+          }
+        }
         if (sMut || pMut || srMut || prMut) {
           rebuildInventory();
         }
@@ -1962,11 +1992,12 @@ class PharoahWebManager with ChangeNotifier {
     }
   }
 
-  void unmarkDeletedId(String id, {String? referenceNo, bool preserveCase = false}) {
+  void unmarkDeletedId(String id, {String? referenceNo, bool preserveCase = false, String? fy}) {
+    final String effFy = (fy != null && fy.trim().isNotEmpty) ? fy.trim() : financialYear;
     final cleanId = id.trim();
     if (cleanId.isNotEmpty) {
       final bool keepIdCase = preserveCase || cleanId.contains('_');
-      final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, financialYear, keepIdCase);
+      final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, effFy, keepIdCase);
       deletedRecordIds.remove(cleanId);
       if (!keepIdCase) deletedRecordIds.remove(cleanId.toUpperCase());
       localTombstoneRegistry.remove(cleanId);
@@ -1982,7 +2013,7 @@ class PharoahWebManager with ChangeNotifier {
     if (referenceNo != null && referenceNo.trim().isNotEmpty) {
       final cleanRef = referenceNo.trim();
       final bool keepRefCase = preserveCase || cleanRef.contains('_');
-      final scopedRef = D1SalesLedgerService.scopeSecondaryKey(cleanRef, financialYear, keepRefCase);
+      final scopedRef = D1SalesLedgerService.scopeSecondaryKey(cleanRef, effFy, keepRefCase);
       deletedRecordIds.remove(cleanRef);
       if (!keepRefCase) deletedRecordIds.remove(cleanRef.toUpperCase());
       localTombstoneRegistry.remove(cleanRef);

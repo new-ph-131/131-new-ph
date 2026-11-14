@@ -557,7 +557,7 @@ class PharoahManager with ChangeNotifier {
               !D1SalesLedgerService.isBillDeleted(s.id, s.billNo, "", currentFY))
           .toList();
       purchases = loadList<Purchase>('purc.json', (e) => Purchase.fromMap(e))
-          .where((p) => p.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, currentFY))
+          .where((p) => p.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, currentFY, p.updatedAt))
           .toList();
       vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
           .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, "", currentFY))
@@ -821,9 +821,9 @@ Future<bool> finalizePurchase({
     if (existingIdx != -1) {
       currentVer = purchases[existingIdx].version + 1;
     }
-    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(pId, party.id, billNo, internalNo);
-    if (d1Known >= currentVer) currentVer = d1Known + 1;
-    D1SalesLedgerService.recordPurchaseKnownVersion(pId, party.id, billNo, currentVer, internalNo);
+    final int d1Known = D1SalesLedgerService.getPurchaseIdKnownVersion(pId, currentFY);
+    if (d1Known >= currentVer && d1Known < 99999) currentVer = d1Known + 1;
+    D1SalesLedgerService.recordPurchaseKnownVersion(pId, party.id, billNo, currentVer, internalNo, currentFY);
 
     purchases.removeWhere((p) => 
       p.id == pId || 
@@ -860,7 +860,7 @@ Future<bool> finalizePurchase({
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
         if (t.isNotEmpty) {
           PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, t);
-          D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, t, isUpdate: isModify, clientSource: "APP_MOBILE");
+          D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, t, isUpdate: isModify, clientSource: "APP_MOBILE", fy: currentFY);
         }
       });
     } 
@@ -3639,7 +3639,7 @@ void registerBatchActivity({
     sales = (load('sales.json') as List?)?.map((e) => Sale.fromMap(e)).where((s) => !D1SalesLedgerService.isBillDeleted(s.id, s.billNo)).toList() ?? [];
     purchases = (load('purc.json') as List?)
         ?.map((e) => Purchase.fromMap(e))
-        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo))
+        .where((p) => !D1SalesLedgerService.isPurchaseDeleted(p.id, p.partyId, p.billNo, p.internalNo, currentFY, p.updatedAt))
         .toList() ?? [];
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)
