@@ -503,11 +503,203 @@ class FYTransferEngine {
   /// Pure-Dart Multi-Year Cascade Step (Marg ERP Back-Year Edit -> Next Year Auto-Heal):
   /// Rebuilds `prevFiles` stock/balances, cascades closing balances into `targetFiles` opening balances
   /// while preserving `targetFiles` own transactions and new batches, and rebuilds `targetFiles` live stock!
+  /// LWW- and tombstone-safe Pending Sale Challan carry-forward/reconciliation between `prevChallans` (back FY)
+  /// and `targetChallans` (newer FY).
+  /// - Never resurrects a challan deleted in targetFY (`isDeletedInTarget`).
+  /// - Never downgrades a challan already converted to "Billed" in targetFY unless prevFY has a strictly newer
+  ///   version/timestamp (e.g. edited or reverted-to-Pending after Bill delete).
+  /// - Syncs newer "Pending" revisions/recoveries from prevFY even if the ID already exists in targetFY.
+  /// - Syncs newer "Billed"/deleted status from prevFY onto an already-carried older "Pending" copy in targetFY
+  ///   so it cannot be double-billed.
+  static List<SaleChallan> reconcileCarryForwardSaleChallans({
+    required List<SaleChallan> prevChallans,
+    required List<SaleChallan> targetChallans,
+    bool Function(SaleChallan)? isDeletedInTarget,
+  }) {
+    final List<SaleChallan> out = targetChallans.map((e) => SaleChallan.fromMap(e.toMap())).toList();
+    int findMatch(SaleChallan sc) {
+      final cleanId = sc.id.trim();
+      final cleanBill = sc.billNo.trim().toUpperCase();
+      return out.indexWhere((t) =>
+          (cleanId.isNotEmpty && t.id.trim() == cleanId) ||
+          ((cleanId.isEmpty || t.id.trim().isEmpty) &&
+              cleanBill.isNotEmpty &&
+              t.billNo.trim().toUpperCase() == cleanBill));
+    }
+
+    for (final sc in prevChallans) {
+      final int idx = findMatch(sc);
+      final bool prevIsPending = sc.isDeleted != 1 && sc.status == "Pending";
+      final bool targetBlocked = isDeletedInTarget?.call(sc) ?? false;
+
+      if (prevIsPending) {
+        if (targetBlocked) {
+          if (idx != -1) out.removeAt(idx);
+          continue;
+        }
+        if (idx == -1) {
+          out.add(SaleChallan.fromMap(sc.toMap()));
+        } else {
+          final existing = out[idx];
+          final bool existingNewerBilled = existing.status == "Billed" &&
+              (existing.version > sc.version ||
+                  (existing.version == sc.version && existing.updatedAt >= sc.updatedAt));
+          if (existingNewerBilled) continue;
+
+          final bool prevStrictlyNewer = sc.version > existing.version ||
+              (sc.version == existing.version && sc.updatedAt > existing.updatedAt);
+          if (prevStrictlyNewer) {
+            out[idx] = SaleChallan.fromMap(sc.toMap());
+          }
+        }
+      } else if (idx != -1) {
+        final existing = out[idx];
+        final bool prevStrictlyNewer = sc.version > existing.version ||
+            (sc.version == existing.version && sc.updatedAt > existing.updatedAt);
+        if (existing.status == "Pending" && prevStrictlyNewer) {
+          if (sc.isDeleted == 1 || sc.status == "Cancelled") {
+            out.removeAt(idx);
+          } else if (sc.status == "Billed") {
+            out[idx] = SaleChallan.fromMap(sc.toMap());
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /// LWW- and tombstone-safe Pending Purchase Challan carry-forward/reconciliation between `prevChallans`
+  /// and `targetChallans`. Mirrors Sale Challan isolation while respecting composite `internalNo` + `partyId` + `billNo`.
+  static List<PurchaseChallan> reconcileCarryForwardPurchaseChallans({
+    required List<PurchaseChallan> prevChallans,
+    required List<PurchaseChallan> targetChallans,
+    bool Function(PurchaseChallan)? isDeletedInTarget,
+  }) {
+    final List<PurchaseChallan> out = targetChallans.map((e) => PurchaseChallan.fromMap(e.toMap())).toList();
+    int findMatch(PurchaseChallan pc) {
+      final cleanId = pc.id.trim();
+      final cleanInt = pc.internalNo.trim().toUpperCase();
+      final cleanParty = pc.partyId.trim().toUpperCase();
+      final cleanBill = pc.billNo.trim();
+      return out.indexWhere((t) {
+        if (cleanId.isNotEmpty && t.id.trim() == cleanId) return true;
+        if ((cleanId.isEmpty || t.id.trim().isEmpty) &&
+            cleanInt.isNotEmpty &&
+            t.internalNo.trim().toUpperCase() == cleanInt) {
+          if (cleanParty.isNotEmpty && cleanBill.isNotEmpty && t.partyId.trim().isNotEmpty && t.billNo.trim().isNotEmpty) {
+            return t.partyId.trim().toUpperCase() == cleanParty && t.billNo.trim() == cleanBill;
+          }
+          return true;
+        }
+        return false;
+      });
+    }
+
+    for (final pc in prevChallans) {
+      final int idx = findMatch(pc);
+      final bool prevIsPending = pc.isDeleted != 1 && pc.status == "Pending";
+      final bool targetBlocked = isDeletedInTarget?.call(pc) ?? false;
+
+      if (prevIsPending) {
+        if (targetBlocked) {
+          if (idx != -1) out.removeAt(idx);
+          continue;
+        }
+        if (idx == -1) {
+          out.add(PurchaseChallan.fromMap(pc.toMap()));
+        } else {
+          final existing = out[idx];
+          final bool existingNewerBilled = existing.status == "Billed" &&
+              (existing.version > pc.version ||
+                  (existing.version == pc.version && existing.updatedAt >= pc.updatedAt));
+          if (existingNewerBilled) continue;
+
+          final bool prevStrictlyNewer = pc.version > existing.version ||
+              (pc.version == existing.version && pc.updatedAt > existing.updatedAt);
+          if (prevStrictlyNewer) {
+            out[idx] = PurchaseChallan.fromMap(pc.toMap());
+          }
+        }
+      } else if (idx != -1) {
+        final existing = out[idx];
+        final bool prevStrictlyNewer = pc.version > existing.version ||
+            (pc.version == existing.version && pc.updatedAt > existing.updatedAt);
+        if (existing.status == "Pending" && prevStrictlyNewer) {
+          if (pc.isDeleted == 1 || pc.status == "Cancelled") {
+            out.removeAt(idx);
+          } else if (pc.status == "Billed") {
+            out[idx] = PurchaseChallan.fromMap(pc.toMap());
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Challan-only single-step carry-forward (NEVER touches Opening Balances, Batches, Parties, Banks, or Stock).
+  static ({String sChallanJson, String pChallanJson, bool sChanged, bool pChanged}) cascadePendingChallansOnlyStep({
+    required Map<String, String> prevFiles,
+    required Map<String, String> targetFiles,
+    bool Function(SaleChallan)? isSaleChallanDeletedInTarget,
+    bool Function(PurchaseChallan)? isPurchaseChallanDeletedInTarget,
+  }) {
+    dynamic decodeMapJson(Map<String, String> map, String key) {
+      try {
+        final raw = map[key];
+        if (raw == null || raw.trim().isEmpty) return null;
+        return jsonDecode(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final prevSc = (decodeMapJson(prevFiles, 's_challan.json') as List?)
+            ?.map((e) => SaleChallan.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
+        [];
+    final targetSc = (decodeMapJson(targetFiles, 's_challan.json') as List?)
+            ?.map((e) => SaleChallan.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
+        [];
+    final reconciledSc = reconcileCarryForwardSaleChallans(
+      prevChallans: prevSc,
+      targetChallans: targetSc,
+      isDeletedInTarget: isSaleChallanDeletedInTarget,
+    );
+    final String newScJson = jsonEncode(reconciledSc.map((e) => e.toMap()).toList());
+    final bool sChanged = newScJson != (targetFiles['s_challan.json'] ?? '');
+
+    final prevPc = (decodeMapJson(prevFiles, 'p_challan.json') as List?)
+            ?.map((e) => PurchaseChallan.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
+        [];
+    final targetPc = (decodeMapJson(targetFiles, 'p_challan.json') as List?)
+            ?.map((e) => PurchaseChallan.fromMap(Map<String, dynamic>.from(e as Map)))
+            .toList() ??
+        [];
+    final reconciledPc = reconcileCarryForwardPurchaseChallans(
+      prevChallans: prevPc,
+      targetChallans: targetPc,
+      isDeletedInTarget: isPurchaseChallanDeletedInTarget,
+    );
+    final String newPcJson = jsonEncode(reconciledPc.map((e) => e.toMap()).toList());
+    final bool pChanged = newPcJson != (targetFiles['p_challan.json'] ?? '');
+
+    return (
+      sChallanJson: newScJson,
+      pChallanJson: newPcJson,
+      sChanged: sChanged,
+      pChanged: pChanged,
+    );
+  }
+
   static ({Map<String, String> healedPrevFiles, Map<String, String> healedTargetFiles}) cascadeSingleYearStep({
     required Map<String, String> prevFiles,
     required Map<String, String> targetFiles,
     required String prevFY,
     required String targetFY,
+    bool Function(SaleChallan)? isSaleChallanDeletedInTarget,
+    bool Function(PurchaseChallan)? isPurchaseChallanDeletedInTarget,
   }) {
     dynamic loadMapJson(Map<String, String> map, String name) {
       final raw = map[name];
@@ -819,22 +1011,20 @@ class FYTransferEngine {
     );
 
     final List<SaleChallan> prevSaleChallans = (loadMapJson(outPrev, 's_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
-    final List<SaleChallan> targetSaleChallans = (loadMapJson(outTarget, 's_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
-    final Set<String> targetScIds = targetSaleChallans.map((c) => c.id).toSet();
-    for (final sc in prevSaleChallans.where((c) => c.isDeleted != 1 && c.status == "Pending")) {
-      if (!targetScIds.contains(sc.id)) {
-        targetSaleChallans.add(sc);
-      }
-    }
+    final List<SaleChallan> rawTargetSaleChallans = (loadMapJson(outTarget, 's_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
+    final List<SaleChallan> targetSaleChallans = reconcileCarryForwardSaleChallans(
+      prevChallans: prevSaleChallans,
+      targetChallans: rawTargetSaleChallans,
+      isDeletedInTarget: isSaleChallanDeletedInTarget,
+    );
 
     final List<PurchaseChallan> prevPurChallans = (loadMapJson(outPrev, 'p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
-    final List<PurchaseChallan> targetPurChallans = (loadMapJson(outTarget, 'p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
-    final Set<String> targetPcIds = targetPurChallans.map((c) => c.id).toSet();
-    for (final pc in prevPurChallans.where((c) => c.isDeleted != 1 && c.status == "Pending")) {
-      if (!targetPcIds.contains(pc.id)) {
-        targetPurChallans.add(pc);
-      }
-    }
+    final List<PurchaseChallan> rawTargetPurChallans = (loadMapJson(outTarget, 'p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
+    final List<PurchaseChallan> targetPurChallans = reconcileCarryForwardPurchaseChallans(
+      prevChallans: prevPurChallans,
+      targetChallans: rawTargetPurChallans,
+      isDeletedInTarget: isPurchaseChallanDeletedInTarget,
+    );
 
     // Delta merge static master lists (Routes, Companies, Salts)
     final List<RouteArea> prevRouts = (loadMapJson(outPrev, 'routs.json') as List?)?.map((e) => RouteArea.fromMap(e)).toList() ?? [];

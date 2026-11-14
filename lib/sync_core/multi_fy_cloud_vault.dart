@@ -10,6 +10,7 @@ import '../gateway/company_registry_model.dart';
 import '../inventory_logic_center.dart';
 import '../models.dart';
 import '../pharoah_manager.dart';
+import '../web_live_sync/sync_protocol/tombstone_engine.dart';
 import '../web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart';
 import 'd1_sales_ledger_service.dart';
 import 'modules/batch_delta_merge_module.dart';
@@ -735,6 +736,8 @@ class MultiFyCloudVault {
         final File voucFile = File('$fyDirPath/vouc.json');
         final File sRetFile = File('$fyDirPath/s_return.json');
         final File pRetFile = File('$fyDirPath/p_return.json');
+        final File sChFile = File('$fyDirPath/s_challan.json');
+        final File pChFile = File('$fyDirPath/p_challan.json');
 
         List<Sale> fySales = [];
         if (await salesFile.exists()) {
@@ -786,6 +789,50 @@ class MultiFyCloudVault {
           } catch (_) {}
         }
 
+        List<SaleChallan> fySChallans = [];
+        if (await sChFile.exists()) {
+          try {
+            final raw = jsonDecode(await sChFile.readAsString());
+            if (raw is List) {
+              fySChallans = raw.map((e) => SaleChallan.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+            }
+          } catch (_) {}
+        }
+
+        List<PurchaseChallan> fyPChallans = [];
+        if (await pChFile.exists()) {
+          try {
+            final raw = jsonDecode(await pChFile.readAsString());
+            if (raw is List) {
+              fyPChallans = raw.map((e) => PurchaseChallan.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+            }
+          } catch (_) {}
+        }
+
+        final List<Sale> salesBeforeDelete = List<Sale>.from(fySales);
+        final List<Purchase> purcBeforeDelete = List<Purchase>.from(fyPurc);
+        final List<SaleChallan> revertedSaleChallans = [];
+        final List<PurchaseChallan> revertedPurChallans = [];
+        final revRes = D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
+          events: fyEvents,
+          targetFy: targetFy,
+          existingSalesBeforeDelete: salesBeforeDelete,
+          existingPurchasesBeforeDelete: purcBeforeDelete,
+          saleChallans: fySChallans,
+          purchaseChallans: fyPChallans,
+          onSaleChallanReverted: (ch) => revertedSaleChallans.add(ch),
+          onPurchaseChallanReverted: (ch) => revertedPurChallans.add(ch),
+        );
+        final bool scChanged = revRes.saleChallansMutated;
+        final bool pcChanged = revRes.purchaseChallansMutated;
+
+        for (final ch in revertedSaleChallans) {
+          await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.billNo, fy: targetFy);
+        }
+        for (final ch in revertedPurChallans) {
+          await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.internalNo, fy: targetFy);
+        }
+
         final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(fySales, fyEvents, targetFy);
         final bool pChanged = D1SalesLedgerService.applyEventsToLocalPurchases(fyPurc, fyEvents, targetFy);
         final bool vChanged = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(fyVouc, fyEvents, targetFy);
@@ -807,7 +854,13 @@ class MultiFyCloudVault {
         if (prChanged) {
           await pRetFile.writeAsString(jsonEncode(fyPRet.map((e) => e.toMap()).toList()));
         }
-        if (sChanged || pChanged || vChanged || srChanged || prChanged) {
+        if (scChanged) {
+          await sChFile.writeAsString(jsonEncode(fySChallans.map((e) => e.toMap()).toList()));
+        }
+        if (pcChanged) {
+          await pChFile.writeAsString(jsonEncode(fyPChallans.map((e) => e.toMap()).toList()));
+        }
+        if (sChanged || pChanged || vChanged || srChanged || prChanged || scChanged || pcChanged) {
           anyMutated = true;
           mutatedFys.add(targetFy);
           await _rebuildDiskFyInventory(fyDirPath);

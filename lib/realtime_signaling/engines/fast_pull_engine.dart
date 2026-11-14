@@ -136,6 +136,22 @@ class FastPullEngine {
           fetchedEdgeEvents = edgeEvents;
           D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
           if (edgeEvents.isNotEmpty) {
+            final List<Sale> salesBeforeD1 = List<Sale>.from(ph.sales);
+            final List<Purchase> purcBeforeD1 = List<Purchase>.from(ph.purchases);
+            final List<SaleChallan> revScList = [];
+            final List<PurchaseChallan> revPcList = [];
+            final d1ChRev = D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
+              events: edgeEvents,
+              targetFy: targetFyAtStart,
+              existingSalesBeforeDelete: salesBeforeD1,
+              existingPurchasesBeforeDelete: purcBeforeD1,
+              saleChallans: ph.saleChallans,
+              purchaseChallans: ph.purchaseChallans,
+              onSaleChallanReverted: (ch) => revScList.add(ch),
+              onPurchaseChallanReverted: (ch) => revPcList.add(ch),
+            );
+            final bool d1ScReverted = d1ChRev.saleChallansMutated;
+            final bool d1PcReverted = d1ChRev.purchaseChallansMutated;
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, targetFyAtStart);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, targetFyAtStart);
             bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents, targetFyAtStart);
@@ -286,7 +302,19 @@ class FastPullEngine {
               }
               await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs, fy: targetFyAtStart);
             }
-            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated) {
+            for (final ch in revScList) {
+              newUnmarkKeys.add(ch.id);
+              if (ch.billNo.trim().isNotEmpty) {
+                newUnmarkKeys.add(D1SalesLedgerService.scopeSecondaryKey(ch.billNo, targetFyAtStart));
+              }
+            }
+            for (final ch in revPcList) {
+              newUnmarkKeys.add(ch.id);
+              if (ch.internalNo.trim().isNotEmpty) {
+                newUnmarkKeys.add(D1SalesLedgerService.scopeSecondaryKey(ch.internalNo, targetFyAtStart));
+              }
+            }
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated || d1ScReverted || d1PcReverted) {
               d1AnyMutated = true;
               if (d1SalesMutated || d1PurcMutated || d1SrMutated || d1PrMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
@@ -306,6 +334,16 @@ class FastPullEngine {
               if (d1PurcMutated) {
                 await File('$workingDir/purc.json').writeAsString(
                   jsonEncode(ph.purchases.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1ScReverted) {
+                await File('$workingDir/s_challan.json').writeAsString(
+                  jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()),
+                );
+              }
+              if (d1PcReverted) {
+                await File('$workingDir/p_challan.json').writeAsString(
+                  jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()),
                 );
               }
               if (d1VoucMutated) {

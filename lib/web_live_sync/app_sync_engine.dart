@@ -159,6 +159,18 @@ class AppSyncEngine {
               pendingD1MaxSeq = deltaRes.maxSeq;
               if (edgeEvents.isNotEmpty) {
                 if (stillInEffectiveFy) {
+                  final salesBefore = List<Sale>.from(ph.sales);
+                  final purcBefore = List<Purchase>.from(ph.purchases);
+                  D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
+                    events: edgeEvents,
+                    targetFy: effectiveFy,
+                    existingSalesBeforeDelete: salesBefore,
+                    existingPurchasesBeforeDelete: purcBefore,
+                    saleChallans: ph.saleChallans,
+                    purchaseChallans: ph.purchaseChallans,
+                    onSaleChallanReverted: (ch) => d1HasChanges = true,
+                    onPurchaseChallanReverted: (ch) => d1HasChanges = true,
+                  );
                   bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, effectiveFy);
                   bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, effectiveFy);
                   bool d1SRet = D1SalesLedgerService.applyEventsToLocalSaleReturns(ph.saleReturns, edgeEvents, effectiveFy);
