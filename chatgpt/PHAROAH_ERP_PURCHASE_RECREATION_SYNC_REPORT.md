@@ -71,23 +71,27 @@ In `PharoahNumberingEngine.getNextNumber` (`lib/logic/pharoah_numbering_engine.d
 
 ## 4. Verification & Honest Execution Status
 
-- **Executed in Environment:**
+- **Container Pre-Checks:**
   - `esbuild functions/api/lab_signal.ts`: **PASSED** (valid TypeScript compilation, 0 syntax errors).
   - Static cross-file signature, caller, diff, and `#PH-REV-811` compatibility audit across all 11 modified files + new test file: **PASSED**.
-- **Not Executed in Container (No Flutter/Dart SDK or live Cloudflare D1/Android/Web runtime in container):**
-  - `flutter analyze`
-  - `flutter test test/purchase_recreation_sync_regression_test.dart test/three_issues_independent_regression_test.dart`
-  - `flutter build apk` / `flutter build web`
-  - Live Cloudflare Worker/D1 deployment (`wrangler pages deploy`) & live App ↔ Web manual smoke test
+- **GitHub Actions CI History & Resolution:**
+  - Initial run `43605736279` (commit `0a02674`) failed only on 2 `DELETE` return-value expectations in `test/purchase_recreation_sync_regression_test.dart` (`dispatchEnvelope(..., phWeb: webPh)` returns `false` on `DELETE` because `MasterSyncOrchestrator` already removes the record via `phWeb.purgeDeletedIds` beforehand); all 37 pre-existing tests passed.
+  - Updated those 2 assertions to verify `webPh.purchases` / `webPh.sales` are empty after `DELETE` dispatch and pushed commit `94717f1`.
+- **Verified Passing GitHub Actions CI Runs (Commit `94717f1`):**
+  - **`Build Flutter Web Portal and Android APK` (Run `43606117554`) — `SUCCESS`:**
+    - `flutter test`: **39 tests passed** (0 failures; all pre-existing regression suites + Scenarios A–E of `test/purchase_recreation_sync_regression_test.dart` passed).
+    - `flutter build apk --release`: **PASSED** (`build/app/outputs/flutter-apk/app-release.apk`, 110.4MB) + uploaded artifact.
+    - `flutter build web`: **PASSED** + uploaded artifact.
+    - `Deploy production web to Cloudflare Pages`: **PASSED** (`https://3f77faf1.pharoah-erp.pages.dev`).
+  - **`Build Android APK` (Run `43606117161`) — `SUCCESS`:**
+    - `flutter build apk --release` + APK artifact upload: **PASSED**.
 
 ---
 
-## 5. Recommended Next Steps Before Live Release
+## 5. Remaining Live Verification (Manual App ↔ Web Smoke Test)
 
-1. Run `flutter analyze` and `flutter test` locally or in CI.
-2. Deploy updated `functions/api/lab_signal.ts` to Cloudflare Pages so `JSON_BATCH_MUTATION` clears FY-scoped Purchase tombstones in D1.
-3. Build Android APK & Web release and verify live:
-   - Create Purchase for Party X (App) → verify on Web.
-   - Delete Purchase (App) → verify removed on App & Web.
-   - Re-create Purchase for Party X (App) → verify visible on both App & Web Purchase Registers.
-   - Repeat with Sale (`Create -> Delete -> Re-create`) to confirm no regressions.
+Install the newly built Android release APK from GitHub Actions run `43606117554` / `43606117161` and verify against the deployed Cloudflare Pages Web Portal (`https://3f77faf1.pharoah-erp.pages.dev`):
+1. Create Purchase for Party X (App) → verify visible on App & Web Purchase Registers.
+2. Delete that Purchase (App) → verify removed on both App & Web.
+3. Re-create Purchase for Party X (App) → verify visible on both App & Web Purchase Registers.
+4. Repeat `Create -> Delete -> Re-create` with Sale to confirm no regressions.
