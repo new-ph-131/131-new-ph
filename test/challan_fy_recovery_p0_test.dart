@@ -536,8 +536,8 @@ void main() {
           'sale_data': {'id': 'PC-1', 'doc_type': 'PURCHASE_CHALLAN', 'fy': '2026-27'},
         },
       ];
-      expect(D1SalesLedgerService.applyEventsToLocalSales(localSales, challanEvents, targetFy: '2026-27'), isFalse);
-      expect(D1SalesLedgerService.applyEventsToLocalPurchases(localPurchases, challanEvents, targetFy: '2026-27'), isFalse);
+      expect(D1SalesLedgerService.applyEventsToLocalSales(localSales, challanEvents, '2026-27'), isFalse);
+      expect(D1SalesLedgerService.applyEventsToLocalPurchases(localPurchases, challanEvents, '2026-27'), isFalse);
       expect(localSales, isEmpty);
       expect(localPurchases, isEmpty);
     });

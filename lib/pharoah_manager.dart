@@ -2801,6 +2801,7 @@ void registerBatchActivity({
 
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
+        final String bizType = activeCompany!.businessType;
         Future<void>(() async {
           try {
             final root = await getApplicationDocumentsDirectory();

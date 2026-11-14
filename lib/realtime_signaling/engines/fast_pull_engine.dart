@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../../models.dart';
 import '../../pharoah_manager.dart';
 import '../../inventory_logic_center.dart';
 import '../../web_live_sync/weblivetoken.dart';
