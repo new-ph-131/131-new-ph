@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../web_models.dart';
 import '../../pharoah_web_manager.dart';
+import '../../../sync_core/modules/sale_challan_sync_module.dart';
 import '../../web_app_date_logic.dart';
 import '../../web_pharoah_numbering_engine.dart';
 import '../../web_pdf_router_service.dart';
@@ -437,10 +438,15 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     // In-place enterprise update: preserved for addSaleAndSync
     webPh.addSaleAndSync(newSale);
     
-    if (widget.linkedChallanIds != null) {
+    if (widget.linkedChallanIds != null && widget.linkedChallanIds!.isNotEmpty) {
       for (var id in widget.linkedChallanIds!) {
-        int idx = webPh.saleChallans.indexWhere((c) => c.id == id);
-        if (idx != -1) webPh.saleChallans[idx].status = "Billed";
+        int idx = webPh.saleChallans.indexWhere((c) => c.id == id || c.billNo == id);
+        if (idx != -1 && webPh.saleChallans[idx].status != "Billed") {
+          webPh.saleChallans[idx].status = "Billed";
+          webPh.saleChallans[idx].version += 1;
+          webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
+          SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
+        }
       }
       await webPh.pushUpdatedDataToCloud();
     }

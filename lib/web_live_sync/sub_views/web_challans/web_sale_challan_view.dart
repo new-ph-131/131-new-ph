@@ -1527,7 +1527,12 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
   // --- RIGHT PANEL: STORE-WIDE RECENT CHALLANS LOG ---
   Widget _buildStoreRecentChallansCard(PharoahWebManager webPh) {
     final recentChallans = List<SaleChallan>.from(webPh.saleChallans)
-      ..sort((a, b) => b.date.compareTo(a.date));
+      ..sort((a, b) {
+        final int tsA = a.updatedAt > 0 ? a.updatedAt : a.date.millisecondsSinceEpoch;
+        final int tsB = b.updatedAt > 0 ? b.updatedAt : b.date.millisecondsSinceEpoch;
+        final int cmp = tsB.compareTo(tsA);
+        return cmp != 0 ? cmp : b.date.compareTo(a.date);
+      });
     final displayList = recentChallans.take(5).toList();
 
     return Container(

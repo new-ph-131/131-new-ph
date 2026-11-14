@@ -160,9 +160,11 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
 
   @override
   Widget build(BuildContext context) {
-    final webPh = Provider.of<PharoahWebManager>(context);
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    context.select<PharoahWebManager, int>((m) => m.medicines.length);
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         title: Text(widget.isReadOnly ? "View Items" : "Challan: ${widget.challanNo}"),
@@ -329,34 +331,49 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0x332DD4BF)),
               ),
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                itemCount: matchingMeds.length,
-                itemBuilder: (context, idx) {
-                  final med = matchingMeds[idx];
-                  return ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.medication_rounded, color: Color(0xFF2DD4BF), size: 18),
-                    title: Row(
-                      children: [
-                        Text(med.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
-                        const SizedBox(width: 8),
-                        Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                        const Spacer(),
-                        Text(
-                          "Stock: ${formatQty(med.stock)} Qty",
-                          style: TextStyle(color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                    subtitle: Text("MRP: ₹${med.mrp.toStringAsFixed(2)} | Rate A: ₹${med.rateA.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
-                    onTap: () {
-                      setState(() => productSearchC.clear());
-                      _openItemEntry(med);
-                    },
-                  );
-                },
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                clipBehavior: Clip.antiAlias,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: matchingMeds.length,
+                  itemBuilder: (context, idx) {
+                    final med = matchingMeds[idx];
+                    return ListTile(
+                      key: ValueKey('sc_med_${med.id.isNotEmpty ? med.id : med.systemId}_$idx'),
+                      dense: true,
+                      leading: const Icon(Icons.medication_rounded, color: Color(0xFF2DD4BF), size: 18),
+                      title: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              med.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text("(${med.packing})", style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                          const Spacer(),
+                          Text(
+                            "Stock: ${formatQty(med.stock)} Qty",
+                            style: TextStyle(color: med.stock > 0 ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      subtitle: Text("MRP: ₹${med.mrp.toStringAsFixed(2)} | Rate A: ₹${med.rateA.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white38, fontSize: 10)),
+                      onTap: () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        _openItemEntry(med);
+                        if (mounted) {
+                          setState(() => productSearchC.clear());
+                        }
+                      },
+                    );
+                  },
+                ),
               ),
             ),
           ],

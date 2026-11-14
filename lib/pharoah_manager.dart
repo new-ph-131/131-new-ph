@@ -696,31 +696,46 @@ Future<void> finalizeSale({
       version: currentVer,
     );
     sales.add(newFinalSale);
-    if (activeCompany != null) {
-      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) {
-          SalesSyncModule.onSaleSaved(newFinalSale, t);
-          D1SalesLedgerService.onSaleSaved(newFinalSale, t, isUpdate: existingIdx != -1, clientSource: "APP_MOBILE");
-        }
-      });
-    } 
-    
-    if (linkedIds != null) { 
-      for (var id in linkedIds) { 
-        int i = saleChallans.indexWhere((c) => c.id == id || c.billNo == id); 
-        if (i != -1) {
-          saleChallans[i].status = "Billed";
-          saleChallans[i].version += 1;
-          saleChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
-          if (activeCompany != null) {
-            WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-              if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(saleChallans[i], t);
-            });
+    final String activeToken = activeCompany != null
+        ? await WebLiveToken.getOrCreateToken(activeCompany!.id)
+        : '';
+    if (activeToken.isNotEmpty) {
+      SalesSyncModule.onSaleSaved(newFinalSale, activeToken);
+      D1SalesLedgerService.onSaleSaved(
+        newFinalSale,
+        activeToken,
+        isUpdate: existingIdx != -1,
+        clientSource: APP_MOBILE,
+        fy: currentFY,
+      );
+    }
+
+    final Set<String> allSaleChallanLinks = {
+      if (linkedIds != null)
+        for (final id in linkedIds)
+          if (id.trim().isNotEmpty) id.trim().toUpperCase(),
+      for (final it in items) ...[
+        if (it.sourceChallanId.trim().isNotEmpty) it.sourceChallanId.trim().toUpperCase(),
+        if (it.sourceChallanNo.trim().isNotEmpty) it.sourceChallanNo.trim().toUpperCase(),
+      ],
+    };
+    if (allSaleChallanLinks.isNotEmpty) {
+      for (int i = 0; i < saleChallans.length; i++) {
+        final c = saleChallans[i];
+        if (allSaleChallanLinks.contains(c.id.trim().toUpperCase()) ||
+            (c.billNo.trim().isNotEmpty && allSaleChallanLinks.contains(c.billNo.trim().toUpperCase()))) {
+          if (c.status != Billed) {
+            c.status = Billed;
+            c.version += 1;
+            c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            if (activeToken.isNotEmpty) {
+              SaleChallanSyncModule.onSaleChallanSaved(c, activeToken);
+            }
           }
         }
-      } 
+      }
     }
-    
+
     if (sourceTag.isEmpty && activeCompany != null) { 
       String pfx = billNo.split(RegExp(r'\d')).first; 
       await PharoahNumberingEngine.updateSeriesCounter(type: "SALE", companyID: activeCompany!.id, usedNumber: billNo, prefix: pfx); 
@@ -857,31 +872,41 @@ Future<bool> finalizePurchase({
     );
     purchases.add(newFinalPurchase);
     final bool isModify = existingIdx != -1;
-    if (activeCompany != null) {
-      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) {
-          PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, t);
-          D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, t, isUpdate: isModify, clientSource: "APP_MOBILE", fy: currentFY);
+    final String activeToken = activeCompany != null
+        ? await WebLiveToken.getOrCreateToken(activeCompany!.id)
+        : '';
+    if (activeToken.isNotEmpty) {
+      PurchaseSyncModule.onPurchaseSaved(newFinalPurchase, activeToken);
+      D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, activeToken, isUpdate: isModify, clientSource: APP_MOBILE, fy: currentFY);
+    }
+
+    final Set<String> allPurChallanLinks = {
+      if (linkedChallanIds != null)
+        for (final id in linkedChallanIds)
+          if (id.trim().isNotEmpty) id.trim().toUpperCase(),
+      for (final it in items) ...[
+        if (it.sourceChallanId.trim().isNotEmpty) it.sourceChallanId.trim().toUpperCase(),
+        if (it.sourceChallanNo.trim().isNotEmpty) it.sourceChallanNo.trim().toUpperCase(),
+      ],
+    };
+    if (allPurChallanLinks.isNotEmpty) {
+      for (int i = 0; i < purchaseChallans.length; i++) {
+        final c = purchaseChallans[i];
+        if (allPurChallanLinks.contains(c.id.trim().toUpperCase()) ||
+            (c.internalNo.trim().isNotEmpty && allPurChallanLinks.contains(c.internalNo.trim().toUpperCase())) ||
+            (c.billNo.trim().isNotEmpty && allPurChallanLinks.contains(c.billNo.trim().toUpperCase()))) {
+          if (c.status != Billed) {
+            c.status = Billed;
+            c.version += 1;
+            c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            if (activeToken.isNotEmpty) {
+              PurchaseChallanSyncModule.onPurchaseChallanSaved(c, activeToken);
+            }
+          }
         }
-      });
-    } 
-    
-    if (linkedChallanIds != null) { 
-       for (var id in linkedChallanIds) { 
-         int i = purchaseChallans.indexWhere((c) => c.id == id || c.internalNo == id || c.billNo == id); 
-         if (i != -1) {
-           purchaseChallans[i].status = "Billed";
-           purchaseChallans[i].version += 1;
-           purchaseChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
-           if (activeCompany != null) {
-             WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-               if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(purchaseChallans[i], t);
-             });
-           }
-         }
-       } 
-     }
-    
+      }
+    }
+
     if (sourceTag.isEmpty && activeCompany != null) { 
       await PharoahNumberingEngine.updateSeriesCounter(type: "PURCHASE", companyID: activeCompany!.id, usedNumber: internalNo, prefix: "PUR-"); 
     }
@@ -1147,9 +1172,10 @@ Future<bool> finalizePurchase({
     );
     saleChallans.add(newChallan);
     if (activeCompany != null) {
-      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
-      });
+      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      if (t.isNotEmpty) {
+        SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
+      }
     } 
     
     // 🆕 STRICT TWO-WAY SYNC: Sale Challan items ko correct systemId ke sath Batch Master me register karein
@@ -1181,6 +1207,7 @@ Future<bool> finalizePurchase({
       action: 'SALE_CHALLAN_SAVED',
       entityId: cId,
       unmarkedIds: [cId, if (billNo.isNotEmpty) billNo],
+      fy: currentFY,
     );
   }
 
@@ -1237,9 +1264,10 @@ Future<bool> finalizePurchase({
     );
     purchaseChallans.add(newPChallan);
     if (activeCompany != null) {
-      WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-        if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
-      });
+      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      if (t.isNotEmpty) {
+        PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
+      }
     } 
     
     // 🆕 STRICT TWO-WAY SYNC: Purchase Challan items ko correct systemId ke sath Batch Master me register karein
@@ -1275,6 +1303,7 @@ Future<bool> finalizePurchase({
         if (compKey2.isNotEmpty) compKey2,
         if (compKey3.isNotEmpty) compKey3,
       ],
+      fy: currentFY,
     );
     return true;
   }
@@ -2992,16 +3021,23 @@ void registerBatchActivity({
       final List<String> delKeys = [cId, if (scopedBNo.isNotEmpty) scopedBNo];
       D1SalesLedgerService.markPermanentlyDeleted(cId, bNo, "", currentFY);
       if (activeCompany != null) {
-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanDeleted(c, t);
+        final String compId = activeCompany!.id;
+        final String delFy = currentFY;
+        Future<void>(() async {
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
+          final t = await WebLiveToken.getOrCreateToken(compId);
+          if (t.isNotEmpty) {
+            SaleChallanSyncModule.onSaleChallanDeleted(c, t);
+            await SyncQueueManager.flushOutboxAsJSONBatch();
+          }
+          AppRealtimeCoordinator.instance.notifyAppMutation(
+            this,
+            action: 'DELETE_SALE_CHALLAN',
+            entityId: cId,
+            deletedIds: delKeys,
+            fy: delFy,
+          );
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
-        AppRealtimeCoordinator.instance.notifyAppMutation(
-          this,
-          action: 'DELETE_SALE_CHALLAN',
-          entityId: cId,
-          deletedIds: delKeys,
-        );
       }
       saleChallans.removeWhere((x) => x.id == cId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
       save();
@@ -3030,16 +3066,23 @@ void registerBatchActivity({
       D1SalesLedgerService.markPurchasePermanentlyDeleted(cId, pId, bNo, iNo, currentFY);
 
       if (activeCompany != null) {
-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
+        final String compId = activeCompany!.id;
+        final String delFy = currentFY;
+        Future<void>(() async {
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
+          final t = await WebLiveToken.getOrCreateToken(compId);
+          if (t.isNotEmpty) {
+            PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
+            await SyncQueueManager.flushOutboxAsJSONBatch();
+          }
+          AppRealtimeCoordinator.instance.notifyAppMutation(
+            this,
+            action: 'DELETE_PURCHASE_CHALLAN',
+            entityId: cId,
+            deletedIds: delKeys,
+            fy: delFy,
+          );
         });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY);
-        AppRealtimeCoordinator.instance.notifyAppMutation(
-          this,
-          action: 'DELETE_PURCHASE_CHALLAN',
-          entityId: cId,
-          deletedIds: delKeys,
-        );
       }
       purchaseChallans.removeWhere((x) =>
         x.id == cId ||

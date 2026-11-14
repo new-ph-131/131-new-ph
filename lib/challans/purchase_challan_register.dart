@@ -225,7 +225,28 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
                       },
                     ),
                   const SizedBox(width: 5),
-                  Text("₹${ch.totalAmount.toStringAsFixed(0)}", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.amber.shade900)),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text("₹${ch.totalAmount.toStringAsFixed(0)}", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.amber.shade900)),
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ch.status == "Pending" ? Colors.orange.shade50 : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                          ch.status.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            color: ch.status == "Pending" ? Colors.orange.shade900 : Colors.green.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ],
@@ -256,7 +277,11 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseChallanView(existingRecord: ch, isReadOnly: true)));
             }),
 
-            _menuTile(Icons.edit_note_rounded, "Modify / Edit Items", Colors.orange, () {
+            _menuTile(Icons.edit_note_rounded, "Modify / Edit Items", ch.status == "Billed" ? Colors.grey : Colors.orange, () {
+              if (ch.status == "Billed") {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Locked: Bill has already been generated!")));
+                return;
+              }
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseChallanView(existingRecord: ch)));
             }),

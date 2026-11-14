@@ -136,7 +136,7 @@ class WebRecentSidebar extends StatelessWidget {
             color: Colors.black38,
             child: const Center(
               child: Text(
-                "Pharoah ERP Web v1.1.0 (#PH-REV-811 (FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC)",
+                "Pharoah ERP Web v1.1.0 (#PH-REV-813 (FIX-CHALLAN-FY-RECOVERY-REALTIME-AND-PRODUCT-TAP))",
                 style: TextStyle(color: Colors.white24, fontSize: 9),
               ),
             ),

@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:pharoah_erp/challans/purchase_challan_register.dart';
 import 'package:pharoah_erp/fy_transfer_engine.dart';
 import 'package:pharoah_erp/gateway/company_registry_model.dart';
 import 'package:pharoah_erp/models.dart';
@@ -13,7 +16,11 @@ import 'package:pharoah_erp/sync_core/multi_fy_cloud_vault.dart';
 import 'package:pharoah_erp/sync_core/orchestrator/master_sync_orchestrator.dart';
 import 'package:pharoah_erp/sync_core/outbox/sync_queue_manager.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
-import 'package:pharoah_erp/web_live_sync/sync_protocol/tombstone_engine.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_purchase_challan_view.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_sale_challan_billing_view.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_sale_challan_view.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/web_item_entry_card.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -167,7 +174,6 @@ void main() {
         updatedAt: 100050,
       );
       final partyNew = Party(id: 'PARTY-S1', name: 'Alpha Medical', opBal: 5432.10, updatedAt: 100000);
-      // Simulate stale carried-over Billed copy in 2026-27
       final scNewStale = _makeSaleChallan(
         id: 'SC-UUID-1',
         billNo: 'SC-101',
@@ -177,10 +183,13 @@ void main() {
         updatedAt: 100000,
       );
 
+      final medDummy = Medicine(id: 'MED-1', systemId: 'PH-1001', name: 'PARA 500', packing: '10T', mrp: 50.0, rateA: 40.0);
+      await File('${oldDir.path}/meds.json').writeAsString(jsonEncode([medDummy.toMap()]));
       await File('${oldDir.path}/s_challan.json').writeAsString(jsonEncode([scOld.toMap()]));
       await File('${oldDir.path}/sales.json').writeAsString(jsonEncode([saleOld.toMap()]));
       await File('${oldDir.path}/parts.json').writeAsString(jsonEncode([Party(id: 'PARTY-S1', name: 'Alpha Medical', opBal: 100.0).toMap()]));
 
+      await File('${newDir.path}/meds.json').writeAsString(jsonEncode([medDummy.toMap()]));
       await File('${newDir.path}/s_challan.json').writeAsString(jsonEncode([scNewStale.toMap()]));
       await File('${newDir.path}/sales.json').writeAsString(jsonEncode([]));
       await File('${newDir.path}/parts.json').writeAsString(jsonEncode([partyNew.toMap()]));
@@ -201,25 +210,21 @@ void main() {
       expect(ph.saleChallans.first.status, 'Billed');
 
       ph.deleteBill('SALE-UUID-1');
-      // Allow background deleteBill async persistence & outbox/cascade Future to complete
       await Future.delayed(const Duration(milliseconds: 250));
 
       expect(ph.sales, isEmpty);
       expect(ph.saleChallans.first.status, 'Pending');
       expect(ph.saleChallans.first.version, greaterThan(2));
 
-      // Verify back-FY cascade ALREADY updated 2026-27/s_challan.json on disk before switchYear!
       final newScDisk = jsonDecode(await File('${newDir.path}/s_challan.json').readAsString()) as List;
       expect(newScDisk.first['status'], 'Pending');
 
-      // Verify Switch Year into 2026-27 brings Pending challan and does NOT touch Party opBal!
       await ph.switchYear(newFy);
       expect(ph.currentFY, newFy);
       expect(ph.saleChallans.length, 1);
       expect(ph.saleChallans.first.status, 'Pending');
       expect(ph.parties.first.opBal, 5432.10);
     });
-
 
     test('T2-App: App deletePurchase in 2025-26 recovers PurchaseChallan to Pending and carries into 2026-27 on switchYear without altering opBal', () async {
       const compId = 'COMP_CH_T2_APP';
@@ -265,9 +270,12 @@ void main() {
         version: 2,
         updatedAt: 100000,
       );
+      final medDummy = Medicine(id: 'MED-1', systemId: 'PH-1001', name: 'PARA 500', packing: '10T', mrp: 50.0, rateA: 40.0);
 
+      await File('${oldDir.path}/meds.json').writeAsString(jsonEncode([medDummy.toMap()]));
       await File('${oldDir.path}/p_challan.json').writeAsString(jsonEncode([pcOld.toMap()]));
       await File('${oldDir.path}/purc.json').writeAsString(jsonEncode([purOld.toMap()]));
+      await File('${newDir.path}/meds.json').writeAsString(jsonEncode([medDummy.toMap()]));
       await File('${newDir.path}/p_challan.json').writeAsString(jsonEncode([pcNewStale.toMap()]));
       await File('${newDir.path}/purc.json').writeAsString(jsonEncode([]));
       await File('${newDir.path}/parts.json').writeAsString(jsonEncode([Party(id: 'SUP-P1', name: 'Omega Pharma', opBal: 3210.5).toMap()]));
@@ -378,7 +386,6 @@ void main() {
       expect(oldPcAfter.first['status'], 'Pending');
       expect(newPcAfter.first['status'], 'Pending');
       expect(webPh.purchaseChallans.first.status, 'Pending');
-      // Exact case preservation on supplier billNo
       expect(webPh.purchaseChallans.first.billNo, 'SupCh-MixCase');
     });
 
@@ -408,7 +415,7 @@ void main() {
         items: [pc.items.first],
         totalAmount: 150.0,
         paymentMode: 'CREDIT',
-        linkedChallanIds: const [], // Empty at header level: relies on pre-purge item sourceChallanId!
+        linkedChallanIds: const [],
         version: 1,
         updatedAt: 100050,
       );
@@ -459,9 +466,12 @@ void main() {
         version: 1,
         updatedAt: 100050,
       );
+      final medDummy = Medicine(id: 'MED-1', systemId: 'PH-1001', name: 'PARA 500', packing: '10T', mrp: 50.0, rateA: 40.0);
 
+      await File('${oldDir.path}/meds.json').writeAsString(jsonEncode([medDummy.toMap()]));
       await File('${oldDir.path}/s_challan.json').writeAsString(jsonEncode([scOld.toMap()]));
       await File('${oldDir.path}/sales.json').writeAsString(jsonEncode([saleOld.toMap()]));
+      await File('${newDir.path}/meds.json').writeAsString(jsonEncode([medDummy.toMap()]));
       await File('${newDir.path}/s_challan.json').writeAsString(jsonEncode([]));
       await File('${newDir.path}/sales.json').writeAsString(jsonEncode([]));
       await File('${newDir.path}/parts.json').writeAsString(jsonEncode([Party(id: 'PARTY-S1', name: 'Alpha Medical', opBal: 987.65).toMap()]));
@@ -515,9 +525,8 @@ void main() {
 
       expect(res.length, 1);
       expect(res.first.id, 'SC-LWW');
-      expect(res.first.status, 'Billed'); // Newer Billed preserved!
+      expect(res.first.status, 'Billed');
 
-      // Skip-guard verification on D1SalesLedgerService
       final localSales = <Sale>[];
       final localPurchases = <Purchase>[];
       final challanEvents = [
@@ -540,6 +549,207 @@ void main() {
       expect(D1SalesLedgerService.applyEventsToLocalPurchases(localPurchases, challanEvents, '2026-27'), isFalse);
       expect(localSales, isEmpty);
       expect(localPurchases, isEmpty);
+    });
+  });
+
+  group('Phase 2 & 3 (T4, T5, T6, T7): Real-Time Challan Sync, Recent Store Dispatches & First-Click Web Product Selection', () {
+    test('T4 & Vault Snapshot: Web addSaleChallanAndSync, addPurchaseChallanAndSync, deleteSaleChallan, deletePurchaseChallan & single conversion update fyVault and outbox immediately', () async {
+      const fy = '2026-27';
+      D1SalesLedgerService.activeFinancialYear = fy;
+      final webPh = PharoahWebManager();
+      webPh.financialYear = fy;
+      webPh.activeStoreToken = 'TK-LIVE';
+
+      final sc = _makeSaleChallan(id: 'SC-WEB-1', billNo: 'WSC-1', status: 'Pending', date: DateTime(2026, 7, 10), version: 1, updatedAt: 100);
+      webPh.addSaleChallanAndSync(sc);
+      expect(webPh.saleChallans.length, 1);
+      expect(webPh.fyVault[fy]!['s_challan.json'], isNotNull);
+      final vSc1 = jsonDecode(webPh.fyVault[fy]!['s_challan.json']!) as List;
+      expect(vSc1.length, 1);
+      expect(vSc1.first['id'], 'SC-WEB-1');
+
+      // Single conversion via addSaleAndSync bumps version once and marks Billed in fyVault
+      final verBefore = webPh.saleChallans.first.version;
+      final sale = Sale(
+        id: 'SALE-CONV-1',
+        billNo: 'WSALE-1',
+        partyId: 'PARTY-S1',
+        date: DateTime(2026, 7, 11),
+        partyName: 'Alpha Medical',
+        partyGstin: '',
+        partyState: 'Rajasthan',
+        items: [sc.items.first],
+        totalAmount: 80.0,
+        paymentMode: 'CREDIT',
+        linkedChallanIds: const ['SC-WEB-1'],
+      );
+      webPh.addSaleAndSync(sale);
+      expect(webPh.saleChallans.first.status, 'Billed');
+      expect(webPh.saleChallans.first.version, verBefore + 1);
+      final vScAfterBill = jsonDecode(webPh.fyVault[fy]!['s_challan.json']!) as List;
+      expect(vScAfterBill.first['status'], 'Billed');
+
+      // Purchase Challan add & conversion via item sourceChallanId
+      final pc = _makePurchaseChallan(id: 'PC-WEB-1', internalNo: 'WPC-1', billNo: 'SupRef-1', status: 'Pending', date: DateTime(2026, 7, 10), version: 1, updatedAt: 100);
+      expect(webPh.addPurchaseChallanAndSync(pc), isTrue);
+      final vPc1 = jsonDecode(webPh.fyVault[fy]!['p_challan.json']!) as List;
+      expect(vPc1.length, 1);
+
+      final pur = Purchase(
+        id: 'PUR-CONV-1',
+        internalNo: 'WPUR-1',
+        billNo: 'SupBill-1',
+        partyId: 'SUP-P1',
+        date: DateTime(2026, 7, 11),
+        entryDate: DateTime(2026, 7, 11),
+        distributorName: 'Omega Pharma',
+        items: [pc.items.first],
+        totalAmount: 150.0,
+        paymentMode: 'CREDIT',
+        linkedChallanIds: const [], // Tested via item.sourceChallanId!
+      );
+      expect(webPh.addPurchaseAndSync(pur), isTrue);
+      expect(webPh.purchaseChallans.first.status, 'Billed');
+
+      // Delete SaleChallan & PurchaseChallan updates fyVault immediately
+      webPh.deleteSaleChallan('SC-WEB-1');
+      webPh.deletePurchaseChallan('PC-WEB-1');
+      expect(jsonDecode(webPh.fyVault[fy]!['s_challan.json']!) as List, isEmpty);
+      expect(jsonDecode(webPh.fyVault[fy]!['p_challan.json']!) as List, isEmpty);
+    });
+
+    testWidgets('T5: RECENT STORE DISPATCHES & RECENT INWARD RECEIPTS sort by latest updatedAt (back-dated / recovered challan appears at top)', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+
+      // Create 5 older challans with newer date (July 2026) but older updatedAt (1000..5000)
+      for (int i = 1; i <= 5; i++) {
+        webPh.saleChallans.add(
+          _makeSaleChallan(
+            id: 'SC-OLD-$i',
+            billNo: 'SC-$i',
+            status: 'Billed',
+            date: DateTime(2026, 7, 10 + i),
+            updatedAt: 1000 * i,
+          ),
+        );
+      }
+      // Back-dated / recovered challan from Feb 2026 with latest updatedAt (999999)
+      final recovered = _makeSaleChallan(
+        id: 'SC-RECOVERED-TOP',
+        billNo: 'SC-BACK-99',
+        status: 'Pending',
+        date: DateTime(2026, 2, 1),
+        updatedAt: 999999,
+      );
+      webPh.saleChallans.add(recovered);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PharoahWebManager>.value(
+          value: webPh,
+          child: const MaterialApp(
+            home: Scaffold(body: WebSaleChallanView()),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('RECENT STORE DISPATCHES'), findsOneWidget);
+      expect(find.textContaining('SC-BACK-99'), findsWidgets);
+    });
+
+    testWidgets('T6 & T7: Web Sale Challan & Purchase Challan Product Selection opens Batch/Config Dialog on 1st Click even when PharoahWebManager notifies listeners', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+      final med = Medicine(
+        id: 'MED-DOLO',
+        systemId: 'PH-10001',
+        name: 'DOLO 650 TAB',
+        packing: '15T',
+        mrp: 35.0,
+        rateA: 28.0,
+        purRate: 22.0,
+        stock: 50.0,
+      );
+      webPh.medicines = [med];
+      final customer = Party(id: 'CUST-1', name: 'City Care', state: 'Rajasthan');
+
+      // 1. Test WebSaleChallanBillingView 1st click
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PharoahWebManager>.value(
+          value: webPh,
+          child: MaterialApp(
+            home: WebSaleChallanBillingView(
+              party: customer,
+              challanNo: 'WSC-101',
+              challanDate: DateTime(2026, 7, 15),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final searchField = find.byType(TextField).first;
+      await tester.enterText(searchField, 'DOLO');
+      await tester.pump();
+
+      // Simulate a background heartbeat notification right while dropdown is open!
+      webPh.notifyListeners();
+      await tester.pump();
+
+      final medTile = find.byKey(const ValueKey('sc_med_MED-DOLO_0'));
+      expect(medTile, findsOneWidget);
+
+      // Single tap MUST open WebItemEntryCard immediately on 1st click
+      await tester.tap(medTile);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(WebItemEntryCard), findsOneWidget);
+      expect(find.text('ITEM BILLING & BATCH CONFIG'), findsOneWidget);
+
+      // Close modal
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pumpAndSettle();
+
+      // 2. Test WebPurchaseChallanBillingView 1st click on Mobile Browser viewport (390x844)
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      final supplier = Party(id: 'SUP-1', name: 'Apex Distributors', group: 'Sundry Creditors');
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PharoahWebManager>.value(
+          value: webPh,
+          child: MaterialApp(
+            home: WebPurchaseChallanBillingView(
+              supplier: supplier,
+              internalNo: 'WPC-101',
+              supplierRefNo: 'SUP-REF-1',
+              challanDate: DateTime(2026, 7, 15),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final pcSearchField = find.byType(TextField).first;
+      await tester.enterText(pcSearchField, 'DOLO');
+      await tester.pump();
+
+      webPh.notifyListeners();
+      await tester.pump();
+
+      final pcMedTile = find.byKey(const ValueKey('pc_med_MED-DOLO_0'));
+      expect(pcMedTile, findsOneWidget);
+
+      await tester.tap(pcMedTile);
+      await tester.pumpAndSettle();
+
+      expect(find.text('INWARD STOCK CONFIGURATION'), findsOneWidget);
     });
   });
 }
