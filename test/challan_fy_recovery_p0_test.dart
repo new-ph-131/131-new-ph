@@ -219,6 +219,12 @@ void main() {
       final newScDisk = jsonDecode(await File('${newDir.path}/s_challan.json').readAsString()) as List;
       expect(newScDisk.first['status'], 'Pending');
 
+      // Set custom 2026-27 Party opBal on disk BEFORE switchYear to prove switchYear()
+      // ONLY runs syncPendingChallansFromPreviousYears and NEVER overwrites 2026-27 Party opBal!
+      await File('${newDir.path}/parts.json').writeAsString(jsonEncode([partyNew.toMap()]));
+      // Also set 2026-27 s_challan.json back to stale Billed so switchYear() itself proves it carries Pending!
+      await File('${newDir.path}/s_challan.json').writeAsString(jsonEncode([scNewStale.toMap()]));
+
       await ph.switchYear(newFy);
       expect(ph.currentFY, newFy);
       expect(ph.saleChallans.length, 1);

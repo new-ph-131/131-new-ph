@@ -727,23 +727,28 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
-                        child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B), size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(widget.supplier.name, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-                          Text("Ref: ${widget.supplierRefNo} | GST: ${widget.supplier.gst}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
-                        ],
-                      ),
-                    ],
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: const BoxDecoration(color: Color(0x33F59E0B), shape: BoxShape.circle),
+                          child: const Icon(Icons.business_rounded, color: Color(0xFFF59E0B), size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(widget.supplier.name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                              Text("Ref: ${widget.supplierRefNo} | GST: ${widget.supplier.gst}", overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
@@ -997,7 +1002,65 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
-      child: Row(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isCompact = constraints.maxWidth < 720;
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: remarksC,
+                  readOnly: widget.isReadOnly,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: "INWARD REMARKS / TRANSPORT DETAILS",
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
+                    prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 18),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("NET INWARD VALUE", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                        Text("₹${totalAmt.toStringAsFixed(2)}", style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 20, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                    if (!widget.isReadOnly)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            onPressed: isSaving ? null : () => _savePurchaseChallan(webPh, andPrint: false),
+                            icon: isSaving ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_rounded, size: 16),
+                            label: Text(isSaving ? "SAVING..." : "SAVE INWARD", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFFBBF24), side: const BorderSide(color: Color(0xFFFBBF24), width: 1.5), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                            onPressed: isSaving ? null : () => _savePurchaseChallan(webPh, andPrint: true),
+                            icon: const Icon(Icons.print_rounded, size: 16),
+                            label: const Text("SAVE & PRINT", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.5)),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
+            );
+          }
+          return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
@@ -1040,6 +1103,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
             ),
           ],
         ],
+      );
+        },
       ),
     );
   }
