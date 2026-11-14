@@ -16,6 +16,7 @@ class SyncQueueManager {
   static final List<SyncEnvelope> _outboxBufferQueue = [];
   static Timer? _debounceTimer;
   static bool _isFlushing = false;
+  static Future<bool>? _inFlightFlush;
   static int _sequenceCounter = 100;
   static String _deviceId = 'MREG-DEVICE-${DateTime.now().millisecondsSinceEpoch % 10000}';
   static const String edgeSignalEndpoint = "https://pharoah-erp.pages.dev/api/lab_signal";
@@ -70,57 +71,89 @@ class SyncQueueManager {
     });
   }
 
-  /// Flushes all pending outbox envelopes as an aggregated atomic Step 4 JSON batch
+  /// Flushes all pending outbox envelopes as an aggregated atomic Step 4 JSON batch.
+  /// Coalesces concurrent flush callers onto the active future and drains any operations
+  /// enqueued mid-flight (such as rapid 10-12 delete bursts) before completing.
   static Future<bool> flushOutboxAsJSONBatch() async {
-    if (_outboxBufferQueue.isEmpty || _isFlushing) return false;
+    if (_inFlightFlush != null) {
+      final prevOk = await _inFlightFlush!;
+      if (_outboxBufferQueue.isEmpty) return prevOk;
+    }
+    if (_outboxBufferQueue.isEmpty) return true;
+    final completer = Completer<bool>();
+    _inFlightFlush = completer.future;
     _isFlushing = true;
+    bool allSucceeded = true;
 
-    final List<SyncEnvelope> batchPayload = List.from(_outboxBufferQueue);
-    _outboxBufferQueue.clear();
-    final String token = batchPayload.first.storeToken;
-    final Map<String, dynamic> body = {
-      "device_id": _deviceId,
-      "storeToken": token,
-      "source": "OUTBOX_BATCH",
-      "action": "JSON_BATCH_MUTATION",
-      "batch_timestamp": DateTime.now().toUtc().toIso8601String(),
-      "operations": batchPayload.map((e) => e.toMap()).toList(),
-    };
-
-    bool succeeded = false;
     try {
-      final response = await http.post(
-        Uri.parse(edgeSignalEndpoint),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 6));
+      while (_outboxBufferQueue.isNotEmpty) {
+        final List<SyncEnvelope> batchPayload = List.from(_outboxBufferQueue);
+        _outboxBufferQueue.clear();
+        final String token = batchPayload.first.storeToken;
+        final Map<String, dynamic> body = {
+          "device_id": _deviceId,
+          "storeToken": token,
+          "source": "OUTBOX_BATCH",
+          "action": "JSON_BATCH_MUTATION",
+          "batch_timestamp": DateTime.now().toUtc().toIso8601String(),
+          "operations": batchPayload.map((e) => e.toMap()).toList(),
+        };
 
-      if (response.statusCode == 200) {
-        debugPrint("⚡ [SyncQueueManager] Successfully flushed Step 4 batch of ${batchPayload.length} operations to D1!");
-        succeeded = true;
-      } else {
-        debugPrint("⚠ [SyncQueueManager] Server returned status ${response.statusCode}. Restoring to buffer.");
+        bool succeeded = false;
+        try {
+          final response = await http.post(
+            Uri.parse(edgeSignalEndpoint),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode(body),
+          ).timeout(const Duration(seconds: 6));
+
+          if (response.statusCode == 200) {
+            debugPrint("⚡ [SyncQueueManager] Successfully flushed Step 4 batch of ${batchPayload.length} operations to D1!");
+            succeeded = true;
+          } else {
+            debugPrint("⚠ [SyncQueueManager] Server returned status ${response.statusCode}. Restoring to buffer.");
+          }
+        } catch (e) {
+          debugPrint("⚠ [SyncQueueManager] Batch flush error: $e. Restoring to buffer for retry.");
+        }
+        if (!succeeded) {
+          allSucceeded = false;
+          final Set<String> newerIds = _outboxBufferQueue.map((e) => e.syncId).toSet();
+          final List<SyncEnvelope> toRestore = batchPayload.where((e) => !newerIds.contains(e.syncId)).toList();
+          if (toRestore.isNotEmpty) {
+            _outboxBufferQueue.insertAll(0, toRestore);
+          }
+          break;
+        }
       }
-    } catch (e) {
-      debugPrint("⚠ [SyncQueueManager] Batch flush error: $e. Restoring to buffer for retry.");
     } finally {
-      if (!succeeded) {
-        // Preserve retry data ahead of mutations queued while the request was in flight.
-        _outboxBufferQueue.insertAll(0, batchPayload);
-      }
       _isFlushing = false;
-
-      // An enqueue can happen while the HTTP request is in flight. Its debounce
-      // timer may fire while _isFlushing is true and return early; always schedule
-      // another flush once the current request finishes if anything remains queued.
+      if (identical(_inFlightFlush, completer.future)) {
+        _inFlightFlush = null;
+      }
+      if (!completer.isCompleted) {
+        completer.complete(allSucceeded);
+      }
       if (_outboxBufferQueue.isNotEmpty) {
         _debounceTimer?.cancel();
-        _debounceTimer = Timer(const Duration(milliseconds: 100), () {
+        _debounceTimer = Timer(const Duration(milliseconds: 150), () {
           flushOutboxAsJSONBatch();
         });
       }
     }
-    return succeeded;
+    return allSucceeded;
+  }
+
+  /// Test/Diagnostic helper to return snapshot of queued operations
+  static List<SyncEnvelope> debugPendingOperations() => List.unmodifiable(_outboxBufferQueue);
+
+  /// Test/Diagnostic helper to clear outbox state cleanly between tests
+  static void debugReset() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    _outboxBufferQueue.clear();
+    _isFlushing = false;
+    _inFlightFlush = null;
   }
 
   /// Pending count for UI status inspection

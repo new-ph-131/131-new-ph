@@ -80,14 +80,40 @@ class TombstoneEngine {
     await recordTombstone(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
   }
 
+  /// Returns timestamped unmark map so stale unmarks never block newer cloud deletions.
+  static Future<Map<String, int>> getUnmarkedRegistry(String companyId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('unmarked_registry_$companyId');
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final res = <String, int>{};
+      decoded.forEach((k, v) {
+        final ck = k.toString().trim();
+        if (ck.isNotEmpty) res[ck] = int.tryParse(v.toString()) ?? 0;
+      });
+      return res;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveUnmarkedRegistry(String companyId, Map<String, int> reg) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('unmarked_registry_$companyId', jsonEncode(reg));
+  }
+
   /// Unmarks a tombstone when a bill is explicitly re-created or updated with a newer timestamp
   static Future<void> unmarkTombstoneWithTimestamp(
     String companyId, {
     required String id,
     String? secondaryKey,
     String? fy,
+    int? timestamp,
   }) async {
+    final int unmarkTs = timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final registry = await getTombstoneRegistry(companyId);
+    final unmarkReg = await getUnmarkedRegistry(companyId);
     final cleanId = id.trim();
     final bool keepIdCase = cleanId.contains('_');
     final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, fy, keepIdCase);
@@ -95,6 +121,9 @@ class TombstoneEngine {
       registry.remove(cleanId);
       if (!keepIdCase) registry.remove(cleanId.toUpperCase());
       registry.remove(scopedId);
+      unmarkReg[cleanId] = unmarkTs;
+      if (!keepIdCase) unmarkReg[cleanId.toUpperCase()] = unmarkTs;
+      if (scopedId.isNotEmpty) unmarkReg[scopedId] = unmarkTs;
     }
     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
       final rawSec = secondaryKey.trim();
@@ -103,8 +132,12 @@ class TombstoneEngine {
       registry.remove(rawSec);
       if (!keepSecCase) registry.remove(rawSec.toUpperCase());
       registry.remove(scopedSec);
+      unmarkReg[rawSec] = unmarkTs;
+      if (!keepSecCase) unmarkReg[rawSec.toUpperCase()] = unmarkTs;
+      if (scopedSec.isNotEmpty) unmarkReg[scopedSec] = unmarkTs;
     }
     await saveTombstoneRegistry(companyId, registry);
+    await saveUnmarkedRegistry(companyId, unmarkReg);
     await unmarkTombstone(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
   }
 
@@ -210,6 +243,7 @@ class TombstoneEngine {
     final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
     final tombstones = await getLocalTombstones(companyId);
     final unmarked = await getUnmarkedKeys(companyId);
+    final unmarkReg = await getUnmarkedRegistry(companyId);
     for (var k in keys) {
       final rawK = k.trim();
       if (rawK.isEmpty) continue;
@@ -221,15 +255,45 @@ class TombstoneEngine {
         tombstones.add(cleanK);
         if (!keepCase) tombstones.add(cleanK.toUpperCase());
         unmarked.remove(cleanK);
-        if (!keepCase) unmarked.remove(cleanK.toUpperCase());
+        unmarkReg.remove(cleanK);
+        if (!keepCase) {
+          unmarked.remove(cleanK.toUpperCase());
+          unmarkReg.remove(cleanK.toUpperCase());
+        }
         unmarked.remove(rawK);
-        if (!keepCase) unmarked.remove(rawK.toUpperCase());
+        unmarkReg.remove(rawK);
+        if (!keepCase) {
+          unmarked.remove(rawK.toUpperCase());
+          unmarkReg.remove(rawK.toUpperCase());
+        }
       }
     }
     await saveTombstoneRegistry(companyId, registry);
     await saveLocalTombstones(companyId, tombstones);
     await saveUnmarkedKeys(companyId, unmarked);
+    await saveUnmarkedRegistry(companyId, unmarkReg);
     return tombstones;
+  }
+
+  /// Removes unmarked status when an authoritative newer cloud deletion is observed.
+  static Future<void> clearUnmarkedForDeletedKeys(String companyId, Iterable<String> keys) async {
+    final unmarked = await getUnmarkedKeys(companyId);
+    final unmarkReg = await getUnmarkedRegistry(companyId);
+    bool changed = false;
+    for (final k in keys) {
+      final ck = k.trim();
+      if (ck.isEmpty) continue;
+      if (unmarked.remove(ck)) changed = true;
+      if (unmarkReg.remove(ck) != null) changed = true;
+      if (!ck.contains('_')) {
+        if (unmarked.remove(ck.toUpperCase())) changed = true;
+        if (unmarkReg.remove(ck.toUpperCase()) != null) changed = true;
+      }
+    }
+    if (changed) {
+      await saveUnmarkedKeys(companyId, unmarked);
+      await saveUnmarkedRegistry(companyId, unmarkReg);
+    }
   }
 
     /// 🛡️ SELF-HEALING DISINFECTION (#PH-REV-807):
@@ -272,14 +336,45 @@ class TombstoneEngine {
     } catch (_) {}
   }
 
-  static Future<Set<String>> sanitizeCloudTombstones(String companyId, Iterable<String> incomingCloudTombstones) async {
+  static Future<Set<String>> sanitizeCloudTombstones(
+    String companyId,
+    Iterable<String> incomingCloudTombstones, {
+    Map<String, int>? cloudRegistry,
+    Set<String>? absentFromCloudIds,
+  }) async {
     final unmarked = await getUnmarkedKeys(companyId);
+    final unmarkReg = await getUnmarkedRegistry(companyId);
     final sanitized = <String>{};
     for (var k in incomingCloudTombstones) {
       final cleanK = k.trim();
       if (cleanK.isEmpty) continue;
       if (D1SalesLedgerService.isUnscopedSeriesKey(cleanK)) continue;
-      if (!unmarked.contains(cleanK) && (cleanK.contains('_') || !unmarked.contains(cleanK.toUpperCase()))) {
+      // If cloud tombstone has a strictly newer deletion timestamp than our local unmark, accept the deletion!
+      final int unmarkTs = unmarkReg[cleanK] ?? (!cleanK.contains('_') ? (unmarkReg[cleanK.toUpperCase()] ?? 0) : 0);
+      final int cloudTs = cloudRegistry != null
+          ? (cloudRegistry[cleanK] ?? (!cleanK.contains('_') ? (cloudRegistry[cleanK.toUpperCase()] ?? 0) : 0))
+          : 0;
+      
+      if (unmarkTs > 0) {
+        if (cloudTs > 0 && cloudTs >= unmarkTs) {
+          sanitized.add(cleanK);
+        }
+        continue;
+      }
+
+      final bool isMarkedUnmarked = unmarked.contains(cleanK) || (!cleanK.contains('_') && unmarked.contains(cleanK.toUpperCase()));
+      if (!isMarkedUnmarked) {
+        sanitized.add(cleanK);
+        continue;
+      }
+      if (cloudTs > 0 && cloudTs >= unmarkTs) {
+        sanitized.add(cleanK);
+        continue;
+      }
+      // If record is explicitly absent from cloud snapshot, an older unmark must not block cloud tombstone.
+      if (absentFromCloudIds != null &&
+          !absentFromCloudIds.contains(cleanK) &&
+          (cleanK.contains('_') || !absentFromCloudIds.contains(cleanK.toUpperCase()))) {
         sanitized.add(cleanK);
       }
     }

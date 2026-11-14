@@ -129,11 +129,13 @@ class MasterSyncOrchestrator {
           break;
         case 'PURCHASE':
           final billData = envelope.billData;
-          final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
+          final String bNo = (billData['billNo'] ?? '').toString().trim();
           final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
           final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
           final String comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
           final String comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+          final String comp2Upper = comp2.isNotEmpty ? comp2.toUpperCase() : "";
+          final String comp3Upper = comp3.isNotEmpty ? comp3.toUpperCase() : "";
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
             D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
             if (phApp.activeCompany != null) {
@@ -142,8 +144,15 @@ class MasterSyncOrchestrator {
                 if (iNo.isNotEmpty) iNo,
                 if (comp2.isNotEmpty) comp2,
                 if (comp3.isNotEmpty) comp3,
+                if (comp2Upper.isNotEmpty && comp2Upper != comp2) comp2Upper,
+                if (comp3Upper.isNotEmpty && comp3Upper != comp3) comp3Upper,
               ];
-              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, delKeys);
+              TombstoneEngine.recordBatchTombstones(
+                phApp.activeCompany!.id,
+                delKeys,
+                timestamp: envelope.updatedAt > 0 ? envelope.updatedAt : null,
+                fy: targetFy,
+              );
             }
             // 🔄 Cross-Platform Revert: linked purchase challans back to Pending
             final Set<String> targetPurCids = {};
@@ -175,16 +184,35 @@ class MasterSyncOrchestrator {
               phApp.notifyListeners();
             }
           } else {
+            if (D1SalesLedgerService.isPurchaseDeleted(envelope.syncId, pId, bNo, iNo, targetFy)) {
+              break;
+            }
+            int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(envelope.syncId, pId, bNo, iNo, targetFy);
+            int localUpd = 0;
+            for (final p in phApp.purchases) {
+              if (p.id == envelope.syncId || (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo)) {
+                if (p.version > knownVer) knownVer = p.version;
+                if (p.updatedAt > localUpd) localUpd = p.updatedAt;
+              }
+            }
+            if (envelope.version < knownVer && (envelope.updatedAt == 0 || envelope.updatedAt < localUpd)) {
+              break;
+            }
             D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
             if (phApp.activeCompany != null) {
               final cid = phApp.activeCompany!.id;
-              TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: comp3.isNotEmpty ? comp3 : comp2);
-              if (iNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: iNo);
-              if (comp2.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2);
-              if (bNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: bNo);
+              TombstoneEngine.unmarkTombstoneWithTimestamp(
+                cid,
+                id: envelope.syncId,
+                secondaryKey: comp3.isNotEmpty ? comp3 : comp2,
+                fy: targetFy,
+              );
+              if (iNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: iNo, fy: targetFy);
+              if (comp2.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2, fy: targetFy);
+              if (comp2Upper.isNotEmpty && comp2Upper != comp2) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2Upper, fy: targetFy);
             }
           }
-          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope);
+          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope, fy: targetFy);
           break;
         case 'CHALLAN':
         case 'SALE_CHALLAN':
@@ -312,30 +340,93 @@ class MasterSyncOrchestrator {
           final bData = envelope.billData;
           final String medKey = (bData['medKey'] ?? '').toString().trim();
           final dynamic rawBatch = bData['batch'];
-          final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
+          final String rawBNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim();
+          final String bNo = rawBNo.toUpperCase();
+          final String batchExp = (rawBatch is Map ? (rawBatch['exp'] ?? '') : '').toString().trim();
+          final double batchMrp = double.tryParse((rawBatch is Map ? rawBatch['mrp'] : 0)?.toString() ?? '0') ?? 0.0;
+          final double batchPurRate = double.tryParse((rawBatch is Map ? rawBatch['purchaseRate'] : 0)?.toString() ?? '0') ?? 0.0;
+          final String canonicalSyncId = BatchSyncModule.getBatchSyncId(
+            medKey,
+            rawBNo,
+            exp: batchExp,
+            mrp: batchMrp,
+            purRate: batchPurRate,
+          );
           final String batchEnvFy = (bData['fy'] ?? (rawBatch is Map ? rawBatch['fy'] : '') ?? '').toString().trim();
           if (batchEnvFy.isNotEmpty && targetFy.isNotEmpty && batchEnvFy != targetFy &&
               (envelope.isDeleted == 1 || envelope.action == 'DELETE')) {
             break;
           }
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
+            if (canonicalSyncId != envelope.syncId) {
+              D1SalesLedgerService.markPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
+            }
             if (phApp.activeCompany != null) {
-              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (bNo.isNotEmpty) bNo]);
+              TombstoneEngine.recordBatchTombstones(
+                phApp.activeCompany!.id,
+                [
+                  envelope.syncId,
+                  if (canonicalSyncId != envelope.syncId) canonicalSyncId,
+                  if (bNo.isNotEmpty) bNo,
+                ],
+                fy: targetFy,
+              );
             }
             if (phApp.batchHistory.containsKey(medKey)) {
-              final beforeLen = phApp.batchHistory[medKey]!.length;
-              phApp.batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
-              mutated = phApp.batchHistory[medKey]!.length != beforeLen;
+              final list = phApp.batchHistory[medKey]!;
+              final beforeLen = list.length;
+              if (bNo.isNotEmpty) {
+                list.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
+              } else {
+                final int matchIdx = InventoryLogicCenter.findMatchingBatchIndex(
+                  list,
+                  batchNo: rawBNo,
+                  exp: batchExp,
+                  mrp: batchMrp,
+                  purRate: batchPurRate,
+                  exactEmptyBatchLot: true,
+                );
+                if (matchIdx != -1) {
+                  list.removeAt(matchIdx);
+                } else {
+                  list.removeWhere((b) =>
+                      b.batch.trim().isEmpty &&
+                      BatchSyncModule.getBatchSyncId(
+                        medKey,
+                        b.batch,
+                        exp: b.exp,
+                        mrp: b.mrp,
+                        purRate: b.purRate,
+                      ) == envelope.syncId);
+                }
+              }
+              mutated = list.length != beforeLen;
             }
           } else {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
+            if (canonicalSyncId != envelope.syncId) {
+              D1SalesLedgerService.unmarkPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
+            }
             if (phApp.activeCompany != null) {
-              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: bNo);
+              TombstoneEngine.unmarkTombstoneWithTimestamp(
+                phApp.activeCompany!.id,
+                id: envelope.syncId,
+                secondaryKey: bNo.isNotEmpty ? bNo : null,
+                fy: targetFy,
+              );
             }
             mutated = BatchSyncModule.mergeIncomingBatchEnvelope(phApp.batchHistory, envelope);
           }
           if (mutated) {
+            InventoryLogicCenter.rebuildAllInventory(
+              medicines: phApp.medicines,
+              batchHistory: phApp.batchHistory,
+              purchases: phApp.purchases,
+              sales: phApp.sales,
+              saleReturns: phApp.saleReturns,
+              purchaseReturns: phApp.purchaseReturns,
+            );
             phApp.save();
             phApp.notifyListeners();
           }
@@ -498,11 +589,13 @@ class MasterSyncOrchestrator {
           break;
         case 'PURCHASE':
           final billData = envelope.billData;
-          final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
+          final String bNo = (billData['billNo'] ?? '').toString().trim();
           final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
           final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
           final String comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
           final String comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+          final String comp2Upper = comp2.isNotEmpty ? comp2.toUpperCase() : "";
+          final String comp3Upper = comp3.isNotEmpty ? comp3.toUpperCase() : "";
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
             D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
             final List<String> delList = [
@@ -510,6 +603,8 @@ class MasterSyncOrchestrator {
               if (iNo.isNotEmpty) iNo,
               if (comp2.isNotEmpty) comp2,
               if (comp3.isNotEmpty) comp3,
+              if (comp2Upper.isNotEmpty && comp2Upper != comp2) comp2Upper,
+              if (comp3Upper.isNotEmpty && comp3Upper != comp3) comp3Upper,
             ];
             phWeb.purgeDeletedIds(delList);
             // 🔄 Cross-Platform Revert: linked purchase challans back to Pending
@@ -541,24 +636,26 @@ class MasterSyncOrchestrator {
               phWeb.notifyListeners();
             }
           } else {
-            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
-            final List<String> unmList = [
-              envelope.syncId,
-              if (iNo.isNotEmpty) iNo,
-              if (bNo.isNotEmpty) bNo,
-              if (comp2.isNotEmpty) comp2,
-              if (comp3.isNotEmpty) comp3,
-            ];
-            for (final k in unmList) {
-              phWeb.deletedRecordIds.remove(k);
-              phWeb.deletedRecordIds.remove(k.toUpperCase());
-              phWeb.localTombstoneRegistry.remove(k);
-              phWeb.localTombstoneRegistry.remove(k.toUpperCase());
-              phWeb.unmarkedRecordIds.add(k);
-              phWeb.unmarkedRecordIds.add(k.toUpperCase());
+            if (D1SalesLedgerService.isPurchaseDeleted(envelope.syncId, pId, bNo, iNo, targetFy)) {
+              break;
             }
+            int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(envelope.syncId, pId, bNo, iNo, targetFy);
+            int localUpd = 0;
+            for (final p in phWeb.purchases) {
+              if (p.id == envelope.syncId || (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo)) {
+                if (p.version > knownVer) knownVer = p.version;
+                if (p.updatedAt > localUpd) localUpd = p.updatedAt;
+              }
+            }
+            if (envelope.version < knownVer && (envelope.updatedAt == 0 || envelope.updatedAt < localUpd)) {
+              break;
+            }
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: iNo.isNotEmpty ? iNo : null);
+            if (comp2.isNotEmpty) phWeb.unmarkDeletedId(comp2, preserveCase: true);
+            if (comp3.isNotEmpty) phWeb.unmarkDeletedId(comp3, preserveCase: true);
           }
-          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope);
+          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope, fy: targetFy);
           break;
         case 'CHALLAN':
         case 'SALE_CHALLAN':
@@ -651,23 +748,69 @@ class MasterSyncOrchestrator {
           final bData = envelope.billData;
           final String medKey = (bData['medKey'] ?? '').toString().trim();
           final dynamic rawBatch = bData['batch'];
-          final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
+          final String rawBNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim();
+          final String bNo = rawBNo.toUpperCase();
+          final String batchExp = (rawBatch is Map ? (rawBatch['exp'] ?? '') : '').toString().trim();
+          final double batchMrp = double.tryParse((rawBatch is Map ? rawBatch['mrp'] : 0)?.toString() ?? '0') ?? 0.0;
+          final double batchPurRate = double.tryParse((rawBatch is Map ? rawBatch['purchaseRate'] : 0)?.toString() ?? '0') ?? 0.0;
+          final String canonicalSyncId = BatchSyncModule.getBatchSyncId(
+            medKey,
+            rawBNo,
+            exp: batchExp,
+            mrp: batchMrp,
+            purRate: batchPurRate,
+          );
           final String batchEnvFy = (bData['fy'] ?? (rawBatch is Map ? rawBatch['fy'] : '') ?? '').toString().trim();
           if (batchEnvFy.isNotEmpty && targetFy.isNotEmpty && batchEnvFy != targetFy &&
               (envelope.isDeleted == 1 || envelope.action == 'DELETE')) {
             break;
           }
           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
-            phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
+            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
+            if (canonicalSyncId != envelope.syncId) {
+              D1SalesLedgerService.markPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
+            }
+            phWeb.purgeDeletedIds([
+              envelope.syncId,
+              if (canonicalSyncId != envelope.syncId) canonicalSyncId,
+              if (bNo.isNotEmpty) bNo,
+            ]);
             if (phWeb.batchHistory.containsKey(medKey)) {
-              final beforeLen = phWeb.batchHistory[medKey]!.length;
-              phWeb.batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
-              mutated = phWeb.batchHistory[medKey]!.length != beforeLen;
+              final list = phWeb.batchHistory[medKey]!;
+              final beforeLen = list.length;
+              if (bNo.isNotEmpty) {
+                list.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
+              } else {
+                final int matchIdx = InventoryLogicCenter.findMatchingBatchIndex(
+                  list,
+                  batchNo: rawBNo,
+                  exp: batchExp,
+                  mrp: batchMrp,
+                  purRate: batchPurRate,
+                  exactEmptyBatchLot: true,
+                );
+                if (matchIdx != -1) {
+                  list.removeAt(matchIdx);
+                } else {
+                  list.removeWhere((b) =>
+                      b.batch.trim().isEmpty &&
+                      BatchSyncModule.getBatchSyncId(
+                        medKey,
+                        b.batch,
+                        exp: b.exp,
+                        mrp: b.mrp,
+                        purRate: b.purRate,
+                      ) == envelope.syncId);
+                }
+              }
+              mutated = list.length != beforeLen;
             }
           } else {
-            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey);
-            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
+            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
+            if (canonicalSyncId != envelope.syncId) {
+              D1SalesLedgerService.unmarkPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
+            }
+            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo.isNotEmpty ? bNo : null);
             mutated = BatchSyncModule.mergeIncomingBatchEnvelope(phWeb.batchHistory, envelope);
           }
           if (mutated) {

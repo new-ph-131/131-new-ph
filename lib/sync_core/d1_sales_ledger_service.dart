@@ -99,9 +99,10 @@ class D1SalesLedgerService {
     if (k.startsWith("PARTY-") && !k.contains("_")) return false;
     if (k.startsWith("MED_") || (k.startsWith("PH-") && RegExp(r"^PH-\d{4,}$").hasMatch(k))) return false;
 
-    // Timestamps (e.g. 1712345678901) or ISO dates or standard 36-char UUIDs
+    // Timestamps (e.g. 1712345678901) or ISO dates or standard UUIDs (including prefixed UUIDs like PUR-UUID-101)
     if (RegExp(r"^\d{10,}$").hasMatch(k) || RegExp(r"^\d{4}-\d{2}-\d{2}").hasMatch(k) ||
-        RegExp(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$").hasMatch(k)) {
+        RegExp(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$").hasMatch(k) ||
+        k.contains("-UUID-") || (k.contains("-") && k.length >= 24)) {
       return false;
     }
 
@@ -272,9 +273,13 @@ class D1SalesLedgerService {
   // =========================================================================
   static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
     final cleanId = id.trim();
-    if (cleanId.isNotEmpty && !isUnscopedSeriesKey(cleanId)) {
-      return _permanentDeletedKeys.contains(cleanId) ||
-             _permanentDeletedKeys.contains(cleanId.toUpperCase());
+    if (cleanId.isNotEmpty) {
+      final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+      if (_permanentDeletedKeys.contains(cleanId) ||
+          _permanentDeletedKeys.contains(cleanId.toUpperCase()) ||
+          (scopedId.isNotEmpty && (_permanentDeletedKeys.contains(scopedId) || _permanentDeletedKeys.contains(scopedId.toUpperCase())))) {
+        return true;
+      }
     }
     final cleanInt = scopeSecondaryKey(internalNo, fy);
     final cleanParty = partyId.trim().toUpperCase();
@@ -285,9 +290,13 @@ class D1SalesLedgerService {
     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
         ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy, true)
         : "";
+    final compKey2Upper = compKey2.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}", fy, true) : "";
+    final compKey3Upper = compKey3.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}_${internalNo.trim().toUpperCase()}", fy, true) : "";
     return (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
            (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
-           (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3));
+           (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3)) ||
+           (compKey2Upper.isNotEmpty && _permanentDeletedKeys.contains(compKey2Upper)) ||
+           (compKey3Upper.isNotEmpty && _permanentDeletedKeys.contains(compKey3Upper));
   }
 
   static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
@@ -348,25 +357,31 @@ class D1SalesLedgerService {
     String storeToken, {
     bool isUpdate = false,
     String clientSource = "APP_MOBILE",
+    String? fy,
   }) async {
+    final String effFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (activeFinancialYear.isNotEmpty ? activeFinancialYear.trim() : inferFyFromDate(purchase.date));
     unmarkPurchasePermanentlyDeleted(
       purchase.id,
       purchase.partyId,
       purchase.billNo,
       purchase.internalNo,
+      effFy,
     );
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
       final purMap = purchase.toMap();
       purMap["doc_type"] = "PURCHASE";
-      purMap["fy"] = activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(purchase.date);
+      purMap["fy"] = effFy;
       final String cleanParty = purchase.partyId.trim().toUpperCase();
       final String cleanBill = purchase.billNo.trim();
       final String cleanInt = purchase.internalNo.trim().toUpperCase();
-      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
+      final String scopedInt = cleanInt.isNotEmpty ? scopeSecondaryKey(cleanInt, effFy) : "";
+      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? scopeSecondaryKey("${cleanParty}_$cleanBill", effFy, true) : "";
       final String compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
-          ? "${cleanParty}_${cleanBill}_$cleanInt"
+          ? scopeSecondaryKey("${cleanParty}_${cleanBill}_$cleanInt", effFy, true)
           : "";
       final String refNo = cleanInt.isNotEmpty ? cleanInt : cleanBill;
 
@@ -375,9 +390,10 @@ class D1SalesLedgerService {
         "source": clientSource,
         "action": isUpdate ? "UPDATE_PURCHASE" : "INSERT_PURCHASE",
         "entityId": purchase.id,
+        "fy": effFy,
         "unmarkedIds": [
           purchase.id,
-          if (cleanInt.isNotEmpty) cleanInt,
+          if (scopedInt.isNotEmpty) scopedInt,
           if (compKey2.isNotEmpty) compKey2,
           if (compKey3.isNotEmpty) compKey3,
         ],
@@ -407,6 +423,7 @@ class D1SalesLedgerService {
             purchase.billNo,
             purchase.version,
             purchase.internalNo,
+            effFy,
           );
           final int? newSeq = data["seq"];
           if (newSeq != null && newSeq > 0) {
@@ -414,10 +431,21 @@ class D1SalesLedgerService {
           }
           return true;
         }
+      } else if (res.statusCode == 410) {
+        markPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, effFy);
+        return false;
       } else if (res.statusCode == 409) {
         try {
           final data = jsonDecode(res.body);
+          if (data["status"] == "DELETED") {
+            markPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, effFy);
+            return false;
+          }
           final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
+          if (serverVer >= 99999) {
+            markPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, effFy);
+            return false;
+          }
           if (serverVer > 0) {
             recordPurchaseKnownVersion(
               purchase.id,
@@ -425,9 +453,10 @@ class D1SalesLedgerService {
               purchase.billNo,
               serverVer,
               purchase.internalNo,
+              effFy,
             );
             purchase.version = serverVer + 1;
-            return await onPurchaseSaved(purchase, storeToken, isUpdate: true, clientSource: clientSource);
+            return await onPurchaseSaved(purchase, storeToken, isUpdate: true, clientSource: clientSource, fy: effFy);
           }
         } catch (_) {}
       }
@@ -617,11 +646,18 @@ class D1SalesLedgerService {
           }
           return true;
         }
+      } else if (res.statusCode == 410) {
+        markPermanentlyDeleted(sale.id, sale.billNo);
+        return false;
       } else if (res.statusCode == 409) {
         debugPrint("⚠ [D1SalesLedger] OCC Conflict: Bill modified elsewhere. Initiating Enterprise Auto-Rebase...");
         try {
           final data = jsonDecode(res.body);
           final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
+          if (data["status"] == "DELETED" || serverVer >= 99999) {
+            markPermanentlyDeleted(sale.id, sale.billNo);
+            return false;
+          }
           if (serverVer > 0) {
             recordKnownVersion(sale.id, sale.billNo, serverVer);
             sale.version = serverVer + 1;
@@ -757,35 +793,60 @@ class D1SalesLedgerService {
   /// 2. DELTA SYNC PULL & LOCAL MERGE
   /// =========================================================================
 
+  /// Commits highest processed D1 seq cursor ONLY after caller has persisted mutations/tombstones.
+  static Future<void> commitSaleDeltaSeq(String storeToken, int seq) async {
+    if (storeToken.trim().isEmpty || seq <= 0) return;
+    await _updateHighestLocalSeq(storeToken, seq);
+  }
+
+  /// Pulls sequential mutations committed after sinceSeq without advancing local cursor prematurely.
+  static Future<({List<Map<String, dynamic>> events, int maxSeq})> fetchSaleDeltasWithCursor(
+    String storeToken, {
+    int? customSinceSeq,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) {
+      return (events: <Map<String, dynamic>>[], maxSeq: 0);
+    }
+
+    int cursor = customSinceSeq ?? await getLatestLocalSeq(storeToken);
+    int highestMaxSeq = cursor;
+    final List<Map<String, dynamic>> allEvents = [];
+    try {
+      for (int page = 0; page < 5; page++) {
+        final uri = Uri.parse("$endpoint?storeToken=${Uri.encodeComponent(storeToken.trim().toUpperCase())}&since_seq=$cursor");
+        final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+        if (res.statusCode != 200) break;
+        final data = jsonDecode(res.body);
+        if (data["status"] != "SUCCESS" || data["events"] is! List) break;
+        final List<Map<String, dynamic>> pageEvents =
+            List<Map<String, dynamic>>.from(data["events"]);
+        if (pageEvents.isEmpty) break;
+        allEvents.addAll(pageEvents);
+        final int? mSeq = int.tryParse(data["max_seq"]?.toString() ?? '');
+        if (mSeq != null && mSeq > highestMaxSeq) {
+          highestMaxSeq = mSeq;
+          cursor = mSeq;
+        } else {
+          break;
+        }
+        if (pageEvents.length < 250) break;
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] fetchSaleDeltasWithCursor Error: $e");
+    }
+    return (events: allEvents, maxSeq: highestMaxSeq);
+  }
+
   /// Pulls all sequential mutations committed after sinceSeq
   static Future<List<Map<String, dynamic>>> fetchSaleDeltas(
     String storeToken, {
     int? customSinceSeq,
   }) async {
-    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return [];
-
-    try {
-      final sinceSeq = customSinceSeq ?? await getLatestLocalSeq(storeToken);
-      final uri = Uri.parse("$endpoint?storeToken=${Uri.encodeComponent(storeToken.trim().toUpperCase())}&since_seq=$sinceSeq");
-
-      final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data["status"] == "SUCCESS" && data["events"] is List) {
-          final List<Map<String, dynamic>> events = 
-              List<Map<String, dynamic>>.from(data["events"]);
-          
-          if (events.isNotEmpty && data["max_seq"] != null) {
-            final int mSeq = data["max_seq"];
-            await _updateHighestLocalSeq(storeToken, mSeq);
-          }
-          return events;
-        }
-      }
-    } catch (e) {
-      debugPrint("⚠ [D1SalesLedger] fetchSaleDeltas Error: $e");
+    final res = await fetchSaleDeltasWithCursor(storeToken, customSinceSeq: customSinceSeq);
+    if (res.events.isNotEmpty && res.maxSeq > 0) {
+      await commitSaleDeltaSeq(storeToken, res.maxSeq);
     }
-    return [];
+    return res.events;
   }
 
   /// Merges incoming edge events into local Sales memory list
@@ -969,13 +1030,17 @@ class D1SalesLedgerService {
         continue;
       }
 
-      if (action == "DELETE" || action.startsWith("DELETE_")) {
+      final bool payloadIsDeleted = rawData is Map &&
+          ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+           rawData["status"] == "Deleted");
+      if (action == "DELETE" || action.startsWith("DELETE_") || payloadIsDeleted) {
         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
         final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
         final bool hasActiveNewPur = localPurchases.any((p) => p.id != billId && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo && p.isDeleted != 1);
         if (billId.isNotEmpty) {
           markPermanentlyDeleted(billId, "", "", effFy);
+          recordPurchaseKnownVersion(billId, partyId, pBillNo, version > 99999 ? version : 999999, intNo, effFy);
         }
         if (!hasActiveNewPur && (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty)) {
           markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo, effFy);
@@ -996,6 +1061,19 @@ class D1SalesLedgerService {
         if (billId.isNotEmpty) incomingPur.id = billId;
         incomingPur.version = version;
         if (!doesEventBelongToActiveFY(rawData, incomingPur.date, effFy)) {
+          continue;
+        }
+        if (isPurchaseDeleted(incomingPur.id, incomingPur.partyId, incomingPur.billNo, incomingPur.internalNo, effFy)) {
+          continue;
+        }
+        final int knownVer = getPurchaseKnownVersion(
+          incomingPur.id,
+          incomingPur.partyId,
+          incomingPur.billNo,
+          incomingPur.internalNo,
+          effFy,
+        );
+        if (knownVer >= 99999 || version < knownVer) {
           continue;
         }
         unmarkPurchasePermanentlyDeleted(

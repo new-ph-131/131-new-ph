@@ -1537,13 +1537,13 @@ void registerBatchActivity({
       }
     }
 
-    for (var s in sales) processBillItems(s.items);
-    for (var sc in saleChallans) processBillItems(sc.items);
-    for (var sr in saleReturns) processBillItems(sr.items);
+    for (var p in purchases.where((e) => e.isDeleted != 1)) processPurchaseItems(p.items);
+    for (var pc in purchaseChallans.where((e) => e.isDeleted != 1)) processPurchaseItems(pc.items);
+    for (var pr in purchaseReturns.where((e) => e.isDeleted != 1)) processPurchaseItems(pr.items);
 
-    for (var p in purchases) processPurchaseItems(p.items);
-    for (var pc in purchaseChallans) processPurchaseItems(pc.items);
-    for (var pr in purchaseReturns) processPurchaseItems(pr.items);
+    for (var s in sales.where((e) => e.isDeleted != 1)) processBillItems(s.items);
+    for (var sc in saleChallans.where((e) => e.isDeleted != 1)) processBillItems(sc.items);
+    for (var sr in saleReturns.where((e) => e.isDeleted != 1)) processBillItems(sr.items);
 
     if (hasUpdates) {
       save();
@@ -2889,20 +2889,35 @@ void registerBatchActivity({
       ];
       final List<String> allUnmarked = [...revertedPChallanIds, ...revertedPChallanNos];
       if (activeCompany != null) {
-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
+        final String compId = activeCompany!.id;
+        final String delFy = currentFY;
+        D1SalesLedgerService.recordPurchaseKnownVersion(pId, partyId, bNo, 999999, intNo, delFy);
+        Future<void>(() async {
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
+          final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             PurchaseSyncModule.onPurchaseDeleted(p, t);
-            D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE", linkedChallanIds: p.linkedChallanIds);
-            SyncQueueManager.flushOutboxAsJSONBatch();
+            await Future.wait([
+              D1SalesLedgerService.onPurchaseDeleted(
+                pId,
+                partyId,
+                bNo,
+                intNo,
+                t,
+                clientSource: "APP_MOBILE",
+                linkedChallanIds: p.linkedChallanIds,
+                fy: delFy,
+              ),
+              SyncQueueManager.flushOutboxAsJSONBatch(),
+            ]);
           }
-        });
-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY).then((_) {
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
             action: 'DELETE_PURCHASE',
             entityId: pId,
             deletedIds: delKeys,
             unmarkedIds: allUnmarked,
+            fy: delFy,
           );
         });
       }

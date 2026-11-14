@@ -55,6 +55,22 @@ class PharoahWebManager with ChangeNotifier {
   String _lastRemoteSyncedAt = "";
   int _fyParseGeneration = 0;
   Future<void>? _pendingD1DeltaFuture;
+  final List<Future<void>> _pendingD1WriteFutures = [];
+
+  void trackPendingD1Write(Future<dynamic> future) {
+    late final Future<void> tracked;
+    tracked = future.then((_) {}).catchError((_) {}).whenComplete(() {
+      _pendingD1WriteFutures.remove(tracked);
+    });
+    _pendingD1WriteFutures.add(tracked);
+  }
+
+  Future<void> awaitPendingD1Writes() async {
+    while (_pendingD1WriteFutures.isNotEmpty) {
+      final snapshot = List<Future<void>>.from(_pendingD1WriteFutures);
+      await Future.wait(snapshot);
+    }
+  }
   String errorMessage = "";
   String successMessage = "";
 
@@ -153,18 +169,28 @@ class PharoahWebManager with ChangeNotifier {
     unmarkedRecordIds.removeAll(set);
     unmarkedRecordIds.removeAll(upperSet);
     for (var id in set) {
+      final bool keepCase = id.contains('_');
       if (D1SalesLedgerService.isUnscopedSeriesKey(id)) {
-        final scoped = D1SalesLedgerService.scopeSecondaryKey(id, financialYear);
+        final scoped = D1SalesLedgerService.scopeSecondaryKey(id, financialYear, keepCase);
         if (scoped.isNotEmpty) {
           localTombstoneRegistry[scoped] = nowTs;
           deletedRecordIds.add(scoped);
           unmarkedRecordIds.remove(scoped);
+          if (!keepCase) {
+            localTombstoneRegistry[scoped.toUpperCase()] = nowTs;
+            deletedRecordIds.add(scoped.toUpperCase());
+            unmarkedRecordIds.remove(scoped.toUpperCase());
+          }
         }
       } else {
         localTombstoneRegistry[id] = nowTs;
-        localTombstoneRegistry[id.toUpperCase()] = nowTs;
         deletedRecordIds.add(id);
-        deletedRecordIds.add(id.toUpperCase());
+        unmarkedRecordIds.remove(id);
+        if (!keepCase) {
+          localTombstoneRegistry[id.toUpperCase()] = nowTs;
+          deletedRecordIds.add(id.toUpperCase());
+          unmarkedRecordIds.remove(id.toUpperCase());
+        }
       }
     }
     _saveLocalTombstones();
@@ -1472,13 +1498,13 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    for (var s in sales) processBillItems(s.items);
-    for (var sc in saleChallans) processBillItems(sc.items);
-    for (var sr in saleReturns) processBillItems(sr.items);
+    for (var p in purchases.where((e) => e.isDeleted != 1)) processPurchaseItems(p.items);
+    for (var pc in purchaseChallans.where((e) => e.isDeleted != 1)) processPurchaseItems(pc.items);
+    for (var pr in purchaseReturns.where((e) => e.isDeleted != 1)) processPurchaseItems(pr.items);
 
-    for (var p in purchases) processPurchaseItems(p.items);
-    for (var pc in purchaseChallans) processPurchaseItems(pc.items);
-    for (var pr in purchaseReturns) processPurchaseItems(pr.items);
+    for (var s in sales.where((e) => e.isDeleted != 1)) processBillItems(s.items);
+    for (var sc in saleChallans.where((e) => e.isDeleted != 1)) processBillItems(sc.items);
+    for (var sr in saleReturns.where((e) => e.isDeleted != 1)) processBillItems(sr.items);
 
     if (hasUpdates) {
       notifyListeners();
@@ -2170,8 +2196,8 @@ class PharoahWebManager with ChangeNotifier {
     unmarkDeletedId(purchase.id, referenceNo: purchase.internalNo);
     if (compKey.isNotEmpty) unmarkDeletedId(compKey, preserveCase: true);
     if (compKey2.isNotEmpty) unmarkDeletedId(compKey2, preserveCase: true);
-    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo);
-    if (purchase.internalNo.trim().isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(purchase.internalNo.trim());
+    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, financialYear);
+    if (purchase.internalNo.trim().isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(purchase.internalNo.trim(), "", "", financialYear);
     if (purchase.linkedChallanIds.isNotEmpty) {
       final Set<String> lKeys = purchase.linkedChallanIds.map((k) => k.trim().toUpperCase()).toSet();
       for (var ch in purchaseChallans) {
@@ -2199,13 +2225,13 @@ class PharoahWebManager with ChangeNotifier {
     if (isUpdate && purchases[existingIdx].version >= maxVer) {
       maxVer = purchases[existingIdx].version + 1;
     }
-    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo);
-    if (d1Known >= maxVer) {
+    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, financialYear);
+    if (d1Known >= maxVer && d1Known < 99999) {
       maxVer = d1Known + 1;
     }
     purchase.version = maxVer;
     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    D1SalesLedgerService.recordPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.version, purchase.internalNo);
+    D1SalesLedgerService.recordPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.version, purchase.internalNo, financialYear);
 
     if (!isUpdate) {
       purchase.date = WebFyDateRangeHelper.ensureDateInActiveFy(purchase.date, financialYear);
@@ -2216,7 +2242,15 @@ class PharoahWebManager with ChangeNotifier {
       purchases.insert(0, purchase);
     }
     PurchaseSyncModule.onPurchaseSaved(purchase, activeStoreToken);
-    D1SalesLedgerService.onPurchaseSaved(purchase, activeStoreToken, isUpdate: isUpdate, clientSource: "WEB_PORTAL");
+    trackPendingD1Write(
+      D1SalesLedgerService.onPurchaseSaved(
+        purchase,
+        activeStoreToken,
+        isUpdate: isUpdate,
+        clientSource: "WEB_PORTAL",
+        fy: financialYear,
+      ),
+    );
     for (var item in purchase.items) {
       String resolvedKey = item.medicineID;
       try {
@@ -2252,6 +2286,7 @@ class PharoahWebManager with ChangeNotifier {
         if (compKey.isNotEmpty) compKey,
         if (compKey2.isNotEmpty) compKey2,
       ],
+      fy: financialYear,
     );
     return true;
   }
@@ -2274,17 +2309,21 @@ class PharoahWebManager with ChangeNotifier {
       targetPartyId = p.partyId.trim().toUpperCase();
       compKey2 = (targetPartyId.isNotEmpty && targetBillNo.isNotEmpty) ? "${targetPartyId}_$targetBillNo" : "";
       compKey3 = PurchaseSyncModule.makeCompositeKey(targetPartyId, targetBillNo, targetIntNo);
-      D1SalesLedgerService.markPurchasePermanentlyDeleted(realId, targetPartyId, targetBillNo, targetIntNo);
-      D1SalesLedgerService.onPurchaseDeleted(
-        realId,
-        targetPartyId,
-        targetBillNo,
-        targetIntNo,
-        activeStoreToken,
-        clientSource: "WEB_PORTAL",
-        linkedChallanIds: p.linkedChallanIds,
-      );
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(realId, targetPartyId, targetBillNo, targetIntNo, financialYear);
+      D1SalesLedgerService.recordPurchaseKnownVersion(realId, targetPartyId, targetBillNo, 999999, targetIntNo, financialYear);
       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
+      trackPendingD1Write(
+        D1SalesLedgerService.onPurchaseDeleted(
+          realId,
+          targetPartyId,
+          targetBillNo,
+          targetIntNo,
+          activeStoreToken,
+          clientSource: "WEB_PORTAL",
+          linkedChallanIds: p.linkedChallanIds,
+          fy: financialYear,
+        ),
+      );
       Set<String> targetChallanKeys = {};
       for (var cid in p.linkedChallanIds) {
         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
@@ -4284,11 +4323,17 @@ class PharoahWebManager with ChangeNotifier {
   ({bool success, String message, List<BatchUsageAuditRecord> lockingRecords}) deleteBatchSafe({
     required Medicine med,
     required String batchNo,
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
     required String activeFY,
   }) {
     final result = BatchCascadeEngine.deleteBatchSafe(
       medicine: med,
       batchNo: batchNo,
+      exp: exp,
+      mrp: mrp,
+      purRate: purRate,
       activeFY: activeFY,
       batchHistory: batchHistory,
       sales: sales,
@@ -4303,7 +4348,13 @@ class PharoahWebManager with ChangeNotifier {
     );
 
     if (result.success) {
-      final syncId = BatchSyncModule.getBatchSyncId(med.identityKey, batchNo);
+      final syncId = BatchSyncModule.getBatchSyncId(
+        med.identityKey,
+        batchNo,
+        exp: exp,
+        mrp: mrp,
+        purRate: purRate,
+      );
       final cleanBatch = batchNo.trim().toUpperCase();
       deletedRecordIds.add(syncId);
       if (cleanBatch.isNotEmpty) deletedRecordIds.add(cleanBatch);

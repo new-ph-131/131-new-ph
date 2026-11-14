@@ -363,6 +363,9 @@ class BatchCascadeEngine {
   static ({bool success, String message, List<BatchUsageAuditRecord> lockingRecords}) deleteBatchSafe({
     required Medicine medicine,
     required String batchNo,
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
     required String activeFY,
     required Map<String, List<BatchInfo>> batchHistory,
     required List<Sale> sales,
@@ -403,7 +406,21 @@ class BatchCascadeEngine {
     BatchInfo? removedBatch;
     if (batchHistory.containsKey(medKey)) {
       final list = batchHistory[medKey]!;
-      final idx = list.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatch);
+      int idx = -1;
+      if (cleanBatch.isNotEmpty) {
+        idx = list.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatch);
+      } else if (exp.trim().isNotEmpty || mrp > 0 || purRate > 0) {
+        idx = InventoryLogicCenter.findMatchingBatchIndex(
+          list,
+          batchNo: '',
+          exp: exp,
+          mrp: mrp,
+          purRate: purRate,
+          exactEmptyBatchLot: true,
+        );
+      } else {
+        idx = list.indexWhere((b) => b.batch.trim().isEmpty);
+      }
       if (idx != -1) {
         removedBatch = list.removeAt(idx);
       }

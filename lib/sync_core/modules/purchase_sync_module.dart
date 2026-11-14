@@ -63,7 +63,7 @@ class PurchaseSyncModule {
     return currentUIStateList;
   }
 
-  static bool mergeIncomingPurchaseEnvelope(List<Purchase> currentPurchases, SyncEnvelope envelope) {
+  static bool mergeIncomingPurchaseEnvelope(List<Purchase> currentPurchases, SyncEnvelope envelope, {String? fy}) {
     if (envelope.documentType != documentType) return false;
     final targetId = envelope.syncId.trim();
     if (targetId.isEmpty) return false;
@@ -72,9 +72,9 @@ class PurchaseSyncModule {
     incomingPurchase.id = targetId;
     incomingPurchase.version = envelope.version;
     incomingPurchase.updatedAt = envelope.updatedAt;
-    incomingPurchase.isDeleted = envelope.isDeleted;
+    incomingPurchase.isDeleted = (envelope.isDeleted == 1 || envelope.action == 'DELETE') ? 1 : 0;
 
-    return applyPurchaseMutation(currentPurchases, incomingPurchase);
+    return applyPurchaseMutation(currentPurchases, incomingPurchase, fy: fy);
   }
 
   static bool _sameSupplierInvoice(Purchase a, Purchase b) {
@@ -87,7 +87,10 @@ class PurchaseSyncModule {
         aParty == bParty && aBill == bBill;
   }
 
-  static bool applyPurchaseMutation(List<Purchase> currentPurchases, Purchase incoming) {
+  static bool applyPurchaseMutation(List<Purchase> currentPurchases, Purchase incoming, {String? fy}) {
+    final String effFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : D1SalesLedgerService.activeFinancialYear.trim();
     final cleanIntNo = incoming.internalNo.trim().toUpperCase();
     final hasSupplierInvoice = incoming.partyId.trim().isNotEmpty && incoming.billNo.trim().isNotEmpty;
 
@@ -118,11 +121,20 @@ class PurchaseSyncModule {
         incoming.partyId,
         incoming.billNo,
         incoming.internalNo,
+        effFy,
+      );
+      D1SalesLedgerService.recordPurchaseKnownVersion(
+        incoming.id,
+        incoming.partyId,
+        incoming.billNo,
+        999999,
+        incoming.internalNo,
+        effFy,
       );
       if (idx == -1) return false;
       final local = currentPurchases[idx];
       if (incoming.updatedAt < local.updatedAt &&
-          incoming.version <= local.version && incoming.updatedAt != 0) {
+          incoming.version < local.version && incoming.updatedAt != 0) {
         return false;
       }
       currentPurchases.removeAt(idx);
@@ -130,11 +142,44 @@ class PurchaseSyncModule {
       return true;
     }
 
+    if (D1SalesLedgerService.isPurchaseDeleted(
+      incoming.id,
+      incoming.partyId,
+      incoming.billNo,
+      incoming.internalNo,
+      effFy,
+    )) {
+      return false;
+    }
+    final int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(
+      incoming.id,
+      incoming.partyId,
+      incoming.billNo,
+      incoming.internalNo,
+      effFy,
+    );
+    if (knownVer >= 99999 || incoming.version < knownVer) {
+      return false;
+    }
+
+    if (idx != -1) {
+      final local = currentPurchases[idx];
+      if (incoming.id == local.id &&
+          (incoming.version < local.version ||
+           (incoming.version == local.version && incoming.updatedAt > 0 && local.updatedAt > 0 && incoming.updatedAt < local.updatedAt))) {
+        return false;
+      }
+      currentPurchases[idx] = incoming;
+    } else {
+      currentPurchases.insert(0, incoming);
+    }
+
     D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(
       incoming.id,
       incoming.partyId,
       incoming.billNo,
       incoming.internalNo,
+      effFy,
     );
     D1SalesLedgerService.recordPurchaseKnownVersion(
       incoming.id,
@@ -142,19 +187,8 @@ class PurchaseSyncModule {
       incoming.billNo,
       incoming.version,
       incoming.internalNo,
+      effFy,
     );
-
-    if (idx != -1) {
-      final local = currentPurchases[idx];
-      if (incoming.id == local.id &&
-          incoming.version < local.version &&
-          incoming.updatedAt < local.updatedAt) {
-        return false;
-      }
-      currentPurchases[idx] = incoming;
-    } else {
-      currentPurchases.insert(0, incoming);
-    }
 
     // Deduplicate strictly on immutable ID (or legacy empty-ID composite key)
     currentPurchases.removeWhere((p) =>

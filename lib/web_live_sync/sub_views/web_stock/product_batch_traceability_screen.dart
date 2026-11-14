@@ -1135,6 +1135,9 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
               final result = webPh.deleteBatchSafe(
                 med: med,
                 batchNo: b.batch,
+                exp: b.exp,
+                mrp: b.mrp,
+                purRate: b.purRate > 0 ? b.purRate : b.rate,
                 activeFY: activeFY,
               );
               Navigator.pop(c);

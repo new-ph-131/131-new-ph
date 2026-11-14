@@ -54,7 +54,7 @@ class InventoryLogicCenter {
     final String cleanBatch = batchNo.trim().toUpperCase();
     if (cleanBatch.isNotEmpty) return cleanBatch;
     final String normExp = normalizeExpKey(exp);
-    return "__NOBATCH__|\$normExp|\${mrp.toStringAsFixed(2)}|\${purRate.toStringAsFixed(2)}";
+    return "__NOBATCH__|$normExp|${mrp.toStringAsFixed(2)}|${purRate.toStringAsFixed(2)}";
   }
 
   /// Builds a deterministic cloud/D1 sync key for a batch or non-batch stock lot.
@@ -68,9 +68,9 @@ class InventoryLogicCenter {
     final String cleanMed = medIdentityKey.trim().toUpperCase();
     final String cleanBatch = batchNo.trim().toUpperCase();
     if (cleanBatch.isNotEmpty) {
-      return "BATCH_\${cleanMed}_\$cleanBatch";
+      return "BATCH_${cleanMed}_$cleanBatch";
     }
-    return "BATCH_\${cleanMed}_\${makeLotKey('', exp: exp, mrp: mrp, purRate: purRate)}";
+    return "BATCH_${cleanMed}_${makeLotKey('', exp: exp, mrp: mrp, purRate: purRate)}";
   }
 
   /// Finds the matching BatchInfo index in [list] for both batch-managed and non-batch stock.
@@ -298,7 +298,7 @@ class InventoryLogicCenter {
         final Medicine? med = _findMedicine(medicines, item.medicineID, item.name);
         final String medKey = med != null ? med.identityKey : item.medicineID.trim();
         if (medKey.isNotEmpty) {
-          purchasedBatchKeys.add("\${medKey}_\$lotKey");
+          purchasedBatchKeys.add("${medKey}_$lotKey");
         }
       }
     }
@@ -319,7 +319,7 @@ class InventoryLogicCenter {
             b.qty > 0 &&
             b.openingQty == 0.0 &&
             b.adjustmentQty == 0.0 &&
-            !purchasedBatchKeys.contains("\${key}_\$lotKey")) {
+            !purchasedBatchKeys.contains("${key}_$lotKey")) {
           b.openingQty = b.qty;
         }
         b.legacyOpeningHealPending = false;

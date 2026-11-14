@@ -984,6 +984,9 @@ class _AppBatchTraceabilityViewState extends State<AppBatchTraceabilityView> {
               final result = BatchCascadeEngine.deleteBatchSafe(
                 medicine: med,
                 batchNo: b.batch,
+                exp: b.exp,
+                mrp: b.mrp,
+                purRate: b.purRate > 0 ? b.purRate : b.rate,
                 activeFY: activeFY,
                 batchHistory: ph.batchHistory,
                 sales: ph.sales,

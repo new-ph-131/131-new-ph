@@ -17,14 +17,24 @@ class BatchDeltaMergeModule {
   static bool isBatchTombstoned({
     required String productKey,
     required String batchNo,
+    String exp = '',
+    double mrp = 0.0,
+    double purRate = 0.0,
     Iterable<String>? tombstones,
     Map<String, int>? registry,
   }) {
     final cleanMed = productKey.trim();
     final cleanBatch = batchNo.trim().toUpperCase();
-    if (cleanMed.isEmpty || cleanBatch.isEmpty) return false;
+    if (cleanMed.isEmpty) return false;
 
-    final syncId = BatchSyncModule.getBatchSyncId(cleanMed, cleanBatch);
+    final syncId = BatchSyncModule.getBatchSyncId(
+      cleanMed,
+      cleanBatch,
+      exp: exp,
+      mrp: mrp,
+      purRate: purRate,
+    );
+    final upperSyncId = syncId.toUpperCase();
 
     // 1. D1 Sales Ledger Edge Gravestones
     if (D1SalesLedgerService.isBillDeleted(syncId, cleanBatch, cleanMed)) {
@@ -34,8 +44,8 @@ class BatchDeltaMergeModule {
     // 2. High-precision Epoch Tombstone Registry
     if (registry != null) {
       if (registry.containsKey(syncId) ||
-          registry.containsKey(syncId.toUpperCase()) ||
-          registry.containsKey(cleanBatch)) {
+          registry.containsKey(upperSyncId) ||
+          (cleanBatch.isNotEmpty && registry.containsKey(cleanBatch))) {
         return true;
       }
     }
@@ -44,7 +54,7 @@ class BatchDeltaMergeModule {
     if (tombstones != null) {
       for (final t in tombstones) {
         final upperT = t.trim().toUpperCase();
-        if (upperT == syncId || upperT == cleanBatch) {
+        if (upperT == upperSyncId || (cleanBatch.isNotEmpty && upperT == cleanBatch)) {
           return true;
         }
       }
@@ -64,12 +74,18 @@ class BatchDeltaMergeModule {
 
     batchHistory.forEach((medKey, list) {
       final beforeLen = list.length;
-      list.removeWhere((b) => isBatchTombstoned(
-        productKey: medKey,
-        batchNo: b.batch,
-        tombstones: tombstones,
-        registry: registry,
-      ));
+      list.removeWhere((b) {
+        final bPur = b.purRate > 0 ? b.purRate : b.rate;
+        return isBatchTombstoned(
+          productKey: medKey,
+          batchNo: b.batch,
+          exp: b.exp,
+          mrp: b.mrp,
+          purRate: bPur,
+          tombstones: tombstones,
+          registry: registry,
+        );
+      });
       purgedCount += (beforeLen - list.length);
       if (list.isEmpty) {
         keysToRemove.add(medKey);
@@ -134,20 +150,34 @@ class BatchDeltaMergeModule {
         if (rawItem is! Map) continue;
         final itemMap = Map<String, dynamic>.from(rawItem);
         final batchNo = (itemMap['batch'] ?? "").toString().trim().toUpperCase();
+        final incomingBatch = BatchInfo.fromMap(itemMap);
+        final double incPur = incomingBatch.purRate > 0 ? incomingBatch.purRate : incomingBatch.rate;
 
-        // 🛡️ Tombstone Guard: Do NOT resurrect deleted batches!
-        if (batchNo.isNotEmpty && isBatchTombstoned(
+        // 🛡️ Tombstone Guard: Do NOT resurrect deleted batches (named or distinct empty-batch lots)!
+        if (isBatchTombstoned(
           productKey: cleanMedKey,
           batchNo: batchNo,
+          exp: incomingBatch.exp,
+          mrp: incomingBatch.mrp,
+          purRate: incPur,
           tombstones: tombstones,
           registry: registry,
         )) {
-          existingList.removeWhere((b) => b.batch.trim().toUpperCase() == batchNo);
+          if (batchNo.isNotEmpty) {
+            existingList.removeWhere((b) => b.batch.trim().toUpperCase() == batchNo);
+          } else {
+            final idxToDel = InventoryLogicCenter.findMatchingBatchIndex(
+              existingList,
+              batchNo: '',
+              exp: incomingBatch.exp,
+              mrp: incomingBatch.mrp,
+              purRate: incPur,
+              exactEmptyBatchLot: true,
+            );
+            if (idxToDel != -1) existingList.removeAt(idxToDel);
+          }
           continue;
         }
-
-        final incomingBatch = BatchInfo.fromMap(itemMap);
-        final double incPur = incomingBatch.purRate > 0 ? incomingBatch.purRate : incomingBatch.rate;
         final idx = InventoryLogicCenter.findMatchingBatchIndex(
           existingList,
           batchNo: batchNo,
@@ -276,17 +306,19 @@ class BatchDeltaMergeModule {
         for (final item in list) {
           if (item is Map) {
             final batchNo = (item['batch'] ?? "").toString().trim().toUpperCase();
-            if (batchNo.isEmpty) {
-              validBatches.add(item);
-              continue;
-            }
+            final itemMap = Map<String, dynamic>.from(item);
+            final parsed = BatchInfo.fromMap(itemMap);
+            final double pPur = parsed.purRate > 0 ? parsed.purRate : parsed.rate;
             if (isBatchTombstoned(
               productKey: cleanMedKey,
               batchNo: batchNo,
+              exp: parsed.exp,
+              mrp: parsed.mrp,
+              purRate: pPur,
               tombstones: tombstones,
               registry: registry,
             )) {
-              continue; // Drop tombstoned batch
+              continue; // Drop tombstoned batch or specific empty-batch lot
             }
             validBatches.add(item);
           }

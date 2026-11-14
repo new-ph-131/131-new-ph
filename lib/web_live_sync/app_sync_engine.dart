@@ -49,6 +49,7 @@ class AppSyncEngine {
               ? ph.currentFY
               : (ph.activeCompany!.fYears.isNotEmpty ? ph.activeCompany!.fYears.last : ""));
       if (effectiveFy.isEmpty) return false;
+      int pendingD1MaxSeq = 0;
 
       final root = await getApplicationDocumentsDirectory();
       final String workingDir = '${root.path}/Pharoah_Data/${ph.activeCompany!.id}/${ph.activeCompany!.businessType}/$effectiveFy';
@@ -95,26 +96,36 @@ class AppSyncEngine {
           initialRemoteSyncedAt = (cloudData['syncedAt'] ?? '').toString().trim();
           final Map<String, dynamic> cloudFiles = Map<String, dynamic>.from(cloudData['files'] as Map);
 
+          final Map<String, int> unmarkedRegistry = await TombstoneEngine.getUnmarkedRegistry(companyId);
+          final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
+          final List<String> cloudOverridesUnmark = [];
           if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
             try {
               dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
               if (rawReg is Map) {
-                final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
                 rawReg.forEach((k, v) {
                   final cleanK = k.toString().trim();
-                  if (cleanK.isNotEmpty && !unmarkedKeys.contains(cleanK) && !unmarkedKeys.contains(cleanK.toUpperCase())) {
-                    final cTs = int.tryParse(v.toString()) ?? 0;
+                  if (cleanK.isEmpty || D1SalesLedgerService.isUnscopedSeriesKey(cleanK)) return;
+                  final bool keepCase = cleanK.contains('_');
+                  final cTs = int.tryParse(v.toString()) ?? 0;
+                  final bool isUnmarked = unmarkedKeys.contains(cleanK) || (!keepCase && unmarkedKeys.contains(cleanK.toUpperCase()));
+                  final int uTs = unmarkedRegistry[cleanK] ?? (!keepCase ? (unmarkedRegistry[cleanK.toUpperCase()] ?? 0) : 0);
+                  if (!isUnmarked || (cTs > 0 && cTs >= uTs)) {
                     final lTs = localRegistry[cleanK] ?? 0;
                     if (cTs > lTs) {
                       localRegistry[cleanK] = cTs;
-                      localRegistry[cleanK.toUpperCase()] = cTs;
+                      if (!keepCase) localRegistry[cleanK.toUpperCase()] = cTs;
                     }
                     localTombstones.add(cleanK);
-                    localTombstones.add(cleanK.toUpperCase());
+                    if (!keepCase) localTombstones.add(cleanK.toUpperCase());
+                    if (isUnmarked) cloudOverridesUnmark.add(cleanK);
                   }
                 });
               }
             } catch (_) {}
+          }
+          if (cloudOverridesUnmark.isNotEmpty) {
+            await TombstoneEngine.clearUnmarkedForDeletedKeys(companyId, cloudOverridesUnmark);
           }
           if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
             try {
@@ -122,21 +133,30 @@ class AppSyncEngine {
               final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
                 companyId,
                 cloudT.map((e) => e.toString()),
+                cloudRegistry: localRegistry,
               );
               // Never poison localRegistry with DateTime.now() on flat legacy tombstones
               localTombstones.addAll(sanitizedCloudT);
             } catch (_) {}
           }
-          localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
+          localTombstones = await TombstoneEngine.sanitizeCloudTombstones(
+            companyId,
+            localTombstones,
+            cloudRegistry: localRegistry,
+          );
 
           // 🚀 STEP 2.5: EDGE D1 REAL-TIME SALES & PURCHASES DELTA HARVEST BEFORE CLOUD MERGE
           bool d1HasChanges = false;
+          
+          
           final bool stillInEffectiveFy = ph.activeCompany != null &&
               ph.activeCompany!.id == companyId &&
               ph.currentFY == effectiveFy;
           if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
             try {
-              final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
+              final deltaRes = await D1SalesLedgerService.fetchSaleDeltasWithCursor(storeToken);
+              final edgeEvents = deltaRes.events;
+              pendingD1MaxSeq = deltaRes.maxSeq;
               if (edgeEvents.isNotEmpty) {
                 if (stillInEffectiveFy) {
                   bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, effectiveFy);
@@ -165,7 +185,7 @@ class AppSyncEngine {
                   final String action = (ev["action"] ?? "").toString().toUpperCase();
                   final String bId = (ev["bill_id"] ?? "").toString().trim();
                   final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
-                  final int evTs = int.tryParse(ev["updated_at"]?.toString() ?? "0") ?? 1;
+                  final int evTs = int.tryParse((ev["updated_at"] ?? ev["created_at"] ?? "1").toString()) ?? DateTime.now().millisecondsSinceEpoch;
                   final dynamic rawPayload = ev["sale_data"];
                   final String evFy = (ev["fy"] ?? (rawPayload is Map ? rawPayload["fy"] : "") ?? "").toString().trim();
                   DateTime? evDate;
@@ -182,8 +202,11 @@ class AppSyncEngine {
                       (rawPayload["doc_type"] == "PURCHASE" ||
                        rawPayload.containsKey("distributorName") ||
                        rawPayload.containsKey("internalNo"));
+                  final bool payloadDel = rawPayload is Map &&
+                      ((int.tryParse(rawPayload["is_deleted"]?.toString() ?? rawPayload["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+                       rawPayload["status"] == "Deleted");
                   final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNo, effectiveFy);
-                  if (action == "DELETE") {
+                  if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
                     if (bId.isNotEmpty) {
                       localRegistry[bId] = evTs;
                       localRegistry[bId.toUpperCase()] = evTs;
@@ -195,7 +218,7 @@ class AppSyncEngine {
                     }
                     if (rawPayload is Map) {
                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
-                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
                       final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
                       if (scopedINo.isNotEmpty) {
@@ -203,30 +226,40 @@ class AppSyncEngine {
                         localTombstones.add(scopedINo);
                       }
                       if (pId.isNotEmpty && pBill.isNotEmpty) {
-                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy);
+                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy, true);
                         localRegistry[c2] = evTs;
                         localTombstones.add(c2);
                         if (iNo.isNotEmpty) {
-                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy);
+                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy, true);
                           localRegistry[c3] = evTs;
                           localTombstones.add(c3);
                         }
                       }
                     }
                   } else {
+                    final bool alreadyDel = bId.isNotEmpty && D1SalesLedgerService.isBillDeleted(bId, "", "", effectiveFy);
+                    if (alreadyDel) continue;
+                    if (rawPayload is Map && isPurc) {
+                      final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
+                      final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                      if (D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, effectiveFy)) {
+                        continue;
+                      }
+                    }
                     if (bId.isNotEmpty) {
                       localRegistry.remove(bId);
                       localRegistry.remove(bId.toUpperCase());
                       localTombstones.remove(bId);
                       localTombstones.remove(bId.toUpperCase());
                     }
-                    if (scopedBNo.isNotEmpty) {
+                    if (!isPurc && scopedBNo.isNotEmpty) {
                       localRegistry.remove(scopedBNo);
                       localTombstones.remove(scopedBNo);
                     }
                     if (rawPayload is Map) {
                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
-                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
                       final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
                       final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, effectiveFy);
@@ -234,16 +267,16 @@ class AppSyncEngine {
                         localRegistry.remove(scopedINo);
                         localTombstones.remove(scopedINo);
                       }
-                      if (scopedPBill.isNotEmpty) {
+                      if (!isPurc && scopedPBill.isNotEmpty) {
                         localRegistry.remove(scopedPBill);
                         localTombstones.remove(scopedPBill);
                       }
                       if (pId.isNotEmpty && pBill.isNotEmpty) {
-                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy);
+                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy, true);
                         localRegistry.remove(c2);
                         localTombstones.remove(c2);
                         if (iNo.isNotEmpty) {
-                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy);
+                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy, true);
                           localRegistry.remove(c3);
                           localTombstones.remove(c3);
                         }
@@ -311,6 +344,9 @@ class AppSyncEngine {
 
       await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
+      if (pendingD1MaxSeq > 0) {
+        await D1SalesLedgerService.commitSaleDeltaSeq(storeToken, pendingD1MaxSeq);
+      }
       if (ph.activeCompany != null && ph.activeCompany!.id == companyId && ph.currentFY == effectiveFy) {
         await SnapshotWatcher.takeSnapshot(ph);
 

@@ -95,30 +95,44 @@ class WebRealtimeCoordinator {
 
     if (deletedIds.isNotEmpty) {
       for (final d in deletedIds) {
-        if (d.trim().isEmpty) continue;
-        final clean = d.trim().toUpperCase();
+        final rawD = d.trim();
+        if (rawD.isEmpty) continue;
+        final bool keepCase = rawD.contains('_');
+        final clean = keepCase ? rawD : rawD.toUpperCase();
         final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
-            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
             : clean;
         _pendingDeletedIds.add(scoped);
+        _pendingUnmarkedIds.remove(scoped);
+        _pendingUnmarkedIds.remove(rawD);
+        if (!keepCase) _pendingUnmarkedIds.remove(rawD.toUpperCase());
       }
     }
     if (unmarkedIds.isNotEmpty) {
       for (final u in unmarkedIds) {
-        if (u.trim().isEmpty) continue;
-        final clean = u.trim().toUpperCase();
+        final rawU = u.trim();
+        if (rawU.isEmpty) continue;
+        final bool keepCase = rawU.contains('_');
+        final clean = keepCase ? rawU : rawU.toUpperCase();
         final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
-            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
             : clean;
         _pendingUnmarkedIds.add(scoped);
+        _pendingDeletedIds.remove(scoped);
+        _pendingDeletedIds.remove(rawU);
+        if (!keepCase) _pendingDeletedIds.remove(rawU.toUpperCase());
       }
     }
     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
-      final clean = entityId.trim().toUpperCase();
+      final rawE = entityId.trim();
+      final bool keepCase = rawE.contains('_');
+      final clean = keepCase ? rawE : rawE.toUpperCase();
       final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
-          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
           : clean;
       _pendingDeletedIds.add(scoped);
+      _pendingUnmarkedIds.remove(scoped);
+      _pendingUnmarkedIds.remove(rawE);
     }
 
     _pushDebounceTimer?.cancel();
@@ -133,6 +147,9 @@ class WebRealtimeCoordinator {
           _hasPendingPush = false;
           final batchDeleted = List<String>.from(_pendingDeletedIds.where((k) => k.trim().isNotEmpty));
           final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
+
+          // 0. Ensure any in-flight D1 direct writes/deletes settle before signaling App & uploading snapshot
+          await webManager.awaitPendingD1Writes();
 
           // 1. Flush Outbox immediately so D1 erp_master_sync has the WPUR-/W- record BEFORE App polls
           await SyncQueueManager.flushOutboxAsJSONBatch();

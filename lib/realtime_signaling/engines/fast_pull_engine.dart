@@ -24,19 +24,52 @@ import '../../sync_core/multi_fy_cloud_vault.dart';
 /// Strict mandate: Evaluates immutable sync_id/UUID only, never purges by human-readable billNo.
 class FastPullEngine {
   static bool _isPulling = false;
+  static bool _hasPendingPull = false;
   static int _pullEpoch = 0;
 
   /// Immediately invalidates any in-flight pull when user logs out or switches Financial Year.
   static void invalidateInFlightPulls() {
     _pullEpoch++;
     _isPulling = false;
+    _hasPendingPull = false;
   }
 
+  static int _countCoreRecords(PharoahManager ph) =>
+      ph.sales.length +
+      ph.purchases.length +
+      ph.vouchers.length +
+      ph.saleChallans.length +
+      ph.purchaseChallans.length +
+      ph.saleReturns.length +
+      ph.purchaseReturns.length +
+      ph.medicines.length +
+      ph.parties.length;
+
   static Future<bool> pullAndMerge(PharoahManager ph) async {
-    if (_isPulling) return false;
     if (ph.activeCompany == null) return false;
+    if (_isPulling) {
+      _hasPendingPull = true;
+      return false;
+    }
     _isPulling = true;
     final int myEpoch = ++_pullEpoch;
+    bool anyMutated = false;
+    try {
+      do {
+        _hasPendingPull = false;
+        final bool stepMutated = await _pullOnce(ph, myEpoch);
+        if (stepMutated) anyMutated = true;
+      } while (_hasPendingPull && myEpoch == _pullEpoch && ph.activeCompany != null);
+    } finally {
+      if (myEpoch == _pullEpoch) {
+        _isPulling = false;
+      }
+    }
+    return anyMutated;
+  }
+
+  static Future<bool> _pullOnce(PharoahManager ph, int myEpoch) async {
+    if (ph.activeCompany == null) return false;
     final String targetFyAtStart = ph.currentFY;
     final String companyId = ph.activeCompany!.id;
 
@@ -92,9 +125,13 @@ class FastPullEngine {
 
       // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK (SALES + PURCHASES + RETURNS + VOUCHERS)
       List<Map<String, dynamic>> fetchedEdgeEvents = [];
+      bool d1AnyMutated = false;
+      int pendingD1MaxSeq = 0;
       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
         try {
-          final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
+          final deltaRes = await D1SalesLedgerService.fetchSaleDeltasWithCursor(storeToken);
+          final edgeEvents = deltaRes.events;
+          pendingD1MaxSeq = deltaRes.maxSeq;
           if (isStale()) return false;
           fetchedEdgeEvents = edgeEvents;
           D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
@@ -122,6 +159,10 @@ class FastPullEngine {
               final String bId = (ev["bill_id"] ?? "").toString().trim();
               final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
               final dynamic rawPayload = ev["sale_data"];
+              final String evFy = (ev["fy"] ?? (rawPayload is Map ? rawPayload["fy"] : "") ?? "").toString().trim();
+              if (evFy.isNotEmpty && evFy != targetFyAtStart) {
+                continue;
+              }
               if (rawPayload is Map && (rawPayload["fy"] != null || rawPayload["date"] != null)) {
                 final DateTime? evDate = rawPayload["date"] != null
                     ? DateTime.tryParse(rawPayload["date"].toString())
@@ -130,14 +171,21 @@ class FastPullEngine {
                   continue;
                 }
               }
+              final bool isPurcEvt = rawPayload is Map &&
+                  (rawPayload["doc_type"] == "PURCHASE" ||
+                   rawPayload.containsKey("distributorName") ||
+                   rawPayload.containsKey("internalNo"));
+              final bool payloadDel = rawPayload is Map &&
+                  ((int.tryParse(rawPayload["is_deleted"]?.toString() ?? rawPayload["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+                   rawPayload["status"] == "Deleted");
               final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNo, targetFyAtStart);
-              if (action == "DELETE") {
+              if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
                 if (bId.isNotEmpty) {
                   newTombKeys.add(bId);
                   newUnmarkKeys.remove(bId);
                   newUnmarkKeys.remove(bId.toUpperCase());
                 }
-                if (scopedBNo.isNotEmpty) {
+                if (!isPurcEvt && scopedBNo.isNotEmpty) {
                   final cleanBNo = bNo.trim().toUpperCase();
                   final bool hasActiveSale = ph.sales.any((s) => s.id != bId && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
                   if (!hasActiveSale) {
@@ -147,7 +195,7 @@ class FastPullEngine {
                 }
                 if (rawPayload is Map) {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
-                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
                   final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
                   if (scopedINo.isNotEmpty) {
@@ -158,46 +206,52 @@ class FastPullEngine {
                     }
                   }
                   if (pId.isNotEmpty && pBill.isNotEmpty) {
-                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart);
+                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart, true);
                     newTombKeys.add(c2);
                     newUnmarkKeys.remove(c2);
                     if (iNo.isNotEmpty) {
-                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart);
+                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart, true);
                       newTombKeys.add(c3);
                       newUnmarkKeys.remove(c3);
                     }
                   }
                 }
               } else {
+                // Skip unmarking if already marked deleted in D1/tombstones (e.g. from later deleted copy)
+                final bool blockedByTomb = (bId.isNotEmpty && (localTombstones.contains(bId) || D1SalesLedgerService.isBillDeleted(bId, "", "", targetFyAtStart)));
+                if (blockedByTomb) continue;
                 if (bId.isNotEmpty) {
                   newUnmarkKeys.add(bId);
                   newTombKeys.remove(bId);
                   newTombKeys.remove(bId.toUpperCase());
                 }
-                if (scopedBNo.isNotEmpty) {
+                if (!isPurcEvt && scopedBNo.isNotEmpty) {
                   newUnmarkKeys.add(scopedBNo);
                   newTombKeys.remove(scopedBNo);
                 }
                 if (rawPayload is Map) {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
-                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
+                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                  if (isPurcEvt && D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, targetFyAtStart)) {
+                    continue;
+                  }
                   final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
                   final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, targetFyAtStart);
                   if (scopedINo.isNotEmpty) {
                     newUnmarkKeys.add(scopedINo);
                     newTombKeys.remove(scopedINo);
                   }
-                  if (scopedPBill.isNotEmpty) {
+                  if (!isPurcEvt && scopedPBill.isNotEmpty) {
                     newUnmarkKeys.add(scopedPBill);
                     newTombKeys.remove(scopedPBill);
                   }
                   if (pId.isNotEmpty && pBill.isNotEmpty) {
-                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart);
+                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart, true);
                     newUnmarkKeys.add(c2);
                     newTombKeys.remove(c2);
                     if (iNo.isNotEmpty) {
-                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart);
+                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart, true);
                       newUnmarkKeys.add(c3);
                       newTombKeys.remove(c3);
                     }
@@ -208,23 +262,28 @@ class FastPullEngine {
             if (newUnmarkKeys.isNotEmpty) {
               for (final uk in newUnmarkKeys.toSet()) {
                 localRegistry.remove(uk);
-                localRegistry.remove(uk.toUpperCase());
                 localTombstones.remove(uk);
-                localTombstones.remove(uk.toUpperCase());
-                await TombstoneEngine.unmarkTombstoneWithTimestamp(companyId, id: uk);
+                if (!uk.contains('_')) {
+                  localRegistry.remove(uk.toUpperCase());
+                  localTombstones.remove(uk.toUpperCase());
+                }
+                await TombstoneEngine.unmarkTombstoneWithTimestamp(companyId, id: uk, fy: targetFyAtStart);
               }
             }
             if (newTombKeys.isNotEmpty) {
               final nowTs = DateTime.now().millisecondsSinceEpoch;
               for (final tk in newTombKeys) {
                 localRegistry[tk] = nowTs;
-                localRegistry[tk.toUpperCase()] = nowTs;
                 localTombstones.add(tk);
-                localTombstones.add(tk.toUpperCase());
+                if (!tk.contains('_')) {
+                  localRegistry[tk.toUpperCase()] = nowTs;
+                  localTombstones.add(tk.toUpperCase());
+                }
               }
-              await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
+              await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs, fy: targetFyAtStart);
             }
             if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated) {
+              d1AnyMutated = true;
               if (d1SalesMutated || d1PurcMutated || d1SrMutated || d1PrMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
                   medicines: ph.medicines,
@@ -276,6 +335,9 @@ class FastPullEngine {
                 );
               }
               ph.notifyListeners();
+            }
+            if (pendingD1MaxSeq > 0) {
+              await D1SalesLedgerService.commitSaleDeltaSeq(storeToken, pendingD1MaxSeq);
             }
           }
         } catch (d1Err) {
@@ -329,43 +391,60 @@ class FastPullEngine {
       }
       final Map<String, dynamic> cloudFiles = extractedFyFiles;
 
-      // 3. Process Cloud Tombstones & Monotonic Registry (Only IDs, drop sequence numbers)
+      // 3. Process Cloud Tombstones & Monotonic Registry (Chronological unmark vs tombstone resolution)
+      final Map<String, int> unmarkedRegistry = await TombstoneEngine.getUnmarkedRegistry(companyId);
+      final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
+      final List<String> cloudOverridesUnmark = [];
+      if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
+        try {
+          dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
+          if (rawReg is Map) {
+            rawReg.forEach((k, v) {
+              final cleanK = k.toString().trim();
+              if (cleanK.isEmpty || D1SalesLedgerService.isUnscopedSeriesKey(cleanK)) return;
+              final bool keepCase = cleanK.contains('_');
+              final cTs = int.tryParse(v.toString()) ?? 0;
+              final bool isUnmarked = unmarkedKeys.contains(cleanK) || (!keepCase && unmarkedKeys.contains(cleanK.toUpperCase()));
+              final int uTs = unmarkedRegistry[cleanK] ?? (!keepCase ? (unmarkedRegistry[cleanK.toUpperCase()] ?? 0) : 0);
+              if (!isUnmarked || (cTs > 0 && cTs >= uTs)) {
+                final lTs = localRegistry[cleanK] ?? 0;
+                if (cTs > lTs) {
+                  localRegistry[cleanK] = cTs;
+                  if (!keepCase) localRegistry[cleanK.toUpperCase()] = cTs;
+                }
+                localTombstones.add(cleanK);
+                if (!keepCase) localTombstones.add(cleanK.toUpperCase());
+                if (isUnmarked) cloudOverridesUnmark.add(cleanK);
+              }
+            });
+          }
+        } catch (_) {}
+      }
+      if (cloudOverridesUnmark.isNotEmpty) {
+        await TombstoneEngine.clearUnmarkedForDeletedKeys(companyId, cloudOverridesUnmark);
+      }
       if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
         try {
           List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
           final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
             companyId,
             cloudT.map((e) => e.toString()),
+            cloudRegistry: localRegistry,
           );
           localTombstones.addAll(sanitizedCloudT);
         } catch (_) {}
       }
-      if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
-        try {
-          dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
-          if (rawReg is Map) {
-            final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
-            rawReg.forEach((k, v) {
-              final cleanK = k.toString().trim();
-              if (cleanK.isNotEmpty && !unmarkedKeys.contains(cleanK) && !unmarkedKeys.contains(cleanK.toUpperCase())) {
-                final cTs = int.tryParse(v.toString()) ?? 0;
-                final lTs = localRegistry[cleanK] ?? 0;
-                if (cTs > lTs) {
-                  localRegistry[cleanK] = cTs;
-                  localRegistry[cleanK.toUpperCase()] = cTs;
-                }
-                localTombstones.add(cleanK);
-                localTombstones.add(cleanK.toUpperCase());
-              }
-            });
-          }
-        } catch (_) {}
-      }
-      localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
+      localTombstones = await TombstoneEngine.sanitizeCloudTombstones(
+        companyId,
+        localTombstones,
+        cloudRegistry: localRegistry,
+      );
 
       // 4. Chronological Anti-Zombie Purge with Registry (Timestamp & ID ONLY)
+      final int prePurgeCount = _countCoreRecords(ph);
       TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
       TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
+      final bool preMergePurged = _countCoreRecords(ph) != prePurgeCount;
 
       // 🛡️ UNIVERSAL PRE-MERGE SHIELD FOR ALL CLOUD SNAPSHOT FILES
       void sanitizeCloudFile(String fileName, List<String> Function(Map) keyExtractor) {
@@ -397,10 +476,12 @@ class FastPullEngine {
                     break;
                   }
                 } else {
-                  // Secondary / Series key check: Strictly FY-scoped!
-                  final String scopedClean = D1SalesLedgerService.scopeSecondaryKey(clean, targetFyAtStart);
-                  final bool inTombs = localTombstones.contains(scopedClean);
-                  final int regTs = localRegistry[scopedClean] ?? 0;
+                  // Secondary / Series key check: Strictly FY-scoped! Preserve case for composite keys containing '_'
+                  final bool keepCase = k.contains('_');
+                  final String scopedExact = D1SalesLedgerService.scopeSecondaryKey(k, targetFyAtStart, keepCase);
+                  final String scopedUpper = D1SalesLedgerService.scopeSecondaryKey(clean, targetFyAtStart, true);
+                  final bool inTombs = localTombstones.contains(scopedExact) || localTombstones.contains(scopedUpper);
+                  final int regTs = localRegistry[scopedExact] ?? localRegistry[scopedUpper] ?? 0;
                   if (regTs > 0 && (itemUpdatedAt == 0 || regTs >= itemUpdatedAt)) {
                     isBlocked = true;
                     break;
@@ -460,7 +541,7 @@ class FastPullEngine {
       sanitizeCloudFile("sales.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("purc.json", (m) {
         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
-        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
+        final bNo = (m["billNo"] ?? "").toString().trim();
         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
         final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
         final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
@@ -470,7 +551,7 @@ class FastPullEngine {
       sanitizeCloudFile("s_challan.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
       sanitizeCloudFile("p_challan.json", (m) {
         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
-        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
+        final bNo = (m["billNo"] ?? "").toString().trim();
         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
         final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
         final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
@@ -483,6 +564,14 @@ class FastPullEngine {
 
       // 5. Delta Merge Cloud Data into Memory
       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
+
+      // Final post-merge tombstone sweep so deleted records cannot slip past cloud snapshots
+      final int postMergePreSweep = _countCoreRecords(ph);
+      TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
+      TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
+      final bool postMergePurged = _countCoreRecords(ph) != postMergePreSweep;
+
+      hasChanges = hasChanges || preMergePurged || postMergePurged || d1AnyMutated;
 
       if (hasChanges) {
         // Harvest any missing products from transactions (#PH-REV-737)
@@ -587,9 +676,7 @@ class FastPullEngine {
       debugPrint("⚠ [FastPullEngine] Pull error: $e");
       return false;
     } finally {
-      if (myEpoch == _pullEpoch) {
-        _isPulling = false;
-      }
+      // Lock ownership managed cleanly by pullAndMerge outer loop
     }
   }
 }

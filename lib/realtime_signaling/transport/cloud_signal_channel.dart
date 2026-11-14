@@ -48,12 +48,98 @@ class CloudSignalChannel {
     }
   }
 
+  /// Pure chronological aggregator for incoming signal event maps (testable offline).
+  static ({
+    SyncSignalEvent? mergedEvent,
+    int maxTimestamp,
+  }) aggregateRemoteSignals({
+    required List<Map<String, dynamic>> rawEvents,
+    required String mySource,
+    required int lastSeenTs,
+  }) {
+    final cleanSource = mySource.trim().toUpperCase();
+    final Map<String, Map<String, dynamic>> dedupedById = {};
+    final List<Map<String, dynamic>> noIdList = [];
+    for (final raw in rawEvents) {
+      final evId = (raw['id'] ?? '').toString().trim();
+      if (evId.isNotEmpty) {
+        dedupedById[evId] = raw;
+      } else {
+        noIdList.add(raw);
+      }
+    }
+    final ordered = [...dedupedById.values, ...noIdList];
+    ordered.sort((a, b) {
+      int ta = int.tryParse((a['timestamp'] ?? '0').toString()) ?? 0;
+      int tb = int.tryParse((b['timestamp'] ?? '0').toString()) ?? 0;
+      if (ta > 100000000000000) ta ~/= 1000;
+      if (tb > 100000000000000) tb ~/= 1000;
+      final cmp = ta.compareTo(tb);
+      if (cmp != 0) return cmp;
+      // Same millisecond: process non-delete before delete so rapid modify+delete stays deleted
+      final aDel = (a['action'] ?? '').toString().toUpperCase().contains('DELETE') ? 1 : 0;
+      final bDel = (b['action'] ?? '').toString().toUpperCase().contains('DELETE') ? 1 : 0;
+      return aDel.compareTo(bDel);
+    });
+
+    SyncSignalEvent? latestRemoteEvent;
+    final Set<String> aggregatedDeletedIds = {};
+    final Set<String> aggregatedUnmarkedIds = {};
+    int maxSigTs = lastSeenTs;
+
+    for (final rawEv in ordered) {
+      final ev = SyncSignalEvent.fromMap(rawEv);
+      int evTs = ev.timestamp;
+      if (evTs > 100000000000000) evTs ~/= 1000;
+      if (evTs > lastSeenTs) {
+        if (evTs > maxSigTs) maxSigTs = evTs;
+        final src = ev.source.trim().toUpperCase();
+        if (src != cleanSource) {
+          for (final u in ev.unmarkedIds) {
+            final cu = u.trim();
+            if (cu.isEmpty) continue;
+            aggregatedUnmarkedIds.add(cu);
+            aggregatedDeletedIds.remove(cu);
+            if (!cu.contains('_')) aggregatedDeletedIds.remove(cu.toUpperCase());
+          }
+          for (final d in ev.deletedIds) {
+            final cd = d.trim();
+            if (cd.isEmpty) continue;
+            aggregatedDeletedIds.add(cd);
+            aggregatedUnmarkedIds.remove(cd);
+            if (!cd.contains('_')) aggregatedUnmarkedIds.remove(cd.toUpperCase());
+          }
+          latestRemoteEvent = ev;
+        }
+      }
+    }
+
+    if (latestRemoteEvent == null) {
+      return (mergedEvent: null, maxTimestamp: maxSigTs);
+    }
+    return (
+      mergedEvent: SyncSignalEvent(
+        storeToken: latestRemoteEvent.storeToken,
+        source: latestRemoteEvent.source,
+        action: latestRemoteEvent.action,
+        entityId: latestRemoteEvent.entityId,
+        timestamp: latestRemoteEvent.timestamp,
+        companyId: latestRemoteEvent.companyId,
+        deletedIds: aggregatedDeletedIds.toList(),
+        unmarkedIds: aggregatedUnmarkedIds.toList(),
+        financialYear: latestRemoteEvent.financialYear,
+        delta: latestRemoteEvent.delta,
+      ),
+      maxTimestamp: maxSigTs,
+    );
+  }
+
   /// Starts listening for incoming events from the opposite client
   void listenToSignals({
     required String storeToken,
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
-    Function(List<dynamic>)? onBatchReceived,
+    dynamic Function(List<dynamic>)? onBatchReceived,
     Function(List<String>)? onTombstonesReceived,
     Duration interval = const Duration(milliseconds: 3000),
   }) {
@@ -113,13 +199,15 @@ class CloudSignalChannel {
                   }
                 }
               }
-              _lastKnownBatchTime = maxBatchTs;
               if (freshOps.isNotEmpty) {
-                onBatchReceived?.call(freshOps);
+                final cbResult = await onBatchReceived?.call(freshOps);
+                if (cbResult != false) {
+                  _lastKnownBatchTime = maxBatchTs;
+                }
               }
             }
 
-            // 🔔 Process all new Signal Events (mutations array + latest event) without OUTBOX_BATCH masking
+            // 🔔 Process all new Signal Events (mutations array + latest event) chronologically without OUTBOX_BATCH masking
             final List<Map<String, dynamic>> candidateEvents = [];
             if (data['mutations'] is List) {
               for (final m in (data['mutations'] as List)) {
@@ -132,55 +220,17 @@ class CloudSignalChannel {
               candidateEvents.add(Map<String, dynamic>.from(data['event'] as Map));
             }
 
-            SyncSignalEvent? latestRemoteEvent;
-            final Set<String> aggregatedDeletedIds = {};
-            final Set<String> aggregatedUnmarkedIds = {};
-            int maxSigTs = _lastKnownSignalTime;
+            final agg = aggregateRemoteSignals(
+              rawEvents: candidateEvents,
+              mySource: cleanSource,
+              lastSeenTs: _lastKnownSignalTime,
+            );
+            _lastKnownSignalTime = agg.maxTimestamp;
 
-            for (final rawEv in candidateEvents) {
-              final ev = SyncSignalEvent.fromMap(rawEv);
-              int evTs = ev.timestamp;
-              if (evTs > 100000000000000) evTs ~/= 1000;
-              if (evTs > _lastKnownSignalTime) {
-                if (evTs > maxSigTs) maxSigTs = evTs;
-                final src = ev.source.trim().toUpperCase();
-                if (src != cleanSource) {
-                  for (final d in ev.deletedIds) {
-                    if (d.trim().isNotEmpty) {
-                      aggregatedDeletedIds.add(d.trim());
-                      aggregatedUnmarkedIds.remove(d.trim());
-                      aggregatedUnmarkedIds.remove(d.trim().toUpperCase());
-                    }
-                  }
-                  for (final u in ev.unmarkedIds) {
-                    if (u.trim().isNotEmpty) {
-                      aggregatedUnmarkedIds.add(u.trim());
-                      aggregatedDeletedIds.remove(u.trim());
-                      aggregatedDeletedIds.remove(u.trim().toUpperCase());
-                    }
-                  }
-                  latestRemoteEvent = ev;
-                }
-              }
-            }
-
-            _lastKnownSignalTime = maxSigTs;
-
-            if (latestRemoteEvent != null) {
-              final mergedEvent = SyncSignalEvent(
-                storeToken: latestRemoteEvent.storeToken,
-                source: latestRemoteEvent.source,
-                action: latestRemoteEvent.action,
-                entityId: latestRemoteEvent.entityId,
-                timestamp: latestRemoteEvent.timestamp,
-                companyId: latestRemoteEvent.companyId,
-                deletedIds: aggregatedDeletedIds.toList(),
-                unmarkedIds: aggregatedUnmarkedIds.toList(),
-                financialYear: latestRemoteEvent.financialYear,
-                delta: latestRemoteEvent.delta,
-              );
+            if (agg.mergedEvent != null) {
+              final mergedEvent = agg.mergedEvent!;
               debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${mergedEvent.source}: ${mergedEvent.action} (del:${mergedEvent.deletedIds.length}, unmark:${mergedEvent.unmarkedIds.length})");
-              onSignal(mergedEvent);
+              await onSignal(mergedEvent);
             }
           }
         }

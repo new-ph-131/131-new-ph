@@ -1,0 +1,4091 @@
+diff --git a/.flutter-plugins b/.flutter-plugins
+index d69ffc2..cdd3d6a 100644
+--- a/.flutter-plugins
++++ b/.flutter-plugins
+@@ -1,54 +1,54 @@
+ # This is a generated file; do not edit or check into version control.
+-file_picker=/home/codespace/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
+-file_saver=/home/codespace/.pub-cache/hosted/pub.dev/file_saver-0.2.14/
+-file_selector_linux=/home/codespace/.pub-cache/hosted/pub.dev/file_selector_linux-0.9.3+2/
+-file_selector_macos=/home/codespace/.pub-cache/hosted/pub.dev/file_selector_macos-0.9.4+3/
+-file_selector_windows=/home/codespace/.pub-cache/hosted/pub.dev/file_selector_windows-0.9.3+4/
+-flutter_plugin_android_lifecycle=/home/codespace/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.29/
+-flutter_secure_storage=/home/codespace/.pub-cache/hosted/pub.dev/flutter_secure_storage-9.2.4/
+-flutter_secure_storage_linux=/home/codespace/.pub-cache/hosted/pub.dev/flutter_secure_storage_linux-1.2.3/
+-flutter_secure_storage_macos=/home/codespace/.pub-cache/hosted/pub.dev/flutter_secure_storage_macos-3.1.3/
+-flutter_secure_storage_web=/home/codespace/.pub-cache/hosted/pub.dev/flutter_secure_storage_web-1.2.1/
+-flutter_secure_storage_windows=/home/codespace/.pub-cache/hosted/pub.dev/flutter_secure_storage_windows-3.1.2/
+-google_mlkit_commons=/home/codespace/.pub-cache/hosted/pub.dev/google_mlkit_commons-0.6.1/
+-google_mlkit_text_recognition=/home/codespace/.pub-cache/hosted/pub.dev/google_mlkit_text_recognition-0.11.0/
+-google_sign_in=/home/codespace/.pub-cache/hosted/pub.dev/google_sign_in-6.3.0/
+-google_sign_in_android=/home/codespace/.pub-cache/hosted/pub.dev/google_sign_in_android-6.2.1/
+-google_sign_in_ios=/home/codespace/.pub-cache/hosted/pub.dev/google_sign_in_ios-5.9.0/
+-google_sign_in_web=/home/codespace/.pub-cache/hosted/pub.dev/google_sign_in_web-0.12.4+4/
+-image_picker=/home/codespace/.pub-cache/hosted/pub.dev/image_picker-1.2.0/
+-image_picker_android=/home/codespace/.pub-cache/hosted/pub.dev/image_picker_android-0.8.13/
+-image_picker_for_web=/home/codespace/.pub-cache/hosted/pub.dev/image_picker_for_web-3.1.0/
+-image_picker_ios=/home/codespace/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/
+-image_picker_linux=/home/codespace/.pub-cache/hosted/pub.dev/image_picker_linux-0.2.2/
+-image_picker_macos=/home/codespace/.pub-cache/hosted/pub.dev/image_picker_macos-0.2.2/
+-image_picker_windows=/home/codespace/.pub-cache/hosted/pub.dev/image_picker_windows-0.2.2/
+-local_auth=/home/codespace/.pub-cache/hosted/pub.dev/local_auth-2.3.0/
+-local_auth_android=/home/codespace/.pub-cache/hosted/pub.dev/local_auth_android-1.0.51/
+-local_auth_darwin=/home/codespace/.pub-cache/hosted/pub.dev/local_auth_darwin-1.6.0/
+-local_auth_windows=/home/codespace/.pub-cache/hosted/pub.dev/local_auth_windows-1.0.11/
+-path_provider=/home/codespace/.pub-cache/hosted/pub.dev/path_provider-2.1.5/
+-path_provider_android=/home/codespace/.pub-cache/hosted/pub.dev/path_provider_android-2.2.17/
+-path_provider_foundation=/home/codespace/.pub-cache/hosted/pub.dev/path_provider_foundation-2.4.1/
+-path_provider_linux=/home/codespace/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
+-path_provider_windows=/home/codespace/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
+-permission_handler=/home/codespace/.pub-cache/hosted/pub.dev/permission_handler-11.4.0/
+-permission_handler_android=/home/codespace/.pub-cache/hosted/pub.dev/permission_handler_android-12.1.0/
+-permission_handler_apple=/home/codespace/.pub-cache/hosted/pub.dev/permission_handler_apple-9.6.1/
+-permission_handler_html=/home/codespace/.pub-cache/hosted/pub.dev/permission_handler_html-0.1.4+1/
+-permission_handler_windows=/home/codespace/.pub-cache/hosted/pub.dev/permission_handler_windows-0.2.2/
+-printing=/home/codespace/.pub-cache/hosted/pub.dev/printing-5.14.3/
+-share_plus=/home/codespace/.pub-cache/hosted/pub.dev/share_plus-7.2.2/
+-shared_preferences=/home/codespace/.pub-cache/hosted/pub.dev/shared_preferences-2.5.3/
+-shared_preferences_android=/home/codespace/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.11/
+-shared_preferences_foundation=/home/codespace/.pub-cache/hosted/pub.dev/shared_preferences_foundation-2.5.4/
+-shared_preferences_linux=/home/codespace/.pub-cache/hosted/pub.dev/shared_preferences_linux-2.4.1/
+-shared_preferences_web=/home/codespace/.pub-cache/hosted/pub.dev/shared_preferences_web-2.4.3/
+-shared_preferences_windows=/home/codespace/.pub-cache/hosted/pub.dev/shared_preferences_windows-2.4.1/
+-url_launcher=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher-6.3.2/
+-url_launcher_android=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher_android-6.3.17/
+-url_launcher_ios=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher_ios-6.3.3/
+-url_launcher_linux=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher_linux-3.2.1/
+-url_launcher_macos=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher_macos-3.2.2/
+-url_launcher_web=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher_web-2.4.1/
+-url_launcher_windows=/home/codespace/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.4/
++file_picker=/root/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
++file_saver=/root/.pub-cache/hosted/pub.dev/file_saver-0.2.14/
++file_selector_linux=/root/.pub-cache/hosted/pub.dev/file_selector_linux-0.9.3+2/
++file_selector_macos=/root/.pub-cache/hosted/pub.dev/file_selector_macos-0.9.4+3/
++file_selector_windows=/root/.pub-cache/hosted/pub.dev/file_selector_windows-0.9.3+4/
++flutter_plugin_android_lifecycle=/root/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.29/
++flutter_secure_storage=/root/.pub-cache/hosted/pub.dev/flutter_secure_storage-9.2.4/
++flutter_secure_storage_linux=/root/.pub-cache/hosted/pub.dev/flutter_secure_storage_linux-1.2.3/
++flutter_secure_storage_macos=/root/.pub-cache/hosted/pub.dev/flutter_secure_storage_macos-3.1.3/
++flutter_secure_storage_web=/root/.pub-cache/hosted/pub.dev/flutter_secure_storage_web-1.2.1/
++flutter_secure_storage_windows=/root/.pub-cache/hosted/pub.dev/flutter_secure_storage_windows-3.1.2/
++google_mlkit_commons=/root/.pub-cache/hosted/pub.dev/google_mlkit_commons-0.6.1/
++google_mlkit_text_recognition=/root/.pub-cache/hosted/pub.dev/google_mlkit_text_recognition-0.11.0/
++google_sign_in=/root/.pub-cache/hosted/pub.dev/google_sign_in-6.3.0/
++google_sign_in_android=/root/.pub-cache/hosted/pub.dev/google_sign_in_android-6.2.1/
++google_sign_in_ios=/root/.pub-cache/hosted/pub.dev/google_sign_in_ios-5.9.0/
++google_sign_in_web=/root/.pub-cache/hosted/pub.dev/google_sign_in_web-0.12.4+4/
++image_picker=/root/.pub-cache/hosted/pub.dev/image_picker-1.2.0/
++image_picker_android=/root/.pub-cache/hosted/pub.dev/image_picker_android-0.8.13/
++image_picker_for_web=/root/.pub-cache/hosted/pub.dev/image_picker_for_web-3.1.0/
++image_picker_ios=/root/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/
++image_picker_linux=/root/.pub-cache/hosted/pub.dev/image_picker_linux-0.2.2/
++image_picker_macos=/root/.pub-cache/hosted/pub.dev/image_picker_macos-0.2.2/
++image_picker_windows=/root/.pub-cache/hosted/pub.dev/image_picker_windows-0.2.2/
++local_auth=/root/.pub-cache/hosted/pub.dev/local_auth-2.3.0/
++local_auth_android=/root/.pub-cache/hosted/pub.dev/local_auth_android-1.0.51/
++local_auth_darwin=/root/.pub-cache/hosted/pub.dev/local_auth_darwin-1.6.0/
++local_auth_windows=/root/.pub-cache/hosted/pub.dev/local_auth_windows-1.0.11/
++path_provider=/root/.pub-cache/hosted/pub.dev/path_provider-2.1.5/
++path_provider_android=/root/.pub-cache/hosted/pub.dev/path_provider_android-2.2.17/
++path_provider_foundation=/root/.pub-cache/hosted/pub.dev/path_provider_foundation-2.4.1/
++path_provider_linux=/root/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
++path_provider_windows=/root/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
++permission_handler=/root/.pub-cache/hosted/pub.dev/permission_handler-11.4.0/
++permission_handler_android=/root/.pub-cache/hosted/pub.dev/permission_handler_android-12.1.0/
++permission_handler_apple=/root/.pub-cache/hosted/pub.dev/permission_handler_apple-9.6.1/
++permission_handler_html=/root/.pub-cache/hosted/pub.dev/permission_handler_html-0.1.4+1/
++permission_handler_windows=/root/.pub-cache/hosted/pub.dev/permission_handler_windows-0.2.2/
++printing=/root/.pub-cache/hosted/pub.dev/printing-5.14.3/
++share_plus=/root/.pub-cache/hosted/pub.dev/share_plus-7.2.2/
++shared_preferences=/root/.pub-cache/hosted/pub.dev/shared_preferences-2.5.3/
++shared_preferences_android=/root/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.11/
++shared_preferences_foundation=/root/.pub-cache/hosted/pub.dev/shared_preferences_foundation-2.5.4/
++shared_preferences_linux=/root/.pub-cache/hosted/pub.dev/shared_preferences_linux-2.4.1/
++shared_preferences_web=/root/.pub-cache/hosted/pub.dev/shared_preferences_web-2.4.3/
++shared_preferences_windows=/root/.pub-cache/hosted/pub.dev/shared_preferences_windows-2.4.1/
++url_launcher=/root/.pub-cache/hosted/pub.dev/url_launcher-6.3.2/
++url_launcher_android=/root/.pub-cache/hosted/pub.dev/url_launcher_android-6.3.17/
++url_launcher_ios=/root/.pub-cache/hosted/pub.dev/url_launcher_ios-6.3.3/
++url_launcher_linux=/root/.pub-cache/hosted/pub.dev/url_launcher_linux-3.2.1/
++url_launcher_macos=/root/.pub-cache/hosted/pub.dev/url_launcher_macos-3.2.2/
++url_launcher_web=/root/.pub-cache/hosted/pub.dev/url_launcher_web-2.4.1/
++url_launcher_windows=/root/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.4/
+diff --git a/colab_runner_811.py b/colab_runner_811.py
+new file mode 100644
+index 0000000..78a66ed
+--- /dev/null
++++ b/colab_runner_811.py
+@@ -0,0 +1,145 @@
++# ==============================================================================
++# PHAROAH ERP WEB - GOOGLE COLAB BUILD & DEPLOY RUNNER
++# Revision: #PH-REV-811 (FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC)
++# Target: Cloudflare Pages (pharoah-erp.pages.dev)
++# ==============================================================================
++# Security Note: No credentials are embedded in this script.
++# Supply CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID via environment
++# variables or Google Colab Secrets (userdata) before running.
++
++import json
++import os
++import subprocess
++import sys
++import time
++import urllib.error
++import urllib.request
++
++CF_PROJECT_NAME = "pharoah-erp"
++REPO_URL = "https://github.com/new-ph-131/131-new-ph.git"
++FLUTTER_VERSION = "3.27.4"
++
++
++def resolve_secret(name: str) -> str:
++    val = os.environ.get(name, "").strip()
++    if val:
++        return val
++    try:
++        from google.colab import userdata  # type: ignore
++
++        val = (userdata.get(name) or "").strip()
++        if val:
++            os.environ[name] = val
++            return val
++    except Exception:
++        pass
++    return ""
++
++
++CF_API_TOKEN = resolve_secret("CLOUDFLARE_API_TOKEN")
++CF_ACCOUNT_ID = resolve_secret("CLOUDFLARE_ACCOUNT_ID")
++
++if not CF_API_TOKEN or not CF_ACCOUNT_ID:
++    print("Blocked: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set")
++    print("in environment variables or Google Colab Secrets before deploying.")
++    sys.exit(1)
++
++print("=" * 80)
++print("  PHAROAH ERP - COLAB WEB DEPLOYER (#PH-REV-811)")
++print("  [FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC]")
++print("=" * 80)
++
++subprocess.run(["git", "config", "--global", "--add", "safe.directory", "*"], check=False)
++
++
++def verify_cloudflare_project(account_id: str, token: str, project_name: str):
++    proj_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/pages/projects/{project_name}"
++    headers = {
++        "Authorization": f"Bearer {token}",
++        "Content-Type": "application/json",
++        "User-Agent": "Pharoah-Colab-Deployer/811",
++    }
++    req = urllib.request.Request(proj_url, headers=headers)
++    try:
++        with urllib.request.urlopen(req, timeout=15) as resp:
++            data = json.loads(resp.read().decode())
++            if data.get("success"):
++                subdomain = data.get("result", {}).get("subdomain", f"{project_name}.pages.dev")
++                return True, subdomain
++            return False, f"API error: {data.get('errors')}"
++    except Exception as exc:
++        return False, str(exc)
++
++
++ok, msg = verify_cloudflare_project(CF_ACCOUNT_ID, CF_API_TOKEN, CF_PROJECT_NAME)
++if ok:
++    print(f"  Project Verified: {CF_PROJECT_NAME} -> https://{msg}")
++else:
++    print(f"  Direct verification note: {msg}")
++    print("  Proceeding to Wrangler edge deployment pipeline...")
++
++print("\n[STEP 1/4] Syncing Latest Source Code (#PH-REV-811)...")
++if os.path.exists("pubspec.yaml"):
++    subprocess.run(["git", "pull", "origin", "main"], check=False)
++elif os.path.exists("pharoah_erp/pubspec.yaml"):
++    os.chdir("pharoah_erp")
++    subprocess.run(["git", "pull", "origin", "main"], check=False)
++else:
++    subprocess.run(["git", "clone", "--depth", "1", REPO_URL, "pharoah_erp"], check=True)
++    os.chdir("pharoah_erp")
++
++print(f"\n[STEP 2/4] Setting up Flutter SDK ({FLUTTER_VERSION})...")
++flutter_bin = "flutter"
++has_flutter = subprocess.run(["which", "flutter"], capture_output=True).returncode == 0
++if not has_flutter:
++    flutter_dir = "/content/flutter_sdk"
++    if not os.path.exists(f"{flutter_dir}/bin/flutter"):
++        subprocess.run(
++            ["git", "clone", "--depth", "1", "-b", FLUTTER_VERSION, "https://github.com/flutter/flutter.git", flutter_dir],
++            check=True,
++        )
++    flutter_bin = f"{flutter_dir}/bin/flutter"
++
++subprocess.run([flutter_bin, "--version"], check=False)
++
++print("\n[STEP 3/4] Building Flutter Web Production Bundle (#PH-REV-811)...")
++subprocess.run([flutter_bin, "pub", "get"], check=True)
++build_cmd = [
++    flutter_bin,
++    "build",
++    "web",
++    "-t",
++    "lib/web_live_sync/web_main.dart",
++    "--release",
++    "--base-href",
++    "/",
++    "--pwa-strategy=none",
++]
++t0 = time.time()
++res = subprocess.run(build_cmd)
++if res.returncode != 0:
++    print("Flutter Web Build Failed!")
++    sys.exit(1)
++print(f"  Web Build Completed in {round(time.time() - t0, 1)}s!")
++
++print(f"\n[STEP 4/4] Deploying build/web to Cloudflare Pages ({CF_PROJECT_NAME})...")
++deploy_cmd = [
++    "npx",
++    "--yes",
++    "wrangler@3",
++    "pages",
++    "deploy",
++    "build/web",
++    f"--project-name={CF_PROJECT_NAME}",
++    "--branch=main",
++    "--commit-dirty=true",
++]
++res_deploy = subprocess.run(deploy_cmd)
++if res_deploy.returncode != 0:
++    print("Deployment via Wrangler failed. Check logs above.")
++    sys.exit(1)
++
++print("=" * 80)
++print("#PH-REV-811 LIVE WEB WORKSTATION DEPLOYED SUCCESSFULLY!")
++print(f"Live Production URL: https://{CF_PROJECT_NAME}.pages.dev")
++print("=" * 80)
+diff --git a/functions/api/lab_signal.ts b/functions/api/lab_signal.ts
+index 4416172..517ae3a 100644
+--- a/functions/api/lab_signal.ts
++++ b/functions/api/lab_signal.ts
+@@ -1,7 +1,7 @@
+ // FILE: functions/api/lab_signal.ts
+ // Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal & Tombstone Resolution Bus (<30ms)
+-// Features: Server-Authoritative Tombstone Sanitization, 100,000 Writes/Day, 5,000,000 Reads/Day.
+-// Revision: #PH-REV-711 (WEB-PURCHASE-DUAL-SERIES-WPUR-AND-INSTANT-SYNC)
++// Features: Atomic Row-Level Signal/Tombstone Tables, Sticky Delete Guards, 100k Writes/Day.
++// Revision: #PH-REV-811 (FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC)
+ 
+ interface SignalRecord {
+   id: string;
+@@ -10,6 +10,8 @@ interface SignalRecord {
+   action: string;
+   entityType?: string;
+   entityId: string;
++  financialYear?: string;
++  fy?: string;
+   timestamp: number;
+   serverReceivedAt: number;
+   deletedIds?: string[];
+@@ -31,6 +33,118 @@ const CORS_HEADERS = {
+   "Content-Type": "application/json",
+ };
+ 
++const NO_CACHE_HEADERS = {
++  ...CORS_HEADERS,
++  "Cache-Control": "no-store, no-cache, must-revalidate",
++};
++
++async function ensureSignalTables(db: any) {
++  await db.batch([
++    db.prepare("CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"),
++    db.prepare(
++      "CREATE TABLE IF NOT EXISTS signal_tombstones (" +
++      "store_token TEXT NOT NULL, " +
++      "tomb_key TEXT NOT NULL, " +
++      "fy TEXT DEFAULT '', " +
++      "updated_at INTEGER NOT NULL, " +
++      "PRIMARY KEY (store_token, tomb_key))"
++    ),
++    db.prepare(
++      "CREATE TABLE IF NOT EXISTS signal_events (" +
++      "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
++      "store_token TEXT NOT NULL, " +
++      "event_id TEXT NOT NULL, " +
++      "source TEXT NOT NULL, " +
++      "action TEXT NOT NULL, " +
++      "entity_type TEXT DEFAULT '', " +
++      "entity_id TEXT DEFAULT '', " +
++      "fy TEXT DEFAULT '', " +
++      "timestamp INTEGER NOT NULL, " +
++      "deleted_ids TEXT DEFAULT '[]', " +
++      "unmarked_ids TEXT DEFAULT '[]', " +
++      "event_json TEXT NOT NULL)"
++    ),
++    db.prepare("CREATE INDEX IF NOT EXISTS idx_signal_events_ts ON signal_events (store_token, timestamp, seq)"),
++  ]).catch(() => {});
++}
++
++async function applyAtomicTombstonesAndEvent(
++  db: any,
++  storeToken: string,
++  sigRecord: SignalRecord,
++  deletedKeys: string[],
++  unmarkedKeys: string[],
++  fy: string,
++  eventTs: number
++) {
++  const stmts: any[] = [];
++  const delSet = new Set<string>();
++  const unmSet = new Set<string>();
++
++  for (const rawD of deletedKeys) {
++    if (typeof rawD !== "string") continue;
++    const dk = rawD.trim();
++    if (!dk) continue;
++    delSet.add(dk);
++    if (!dk.includes("_")) delSet.add(dk.toUpperCase());
++  }
++
++  for (const rawU of unmarkedKeys) {
++    if (typeof rawU !== "string") continue;
++    const uk = rawU.trim();
++    if (!uk || delSet.has(uk)) continue;
++    unmSet.add(uk);
++    if (!uk.includes("_")) unmSet.add(uk.toUpperCase());
++  }
++
++  for (const dk of delSet) {
++    stmts.push(
++      db.prepare(
++        "INSERT INTO signal_tombstones (store_token, tomb_key, fy, updated_at) VALUES (?, ?, ?, ?) " +
++        "ON CONFLICT(store_token, tomb_key) DO UPDATE SET " +
++        "updated_at = CASE WHEN excluded.updated_at > signal_tombstones.updated_at THEN excluded.updated_at ELSE signal_tombstones.updated_at END, " +
++        "fy = CASE WHEN excluded.fy != '' THEN excluded.fy ELSE signal_tombstones.fy END"
++      ).bind(storeToken, dk, fy, eventTs)
++    );
++  }
++
++  for (const uk of unmSet) {
++    stmts.push(
++      db.prepare(
++        "DELETE FROM signal_tombstones WHERE store_token = ? AND tomb_key = ? AND updated_at <= ?"
++      ).bind(storeToken, uk, eventTs)
++    );
++  }
++
++  stmts.push(
++    db.prepare(
++      "INSERT INTO signal_events (store_token, event_id, source, action, entity_type, entity_id, fy, timestamp, deleted_ids, unmarked_ids, event_json) " +
++      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
++    ).bind(
++      storeToken,
++      sigRecord.id,
++      sigRecord.source,
++      sigRecord.action,
++      sigRecord.entityType || "",
++      sigRecord.entityId || "",
++      fy,
++      sigRecord.timestamp,
++      JSON.stringify(Array.from(delSet)),
++      JSON.stringify(Array.from(unmSet)),
++      JSON.stringify(sigRecord)
++    )
++  );
++
++  // Keep event buffer trimmed per store (keep last 300 atomic events)
++  stmts.push(
++    db.prepare(
++      "DELETE FROM signal_events WHERE store_token = ? AND seq NOT IN (SELECT seq FROM signal_events WHERE store_token = ? ORDER BY seq DESC LIMIT 300)"
++    ).bind(storeToken, storeToken)
++  );
++
++  await db.batch(stmts).catch(() => {});
++}
++
+ export async function onRequestOptions() {
+   return new Response(null, { status: 204, headers: CORS_HEADERS });
+ }
+@@ -41,7 +155,7 @@ export async function onRequestPost(context: any) {
+     if (!raw || raw.trim().length === 0) {
+       return new Response(JSON.stringify({ status: "ERROR", message: "Empty body" }), {
+         status: 400,
+-        headers: CORS_HEADERS,
++        headers: NO_CACHE_HEADERS,
+       });
+     }
+ 
+@@ -50,15 +164,18 @@ export async function onRequestPost(context: any) {
+     if (!storeToken) {
+       return new Response(JSON.stringify({ status: "ERROR", message: "storeToken required" }), {
+         status: 400,
+-        headers: CORS_HEADERS,
++        headers: NO_CACHE_HEADERS,
+       });
+     }
+ 
++    const reqFy = (body.fy || body.financialYear || "").toString().trim();
++
+     // 🚀 SECTION 2: MARG-STYLE DETERMINISTIC SALE/PURCHASE EVENT LEDGER (D1 AUTO-INCREMENT SEQ)
+     if (body.sale_event && typeof body.sale_event === "object") {
+       try {
+         if (context.env && context.env.SIGNAL_DB) {
+           const db = context.env.SIGNAL_DB;
++          await ensureSignalTables(db);
+           await db.prepare(
+             "CREATE TABLE IF NOT EXISTS sale_events (" +
+             "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
+@@ -84,98 +201,116 @@ export async function onRequestPost(context: any) {
+           const billNo = (ev.bill_no || ev.billNo || "").toString().trim();
+           const incomingVer = parseInt(ev.version || 1, 10);
+           const evAction = (ev.action || "INSERT").toString().toUpperCase();
+-          const evStatus = (ev.status || (evAction === "CANCEL" ? "Cancelled" : "Active")).toString();
++          const evStatus = (ev.status || (evAction === "CANCEL" ? "Cancelled" : (evAction === "DELETE" ? "Deleted" : "Active"))).toString();
+           const clientSource = (ev.client_source || body.source || "UNKNOWN").toString();
+-          const payload = typeof ev.payload === "string" ? ev.payload : JSON.stringify(ev.payload || ev);
++          const evPayloadObj = typeof ev.payload === "string" ? JSON.parse(ev.payload || "{}") : (ev.payload || ev);
++          const evFy = (reqFy || (evPayloadObj && evPayloadObj.fy) || "").toString().trim();
++          if (evPayloadObj && typeof evPayloadObj === "object" && evFy && !evPayloadObj.fy) {
++            evPayloadObj.fy = evFy;
++          }
++          const payload = typeof ev.payload === "string" ? ev.payload : JSON.stringify(evPayloadObj || {});
+ 
+-          // Optimistic Concurrency Control (OCC) Check
+-          if (evAction === "UPDATE" || evAction === "CANCEL") {
++          // Sticky DELETE + Optimistic Concurrency Control (OCC) Check
++          if (evAction !== "DELETE" && billId) {
+             const latestRow: any = await db.prepare(
+-              "SELECT version FROM sale_events WHERE store_token = ? AND bill_id = ? ORDER BY seq DESC LIMIT 1"
++              "SELECT version, action, status FROM sale_events WHERE store_token = ? AND bill_id = ? ORDER BY seq DESC LIMIT 1"
+             ).bind(storeToken, billId).first().catch(() => null);
+ 
+-            if (latestRow && latestRow.version && latestRow.version >= incomingVer) {
+-              return new Response(JSON.stringify({
+-                status: "CONFLICT",
+-                message: `Bill has already been modified (Server v${latestRow.version} vs Client v${incomingVer})`,
+-                current_version: latestRow.version,
+-                bill_id: billId,
+-              }), { status: 409, headers: CORS_HEADERS });
++            if (latestRow) {
++              const latestAct = (latestRow.action || "").toString().toUpperCase();
++              const latestSt = (latestRow.status || "").toString().toUpperCase();
++              if (latestAct === "DELETE" || latestSt === "DELETED") {
++                return new Response(JSON.stringify({
++                  status: "DELETED",
++                  message: "Bill was permanently deleted and cannot be overwritten by a stale update",
++                  current_version: latestRow.version || 999999,
++                  bill_id: billId,
++                }), { status: 410, headers: NO_CACHE_HEADERS });
++              }
++              if ((evAction === "UPDATE" || evAction === "CANCEL") && latestRow.version && latestRow.version >= incomingVer) {
++                return new Response(JSON.stringify({
++                  status: "CONFLICT",
++                  message: `Bill has already been modified (Server v${latestRow.version} vs Client v${incomingVer})`,
++                  current_version: latestRow.version,
++                  bill_id: billId,
++                }), { status: 409, headers: NO_CACHE_HEADERS });
++              }
+             }
+           }
+ 
++          const nowMs = Date.now();
+           const insertRes: any = await db.prepare(
+             "INSERT INTO sale_events (store_token, bill_id, bill_no, version, action, status, client_source, payload, created_at) " +
+             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+-          ).bind(storeToken, billId, billNo, incomingVer, evAction, evStatus, clientSource, payload, Date.now()).run();
++          ).bind(storeToken, billId, billNo, incomingVer, evAction, evStatus, clientSource, payload, nowMs).run();
++
++          const newSeq = insertRes?.meta?.last_row_id || nowMs;
+ 
+-          const newSeq = insertRes?.meta?.last_row_id || Date.now();
++          const delIds: string[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
++          const unmIds: string[] = Array.isArray(body.unmarkedIds) ? body.unmarkedIds : [];
++          const isPurchaseEvt = (body.action || "").toString().toUpperCase().includes("PURCHASE") ||
++            (evPayloadObj && (evPayloadObj.doc_type === "PURCHASE" || evPayloadObj.internalNo !== undefined));
+ 
+-          // 🛡️ Synchronize signals.tombstones & signals.events so listeners get immediate notification
++          const atomicDelKeys: string[] = [];
++          const atomicUnmKeys: string[] = [];
++          if (evAction === "DELETE") {
++            if (billId) atomicDelKeys.push(billId);
++            for (const d of delIds) {
++              if (d && typeof d === "string" && d.trim()) atomicDelKeys.push(d.trim());
++            }
++          } else {
++            if (billId) atomicUnmKeys.push(billId);
++            if (billNo && !isPurchaseEvt) atomicUnmKeys.push(billNo);
++            for (const u of unmIds) {
++              if (u && typeof u === "string" && u.trim()) atomicUnmKeys.push(u.trim());
++            }
++          }
++
++          const sigRecord: SignalRecord = {
++            id: "evt_" + nowMs + "_" + Math.random().toString(36).substring(2, 7),
++            storeToken,
++            source: clientSource.toUpperCase().includes("WEB") ? "WEB" : (clientSource.toUpperCase().includes("APP") ? "APP" : clientSource.toUpperCase()),
++            action: body.action || evAction,
++            entityType: isPurchaseEvt ? "PURCHASE" : "SALE",
++            entityId: billId,
++            financialYear: evFy,
++            fy: evFy,
++            timestamp: nowMs,
++            serverReceivedAt: nowMs,
++            deletedIds: evAction === "DELETE" ? (atomicDelKeys.length > 0 ? atomicDelKeys : (billId ? [billId] : [])) : [],
++            unmarkedIds: evAction !== "DELETE" ? atomicUnmKeys : [],
++            payload: ev.payload || {},
++          };
++
++          await applyAtomicTombstonesAndEvent(db, storeToken, sigRecord, atomicDelKeys, atomicUnmKeys, evFy, nowMs);
++
++          // Backward-compatible signals blob best-effort sync
+           try {
+-            await db.prepare(
+-              "CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"
+-            ).run().catch(() => {});
+             const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
+             let chanData: ChannelData = row && row.data ? JSON.parse(row.data) : { latest: null, events: [], tombstones: [] };
+             if (!chanData.tombstones) chanData.tombstones = [];
+             if (!chanData.events) chanData.events = [];
+             const tSet = new Set(chanData.tombstones);
+-
+-            const delIds: string[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
+-            const unmIds: string[] = Array.isArray(body.unmarkedIds) ? body.unmarkedIds : [];
+-
+-            const isPurchaseEvt = (body.action || "").toString().toUpperCase().includes("PURCHASE");
+             if (evAction === "DELETE") {
+-              if (billId) tSet.add(billId);
+-              for (const d of delIds) {
+-                if (d && typeof d === "string" && d.trim()) {
+-                  const dk = d.trim();
+-                  tSet.add(dk);
+-                  if (!dk.includes("_")) tSet.add(dk.toUpperCase());
+-                }
++              for (const dk of atomicDelKeys) {
++                tSet.add(dk);
++                if (!dk.includes("_")) tSet.add(dk.toUpperCase());
+               }
+             } else {
+-              if (billId) {
+-                tSet.delete(billId);
+-                if (!billId.includes("_")) tSet.delete(billId.toUpperCase());
+-              }
+-              if (billNo && !isPurchaseEvt) {
+-                tSet.delete(billNo);
+-                tSet.delete(billNo.toUpperCase());
+-              }
+-              for (const u of unmIds) {
+-                if (u && typeof u === "string" && u.trim()) {
+-                  const uk = u.trim();
+-                  tSet.delete(uk);
+-                  if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
+-                }
++              for (const uk of atomicUnmKeys) {
++                tSet.delete(uk);
++                if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
+               }
+             }
+-
+             chanData.tombstones = Array.from(tSet);
+-            const sigRecord: SignalRecord = {
+-              id: "evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+-              storeToken,
+-              source: clientSource.toUpperCase().includes("WEB") ? "WEB" : (clientSource.toUpperCase().includes("APP") ? "APP" : clientSource.toUpperCase()),
+-              action: body.action || evAction,
+-              entityType: (body.action || "").toString().toUpperCase().includes("PURCHASE") ? "PURCHASE" : "SALE",
+-              entityId: billId,
+-              timestamp: Date.now(),
+-              serverReceivedAt: Date.now(),
+-              deletedIds: evAction === "DELETE" ? (delIds.length > 0 ? delIds : (billId ? [billId] : [])) : [],
+-              unmarkedIds: evAction !== "DELETE" ? unmIds : [],
+-              payload: ev.payload || {},
+-            };
+             chanData.latest = sigRecord;
+             chanData.events.push(sigRecord);
+-            if (chanData.events.length > 50) {
+-              chanData.events = chanData.events.slice(chanData.events.length - 50);
++            if (chanData.events.length > 200) {
++              chanData.events = chanData.events.slice(chanData.events.length - 200);
+             }
+-
+             await db.prepare(
+               "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+-            ).bind(storeToken, JSON.stringify(chanData), Date.now()).run();
++            ).bind(storeToken, JSON.stringify(chanData), nowMs).run();
+           } catch (_) {}
+ 
+           return new Response(JSON.stringify({
+@@ -185,7 +320,7 @@ export async function onRequestPost(context: any) {
+             bill_id: billId,
+             bill_no: billNo,
+             action: evAction,
+-          }), { status: 200, headers: CORS_HEADERS });
++          }), { status: 200, headers: NO_CACHE_HEADERS });
+         }
+       } catch (evtErr: any) {
+         console.error("D1 Sale Event Exception:", evtErr);
+@@ -228,20 +363,28 @@ export async function onRequestPost(context: any) {
+       ...(Array.isArray(body.deletedIds) ? body.deletedIds : []),
+       ...extractedBatchDeletedIds,
+     ]));
++    const deletedSetForFilter = new Set(mergedDeletedIds.map((e: any) => (e || "").toString().trim()));
+     const mergedUnmarkedIds = Array.from(new Set([
+       ...(Array.isArray(body.unmarkedIds) ? body.unmarkedIds : []),
+       ...extractedBatchUnmarkedIds,
+-    ]));
++    ])).filter((u: any) => !deletedSetForFilter.has((u || "").toString().trim()));
++
++    const nowMs = Date.now();
++    const rawTs = body.timestamp ? parseInt(body.timestamp, 10) : 0;
++    const normalizedTs = rawTs > 100000000000000 ? Math.floor(rawTs / 1000) : rawTs;
++    const effectiveTs = Math.max(normalizedTs || 0, nowMs);
+ 
+     const record: SignalRecord = {
+-      id: body.id || ("evt_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7)),
++      id: body.id || ("evt_" + nowMs + "_" + Math.random().toString(36).substring(2, 7)),
+       storeToken,
+       source: (body.source || "UNKNOWN").toUpperCase(),
+       action: body.action || "DELTA_MUTATION",
+       entityType: body.entityType || "",
+       entityId: (body.entityId || "").trim(),
+-      timestamp: Math.max((body.timestamp && body.timestamp > 100000000000000) ? Math.floor(body.timestamp / 1000) : (body.timestamp || 0), Date.now()),
+-      serverReceivedAt: Date.now(),
++      financialYear: reqFy,
++      fy: reqFy,
++      timestamp: effectiveTs,
++      serverReceivedAt: nowMs,
+       deletedIds: mergedDeletedIds,
+       unmarkedIds: mergedUnmarkedIds,
+       delta: body.delta || null,
+@@ -254,14 +397,48 @@ export async function onRequestPost(context: any) {
+       tombstones: [],
+     };
+ 
+-    // 1. PRIMARY ENGINE: CLOUDFLARE D1 (100,000 Writes/Day Quota)
+     if (context.env && context.env.SIGNAL_DB) {
+       try {
+         const db = context.env.SIGNAL_DB;
+-        await db.prepare(
+-          "CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"
+-        ).run().catch(() => {});
++        await ensureSignalTables(db);
++
++        const isPurchaseSignal = (record.entityType || "").toUpperCase().includes("PURCHASE") ||
++          action.includes("PURCHASE");
++
++        const effectiveDeletes: string[] = [...mergedDeletedIds];
++        const effectiveUnmarks: string[] = [...mergedUnmarkedIds];
++        if (isDeleteAction && record.entityId) {
++          effectiveDeletes.push(record.entityId);
++        } else if (!isDeleteAction) {
++          if (record.entityId) effectiveUnmarks.push(record.entityId);
++          if (record.payload && typeof record.payload === "object") {
++            if (record.payload.billNo && !isPurchaseSignal) {
++              effectiveUnmarks.push(record.payload.billNo.toString().trim());
++            }
++            if (record.payload.internalNo) {
++              effectiveUnmarks.push(record.payload.internalNo.toString().trim());
++            }
++            if (record.payload.id) {
++              effectiveUnmarks.push(record.payload.id.toString().trim());
++            }
++            if (record.payload.partyId && record.payload.billNo) {
++              effectiveUnmarks.push(`${record.payload.partyId.toString().trim().toUpperCase()}_${record.payload.billNo.toString().trim()}`);
++            }
++          }
++        }
+ 
++        // Write atomically to relational signal_tombstones & signal_events first
++        await applyAtomicTombstonesAndEvent(
++          db,
++          storeToken,
++          record,
++          effectiveDeletes,
++          effectiveUnmarks,
++          reqFy,
++          effectiveTs
++        );
++
++        // Maintain signals compatibility blob as best-effort secondary store
+         const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
+         if (row && row.data) {
+           try {
+@@ -269,14 +446,13 @@ export async function onRequestPost(context: any) {
+           } catch (_) {}
+         }
+ 
+-        // Preserve latest non-OUTBOX_BATCH signal source if OUTBOX_BATCH arrives within 2s, while merging its deleted/unmarked IDs
+         if (!isOutboxBatch || !channelData.latest) {
+           channelData.latest = record;
+         } else {
+           channelData.latest = {
+             ...channelData.latest,
+             timestamp: Math.max(channelData.latest.timestamp || 0, record.timestamp),
+-            serverReceivedAt: Date.now(),
++            serverReceivedAt: nowMs,
+             deletedIds: Array.from(new Set([...(channelData.latest.deletedIds || []), ...mergedDeletedIds])),
+             unmarkedIds: Array.from(new Set([...(channelData.latest.unmarkedIds || []), ...mergedUnmarkedIds])),
+           };
+@@ -284,75 +460,31 @@ export async function onRequestPost(context: any) {
+ 
+         if (!channelData.events) channelData.events = [];
+         channelData.events.push(record);
+-        if (channelData.events.length > 50) {
+-          channelData.events = channelData.events.slice(channelData.events.length - 50);
++        if (channelData.events.length > 200) {
++          channelData.events = channelData.events.slice(channelData.events.length - 200);
+         }
+ 
+         if (!channelData.tombstones) channelData.tombstones = [];
+         const tSet = new Set(channelData.tombstones);
+-
+-        const isPurchaseSignal = (record.entityType || "").toUpperCase().includes("PURCHASE") ||
+-          action.includes("PURCHASE");
+-        if (isDeleteAction) {
+-          for (const d of mergedDeletedIds) {
+-            if (d && typeof d === "string" && d.trim().length > 0) {
+-              const dk = d.trim();
+-              tSet.add(dk);
+-              if (!dk.includes("_")) tSet.add(dk.toUpperCase());
+-            }
+-          }
+-          if (record.entityId && record.entityId.length > 0) {
+-            tSet.add(record.entityId);
+-          }
+-        } else {
+-          if (record.entityId && record.entityId.length > 0) {
+-            tSet.delete(record.entityId);
+-            if (!record.entityId.includes("_")) tSet.delete(record.entityId.toUpperCase());
+-          }
+-          if (record.payload && typeof record.payload === "object") {
+-            if (record.payload.billNo && !isPurchaseSignal) {
+-              const b = record.payload.billNo.toString().trim();
+-              tSet.delete(b);
+-              tSet.delete(b.toUpperCase());
+-            }
+-            if (record.payload.internalNo) {
+-              const i = record.payload.internalNo.toString().trim();
+-              tSet.delete(i);
+-              tSet.delete(i.toUpperCase());
+-            }
+-            if (record.payload.id) {
+-              const pid = record.payload.id.toString().trim();
+-              tSet.delete(pid);
+-              tSet.delete(pid.toUpperCase());
+-            }
+-            if (record.payload.partyId && record.payload.billNo) {
+-              const ck = `${record.payload.partyId.toString().trim().toUpperCase()}_${record.payload.billNo.toString().trim()}`;
+-              tSet.delete(ck);
+-            }
+-          }
+-        }
+-
+-        for (const u of mergedUnmarkedIds) {
+-          if (u && typeof u === "string" && u.trim().length > 0) {
++        for (const u of effectiveUnmarks) {
++          if (u && u.trim()) {
+             const uk = u.trim();
+             tSet.delete(uk);
+             if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
+           }
+         }
+-        for (const d of extractedBatchDeletedIds) {
+-          if (d && typeof d === "string" && d.trim().length > 0) {
++        for (const d of effectiveDeletes) {
++          if (d && d.trim()) {
+             const dk = d.trim();
+             tSet.add(dk);
+             if (!dk.includes("_")) tSet.add(dk.toUpperCase());
+           }
+         }
+-
+         channelData.tombstones = Array.from(tSet);
+ 
+-        // Atomic Upsert to D1
+         await db.prepare(
+           "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+-        ).bind(storeToken, JSON.stringify(channelData), Date.now()).run();
++        ).bind(storeToken, JSON.stringify(channelData), nowMs).run();
+ 
+         // SECTION 1: CLOUDFLARE D1 BATCH ENGINE FOR ERP_MASTER_SYNC
+         if (body.operations && Array.isArray(body.operations) && body.operations.length > 0) {
+@@ -370,33 +502,9 @@ export async function onRequestPost(context: any) {
+               if (!sId) continue;
+               const dType = (op.document_type || "SALE").toString().toUpperCase();
+               const ver = parseInt(op.version || 1, 10);
+-              const uAt = Math.max(parseInt(op.updated_at || 0, 10), Date.now());
++              const uAt = Math.max(parseInt(op.updated_at || 0, 10), nowMs);
+               const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
+               const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+-              const isPurchaseOp = dType === "PURCHASE" || dType === "PURCHASE_CHALLAN";
+-              const rawBill = ((op.bill_data && op.bill_data.billNo) || (op.data && op.data.billNo) || "").toString().trim();
+-              const rawParty = ((op.bill_data && op.bill_data.partyId) || (op.data && op.data.partyId) || "").toString().trim();
+-              const rawInt = ((op.bill_data && op.bill_data.internalNo) || (op.data && op.data.internalNo) || "").toString().trim();
+-              const compKey = (rawParty && rawBill) ? `${rawParty.toUpperCase()}_${rawBill}` : "";
+-
+-              if (isDel === 1) {
+-                tSet.add(sId);
+-                if (rawInt) tSet.add(rawInt.toUpperCase());
+-                if (compKey) tSet.add(compKey);
+-              } else {
+-                tSet.delete(sId);
+-                if (!sId.includes("_")) tSet.delete(sId.toUpperCase());
+-                if (rawInt) {
+-                  tSet.delete(rawInt);
+-                  tSet.delete(rawInt.toUpperCase());
+-                }
+-                if (compKey) tSet.delete(compKey);
+-                if (rawBill && !isPurchaseOp) {
+-                  tSet.delete(rawBill);
+-                  tSet.delete(rawBill.toUpperCase());
+-                }
+-              }
+-
+               const rawData = op.data !== undefined ? op.data : op.bill_data;
+               const bData = typeof rawData === "string" ? rawData : JSON.stringify(rawData || {});
+ 
+@@ -404,8 +512,14 @@ export async function onRequestPost(context: any) {
+                 "INSERT INTO erp_master_sync (sync_id, store_token, document_type, version, updated_at, is_deleted, bill_data) " +
+                 "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) " +
+                 "ON CONFLICT(sync_id) DO UPDATE SET " +
+-                "bill_data = CASE WHEN (?5 >= updated_at OR ?4 > version) THEN ?7 ELSE bill_data END, " +
+-                "is_deleted = CASE WHEN (?5 >= updated_at OR ?4 > version) THEN ?6 ELSE is_deleted END, " +
++                "bill_data = CASE " +
++                  "WHEN ?6 = 1 THEN CASE WHEN (?5 >= updated_at OR ?4 >= version) THEN ?7 ELSE bill_data END " +
++                  "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN ?7 ELSE bill_data END " +
++                  "WHEN (?5 >= updated_at OR ?4 > version) THEN ?7 ELSE bill_data END, " +
++                "is_deleted = CASE " +
++                  "WHEN ?6 = 1 THEN 1 " +
++                  "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN 0 ELSE 1 END " +
++                  "WHEN (?5 >= updated_at OR ?4 > version) THEN ?6 ELSE is_deleted END, " +
+                 "version = CASE WHEN ?4 > version THEN ?4 ELSE version END, " +
+                 "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END"
+               ).bind(sId, storeToken, dType, ver, uAt, isDel, bData);
+@@ -413,10 +527,6 @@ export async function onRequestPost(context: any) {
+             }
+             if (sqlStatements.length > 0) {
+               await db.batch(sqlStatements);
+-              channelData.tombstones = Array.from(tSet);
+-              await db.prepare(
+-                "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
+-              ).bind(storeToken, JSON.stringify(channelData), Date.now()).run().catch(() => {});
+             }
+           } catch (batchErr) {
+             console.error("D1 Master Sync Batch Exception:", batchErr);
+@@ -433,12 +543,12 @@ export async function onRequestPost(context: any) {
+       activeTombstonesCount: channelData.tombstones.length,
+     }), {
+       status: 200,
+-      headers: CORS_HEADERS,
++      headers: NO_CACHE_HEADERS,
+     });
+   } catch (err: any) {
+     return new Response(JSON.stringify({ status: "ERROR", message: err.toString() }), {
+       status: 500,
+-      headers: CORS_HEADERS,
++      headers: NO_CACHE_HEADERS,
+     });
+   }
+ }
+@@ -454,7 +564,7 @@ export async function onRequestGet(context: any) {
+     if (!storeToken) {
+       return new Response(JSON.stringify({ status: "ERROR", message: "storeToken query param required" }), {
+         status: 400,
+-        headers: CORS_HEADERS,
++        headers: NO_CACHE_HEADERS,
+       });
+     }
+ 
+@@ -478,7 +588,7 @@ export async function onRequestGet(context: any) {
+ 
+         const deltaRows: any = await db.prepare(
+           "SELECT seq, bill_id, bill_no, version, action, status, client_source, payload, created_at FROM sale_events " +
+-          "WHERE store_token = ? AND seq > ? ORDER BY seq ASC LIMIT 100"
++          "WHERE store_token = ? AND seq > ? ORDER BY seq ASC LIMIT 250"
+         ).bind(storeToken, sinceSeq).all().catch(() => null);
+ 
+         if (deltaRows && Array.isArray(deltaRows.results)) {
+@@ -502,10 +612,7 @@ export async function onRequestGet(context: any) {
+             count: events.length,
+           }), {
+             status: 200,
+-            headers: {
+-              ...CORS_HEADERS,
+-              "Cache-Control": "no-cache",
+-            },
++            headers: NO_CACHE_HEADERS,
+           });
+         }
+       } catch (err) {
+@@ -514,22 +621,56 @@ export async function onRequestGet(context: any) {
+     }
+ 
+     let current: SignalRecord | null = null;
+-    let mutations: SignalRecord[] = [];
+-    let tombstones: string[] = [];
++    const mutationMap = new Map<string, SignalRecord>();
++    const tombSet = new Set<string>();
+ 
+-    // 1. PRIMARY ENGINE: CLOUDFLARE D1
++    // 1. PRIMARY ENGINE: CLOUDFLARE D1 (Atomic signal_tombstones + signal_events + signals blob)
+     if (context.env && context.env.SIGNAL_DB) {
+       try {
+         const db = context.env.SIGNAL_DB;
++        await ensureSignalTables(db);
++
++        const atomicTombRows: any = await db.prepare(
++          "SELECT tomb_key FROM signal_tombstones WHERE store_token = ?"
++        ).bind(storeToken).all().catch(() => null);
++        if (atomicTombRows && Array.isArray(atomicTombRows.results)) {
++          for (const r of atomicTombRows.results) {
++            if (r.tomb_key) tombSet.add(r.tomb_key.toString());
++          }
++        }
++
++        const atomicEvtRows: any = await db.prepare(
++          "SELECT event_json FROM signal_events WHERE store_token = ? AND timestamp > ? ORDER BY seq ASC LIMIT 200"
++        ).bind(storeToken, lastSeenTs).all().catch(() => null);
++        if (atomicEvtRows && Array.isArray(atomicEvtRows.results)) {
++          for (const r of atomicEvtRows.results) {
++            try {
++              const ev: SignalRecord = typeof r.event_json === "string" ? JSON.parse(r.event_json) : r.event_json;
++              if (ev && ev.id) {
++                mutationMap.set(ev.id, ev);
++                current = ev;
++              }
++            } catch (_) {}
++          }
++        }
++
+         const row: any = await db.prepare("SELECT data, timestamp FROM signals WHERE storeToken = ?").bind(storeToken).first();
+         if (row && row.data) {
+           const chanData: ChannelData = JSON.parse(row.data);
+-          current = chanData.latest;
++          if (!current || (chanData.latest && chanData.latest.timestamp > current.timestamp)) {
++            current = chanData.latest;
++          }
+           if (Array.isArray(chanData.events)) {
+-            mutations = chanData.events.filter((e) => e.timestamp > lastSeenTs);
++            for (const e of chanData.events) {
++              if (e && e.timestamp > lastSeenTs && e.id && !mutationMap.has(e.id)) {
++                mutationMap.set(e.id, e);
++              }
++            }
+           }
+           if (Array.isArray(chanData.tombstones)) {
+-            tombstones = chanData.tombstones;
++            for (const t of chanData.tombstones) {
++              if (t) tombSet.add(t);
++            }
+           }
+         }
+       } catch (d1Err) {
+@@ -537,13 +678,16 @@ export async function onRequestGet(context: any) {
+       }
+     }
+ 
++    const mutations = Array.from(mutationMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
++    const tombstones = Array.from(tombSet);
++
+     // Query D1 Master Sync for Delta Batch Operations
+     let batchOperations: any[] = [];
+     if (context.env && context.env.SIGNAL_DB) {
+       try {
+         const db = context.env.SIGNAL_DB;
+         const deltaRows: any = await db.prepare(
+-          "SELECT sync_id, document_type, version, updated_at, is_deleted, bill_data FROM erp_master_sync WHERE store_token = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 150"
++          "SELECT sync_id, document_type, version, updated_at, is_deleted, bill_data FROM erp_master_sync WHERE store_token = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 250"
+         ).bind(storeToken, lastSeenTs).all().catch(() => null);
+ 
+         if (deltaRows && Array.isArray(deltaRows.results) && deltaRows.results.length > 0) {
+@@ -563,13 +707,10 @@ export async function onRequestGet(context: any) {
+       }
+     }
+ 
+-    if (!current && batchOperations.length === 0 && mutations.length === 0) {
++    if (!current && batchOperations.length === 0 && mutations.length === 0 && tombstones.length === 0) {
+       return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], events: [], tombstones: [], batch_operations: [] }), {
+         status: 200,
+-        headers: {
+-          ...CORS_HEADERS,
+-          "Cache-Control": "public, max-age=1, stale-while-revalidate=2",
+-        },
++        headers: NO_CACHE_HEADERS,
+       });
+     }
+ 
+@@ -586,15 +727,12 @@ export async function onRequestGet(context: any) {
+       serverTime: Date.now(),
+     }), {
+       status: 200,
+-      headers: {
+-        ...CORS_HEADERS,
+-        "Cache-Control": "public, max-age=1, stale-while-revalidate=2",
+-      },
++      headers: NO_CACHE_HEADERS,
+     });
+   } catch (err: any) {
+     return new Response(JSON.stringify({ status: "ERROR", message: err.toString() }), {
+       status: 500,
+-      headers: CORS_HEADERS,
++      headers: NO_CACHE_HEADERS,
+     });
+   }
+ }
+diff --git a/lib/batch_master_view.dart b/lib/batch_master_view.dart
+index f670be1..93b0ca9 100644
+--- a/lib/batch_master_view.dart
++++ b/lib/batch_master_view.dart
+@@ -630,6 +630,9 @@ class _BatchMasterViewState extends State<BatchMasterView> {
+               final result = BatchCascadeEngine.deleteBatchSafe(
+                 medicine: med,
+                 batchNo: b.batch,
++                exp: b.exp,
++                mrp: b.mrp,
++                purRate: b.purRate > 0 ? b.purRate : b.rate,
+                 activeFY: activeFY,
+                 batchHistory: ph.batchHistory,
+                 sales: ph.sales,
+diff --git a/lib/inventory_intel/app_stock/app_batch_traceability_view.dart b/lib/inventory_intel/app_stock/app_batch_traceability_view.dart
+index a1ef3ff..f151df7 100644
+--- a/lib/inventory_intel/app_stock/app_batch_traceability_view.dart
++++ b/lib/inventory_intel/app_stock/app_batch_traceability_view.dart
+@@ -984,6 +984,9 @@ class _AppBatchTraceabilityViewState extends State<AppBatchTraceabilityView> {
+               final result = BatchCascadeEngine.deleteBatchSafe(
+                 medicine: med,
+                 batchNo: b.batch,
++                exp: b.exp,
++                mrp: b.mrp,
++                purRate: b.purRate > 0 ? b.purRate : b.rate,
+                 activeFY: activeFY,
+                 batchHistory: ph.batchHistory,
+                 sales: ph.sales,
+diff --git a/lib/inventory_logic_center.dart b/lib/inventory_logic_center.dart
+index 0d8dc4f..1de1bad 100644
+--- a/lib/inventory_logic_center.dart
++++ b/lib/inventory_logic_center.dart
+@@ -54,7 +54,7 @@ class InventoryLogicCenter {
+     final String cleanBatch = batchNo.trim().toUpperCase();
+     if (cleanBatch.isNotEmpty) return cleanBatch;
+     final String normExp = normalizeExpKey(exp);
+-    return "__NOBATCH__|\$normExp|\${mrp.toStringAsFixed(2)}|\${purRate.toStringAsFixed(2)}";
++    return "__NOBATCH__|$normExp|${mrp.toStringAsFixed(2)}|${purRate.toStringAsFixed(2)}";
+   }
+ 
+   /// Builds a deterministic cloud/D1 sync key for a batch or non-batch stock lot.
+@@ -68,9 +68,9 @@ class InventoryLogicCenter {
+     final String cleanMed = medIdentityKey.trim().toUpperCase();
+     final String cleanBatch = batchNo.trim().toUpperCase();
+     if (cleanBatch.isNotEmpty) {
+-      return "BATCH_\${cleanMed}_\$cleanBatch";
++      return "BATCH_${cleanMed}_$cleanBatch";
+     }
+-    return "BATCH_\${cleanMed}_\${makeLotKey('', exp: exp, mrp: mrp, purRate: purRate)}";
++    return "BATCH_${cleanMed}_${makeLotKey('', exp: exp, mrp: mrp, purRate: purRate)}";
+   }
+ 
+   /// Finds the matching BatchInfo index in [list] for both batch-managed and non-batch stock.
+@@ -298,7 +298,7 @@ class InventoryLogicCenter {
+         final Medicine? med = _findMedicine(medicines, item.medicineID, item.name);
+         final String medKey = med != null ? med.identityKey : item.medicineID.trim();
+         if (medKey.isNotEmpty) {
+-          purchasedBatchKeys.add("\${medKey}_\$lotKey");
++          purchasedBatchKeys.add("${medKey}_$lotKey");
+         }
+       }
+     }
+@@ -319,7 +319,7 @@ class InventoryLogicCenter {
+             b.qty > 0 &&
+             b.openingQty == 0.0 &&
+             b.adjustmentQty == 0.0 &&
+-            !purchasedBatchKeys.contains("\${key}_\$lotKey")) {
++            !purchasedBatchKeys.contains("${key}_$lotKey")) {
+           b.openingQty = b.qty;
+         }
+         b.legacyOpeningHealPending = false;
+diff --git a/lib/logic/batch_cascade_engine.dart b/lib/logic/batch_cascade_engine.dart
+index cce9388..9af9e33 100644
+--- a/lib/logic/batch_cascade_engine.dart
++++ b/lib/logic/batch_cascade_engine.dart
+@@ -363,6 +363,9 @@ class BatchCascadeEngine {
+   static ({bool success, String message, List<BatchUsageAuditRecord> lockingRecords}) deleteBatchSafe({
+     required Medicine medicine,
+     required String batchNo,
++    String exp = '',
++    double mrp = 0.0,
++    double purRate = 0.0,
+     required String activeFY,
+     required Map<String, List<BatchInfo>> batchHistory,
+     required List<Sale> sales,
+@@ -403,7 +406,21 @@ class BatchCascadeEngine {
+     BatchInfo? removedBatch;
+     if (batchHistory.containsKey(medKey)) {
+       final list = batchHistory[medKey]!;
+-      final idx = list.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatch);
++      int idx = -1;
++      if (cleanBatch.isNotEmpty) {
++        idx = list.indexWhere((b) => b.batch.trim().toUpperCase() == cleanBatch);
++      } else if (exp.trim().isNotEmpty || mrp > 0 || purRate > 0) {
++        idx = InventoryLogicCenter.findMatchingBatchIndex(
++          list,
++          batchNo: '',
++          exp: exp,
++          mrp: mrp,
++          purRate: purRate,
++          exactEmptyBatchLot: true,
++        );
++      } else {
++        idx = list.indexWhere((b) => b.batch.trim().isEmpty);
++      }
+       if (idx != -1) {
+         removedBatch = list.removeAt(idx);
+       }
+diff --git a/lib/pharoah_manager.dart b/lib/pharoah_manager.dart
+index bad99de..fefce83 100644
+--- a/lib/pharoah_manager.dart
++++ b/lib/pharoah_manager.dart
+@@ -1537,13 +1537,13 @@ void registerBatchActivity({
+       }
+     }
+ 
+-    for (var s in sales) processBillItems(s.items);
+-    for (var sc in saleChallans) processBillItems(sc.items);
+-    for (var sr in saleReturns) processBillItems(sr.items);
++    for (var p in purchases.where((e) => e.isDeleted != 1)) processPurchaseItems(p.items);
++    for (var pc in purchaseChallans.where((e) => e.isDeleted != 1)) processPurchaseItems(pc.items);
++    for (var pr in purchaseReturns.where((e) => e.isDeleted != 1)) processPurchaseItems(pr.items);
+ 
+-    for (var p in purchases) processPurchaseItems(p.items);
+-    for (var pc in purchaseChallans) processPurchaseItems(pc.items);
+-    for (var pr in purchaseReturns) processPurchaseItems(pr.items);
++    for (var s in sales.where((e) => e.isDeleted != 1)) processBillItems(s.items);
++    for (var sc in saleChallans.where((e) => e.isDeleted != 1)) processBillItems(sc.items);
++    for (var sr in saleReturns.where((e) => e.isDeleted != 1)) processBillItems(sr.items);
+ 
+     if (hasUpdates) {
+       save();
+@@ -2889,20 +2889,35 @@ void registerBatchActivity({
+       ];
+       final List<String> allUnmarked = [...revertedPChallanIds, ...revertedPChallanNos];
+       if (activeCompany != null) {
+-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
++        final String compId = activeCompany!.id;
++        final String delFy = currentFY;
++        D1SalesLedgerService.recordPurchaseKnownVersion(pId, partyId, bNo, 999999, intNo, delFy);
++        Future<void>(() async {
++          await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
++          final t = await WebLiveToken.getOrCreateToken(compId);
+           if (t.isNotEmpty) {
+             PurchaseSyncModule.onPurchaseDeleted(p, t);
+-            D1SalesLedgerService.onPurchaseDeleted(pId, partyId, bNo, intNo, t, clientSource: "APP_MOBILE", linkedChallanIds: p.linkedChallanIds);
+-            SyncQueueManager.flushOutboxAsJSONBatch();
++            await Future.wait([
++              D1SalesLedgerService.onPurchaseDeleted(
++                pId,
++                partyId,
++                bNo,
++                intNo,
++                t,
++                clientSource: "APP_MOBILE",
++                linkedChallanIds: p.linkedChallanIds,
++                fy: delFy,
++              ),
++              SyncQueueManager.flushOutboxAsJSONBatch(),
++            ]);
+           }
+-        });
+-        TombstoneEngine.recordBatchTombstones(activeCompany!.id, delKeys, fy: currentFY).then((_) {
+           AppRealtimeCoordinator.instance.notifyAppMutation(
+             this,
+             action: 'DELETE_PURCHASE',
+             entityId: pId,
+             deletedIds: delKeys,
+             unmarkedIds: allUnmarked,
++            fy: delFy,
+           );
+         });
+       }
+diff --git a/lib/realtime_signaling/coordinators/app_realtime_coordinator.dart b/lib/realtime_signaling/coordinators/app_realtime_coordinator.dart
+index 4ace723..5a590c9 100644
+--- a/lib/realtime_signaling/coordinators/app_realtime_coordinator.dart
++++ b/lib/realtime_signaling/coordinators/app_realtime_coordinator.dart
+@@ -43,7 +43,7 @@ class AppRealtimeCoordinator {
+       mySource: 'app',
+       interval: const Duration(milliseconds: 2000),
+       onBatchReceived: (batchOps) async {
+-        if (ph.currentFY.isEmpty) return;
++        if (ph.currentFY.isEmpty) return false;
+         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phApp: ph);
+         try {
+           final workingDir = await ph.getWorkingPath();
+@@ -154,36 +154,46 @@ class AppRealtimeCoordinator {
+ 
+     if (deletedIds.isNotEmpty) {
+       for (final d in deletedIds) {
+-        if (d.trim().isNotEmpty) {
+-          final clean = d.trim().toUpperCase();
++        final rawD = d.trim();
++        if (rawD.isNotEmpty) {
++          final bool keepCase = rawD.contains('_');
++          final clean = keepCase ? rawD : rawD.toUpperCase();
+           final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+-              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
++              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
+               : clean;
+           _pendingDeletedIds.add(scoped);
+           _pendingUnmarkedIds.remove(scoped);
+           _pendingUnmarkedIds.remove(clean);
++          _pendingUnmarkedIds.remove(rawD);
+         }
+       }
+     }
+     if (unmarkedIds.isNotEmpty) {
+       for (final u in unmarkedIds) {
+-        if (u.trim().isNotEmpty) {
+-          final clean = u.trim().toUpperCase();
++        final rawU = u.trim();
++        if (rawU.isNotEmpty) {
++          final bool keepCase = rawU.contains('_');
++          final clean = keepCase ? rawU : rawU.toUpperCase();
+           final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+-              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
++              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
+               : clean;
+           _pendingUnmarkedIds.add(scoped);
+           _pendingDeletedIds.remove(scoped);
+           _pendingDeletedIds.remove(clean);
++          _pendingDeletedIds.remove(rawU);
+         }
+       }
+     }
+     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
+-      final clean = entityId.trim().toUpperCase();
++      final rawE = entityId.trim();
++      final bool keepCase = rawE.contains('_');
++      final clean = keepCase ? rawE : rawE.toUpperCase();
+       final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+-          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
++          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
+           : clean;
+       _pendingDeletedIds.add(scoped);
++      _pendingUnmarkedIds.remove(scoped);
++      _pendingUnmarkedIds.remove(rawE);
+     }
+ 
+     _pushDebounceTimer?.cancel();
+diff --git a/lib/realtime_signaling/coordinators/web_realtime_coordinator.dart b/lib/realtime_signaling/coordinators/web_realtime_coordinator.dart
+index e573477..01c20cb 100644
+--- a/lib/realtime_signaling/coordinators/web_realtime_coordinator.dart
++++ b/lib/realtime_signaling/coordinators/web_realtime_coordinator.dart
+@@ -95,30 +95,44 @@ class WebRealtimeCoordinator {
+ 
+     if (deletedIds.isNotEmpty) {
+       for (final d in deletedIds) {
+-        if (d.trim().isEmpty) continue;
+-        final clean = d.trim().toUpperCase();
++        final rawD = d.trim();
++        if (rawD.isEmpty) continue;
++        final bool keepCase = rawD.contains('_');
++        final clean = keepCase ? rawD : rawD.toUpperCase();
+         final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+-            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
++            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
+             : clean;
+         _pendingDeletedIds.add(scoped);
++        _pendingUnmarkedIds.remove(scoped);
++        _pendingUnmarkedIds.remove(rawD);
++        if (!keepCase) _pendingUnmarkedIds.remove(rawD.toUpperCase());
+       }
+     }
+     if (unmarkedIds.isNotEmpty) {
+       for (final u in unmarkedIds) {
+-        if (u.trim().isEmpty) continue;
+-        final clean = u.trim().toUpperCase();
++        final rawU = u.trim();
++        if (rawU.isEmpty) continue;
++        final bool keepCase = rawU.contains('_');
++        final clean = keepCase ? rawU : rawU.toUpperCase();
+         final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+-            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
++            ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
+             : clean;
+         _pendingUnmarkedIds.add(scoped);
++        _pendingDeletedIds.remove(scoped);
++        _pendingDeletedIds.remove(rawU);
++        if (!keepCase) _pendingDeletedIds.remove(rawU.toUpperCase());
+       }
+     }
+     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
+-      final clean = entityId.trim().toUpperCase();
++      final rawE = entityId.trim();
++      final bool keepCase = rawE.contains('_');
++      final clean = keepCase ? rawE : rawE.toUpperCase();
+       final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
+-          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
++          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
+           : clean;
+       _pendingDeletedIds.add(scoped);
++      _pendingUnmarkedIds.remove(scoped);
++      _pendingUnmarkedIds.remove(rawE);
+     }
+ 
+     _pushDebounceTimer?.cancel();
+@@ -134,6 +148,9 @@ class WebRealtimeCoordinator {
+           final batchDeleted = List<String>.from(_pendingDeletedIds.where((k) => k.trim().isNotEmpty));
+           final batchUnmarked = List<String>.from(_pendingUnmarkedIds);
+ 
++          // 0. Ensure any in-flight D1 direct writes/deletes settle before signaling App & uploading snapshot
++          await webManager.awaitPendingD1Writes();
++
+           // 1. Flush Outbox immediately so D1 erp_master_sync has the WPUR-/W- record BEFORE App polls
+           await SyncQueueManager.flushOutboxAsJSONBatch();
+ 
+diff --git a/lib/realtime_signaling/engines/fast_pull_engine.dart b/lib/realtime_signaling/engines/fast_pull_engine.dart
+index 531ef4d..8bb2d2d 100644
+--- a/lib/realtime_signaling/engines/fast_pull_engine.dart
++++ b/lib/realtime_signaling/engines/fast_pull_engine.dart
+@@ -24,19 +24,52 @@ import '../../sync_core/multi_fy_cloud_vault.dart';
+ /// Strict mandate: Evaluates immutable sync_id/UUID only, never purges by human-readable billNo.
+ class FastPullEngine {
+   static bool _isPulling = false;
++  static bool _hasPendingPull = false;
+   static int _pullEpoch = 0;
+ 
+   /// Immediately invalidates any in-flight pull when user logs out or switches Financial Year.
+   static void invalidateInFlightPulls() {
+     _pullEpoch++;
+     _isPulling = false;
++    _hasPendingPull = false;
+   }
+ 
++  static int _countCoreRecords(PharoahManager ph) =>
++      ph.sales.length +
++      ph.purchases.length +
++      ph.vouchers.length +
++      ph.saleChallans.length +
++      ph.purchaseChallans.length +
++      ph.saleReturns.length +
++      ph.purchaseReturns.length +
++      ph.medicines.length +
++      ph.parties.length;
++
+   static Future<bool> pullAndMerge(PharoahManager ph) async {
+-    if (_isPulling) return false;
+     if (ph.activeCompany == null) return false;
++    if (_isPulling) {
++      _hasPendingPull = true;
++      return false;
++    }
+     _isPulling = true;
+     final int myEpoch = ++_pullEpoch;
++    bool anyMutated = false;
++    try {
++      do {
++        _hasPendingPull = false;
++        final bool stepMutated = await _pullOnce(ph, myEpoch);
++        if (stepMutated) anyMutated = true;
++      } while (_hasPendingPull && myEpoch == _pullEpoch && ph.activeCompany != null);
++    } finally {
++      if (myEpoch == _pullEpoch) {
++        _isPulling = false;
++      }
++    }
++    return anyMutated;
++  }
++
++  static Future<bool> _pullOnce(PharoahManager ph, int myEpoch) async {
++    if (ph.activeCompany == null) return false;
+     final String targetFyAtStart = ph.currentFY;
+     final String companyId = ph.activeCompany!.id;
+ 
+@@ -92,9 +125,13 @@ class FastPullEngine {
+ 
+       // 🚀 STEP 1.5: REAL-TIME D1 EDGE HARVEST (<30ms) & IMMEDIATE TOMBSTONE LOCK (SALES + PURCHASES + RETURNS + VOUCHERS)
+       List<Map<String, dynamic>> fetchedEdgeEvents = [];
++      bool d1AnyMutated = false;
++      int pendingD1MaxSeq = 0;
+       if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
+         try {
+-          final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
++          final deltaRes = await D1SalesLedgerService.fetchSaleDeltasWithCursor(storeToken);
++          final edgeEvents = deltaRes.events;
++          pendingD1MaxSeq = deltaRes.maxSeq;
+           if (isStale()) return false;
+           fetchedEdgeEvents = edgeEvents;
+           D1SalesLedgerService.activeFinancialYear = targetFyAtStart;
+@@ -122,6 +159,10 @@ class FastPullEngine {
+               final String bId = (ev["bill_id"] ?? "").toString().trim();
+               final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+               final dynamic rawPayload = ev["sale_data"];
++              final String evFy = (ev["fy"] ?? (rawPayload is Map ? rawPayload["fy"] : "") ?? "").toString().trim();
++              if (evFy.isNotEmpty && evFy != targetFyAtStart) {
++                continue;
++              }
+               if (rawPayload is Map && (rawPayload["fy"] != null || rawPayload["date"] != null)) {
+                 final DateTime? evDate = rawPayload["date"] != null
+                     ? DateTime.tryParse(rawPayload["date"].toString())
+@@ -130,14 +171,21 @@ class FastPullEngine {
+                   continue;
+                 }
+               }
++              final bool isPurcEvt = rawPayload is Map &&
++                  (rawPayload["doc_type"] == "PURCHASE" ||
++                   rawPayload.containsKey("distributorName") ||
++                   rawPayload.containsKey("internalNo"));
++              final bool payloadDel = rawPayload is Map &&
++                  ((int.tryParse(rawPayload["is_deleted"]?.toString() ?? rawPayload["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
++                   rawPayload["status"] == "Deleted");
+               final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNo, targetFyAtStart);
+-              if (action == "DELETE") {
++              if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
+                 if (bId.isNotEmpty) {
+                   newTombKeys.add(bId);
+                   newUnmarkKeys.remove(bId);
+                   newUnmarkKeys.remove(bId.toUpperCase());
+                 }
+-                if (scopedBNo.isNotEmpty) {
++                if (!isPurcEvt && scopedBNo.isNotEmpty) {
+                   final cleanBNo = bNo.trim().toUpperCase();
+                   final bool hasActiveSale = ph.sales.any((s) => s.id != bId && s.billNo.trim().toUpperCase() == cleanBNo && s.isDeleted != 1);
+                   if (!hasActiveSale) {
+@@ -147,7 +195,7 @@ class FastPullEngine {
+                 }
+                 if (rawPayload is Map) {
+                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+-                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
++                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
+                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                   final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
+                   if (scopedINo.isNotEmpty) {
+@@ -158,46 +206,52 @@ class FastPullEngine {
+                     }
+                   }
+                   if (pId.isNotEmpty && pBill.isNotEmpty) {
+-                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart);
++                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart, true);
+                     newTombKeys.add(c2);
+                     newUnmarkKeys.remove(c2);
+                     if (iNo.isNotEmpty) {
+-                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart);
++                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart, true);
+                       newTombKeys.add(c3);
+                       newUnmarkKeys.remove(c3);
+                     }
+                   }
+                 }
+               } else {
++                // Skip unmarking if already marked deleted in D1/tombstones (e.g. from later deleted copy)
++                final bool blockedByTomb = (bId.isNotEmpty && (localTombstones.contains(bId) || D1SalesLedgerService.isBillDeleted(bId, "", "", targetFyAtStart)));
++                if (blockedByTomb) continue;
+                 if (bId.isNotEmpty) {
+                   newUnmarkKeys.add(bId);
+                   newTombKeys.remove(bId);
+                   newTombKeys.remove(bId.toUpperCase());
+                 }
+-                if (scopedBNo.isNotEmpty) {
++                if (!isPurcEvt && scopedBNo.isNotEmpty) {
+                   newUnmarkKeys.add(scopedBNo);
+                   newTombKeys.remove(scopedBNo);
+                 }
+                 if (rawPayload is Map) {
+                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+-                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
++                  final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
+                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
++                  if (isPurcEvt && D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, targetFyAtStart)) {
++                    continue;
++                  }
+                   final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
+                   final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, targetFyAtStart);
+                   if (scopedINo.isNotEmpty) {
+                     newUnmarkKeys.add(scopedINo);
+                     newTombKeys.remove(scopedINo);
+                   }
+-                  if (scopedPBill.isNotEmpty) {
++                  if (!isPurcEvt && scopedPBill.isNotEmpty) {
+                     newUnmarkKeys.add(scopedPBill);
+                     newTombKeys.remove(scopedPBill);
+                   }
+                   if (pId.isNotEmpty && pBill.isNotEmpty) {
+-                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart);
++                    final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", targetFyAtStart, true);
+                     newUnmarkKeys.add(c2);
+                     newTombKeys.remove(c2);
+                     if (iNo.isNotEmpty) {
+-                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart);
++                      final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", targetFyAtStart, true);
+                       newUnmarkKeys.add(c3);
+                       newTombKeys.remove(c3);
+                     }
+@@ -208,23 +262,28 @@ class FastPullEngine {
+             if (newUnmarkKeys.isNotEmpty) {
+               for (final uk in newUnmarkKeys.toSet()) {
+                 localRegistry.remove(uk);
+-                localRegistry.remove(uk.toUpperCase());
+                 localTombstones.remove(uk);
+-                localTombstones.remove(uk.toUpperCase());
+-                await TombstoneEngine.unmarkTombstoneWithTimestamp(companyId, id: uk);
++                if (!uk.contains('_')) {
++                  localRegistry.remove(uk.toUpperCase());
++                  localTombstones.remove(uk.toUpperCase());
++                }
++                await TombstoneEngine.unmarkTombstoneWithTimestamp(companyId, id: uk, fy: targetFyAtStart);
+               }
+             }
+             if (newTombKeys.isNotEmpty) {
+               final nowTs = DateTime.now().millisecondsSinceEpoch;
+               for (final tk in newTombKeys) {
+                 localRegistry[tk] = nowTs;
+-                localRegistry[tk.toUpperCase()] = nowTs;
+                 localTombstones.add(tk);
+-                localTombstones.add(tk.toUpperCase());
++                if (!tk.contains('_')) {
++                  localRegistry[tk.toUpperCase()] = nowTs;
++                  localTombstones.add(tk.toUpperCase());
++                }
+               }
+-              await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs);
++              await TombstoneEngine.recordBatchTombstones(companyId, newTombKeys, timestamp: nowTs, fy: targetFyAtStart);
+             }
+             if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated) {
++              d1AnyMutated = true;
+               if (d1SalesMutated || d1PurcMutated || d1SrMutated || d1PrMutated) {
+                 InventoryLogicCenter.rebuildAllInventory(
+                   medicines: ph.medicines,
+@@ -277,6 +336,9 @@ class FastPullEngine {
+               }
+               ph.notifyListeners();
+             }
++            if (pendingD1MaxSeq > 0) {
++              await D1SalesLedgerService.commitSaleDeltaSeq(storeToken, pendingD1MaxSeq);
++            }
+           }
+         } catch (d1Err) {
+           debugPrint("⚠ [FastPullEngine] D1 Delta Sync Notice: $d1Err");
+@@ -329,43 +391,60 @@ class FastPullEngine {
+       }
+       final Map<String, dynamic> cloudFiles = extractedFyFiles;
+ 
+-      // 3. Process Cloud Tombstones & Monotonic Registry (Only IDs, drop sequence numbers)
+-      if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
+-        try {
+-          List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
+-          final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
+-            companyId,
+-            cloudT.map((e) => e.toString()),
+-          );
+-          localTombstones.addAll(sanitizedCloudT);
+-        } catch (_) {}
+-      }
++      // 3. Process Cloud Tombstones & Monotonic Registry (Chronological unmark vs tombstone resolution)
++      final Map<String, int> unmarkedRegistry = await TombstoneEngine.getUnmarkedRegistry(companyId);
++      final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
++      final List<String> cloudOverridesUnmark = [];
+       if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
+         try {
+           dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
+           if (rawReg is Map) {
+-            final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
+             rawReg.forEach((k, v) {
+               final cleanK = k.toString().trim();
+-              if (cleanK.isNotEmpty && !unmarkedKeys.contains(cleanK) && !unmarkedKeys.contains(cleanK.toUpperCase())) {
+-                final cTs = int.tryParse(v.toString()) ?? 0;
++              if (cleanK.isEmpty || D1SalesLedgerService.isUnscopedSeriesKey(cleanK)) return;
++              final bool keepCase = cleanK.contains('_');
++              final cTs = int.tryParse(v.toString()) ?? 0;
++              final bool isUnmarked = unmarkedKeys.contains(cleanK) || (!keepCase && unmarkedKeys.contains(cleanK.toUpperCase()));
++              final int uTs = unmarkedRegistry[cleanK] ?? (!keepCase ? (unmarkedRegistry[cleanK.toUpperCase()] ?? 0) : 0);
++              if (!isUnmarked || (cTs > 0 && cTs >= uTs)) {
+                 final lTs = localRegistry[cleanK] ?? 0;
+                 if (cTs > lTs) {
+                   localRegistry[cleanK] = cTs;
+-                  localRegistry[cleanK.toUpperCase()] = cTs;
++                  if (!keepCase) localRegistry[cleanK.toUpperCase()] = cTs;
+                 }
+                 localTombstones.add(cleanK);
+-                localTombstones.add(cleanK.toUpperCase());
++                if (!keepCase) localTombstones.add(cleanK.toUpperCase());
++                if (isUnmarked) cloudOverridesUnmark.add(cleanK);
+               }
+             });
+           }
+         } catch (_) {}
+       }
+-      localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
++      if (cloudOverridesUnmark.isNotEmpty) {
++        await TombstoneEngine.clearUnmarkedForDeletedKeys(companyId, cloudOverridesUnmark);
++      }
++      if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
++        try {
++          List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
++          final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
++            companyId,
++            cloudT.map((e) => e.toString()),
++            cloudRegistry: localRegistry,
++          );
++          localTombstones.addAll(sanitizedCloudT);
++        } catch (_) {}
++      }
++      localTombstones = await TombstoneEngine.sanitizeCloudTombstones(
++        companyId,
++        localTombstones,
++        cloudRegistry: localRegistry,
++      );
+ 
+       // 4. Chronological Anti-Zombie Purge with Registry (Timestamp & ID ONLY)
++      final int prePurgeCount = _countCoreRecords(ph);
+       TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
+       TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
++      final bool preMergePurged = _countCoreRecords(ph) != prePurgeCount;
+ 
+       // 🛡️ UNIVERSAL PRE-MERGE SHIELD FOR ALL CLOUD SNAPSHOT FILES
+       void sanitizeCloudFile(String fileName, List<String> Function(Map) keyExtractor) {
+@@ -397,10 +476,12 @@ class FastPullEngine {
+                     break;
+                   }
+                 } else {
+-                  // Secondary / Series key check: Strictly FY-scoped!
+-                  final String scopedClean = D1SalesLedgerService.scopeSecondaryKey(clean, targetFyAtStart);
+-                  final bool inTombs = localTombstones.contains(scopedClean);
+-                  final int regTs = localRegistry[scopedClean] ?? 0;
++                  // Secondary / Series key check: Strictly FY-scoped! Preserve case for composite keys containing '_'
++                  final bool keepCase = k.contains('_');
++                  final String scopedExact = D1SalesLedgerService.scopeSecondaryKey(k, targetFyAtStart, keepCase);
++                  final String scopedUpper = D1SalesLedgerService.scopeSecondaryKey(clean, targetFyAtStart, true);
++                  final bool inTombs = localTombstones.contains(scopedExact) || localTombstones.contains(scopedUpper);
++                  final int regTs = localRegistry[scopedExact] ?? localRegistry[scopedUpper] ?? 0;
+                   if (regTs > 0 && (itemUpdatedAt == 0 || regTs >= itemUpdatedAt)) {
+                     isBlocked = true;
+                     break;
+@@ -460,7 +541,7 @@ class FastPullEngine {
+       sanitizeCloudFile("sales.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+       sanitizeCloudFile("purc.json", (m) {
+         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
+-        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
++        final bNo = (m["billNo"] ?? "").toString().trim();
+         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
+         final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+         final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+@@ -470,7 +551,7 @@ class FastPullEngine {
+       sanitizeCloudFile("s_challan.json", (m) => [(m["id"] ?? "").toString(), (m["billNo"] ?? "").toString()]);
+       sanitizeCloudFile("p_challan.json", (m) {
+         final pId = (m["partyId"] ?? "").toString().trim().toUpperCase();
+-        final bNo = (m["billNo"] ?? "").toString().trim().toUpperCase();
++        final bNo = (m["billNo"] ?? "").toString().trim();
+         final iNo = (m["internalNo"] ?? "").toString().trim().toUpperCase();
+         final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+         final comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
+@@ -484,6 +565,14 @@ class FastPullEngine {
+       // 5. Delta Merge Cloud Data into Memory
+       bool hasChanges = DeltaMergeEngine.processCloudData(ph, cloudFiles, localRegistry, localHashes);
+ 
++      // Final post-merge tombstone sweep so deleted records cannot slip past cloud snapshots
++      final int postMergePreSweep = _countCoreRecords(ph);
++      TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, localRegistry);
++      TombstoneEngine.purgeDeletedRecords(ph, localTombstones, localRegistry);
++      final bool postMergePurged = _countCoreRecords(ph) != postMergePreSweep;
++
++      hasChanges = hasChanges || preMergePurged || postMergePurged || d1AnyMutated;
++
+       if (hasChanges) {
+         // Harvest any missing products from transactions (#PH-REV-737)
+         ProductIntegrityService.harvestProductsFromAllTransactions(
+@@ -587,9 +676,7 @@ class FastPullEngine {
+       debugPrint("⚠ [FastPullEngine] Pull error: $e");
+       return false;
+     } finally {
+-      if (myEpoch == _pullEpoch) {
+-        _isPulling = false;
+-      }
++      // Lock ownership managed cleanly by pullAndMerge outer loop
+     }
+   }
+ }
+diff --git a/lib/realtime_signaling/transport/cloud_signal_channel.dart b/lib/realtime_signaling/transport/cloud_signal_channel.dart
+index d573b83..a15ada1 100644
+--- a/lib/realtime_signaling/transport/cloud_signal_channel.dart
++++ b/lib/realtime_signaling/transport/cloud_signal_channel.dart
+@@ -48,12 +48,98 @@ class CloudSignalChannel {
+     }
+   }
+ 
++  /// Pure chronological aggregator for incoming signal event maps (testable offline).
++  static ({
++    SyncSignalEvent? mergedEvent,
++    int maxTimestamp,
++  }) aggregateRemoteSignals({
++    required List<Map<String, dynamic>> rawEvents,
++    required String mySource,
++    required int lastSeenTs,
++  }) {
++    final cleanSource = mySource.trim().toUpperCase();
++    final Map<String, Map<String, dynamic>> dedupedById = {};
++    final List<Map<String, dynamic>> noIdList = [];
++    for (final raw in rawEvents) {
++      final evId = (raw['id'] ?? '').toString().trim();
++      if (evId.isNotEmpty) {
++        dedupedById[evId] = raw;
++      } else {
++        noIdList.add(raw);
++      }
++    }
++    final ordered = [...dedupedById.values, ...noIdList];
++    ordered.sort((a, b) {
++      int ta = int.tryParse((a['timestamp'] ?? '0').toString()) ?? 0;
++      int tb = int.tryParse((b['timestamp'] ?? '0').toString()) ?? 0;
++      if (ta > 100000000000000) ta ~/= 1000;
++      if (tb > 100000000000000) tb ~/= 1000;
++      final cmp = ta.compareTo(tb);
++      if (cmp != 0) return cmp;
++      // Same millisecond: process non-delete before delete so rapid modify+delete stays deleted
++      final aDel = (a['action'] ?? '').toString().toUpperCase().contains('DELETE') ? 1 : 0;
++      final bDel = (b['action'] ?? '').toString().toUpperCase().contains('DELETE') ? 1 : 0;
++      return aDel.compareTo(bDel);
++    });
++
++    SyncSignalEvent? latestRemoteEvent;
++    final Set<String> aggregatedDeletedIds = {};
++    final Set<String> aggregatedUnmarkedIds = {};
++    int maxSigTs = lastSeenTs;
++
++    for (final rawEv in ordered) {
++      final ev = SyncSignalEvent.fromMap(rawEv);
++      int evTs = ev.timestamp;
++      if (evTs > 100000000000000) evTs ~/= 1000;
++      if (evTs > lastSeenTs) {
++        if (evTs > maxSigTs) maxSigTs = evTs;
++        final src = ev.source.trim().toUpperCase();
++        if (src != cleanSource) {
++          for (final u in ev.unmarkedIds) {
++            final cu = u.trim();
++            if (cu.isEmpty) continue;
++            aggregatedUnmarkedIds.add(cu);
++            aggregatedDeletedIds.remove(cu);
++            if (!cu.contains('_')) aggregatedDeletedIds.remove(cu.toUpperCase());
++          }
++          for (final d in ev.deletedIds) {
++            final cd = d.trim();
++            if (cd.isEmpty) continue;
++            aggregatedDeletedIds.add(cd);
++            aggregatedUnmarkedIds.remove(cd);
++            if (!cd.contains('_')) aggregatedUnmarkedIds.remove(cd.toUpperCase());
++          }
++          latestRemoteEvent = ev;
++        }
++      }
++    }
++
++    if (latestRemoteEvent == null) {
++      return (mergedEvent: null, maxTimestamp: maxSigTs);
++    }
++    return (
++      mergedEvent: SyncSignalEvent(
++        storeToken: latestRemoteEvent.storeToken,
++        source: latestRemoteEvent.source,
++        action: latestRemoteEvent.action,
++        entityId: latestRemoteEvent.entityId,
++        timestamp: latestRemoteEvent.timestamp,
++        companyId: latestRemoteEvent.companyId,
++        deletedIds: aggregatedDeletedIds.toList(),
++        unmarkedIds: aggregatedUnmarkedIds.toList(),
++        financialYear: latestRemoteEvent.financialYear,
++        delta: latestRemoteEvent.delta,
++      ),
++      maxTimestamp: maxSigTs,
++    );
++  }
++
+   /// Starts listening for incoming events from the opposite client
+   void listenToSignals({
+     required String storeToken,
+     required String mySource, // 'app' or 'web'
+     required Function(SyncSignalEvent) onSignal,
+-    Function(List<dynamic>)? onBatchReceived,
++    dynamic Function(List<dynamic>)? onBatchReceived,
+     Function(List<String>)? onTombstonesReceived,
+     Duration interval = const Duration(milliseconds: 3000),
+   }) {
+@@ -113,13 +199,15 @@ class CloudSignalChannel {
+                   }
+                 }
+               }
+-              _lastKnownBatchTime = maxBatchTs;
+               if (freshOps.isNotEmpty) {
+-                onBatchReceived?.call(freshOps);
++                final cbResult = await onBatchReceived?.call(freshOps);
++                if (cbResult != false) {
++                  _lastKnownBatchTime = maxBatchTs;
++                }
+               }
+             }
+ 
+-            // 🔔 Process all new Signal Events (mutations array + latest event) without OUTBOX_BATCH masking
++            // 🔔 Process all new Signal Events (mutations array + latest event) chronologically without OUTBOX_BATCH masking
+             final List<Map<String, dynamic>> candidateEvents = [];
+             if (data['mutations'] is List) {
+               for (final m in (data['mutations'] as List)) {
+@@ -132,55 +220,17 @@ class CloudSignalChannel {
+               candidateEvents.add(Map<String, dynamic>.from(data['event'] as Map));
+             }
+ 
+-            SyncSignalEvent? latestRemoteEvent;
+-            final Set<String> aggregatedDeletedIds = {};
+-            final Set<String> aggregatedUnmarkedIds = {};
+-            int maxSigTs = _lastKnownSignalTime;
+-
+-            for (final rawEv in candidateEvents) {
+-              final ev = SyncSignalEvent.fromMap(rawEv);
+-              int evTs = ev.timestamp;
+-              if (evTs > 100000000000000) evTs ~/= 1000;
+-              if (evTs > _lastKnownSignalTime) {
+-                if (evTs > maxSigTs) maxSigTs = evTs;
+-                final src = ev.source.trim().toUpperCase();
+-                if (src != cleanSource) {
+-                  for (final d in ev.deletedIds) {
+-                    if (d.trim().isNotEmpty) {
+-                      aggregatedDeletedIds.add(d.trim());
+-                      aggregatedUnmarkedIds.remove(d.trim());
+-                      aggregatedUnmarkedIds.remove(d.trim().toUpperCase());
+-                    }
+-                  }
+-                  for (final u in ev.unmarkedIds) {
+-                    if (u.trim().isNotEmpty) {
+-                      aggregatedUnmarkedIds.add(u.trim());
+-                      aggregatedDeletedIds.remove(u.trim());
+-                      aggregatedDeletedIds.remove(u.trim().toUpperCase());
+-                    }
+-                  }
+-                  latestRemoteEvent = ev;
+-                }
+-              }
+-            }
++            final agg = aggregateRemoteSignals(
++              rawEvents: candidateEvents,
++              mySource: cleanSource,
++              lastSeenTs: _lastKnownSignalTime,
++            );
++            _lastKnownSignalTime = agg.maxTimestamp;
+ 
+-            _lastKnownSignalTime = maxSigTs;
+-
+-            if (latestRemoteEvent != null) {
+-              final mergedEvent = SyncSignalEvent(
+-                storeToken: latestRemoteEvent.storeToken,
+-                source: latestRemoteEvent.source,
+-                action: latestRemoteEvent.action,
+-                entityId: latestRemoteEvent.entityId,
+-                timestamp: latestRemoteEvent.timestamp,
+-                companyId: latestRemoteEvent.companyId,
+-                deletedIds: aggregatedDeletedIds.toList(),
+-                unmarkedIds: aggregatedUnmarkedIds.toList(),
+-                financialYear: latestRemoteEvent.financialYear,
+-                delta: latestRemoteEvent.delta,
+-              );
++            if (agg.mergedEvent != null) {
++              final mergedEvent = agg.mergedEvent!;
+               debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${mergedEvent.source}: ${mergedEvent.action} (del:${mergedEvent.deletedIds.length}, unmark:${mergedEvent.unmarkedIds.length})");
+-              onSignal(mergedEvent);
++              await onSignal(mergedEvent);
+             }
+           }
+         }
+diff --git a/lib/sync_core/d1_sales_ledger_service.dart b/lib/sync_core/d1_sales_ledger_service.dart
+index 4994b5e..9363ca8 100644
+--- a/lib/sync_core/d1_sales_ledger_service.dart
++++ b/lib/sync_core/d1_sales_ledger_service.dart
+@@ -99,9 +99,10 @@ class D1SalesLedgerService {
+     if (k.startsWith("PARTY-") && !k.contains("_")) return false;
+     if (k.startsWith("MED_") || (k.startsWith("PH-") && RegExp(r"^PH-\d{4,}$").hasMatch(k))) return false;
+ 
+-    // Timestamps (e.g. 1712345678901) or ISO dates or standard 36-char UUIDs
++    // Timestamps (e.g. 1712345678901) or ISO dates or standard UUIDs (including prefixed UUIDs like PUR-UUID-101)
+     if (RegExp(r"^\d{10,}$").hasMatch(k) || RegExp(r"^\d{4}-\d{2}-\d{2}").hasMatch(k) ||
+-        RegExp(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$").hasMatch(k)) {
++        RegExp(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$").hasMatch(k) ||
++        k.contains("-UUID-") || (k.contains("-") && k.length >= 24)) {
+       return false;
+     }
+ 
+@@ -272,9 +273,13 @@ class D1SalesLedgerService {
+   // =========================================================================
+   static bool isPurchaseDeleted(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
+     final cleanId = id.trim();
+-    if (cleanId.isNotEmpty && !isUnscopedSeriesKey(cleanId)) {
+-      return _permanentDeletedKeys.contains(cleanId) ||
+-             _permanentDeletedKeys.contains(cleanId.toUpperCase());
++    if (cleanId.isNotEmpty) {
++      final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
++      if (_permanentDeletedKeys.contains(cleanId) ||
++          _permanentDeletedKeys.contains(cleanId.toUpperCase()) ||
++          (scopedId.isNotEmpty && (_permanentDeletedKeys.contains(scopedId) || _permanentDeletedKeys.contains(scopedId.toUpperCase())))) {
++        return true;
++      }
+     }
+     final cleanInt = scopeSecondaryKey(internalNo, fy);
+     final cleanParty = partyId.trim().toUpperCase();
+@@ -285,9 +290,13 @@ class D1SalesLedgerService {
+     final compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && internalNo.trim().isNotEmpty)
+         ? scopeSecondaryKey("${cleanParty}_${cleanBill}_${internalNo.trim().toUpperCase()}", fy, true)
+         : "";
++    final compKey2Upper = compKey2.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}", fy, true) : "";
++    final compKey3Upper = compKey3.isNotEmpty ? scopeSecondaryKey("${cleanParty}_${cleanBill.toUpperCase()}_${internalNo.trim().toUpperCase()}", fy, true) : "";
+     return (cleanInt.isNotEmpty && _permanentDeletedKeys.contains(cleanInt)) ||
+            (compKey2.isNotEmpty && _permanentDeletedKeys.contains(compKey2)) ||
+-           (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3));
++           (compKey3.isNotEmpty && _permanentDeletedKeys.contains(compKey3)) ||
++           (compKey2Upper.isNotEmpty && _permanentDeletedKeys.contains(compKey2Upper)) ||
++           (compKey3Upper.isNotEmpty && _permanentDeletedKeys.contains(compKey3Upper));
+   }
+ 
+   static int getPurchaseKnownVersion(String id, String partyId, String billNo, [String internalNo = "", String? fy]) {
+@@ -348,25 +357,31 @@ class D1SalesLedgerService {
+     String storeToken, {
+     bool isUpdate = false,
+     String clientSource = "APP_MOBILE",
++    String? fy,
+   }) async {
++    final String effFy = (fy != null && fy.trim().isNotEmpty)
++        ? fy.trim()
++        : (activeFinancialYear.isNotEmpty ? activeFinancialYear.trim() : inferFyFromDate(purchase.date));
+     unmarkPurchasePermanentlyDeleted(
+       purchase.id,
+       purchase.partyId,
+       purchase.billNo,
+       purchase.internalNo,
++      effFy,
+     );
+     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+ 
+     try {
+       final purMap = purchase.toMap();
+       purMap["doc_type"] = "PURCHASE";
+-      purMap["fy"] = activeFinancialYear.isNotEmpty ? activeFinancialYear : inferFyFromDate(purchase.date);
++      purMap["fy"] = effFy;
+       final String cleanParty = purchase.partyId.trim().toUpperCase();
+       final String cleanBill = purchase.billNo.trim();
+       final String cleanInt = purchase.internalNo.trim().toUpperCase();
+-      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? "${cleanParty}_$cleanBill" : "";
++      final String scopedInt = cleanInt.isNotEmpty ? scopeSecondaryKey(cleanInt, effFy) : "";
++      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty) ? scopeSecondaryKey("${cleanParty}_$cleanBill", effFy, true) : "";
+       final String compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+-          ? "${cleanParty}_${cleanBill}_$cleanInt"
++          ? scopeSecondaryKey("${cleanParty}_${cleanBill}_$cleanInt", effFy, true)
+           : "";
+       final String refNo = cleanInt.isNotEmpty ? cleanInt : cleanBill;
+ 
+@@ -375,9 +390,10 @@ class D1SalesLedgerService {
+         "source": clientSource,
+         "action": isUpdate ? "UPDATE_PURCHASE" : "INSERT_PURCHASE",
+         "entityId": purchase.id,
++        "fy": effFy,
+         "unmarkedIds": [
+           purchase.id,
+-          if (cleanInt.isNotEmpty) cleanInt,
++          if (scopedInt.isNotEmpty) scopedInt,
+           if (compKey2.isNotEmpty) compKey2,
+           if (compKey3.isNotEmpty) compKey3,
+         ],
+@@ -407,6 +423,7 @@ class D1SalesLedgerService {
+             purchase.billNo,
+             purchase.version,
+             purchase.internalNo,
++            effFy,
+           );
+           final int? newSeq = data["seq"];
+           if (newSeq != null && newSeq > 0) {
+@@ -414,10 +431,21 @@ class D1SalesLedgerService {
+           }
+           return true;
+         }
++      } else if (res.statusCode == 410) {
++        markPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, effFy);
++        return false;
+       } else if (res.statusCode == 409) {
+         try {
+           final data = jsonDecode(res.body);
++          if (data["status"] == "DELETED") {
++            markPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, effFy);
++            return false;
++          }
+           final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
++          if (serverVer >= 99999) {
++            markPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, effFy);
++            return false;
++          }
+           if (serverVer > 0) {
+             recordPurchaseKnownVersion(
+               purchase.id,
+@@ -425,9 +453,10 @@ class D1SalesLedgerService {
+               purchase.billNo,
+               serverVer,
+               purchase.internalNo,
++              effFy,
+             );
+             purchase.version = serverVer + 1;
+-            return await onPurchaseSaved(purchase, storeToken, isUpdate: true, clientSource: clientSource);
++            return await onPurchaseSaved(purchase, storeToken, isUpdate: true, clientSource: clientSource, fy: effFy);
+           }
+         } catch (_) {}
+       }
+@@ -617,11 +646,18 @@ class D1SalesLedgerService {
+           }
+           return true;
+         }
++      } else if (res.statusCode == 410) {
++        markPermanentlyDeleted(sale.id, sale.billNo);
++        return false;
+       } else if (res.statusCode == 409) {
+         debugPrint("⚠ [D1SalesLedger] OCC Conflict: Bill modified elsewhere. Initiating Enterprise Auto-Rebase...");
+         try {
+           final data = jsonDecode(res.body);
+           final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
++          if (data["status"] == "DELETED" || serverVer >= 99999) {
++            markPermanentlyDeleted(sale.id, sale.billNo);
++            return false;
++          }
+           if (serverVer > 0) {
+             recordKnownVersion(sale.id, sale.billNo, serverVer);
+             sale.version = serverVer + 1;
+@@ -757,35 +793,60 @@ class D1SalesLedgerService {
+   /// 2. DELTA SYNC PULL & LOCAL MERGE
+   /// =========================================================================
+ 
+-  /// Pulls all sequential mutations committed after sinceSeq
+-  static Future<List<Map<String, dynamic>>> fetchSaleDeltas(
++  /// Commits highest processed D1 seq cursor ONLY after caller has persisted mutations/tombstones.
++  static Future<void> commitSaleDeltaSeq(String storeToken, int seq) async {
++    if (storeToken.trim().isEmpty || seq <= 0) return;
++    await _updateHighestLocalSeq(storeToken, seq);
++  }
++
++  /// Pulls sequential mutations committed after sinceSeq without advancing local cursor prematurely.
++  static Future<({List<Map<String, dynamic>> events, int maxSeq})> fetchSaleDeltasWithCursor(
+     String storeToken, {
+     int? customSinceSeq,
+   }) async {
+-    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return [];
++    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) {
++      return (events: <Map<String, dynamic>>[], maxSeq: 0);
++    }
+ 
++    int cursor = customSinceSeq ?? await getLatestLocalSeq(storeToken);
++    int highestMaxSeq = cursor;
++    final List<Map<String, dynamic>> allEvents = [];
+     try {
+-      final sinceSeq = customSinceSeq ?? await getLatestLocalSeq(storeToken);
+-      final uri = Uri.parse("$endpoint?storeToken=${Uri.encodeComponent(storeToken.trim().toUpperCase())}&since_seq=$sinceSeq");
+-
+-      final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+-      if (res.statusCode == 200) {
++      for (int page = 0; page < 5; page++) {
++        final uri = Uri.parse("$endpoint?storeToken=${Uri.encodeComponent(storeToken.trim().toUpperCase())}&since_seq=$cursor");
++        final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
++        if (res.statusCode != 200) break;
+         final data = jsonDecode(res.body);
+-        if (data["status"] == "SUCCESS" && data["events"] is List) {
+-          final List<Map<String, dynamic>> events = 
+-              List<Map<String, dynamic>>.from(data["events"]);
+-          
+-          if (events.isNotEmpty && data["max_seq"] != null) {
+-            final int mSeq = data["max_seq"];
+-            await _updateHighestLocalSeq(storeToken, mSeq);
+-          }
+-          return events;
++        if (data["status"] != "SUCCESS" || data["events"] is! List) break;
++        final List<Map<String, dynamic>> pageEvents =
++            List<Map<String, dynamic>>.from(data["events"]);
++        if (pageEvents.isEmpty) break;
++        allEvents.addAll(pageEvents);
++        final int? mSeq = int.tryParse(data["max_seq"]?.toString() ?? '');
++        if (mSeq != null && mSeq > highestMaxSeq) {
++          highestMaxSeq = mSeq;
++          cursor = mSeq;
++        } else {
++          break;
+         }
++        if (pageEvents.length < 250) break;
+       }
+     } catch (e) {
+-      debugPrint("⚠ [D1SalesLedger] fetchSaleDeltas Error: $e");
++      debugPrint("⚠ [D1SalesLedger] fetchSaleDeltasWithCursor Error: $e");
+     }
+-    return [];
++    return (events: allEvents, maxSeq: highestMaxSeq);
++  }
++
++  /// Pulls all sequential mutations committed after sinceSeq
++  static Future<List<Map<String, dynamic>>> fetchSaleDeltas(
++    String storeToken, {
++    int? customSinceSeq,
++  }) async {
++    final res = await fetchSaleDeltasWithCursor(storeToken, customSinceSeq: customSinceSeq);
++    if (res.events.isNotEmpty && res.maxSeq > 0) {
++      await commitSaleDeltaSeq(storeToken, res.maxSeq);
++    }
++    return res.events;
+   }
+ 
+   /// Merges incoming edge events into local Sales memory list
+@@ -969,13 +1030,17 @@ class D1SalesLedgerService {
+         continue;
+       }
+ 
+-      if (action == "DELETE" || action.startsWith("DELETE_")) {
++      final bool payloadIsDeleted = rawData is Map &&
++          ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
++           rawData["status"] == "Deleted");
++      if (action == "DELETE" || action.startsWith("DELETE_") || payloadIsDeleted) {
+         final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
+         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
+         final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
+         final bool hasActiveNewPur = localPurchases.any((p) => p.id != billId && intNo.isNotEmpty && p.internalNo.trim().toUpperCase() == intNo && p.isDeleted != 1);
+         if (billId.isNotEmpty) {
+           markPermanentlyDeleted(billId, "", "", effFy);
++          recordPurchaseKnownVersion(billId, partyId, pBillNo, version > 99999 ? version : 999999, intNo, effFy);
+         }
+         if (!hasActiveNewPur && (isPurchasePayload || intNo.isNotEmpty || partyId.isNotEmpty)) {
+           markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo, effFy);
+@@ -998,6 +1063,19 @@ class D1SalesLedgerService {
+         if (!doesEventBelongToActiveFY(rawData, incomingPur.date, effFy)) {
+           continue;
+         }
++        if (isPurchaseDeleted(incomingPur.id, incomingPur.partyId, incomingPur.billNo, incomingPur.internalNo, effFy)) {
++          continue;
++        }
++        final int knownVer = getPurchaseKnownVersion(
++          incomingPur.id,
++          incomingPur.partyId,
++          incomingPur.billNo,
++          incomingPur.internalNo,
++          effFy,
++        );
++        if (knownVer >= 99999 || version < knownVer) {
++          continue;
++        }
+         unmarkPurchasePermanentlyDeleted(
+           incomingPur.id,
+           incomingPur.partyId,
+diff --git a/lib/sync_core/modules/batch_delta_merge_module.dart b/lib/sync_core/modules/batch_delta_merge_module.dart
+index 537ffa7..e7cc20b 100644
+--- a/lib/sync_core/modules/batch_delta_merge_module.dart
++++ b/lib/sync_core/modules/batch_delta_merge_module.dart
+@@ -17,14 +17,24 @@ class BatchDeltaMergeModule {
+   static bool isBatchTombstoned({
+     required String productKey,
+     required String batchNo,
++    String exp = '',
++    double mrp = 0.0,
++    double purRate = 0.0,
+     Iterable<String>? tombstones,
+     Map<String, int>? registry,
+   }) {
+     final cleanMed = productKey.trim();
+     final cleanBatch = batchNo.trim().toUpperCase();
+-    if (cleanMed.isEmpty || cleanBatch.isEmpty) return false;
++    if (cleanMed.isEmpty) return false;
+ 
+-    final syncId = BatchSyncModule.getBatchSyncId(cleanMed, cleanBatch);
++    final syncId = BatchSyncModule.getBatchSyncId(
++      cleanMed,
++      cleanBatch,
++      exp: exp,
++      mrp: mrp,
++      purRate: purRate,
++    );
++    final upperSyncId = syncId.toUpperCase();
+ 
+     // 1. D1 Sales Ledger Edge Gravestones
+     if (D1SalesLedgerService.isBillDeleted(syncId, cleanBatch, cleanMed)) {
+@@ -34,8 +44,8 @@ class BatchDeltaMergeModule {
+     // 2. High-precision Epoch Tombstone Registry
+     if (registry != null) {
+       if (registry.containsKey(syncId) ||
+-          registry.containsKey(syncId.toUpperCase()) ||
+-          registry.containsKey(cleanBatch)) {
++          registry.containsKey(upperSyncId) ||
++          (cleanBatch.isNotEmpty && registry.containsKey(cleanBatch))) {
+         return true;
+       }
+     }
+@@ -44,7 +54,7 @@ class BatchDeltaMergeModule {
+     if (tombstones != null) {
+       for (final t in tombstones) {
+         final upperT = t.trim().toUpperCase();
+-        if (upperT == syncId || upperT == cleanBatch) {
++        if (upperT == upperSyncId || (cleanBatch.isNotEmpty && upperT == cleanBatch)) {
+           return true;
+         }
+       }
+@@ -64,12 +74,18 @@ class BatchDeltaMergeModule {
+ 
+     batchHistory.forEach((medKey, list) {
+       final beforeLen = list.length;
+-      list.removeWhere((b) => isBatchTombstoned(
+-        productKey: medKey,
+-        batchNo: b.batch,
+-        tombstones: tombstones,
+-        registry: registry,
+-      ));
++      list.removeWhere((b) {
++        final bPur = b.purRate > 0 ? b.purRate : b.rate;
++        return isBatchTombstoned(
++          productKey: medKey,
++          batchNo: b.batch,
++          exp: b.exp,
++          mrp: b.mrp,
++          purRate: bPur,
++          tombstones: tombstones,
++          registry: registry,
++        );
++      });
+       purgedCount += (beforeLen - list.length);
+       if (list.isEmpty) {
+         keysToRemove.add(medKey);
+@@ -134,20 +150,34 @@ class BatchDeltaMergeModule {
+         if (rawItem is! Map) continue;
+         final itemMap = Map<String, dynamic>.from(rawItem);
+         final batchNo = (itemMap['batch'] ?? "").toString().trim().toUpperCase();
++        final incomingBatch = BatchInfo.fromMap(itemMap);
++        final double incPur = incomingBatch.purRate > 0 ? incomingBatch.purRate : incomingBatch.rate;
+ 
+-        // 🛡️ Tombstone Guard: Do NOT resurrect deleted batches!
+-        if (batchNo.isNotEmpty && isBatchTombstoned(
++        // 🛡️ Tombstone Guard: Do NOT resurrect deleted batches (named or distinct empty-batch lots)!
++        if (isBatchTombstoned(
+           productKey: cleanMedKey,
+           batchNo: batchNo,
++          exp: incomingBatch.exp,
++          mrp: incomingBatch.mrp,
++          purRate: incPur,
+           tombstones: tombstones,
+           registry: registry,
+         )) {
+-          existingList.removeWhere((b) => b.batch.trim().toUpperCase() == batchNo);
++          if (batchNo.isNotEmpty) {
++            existingList.removeWhere((b) => b.batch.trim().toUpperCase() == batchNo);
++          } else {
++            final idxToDel = InventoryLogicCenter.findMatchingBatchIndex(
++              existingList,
++              batchNo: '',
++              exp: incomingBatch.exp,
++              mrp: incomingBatch.mrp,
++              purRate: incPur,
++              exactEmptyBatchLot: true,
++            );
++            if (idxToDel != -1) existingList.removeAt(idxToDel);
++          }
+           continue;
+         }
+-
+-        final incomingBatch = BatchInfo.fromMap(itemMap);
+-        final double incPur = incomingBatch.purRate > 0 ? incomingBatch.purRate : incomingBatch.rate;
+         final idx = InventoryLogicCenter.findMatchingBatchIndex(
+           existingList,
+           batchNo: batchNo,
+@@ -276,17 +306,19 @@ class BatchDeltaMergeModule {
+         for (final item in list) {
+           if (item is Map) {
+             final batchNo = (item['batch'] ?? "").toString().trim().toUpperCase();
+-            if (batchNo.isEmpty) {
+-              validBatches.add(item);
+-              continue;
+-            }
++            final itemMap = Map<String, dynamic>.from(item);
++            final parsed = BatchInfo.fromMap(itemMap);
++            final double pPur = parsed.purRate > 0 ? parsed.purRate : parsed.rate;
+             if (isBatchTombstoned(
+               productKey: cleanMedKey,
+               batchNo: batchNo,
++              exp: parsed.exp,
++              mrp: parsed.mrp,
++              purRate: pPur,
+               tombstones: tombstones,
+               registry: registry,
+             )) {
+-              continue; // Drop tombstoned batch
++              continue; // Drop tombstoned batch or specific empty-batch lot
+             }
+             validBatches.add(item);
+           }
+diff --git a/lib/sync_core/modules/purchase_sync_module.dart b/lib/sync_core/modules/purchase_sync_module.dart
+index fe8e2fc..1b73fca 100644
+--- a/lib/sync_core/modules/purchase_sync_module.dart
++++ b/lib/sync_core/modules/purchase_sync_module.dart
+@@ -63,7 +63,7 @@ class PurchaseSyncModule {
+     return currentUIStateList;
+   }
+ 
+-  static bool mergeIncomingPurchaseEnvelope(List<Purchase> currentPurchases, SyncEnvelope envelope) {
++  static bool mergeIncomingPurchaseEnvelope(List<Purchase> currentPurchases, SyncEnvelope envelope, {String? fy}) {
+     if (envelope.documentType != documentType) return false;
+     final targetId = envelope.syncId.trim();
+     if (targetId.isEmpty) return false;
+@@ -72,9 +72,9 @@ class PurchaseSyncModule {
+     incomingPurchase.id = targetId;
+     incomingPurchase.version = envelope.version;
+     incomingPurchase.updatedAt = envelope.updatedAt;
+-    incomingPurchase.isDeleted = envelope.isDeleted;
++    incomingPurchase.isDeleted = (envelope.isDeleted == 1 || envelope.action == 'DELETE') ? 1 : 0;
+ 
+-    return applyPurchaseMutation(currentPurchases, incomingPurchase);
++    return applyPurchaseMutation(currentPurchases, incomingPurchase, fy: fy);
+   }
+ 
+   static bool _sameSupplierInvoice(Purchase a, Purchase b) {
+@@ -87,7 +87,10 @@ class PurchaseSyncModule {
+         aParty == bParty && aBill == bBill;
+   }
+ 
+-  static bool applyPurchaseMutation(List<Purchase> currentPurchases, Purchase incoming) {
++  static bool applyPurchaseMutation(List<Purchase> currentPurchases, Purchase incoming, {String? fy}) {
++    final String effFy = (fy != null && fy.trim().isNotEmpty)
++        ? fy.trim()
++        : D1SalesLedgerService.activeFinancialYear.trim();
+     final cleanIntNo = incoming.internalNo.trim().toUpperCase();
+     final hasSupplierInvoice = incoming.partyId.trim().isNotEmpty && incoming.billNo.trim().isNotEmpty;
+ 
+@@ -118,11 +121,20 @@ class PurchaseSyncModule {
+         incoming.partyId,
+         incoming.billNo,
+         incoming.internalNo,
++        effFy,
++      );
++      D1SalesLedgerService.recordPurchaseKnownVersion(
++        incoming.id,
++        incoming.partyId,
++        incoming.billNo,
++        999999,
++        incoming.internalNo,
++        effFy,
+       );
+       if (idx == -1) return false;
+       final local = currentPurchases[idx];
+       if (incoming.updatedAt < local.updatedAt &&
+-          incoming.version <= local.version && incoming.updatedAt != 0) {
++          incoming.version < local.version && incoming.updatedAt != 0) {
+         return false;
+       }
+       currentPurchases.removeAt(idx);
+@@ -130,25 +142,31 @@ class PurchaseSyncModule {
+       return true;
+     }
+ 
+-    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(
++    if (D1SalesLedgerService.isPurchaseDeleted(
+       incoming.id,
+       incoming.partyId,
+       incoming.billNo,
+       incoming.internalNo,
+-    );
+-    D1SalesLedgerService.recordPurchaseKnownVersion(
++      effFy,
++    )) {
++      return false;
++    }
++    final int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(
+       incoming.id,
+       incoming.partyId,
+       incoming.billNo,
+-      incoming.version,
+       incoming.internalNo,
++      effFy,
+     );
++    if (knownVer >= 99999 || incoming.version < knownVer) {
++      return false;
++    }
+ 
+     if (idx != -1) {
+       final local = currentPurchases[idx];
+       if (incoming.id == local.id &&
+-          incoming.version < local.version &&
+-          incoming.updatedAt < local.updatedAt) {
++          (incoming.version < local.version ||
++           (incoming.version == local.version && incoming.updatedAt > 0 && local.updatedAt > 0 && incoming.updatedAt < local.updatedAt))) {
+         return false;
+       }
+       currentPurchases[idx] = incoming;
+@@ -156,6 +174,22 @@ class PurchaseSyncModule {
+       currentPurchases.insert(0, incoming);
+     }
+ 
++    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(
++      incoming.id,
++      incoming.partyId,
++      incoming.billNo,
++      incoming.internalNo,
++      effFy,
++    );
++    D1SalesLedgerService.recordPurchaseKnownVersion(
++      incoming.id,
++      incoming.partyId,
++      incoming.billNo,
++      incoming.version,
++      incoming.internalNo,
++      effFy,
++    );
++
+     // Deduplicate strictly on immutable ID (or legacy empty-ID composite key)
+     currentPurchases.removeWhere((p) =>
+         !identical(p, incoming) &&
+diff --git a/lib/sync_core/multi_fy_cloud_vault.dart b/lib/sync_core/multi_fy_cloud_vault.dart
+index e9bdf86..1728ccf 100644
+--- a/lib/sync_core/multi_fy_cloud_vault.dart
++++ b/lib/sync_core/multi_fy_cloud_vault.dart
+@@ -596,6 +596,8 @@ class MultiFyCloudVault {
+                   final bool batsChanged = BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
+                     targetBatchHistory: locBatches,
+                     incomingJson: cldMapRaw,
++                    tombstones: localTombstones,
++                    registry: localRegistry,
+                   );
+                   if (batsChanged) {
+                     await targetFile.writeAsString(
+diff --git a/lib/sync_core/orchestrator/master_sync_orchestrator.dart b/lib/sync_core/orchestrator/master_sync_orchestrator.dart
+index 0a21999..987f89f 100644
+--- a/lib/sync_core/orchestrator/master_sync_orchestrator.dart
++++ b/lib/sync_core/orchestrator/master_sync_orchestrator.dart
+@@ -129,11 +129,13 @@ class MasterSyncOrchestrator {
+           break;
+         case 'PURCHASE':
+           final billData = envelope.billData;
+-          final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
++          final String bNo = (billData['billNo'] ?? '').toString().trim();
+           final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
+           final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
+           final String comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+           final String comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
++          final String comp2Upper = comp2.isNotEmpty ? comp2.toUpperCase() : "";
++          final String comp3Upper = comp3.isNotEmpty ? comp3.toUpperCase() : "";
+           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+             D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
+             if (phApp.activeCompany != null) {
+@@ -142,8 +144,15 @@ class MasterSyncOrchestrator {
+                 if (iNo.isNotEmpty) iNo,
+                 if (comp2.isNotEmpty) comp2,
+                 if (comp3.isNotEmpty) comp3,
++                if (comp2Upper.isNotEmpty && comp2Upper != comp2) comp2Upper,
++                if (comp3Upper.isNotEmpty && comp3Upper != comp3) comp3Upper,
+               ];
+-              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, delKeys);
++              TombstoneEngine.recordBatchTombstones(
++                phApp.activeCompany!.id,
++                delKeys,
++                timestamp: envelope.updatedAt > 0 ? envelope.updatedAt : null,
++                fy: targetFy,
++              );
+             }
+             // 🔄 Cross-Platform Revert: linked purchase challans back to Pending
+             final Set<String> targetPurCids = {};
+@@ -175,16 +184,35 @@ class MasterSyncOrchestrator {
+               phApp.notifyListeners();
+             }
+           } else {
++            if (D1SalesLedgerService.isPurchaseDeleted(envelope.syncId, pId, bNo, iNo, targetFy)) {
++              break;
++            }
++            int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(envelope.syncId, pId, bNo, iNo, targetFy);
++            int localUpd = 0;
++            for (final p in phApp.purchases) {
++              if (p.id == envelope.syncId || (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo)) {
++                if (p.version > knownVer) knownVer = p.version;
++                if (p.updatedAt > localUpd) localUpd = p.updatedAt;
++              }
++            }
++            if (envelope.version < knownVer && (envelope.updatedAt == 0 || envelope.updatedAt < localUpd)) {
++              break;
++            }
+             D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
+             if (phApp.activeCompany != null) {
+               final cid = phApp.activeCompany!.id;
+-              TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: comp3.isNotEmpty ? comp3 : comp2);
+-              if (iNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: iNo);
+-              if (comp2.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2);
+-              if (bNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: bNo);
+-            }
+-          }
+-          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope);
++              TombstoneEngine.unmarkTombstoneWithTimestamp(
++                cid,
++                id: envelope.syncId,
++                secondaryKey: comp3.isNotEmpty ? comp3 : comp2,
++                fy: targetFy,
++              );
++              if (iNo.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: iNo, fy: targetFy);
++              if (comp2.isNotEmpty) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2, fy: targetFy);
++              if (comp2Upper.isNotEmpty && comp2Upper != comp2) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2Upper, fy: targetFy);
++            }
++          }
++          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope, fy: targetFy);
+           break;
+         case 'CHALLAN':
+         case 'SALE_CHALLAN':
+@@ -312,30 +340,93 @@ class MasterSyncOrchestrator {
+           final bData = envelope.billData;
+           final String medKey = (bData['medKey'] ?? '').toString().trim();
+           final dynamic rawBatch = bData['batch'];
+-          final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
++          final String rawBNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim();
++          final String bNo = rawBNo.toUpperCase();
++          final String batchExp = (rawBatch is Map ? (rawBatch['exp'] ?? '') : '').toString().trim();
++          final double batchMrp = double.tryParse((rawBatch is Map ? rawBatch['mrp'] : 0)?.toString() ?? '0') ?? 0.0;
++          final double batchPurRate = double.tryParse((rawBatch is Map ? rawBatch['purchaseRate'] : 0)?.toString() ?? '0') ?? 0.0;
++          final String canonicalSyncId = BatchSyncModule.getBatchSyncId(
++            medKey,
++            rawBNo,
++            exp: batchExp,
++            mrp: batchMrp,
++            purRate: batchPurRate,
++          );
+           final String batchEnvFy = (bData['fy'] ?? (rawBatch is Map ? rawBatch['fy'] : '') ?? '').toString().trim();
+           if (batchEnvFy.isNotEmpty && targetFy.isNotEmpty && batchEnvFy != targetFy &&
+               (envelope.isDeleted == 1 || envelope.action == 'DELETE')) {
+             break;
+           }
+           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
++            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
++            if (canonicalSyncId != envelope.syncId) {
++              D1SalesLedgerService.markPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
++            }
+             if (phApp.activeCompany != null) {
+-              TombstoneEngine.recordBatchTombstones(phApp.activeCompany!.id, [envelope.syncId, if (bNo.isNotEmpty) bNo]);
++              TombstoneEngine.recordBatchTombstones(
++                phApp.activeCompany!.id,
++                [
++                  envelope.syncId,
++                  if (canonicalSyncId != envelope.syncId) canonicalSyncId,
++                  if (bNo.isNotEmpty) bNo,
++                ],
++                fy: targetFy,
++              );
+             }
+             if (phApp.batchHistory.containsKey(medKey)) {
+-              final beforeLen = phApp.batchHistory[medKey]!.length;
+-              phApp.batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
+-              mutated = phApp.batchHistory[medKey]!.length != beforeLen;
++              final list = phApp.batchHistory[medKey]!;
++              final beforeLen = list.length;
++              if (bNo.isNotEmpty) {
++                list.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
++              } else {
++                final int matchIdx = InventoryLogicCenter.findMatchingBatchIndex(
++                  list,
++                  batchNo: rawBNo,
++                  exp: batchExp,
++                  mrp: batchMrp,
++                  purRate: batchPurRate,
++                  exactEmptyBatchLot: true,
++                );
++                if (matchIdx != -1) {
++                  list.removeAt(matchIdx);
++                } else {
++                  list.removeWhere((b) =>
++                      b.batch.trim().isEmpty &&
++                      BatchSyncModule.getBatchSyncId(
++                        medKey,
++                        b.batch,
++                        exp: b.exp,
++                        mrp: b.mrp,
++                        purRate: b.purRate,
++                      ) == envelope.syncId);
++                }
++              }
++              mutated = list.length != beforeLen;
+             }
+           } else {
+-            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey);
++            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
++            if (canonicalSyncId != envelope.syncId) {
++              D1SalesLedgerService.unmarkPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
++            }
+             if (phApp.activeCompany != null) {
+-              TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: bNo);
++              TombstoneEngine.unmarkTombstoneWithTimestamp(
++                phApp.activeCompany!.id,
++                id: envelope.syncId,
++                secondaryKey: bNo.isNotEmpty ? bNo : null,
++                fy: targetFy,
++              );
+             }
+             mutated = BatchSyncModule.mergeIncomingBatchEnvelope(phApp.batchHistory, envelope);
+           }
+           if (mutated) {
++            InventoryLogicCenter.rebuildAllInventory(
++              medicines: phApp.medicines,
++              batchHistory: phApp.batchHistory,
++              purchases: phApp.purchases,
++              sales: phApp.sales,
++              saleReturns: phApp.saleReturns,
++              purchaseReturns: phApp.purchaseReturns,
++            );
+             phApp.save();
+             phApp.notifyListeners();
+           }
+@@ -498,11 +589,13 @@ class MasterSyncOrchestrator {
+           break;
+         case 'PURCHASE':
+           final billData = envelope.billData;
+-          final String bNo = (billData['billNo'] ?? '').toString().trim().toUpperCase();
++          final String bNo = (billData['billNo'] ?? '').toString().trim();
+           final String pId = (billData['partyId'] ?? '').toString().trim().toUpperCase();
+           final String iNo = (billData['internalNo'] ?? '').toString().trim().toUpperCase();
+           final String comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
+           final String comp3 = (pId.isNotEmpty && bNo.isNotEmpty && iNo.isNotEmpty) ? "${pId}_${bNo}_$iNo" : "";
++          final String comp2Upper = comp2.isNotEmpty ? comp2.toUpperCase() : "";
++          final String comp3Upper = comp3.isNotEmpty ? comp3.toUpperCase() : "";
+           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+             D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
+             final List<String> delList = [
+@@ -510,6 +603,8 @@ class MasterSyncOrchestrator {
+               if (iNo.isNotEmpty) iNo,
+               if (comp2.isNotEmpty) comp2,
+               if (comp3.isNotEmpty) comp3,
++              if (comp2Upper.isNotEmpty && comp2Upper != comp2) comp2Upper,
++              if (comp3Upper.isNotEmpty && comp3Upper != comp3) comp3Upper,
+             ];
+             phWeb.purgeDeletedIds(delList);
+             // 🔄 Cross-Platform Revert: linked purchase challans back to Pending
+@@ -541,24 +636,26 @@ class MasterSyncOrchestrator {
+               phWeb.notifyListeners();
+             }
+           } else {
+-            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
+-            final List<String> unmList = [
+-              envelope.syncId,
+-              if (iNo.isNotEmpty) iNo,
+-              if (bNo.isNotEmpty) bNo,
+-              if (comp2.isNotEmpty) comp2,
+-              if (comp3.isNotEmpty) comp3,
+-            ];
+-            for (final k in unmList) {
+-              phWeb.deletedRecordIds.remove(k);
+-              phWeb.deletedRecordIds.remove(k.toUpperCase());
+-              phWeb.localTombstoneRegistry.remove(k);
+-              phWeb.localTombstoneRegistry.remove(k.toUpperCase());
+-              phWeb.unmarkedRecordIds.add(k);
+-              phWeb.unmarkedRecordIds.add(k.toUpperCase());
++            if (D1SalesLedgerService.isPurchaseDeleted(envelope.syncId, pId, bNo, iNo, targetFy)) {
++              break;
++            }
++            int knownVer = D1SalesLedgerService.getPurchaseKnownVersion(envelope.syncId, pId, bNo, iNo, targetFy);
++            int localUpd = 0;
++            for (final p in phWeb.purchases) {
++              if (p.id == envelope.syncId || (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo)) {
++                if (p.version > knownVer) knownVer = p.version;
++                if (p.updatedAt > localUpd) localUpd = p.updatedAt;
++              }
++            }
++            if (envelope.version < knownVer && (envelope.updatedAt == 0 || envelope.updatedAt < localUpd)) {
++              break;
+             }
++            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, targetFy);
++            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: iNo.isNotEmpty ? iNo : null);
++            if (comp2.isNotEmpty) phWeb.unmarkDeletedId(comp2, preserveCase: true);
++            if (comp3.isNotEmpty) phWeb.unmarkDeletedId(comp3, preserveCase: true);
+           }
+-          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope);
++          mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope, fy: targetFy);
+           break;
+         case 'CHALLAN':
+         case 'SALE_CHALLAN':
+@@ -651,23 +748,69 @@ class MasterSyncOrchestrator {
+           final bData = envelope.billData;
+           final String medKey = (bData['medKey'] ?? '').toString().trim();
+           final dynamic rawBatch = bData['batch'];
+-          final String bNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim().toUpperCase();
++          final String rawBNo = (rawBatch is Map ? (rawBatch['batch'] ?? '') : '').toString().trim();
++          final String bNo = rawBNo.toUpperCase();
++          final String batchExp = (rawBatch is Map ? (rawBatch['exp'] ?? '') : '').toString().trim();
++          final double batchMrp = double.tryParse((rawBatch is Map ? rawBatch['mrp'] : 0)?.toString() ?? '0') ?? 0.0;
++          final double batchPurRate = double.tryParse((rawBatch is Map ? rawBatch['purchaseRate'] : 0)?.toString() ?? '0') ?? 0.0;
++          final String canonicalSyncId = BatchSyncModule.getBatchSyncId(
++            medKey,
++            rawBNo,
++            exp: batchExp,
++            mrp: batchMrp,
++            purRate: batchPurRate,
++          );
+           final String batchEnvFy = (bData['fy'] ?? (rawBatch is Map ? rawBatch['fy'] : '') ?? '').toString().trim();
+           if (batchEnvFy.isNotEmpty && targetFy.isNotEmpty && batchEnvFy != targetFy &&
+               (envelope.isDeleted == 1 || envelope.action == 'DELETE')) {
+             break;
+           }
+           if (envelope.isDeleted == 1 || envelope.action == 'DELETE') {
+-            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey);
+-            phWeb.purgeDeletedIds([envelope.syncId, if (bNo.isNotEmpty) bNo]);
++            D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
++            if (canonicalSyncId != envelope.syncId) {
++              D1SalesLedgerService.markPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
++            }
++            phWeb.purgeDeletedIds([
++              envelope.syncId,
++              if (canonicalSyncId != envelope.syncId) canonicalSyncId,
++              if (bNo.isNotEmpty) bNo,
++            ]);
+             if (phWeb.batchHistory.containsKey(medKey)) {
+-              final beforeLen = phWeb.batchHistory[medKey]!.length;
+-              phWeb.batchHistory[medKey]!.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
+-              mutated = phWeb.batchHistory[medKey]!.length != beforeLen;
++              final list = phWeb.batchHistory[medKey]!;
++              final beforeLen = list.length;
++              if (bNo.isNotEmpty) {
++                list.removeWhere((b) => b.batch.trim().toUpperCase() == bNo);
++              } else {
++                final int matchIdx = InventoryLogicCenter.findMatchingBatchIndex(
++                  list,
++                  batchNo: rawBNo,
++                  exp: batchExp,
++                  mrp: batchMrp,
++                  purRate: batchPurRate,
++                  exactEmptyBatchLot: true,
++                );
++                if (matchIdx != -1) {
++                  list.removeAt(matchIdx);
++                } else {
++                  list.removeWhere((b) =>
++                      b.batch.trim().isEmpty &&
++                      BatchSyncModule.getBatchSyncId(
++                        medKey,
++                        b.batch,
++                        exp: b.exp,
++                        mrp: b.mrp,
++                        purRate: b.purRate,
++                      ) == envelope.syncId);
++                }
++              }
++              mutated = list.length != beforeLen;
+             }
+           } else {
+-            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey);
+-            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo);
++            D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, medKey, targetFy);
++            if (canonicalSyncId != envelope.syncId) {
++              D1SalesLedgerService.unmarkPermanentlyDeleted(canonicalSyncId, bNo, medKey, targetFy);
++            }
++            phWeb.unmarkDeletedId(envelope.syncId, referenceNo: bNo.isNotEmpty ? bNo : null);
+             mutated = BatchSyncModule.mergeIncomingBatchEnvelope(phWeb.batchHistory, envelope);
+           }
+           if (mutated) {
+diff --git a/lib/sync_core/outbox/sync_queue_manager.dart b/lib/sync_core/outbox/sync_queue_manager.dart
+index 9465be2..2296114 100644
+--- a/lib/sync_core/outbox/sync_queue_manager.dart
++++ b/lib/sync_core/outbox/sync_queue_manager.dart
+@@ -16,6 +16,7 @@ class SyncQueueManager {
+   static final List<SyncEnvelope> _outboxBufferQueue = [];
+   static Timer? _debounceTimer;
+   static bool _isFlushing = false;
++  static Future<bool>? _inFlightFlush;
+   static int _sequenceCounter = 100;
+   static String _deviceId = 'MREG-DEVICE-${DateTime.now().millisecondsSinceEpoch % 10000}';
+   static const String edgeSignalEndpoint = "https://pharoah-erp.pages.dev/api/lab_signal";
+@@ -70,57 +71,89 @@ class SyncQueueManager {
+     });
+   }
+ 
+-  /// Flushes all pending outbox envelopes as an aggregated atomic Step 4 JSON batch
++  /// Flushes all pending outbox envelopes as an aggregated atomic Step 4 JSON batch.
++  /// Coalesces concurrent flush callers onto the active future and drains any operations
++  /// enqueued mid-flight (such as rapid 10-12 delete bursts) before completing.
+   static Future<bool> flushOutboxAsJSONBatch() async {
+-    if (_outboxBufferQueue.isEmpty || _isFlushing) return false;
++    if (_inFlightFlush != null) {
++      final prevOk = await _inFlightFlush!;
++      if (_outboxBufferQueue.isEmpty) return prevOk;
++    }
++    if (_outboxBufferQueue.isEmpty) return true;
++    final completer = Completer<bool>();
++    _inFlightFlush = completer.future;
+     _isFlushing = true;
++    bool allSucceeded = true;
+ 
+-    final List<SyncEnvelope> batchPayload = List.from(_outboxBufferQueue);
+-    _outboxBufferQueue.clear();
+-    final String token = batchPayload.first.storeToken;
+-    final Map<String, dynamic> body = {
+-      "device_id": _deviceId,
+-      "storeToken": token,
+-      "source": "OUTBOX_BATCH",
+-      "action": "JSON_BATCH_MUTATION",
+-      "batch_timestamp": DateTime.now().toUtc().toIso8601String(),
+-      "operations": batchPayload.map((e) => e.toMap()).toList(),
+-    };
+-
+-    bool succeeded = false;
+     try {
+-      final response = await http.post(
+-        Uri.parse(edgeSignalEndpoint),
+-        headers: {"Content-Type": "application/json"},
+-        body: jsonEncode(body),
+-      ).timeout(const Duration(seconds: 6));
+-
+-      if (response.statusCode == 200) {
+-        debugPrint("⚡ [SyncQueueManager] Successfully flushed Step 4 batch of ${batchPayload.length} operations to D1!");
+-        succeeded = true;
+-      } else {
+-        debugPrint("⚠ [SyncQueueManager] Server returned status ${response.statusCode}. Restoring to buffer.");
++      while (_outboxBufferQueue.isNotEmpty) {
++        final List<SyncEnvelope> batchPayload = List.from(_outboxBufferQueue);
++        _outboxBufferQueue.clear();
++        final String token = batchPayload.first.storeToken;
++        final Map<String, dynamic> body = {
++          "device_id": _deviceId,
++          "storeToken": token,
++          "source": "OUTBOX_BATCH",
++          "action": "JSON_BATCH_MUTATION",
++          "batch_timestamp": DateTime.now().toUtc().toIso8601String(),
++          "operations": batchPayload.map((e) => e.toMap()).toList(),
++        };
++
++        bool succeeded = false;
++        try {
++          final response = await http.post(
++            Uri.parse(edgeSignalEndpoint),
++            headers: {"Content-Type": "application/json"},
++            body: jsonEncode(body),
++          ).timeout(const Duration(seconds: 6));
++
++          if (response.statusCode == 200) {
++            debugPrint("⚡ [SyncQueueManager] Successfully flushed Step 4 batch of ${batchPayload.length} operations to D1!");
++            succeeded = true;
++          } else {
++            debugPrint("⚠ [SyncQueueManager] Server returned status ${response.statusCode}. Restoring to buffer.");
++          }
++        } catch (e) {
++          debugPrint("⚠ [SyncQueueManager] Batch flush error: $e. Restoring to buffer for retry.");
++        }
++        if (!succeeded) {
++          allSucceeded = false;
++          final Set<String> newerIds = _outboxBufferQueue.map((e) => e.syncId).toSet();
++          final List<SyncEnvelope> toRestore = batchPayload.where((e) => !newerIds.contains(e.syncId)).toList();
++          if (toRestore.isNotEmpty) {
++            _outboxBufferQueue.insertAll(0, toRestore);
++          }
++          break;
++        }
+       }
+-    } catch (e) {
+-      debugPrint("⚠ [SyncQueueManager] Batch flush error: $e. Restoring to buffer for retry.");
+     } finally {
+-      if (!succeeded) {
+-        // Preserve retry data ahead of mutations queued while the request was in flight.
+-        _outboxBufferQueue.insertAll(0, batchPayload);
+-      }
+       _isFlushing = false;
+-
+-      // An enqueue can happen while the HTTP request is in flight. Its debounce
+-      // timer may fire while _isFlushing is true and return early; always schedule
+-      // another flush once the current request finishes if anything remains queued.
++      if (identical(_inFlightFlush, completer.future)) {
++        _inFlightFlush = null;
++      }
++      if (!completer.isCompleted) {
++        completer.complete(allSucceeded);
++      }
+       if (_outboxBufferQueue.isNotEmpty) {
+         _debounceTimer?.cancel();
+-        _debounceTimer = Timer(const Duration(milliseconds: 100), () {
++        _debounceTimer = Timer(const Duration(milliseconds: 150), () {
+           flushOutboxAsJSONBatch();
+         });
+       }
+     }
+-    return succeeded;
++    return allSucceeded;
++  }
++
++  /// Test/Diagnostic helper to return snapshot of queued operations
++  static List<SyncEnvelope> debugPendingOperations() => List.unmodifiable(_outboxBufferQueue);
++
++  /// Test/Diagnostic helper to clear outbox state cleanly between tests
++  static void debugReset() {
++    _debounceTimer?.cancel();
++    _debounceTimer = null;
++    _outboxBufferQueue.clear();
++    _isFlushing = false;
++    _inFlightFlush = null;
+   }
+ 
+   /// Pending count for UI status inspection
+diff --git a/lib/web_live_sync/app_sync_engine.dart b/lib/web_live_sync/app_sync_engine.dart
+index 445210a..98a9865 100644
+--- a/lib/web_live_sync/app_sync_engine.dart
++++ b/lib/web_live_sync/app_sync_engine.dart
+@@ -49,6 +49,7 @@ class AppSyncEngine {
+               ? ph.currentFY
+               : (ph.activeCompany!.fYears.isNotEmpty ? ph.activeCompany!.fYears.last : ""));
+       if (effectiveFy.isEmpty) return false;
++      int pendingD1MaxSeq = 0;
+ 
+       final root = await getApplicationDocumentsDirectory();
+       final String workingDir = '${root.path}/Pharoah_Data/${ph.activeCompany!.id}/${ph.activeCompany!.businessType}/$effectiveFy';
+@@ -95,48 +96,67 @@ class AppSyncEngine {
+           initialRemoteSyncedAt = (cloudData['syncedAt'] ?? '').toString().trim();
+           final Map<String, dynamic> cloudFiles = Map<String, dynamic>.from(cloudData['files'] as Map);
+ 
++          final Map<String, int> unmarkedRegistry = await TombstoneEngine.getUnmarkedRegistry(companyId);
++          final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
++          final List<String> cloudOverridesUnmark = [];
+           if (cloudFiles.containsKey('tombstone_registry.json') && cloudFiles['tombstone_registry.json'] != null) {
+             try {
+               dynamic rawReg = jsonDecode(cloudFiles['tombstone_registry.json']);
+               if (rawReg is Map) {
+-                final unmarkedKeys = await TombstoneEngine.getUnmarkedKeys(companyId);
+                 rawReg.forEach((k, v) {
+                   final cleanK = k.toString().trim();
+-                  if (cleanK.isNotEmpty && !unmarkedKeys.contains(cleanK) && !unmarkedKeys.contains(cleanK.toUpperCase())) {
+-                    final cTs = int.tryParse(v.toString()) ?? 0;
++                  if (cleanK.isEmpty || D1SalesLedgerService.isUnscopedSeriesKey(cleanK)) return;
++                  final bool keepCase = cleanK.contains('_');
++                  final cTs = int.tryParse(v.toString()) ?? 0;
++                  final bool isUnmarked = unmarkedKeys.contains(cleanK) || (!keepCase && unmarkedKeys.contains(cleanK.toUpperCase()));
++                  final int uTs = unmarkedRegistry[cleanK] ?? (!keepCase ? (unmarkedRegistry[cleanK.toUpperCase()] ?? 0) : 0);
++                  if (!isUnmarked || (cTs > 0 && cTs >= uTs)) {
+                     final lTs = localRegistry[cleanK] ?? 0;
+                     if (cTs > lTs) {
+                       localRegistry[cleanK] = cTs;
+-                      localRegistry[cleanK.toUpperCase()] = cTs;
++                      if (!keepCase) localRegistry[cleanK.toUpperCase()] = cTs;
+                     }
+                     localTombstones.add(cleanK);
+-                    localTombstones.add(cleanK.toUpperCase());
++                    if (!keepCase) localTombstones.add(cleanK.toUpperCase());
++                    if (isUnmarked) cloudOverridesUnmark.add(cleanK);
+                   }
+                 });
+               }
+             } catch (_) {}
+           }
++          if (cloudOverridesUnmark.isNotEmpty) {
++            await TombstoneEngine.clearUnmarkedForDeletedKeys(companyId, cloudOverridesUnmark);
++          }
+           if (cloudFiles.containsKey('tombstones.json') && cloudFiles['tombstones.json'] != null) {
+             try {
+               List<dynamic> cloudT = jsonDecode(cloudFiles['tombstones.json']);
+               final sanitizedCloudT = await TombstoneEngine.sanitizeCloudTombstones(
+                 companyId,
+                 cloudT.map((e) => e.toString()),
++                cloudRegistry: localRegistry,
+               );
+               // Never poison localRegistry with DateTime.now() on flat legacy tombstones
+               localTombstones.addAll(sanitizedCloudT);
+             } catch (_) {}
+           }
+-          localTombstones = await TombstoneEngine.sanitizeCloudTombstones(companyId, localTombstones);
++          localTombstones = await TombstoneEngine.sanitizeCloudTombstones(
++            companyId,
++            localTombstones,
++            cloudRegistry: localRegistry,
++          );
+ 
+           // 🚀 STEP 2.5: EDGE D1 REAL-TIME SALES & PURCHASES DELTA HARVEST BEFORE CLOUD MERGE
+           bool d1HasChanges = false;
++          
++          
+           final bool stillInEffectiveFy = ph.activeCompany != null &&
+               ph.activeCompany!.id == companyId &&
+               ph.currentFY == effectiveFy;
+           if (D1SalesLedgerService.USE_D1_EDGE_LEDGER) {
+             try {
+-              final edgeEvents = await D1SalesLedgerService.fetchSaleDeltas(storeToken);
++              final deltaRes = await D1SalesLedgerService.fetchSaleDeltasWithCursor(storeToken);
++              final edgeEvents = deltaRes.events;
++              pendingD1MaxSeq = deltaRes.maxSeq;
+               if (edgeEvents.isNotEmpty) {
+                 if (stillInEffectiveFy) {
+                   bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, effectiveFy);
+@@ -165,7 +185,7 @@ class AppSyncEngine {
+                   final String action = (ev["action"] ?? "").toString().toUpperCase();
+                   final String bId = (ev["bill_id"] ?? "").toString().trim();
+                   final String bNo = (ev["bill_no"] ?? "").toString().trim().toUpperCase();
+-                  final int evTs = int.tryParse(ev["updated_at"]?.toString() ?? "0") ?? 1;
++                  final int evTs = int.tryParse((ev["updated_at"] ?? ev["created_at"] ?? "1").toString()) ?? DateTime.now().millisecondsSinceEpoch;
+                   final dynamic rawPayload = ev["sale_data"];
+                   final String evFy = (ev["fy"] ?? (rawPayload is Map ? rawPayload["fy"] : "") ?? "").toString().trim();
+                   DateTime? evDate;
+@@ -182,8 +202,11 @@ class AppSyncEngine {
+                       (rawPayload["doc_type"] == "PURCHASE" ||
+                        rawPayload.containsKey("distributorName") ||
+                        rawPayload.containsKey("internalNo"));
++                  final bool payloadDel = rawPayload is Map &&
++                      ((int.tryParse(rawPayload["is_deleted"]?.toString() ?? rawPayload["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
++                       rawPayload["status"] == "Deleted");
+                   final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNo, effectiveFy);
+-                  if (action == "DELETE") {
++                  if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
+                     if (bId.isNotEmpty) {
+                       localRegistry[bId] = evTs;
+                       localRegistry[bId.toUpperCase()] = evTs;
+@@ -195,7 +218,7 @@ class AppSyncEngine {
+                     }
+                     if (rawPayload is Map) {
+                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+-                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
++                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
+                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                       final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
+                       if (scopedINo.isNotEmpty) {
+@@ -203,30 +226,40 @@ class AppSyncEngine {
+                         localTombstones.add(scopedINo);
+                       }
+                       if (pId.isNotEmpty && pBill.isNotEmpty) {
+-                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy);
++                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy, true);
+                         localRegistry[c2] = evTs;
+                         localTombstones.add(c2);
+                         if (iNo.isNotEmpty) {
+-                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy);
++                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy, true);
+                           localRegistry[c3] = evTs;
+                           localTombstones.add(c3);
+                         }
+                       }
+                     }
+                   } else {
++                    final bool alreadyDel = bId.isNotEmpty && D1SalesLedgerService.isBillDeleted(bId, "", "", effectiveFy);
++                    if (alreadyDel) continue;
++                    if (rawPayload is Map && isPurc) {
++                      final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
++                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
++                      final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
++                      if (D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, effectiveFy)) {
++                        continue;
++                      }
++                    }
+                     if (bId.isNotEmpty) {
+                       localRegistry.remove(bId);
+                       localRegistry.remove(bId.toUpperCase());
+                       localTombstones.remove(bId);
+                       localTombstones.remove(bId.toUpperCase());
+                     }
+-                    if (scopedBNo.isNotEmpty) {
++                    if (!isPurc && scopedBNo.isNotEmpty) {
+                       localRegistry.remove(scopedBNo);
+                       localTombstones.remove(scopedBNo);
+                     }
+                     if (rawPayload is Map) {
+                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+-                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim().toUpperCase();
++                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
+                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                       final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
+                       final String scopedPBill = D1SalesLedgerService.scopeSecondaryKey(pBill, effectiveFy);
+@@ -234,16 +267,16 @@ class AppSyncEngine {
+                         localRegistry.remove(scopedINo);
+                         localTombstones.remove(scopedINo);
+                       }
+-                      if (scopedPBill.isNotEmpty) {
++                      if (!isPurc && scopedPBill.isNotEmpty) {
+                         localRegistry.remove(scopedPBill);
+                         localTombstones.remove(scopedPBill);
+                       }
+                       if (pId.isNotEmpty && pBill.isNotEmpty) {
+-                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy);
++                        final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy, true);
+                         localRegistry.remove(c2);
+                         localTombstones.remove(c2);
+                         if (iNo.isNotEmpty) {
+-                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy);
++                          final c3 = D1SalesLedgerService.scopeSecondaryKey("${pId}_${pBill}_$iNo", effectiveFy, true);
+                           localRegistry.remove(c3);
+                           localTombstones.remove(c3);
+                         }
+@@ -311,6 +344,9 @@ class AppSyncEngine {
+ 
+       await TombstoneEngine.saveTombstoneRegistry(companyId, localRegistry);
+       await TombstoneEngine.saveLocalTombstones(companyId, localTombstones);
++      if (pendingD1MaxSeq > 0) {
++        await D1SalesLedgerService.commitSaleDeltaSeq(storeToken, pendingD1MaxSeq);
++      }
+       if (ph.activeCompany != null && ph.activeCompany!.id == companyId && ph.currentFY == effectiveFy) {
+         await SnapshotWatcher.takeSnapshot(ph);
+ 
+diff --git a/lib/web_live_sync/components/web_recent_sidebar.dart b/lib/web_live_sync/components/web_recent_sidebar.dart
+index b33855c..cc1bd09 100644
+--- a/lib/web_live_sync/components/web_recent_sidebar.dart
++++ b/lib/web_live_sync/components/web_recent_sidebar.dart
+@@ -136,7 +136,7 @@ class WebRecentSidebar extends StatelessWidget {
+             color: Colors.black38,
+             child: const Center(
+               child: Text(
+-                "Pharoah ERP Web v1.1.0 (#PH-REV-806 (FIX-BACK-YEAR-TOMBSTONE-PURGE-AND-CASCADE-REBIRTH)",
++                "Pharoah ERP Web v1.1.0 (#PH-REV-811 (FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC)",
+                 style: TextStyle(color: Colors.white24, fontSize: 9),
+               ),
+             ),
+diff --git a/lib/web_live_sync/components/web_top_bar.dart b/lib/web_live_sync/components/web_top_bar.dart
+index 605d28d..1ed2d4b 100644
+--- a/lib/web_live_sync/components/web_top_bar.dart
++++ b/lib/web_live_sync/components/web_top_bar.dart
+@@ -113,7 +113,7 @@ class WebTopBar extends StatelessWidget implements PreferredSizeWidget {
+                       border: Border.all(color: Colors.greenAccent, width: 0.5),
+                     ),
+                     child: const Text(
+-                      "#PH-REV-806 (FIX-BACK-YEAR-TOMBSTONE-PURGE-AND-CASCADE-REBIRTH)",
++                      "#PH-REV-811 (FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC)",
+                       style: TextStyle(color: Colors.greenAccent, fontSize: 7.5, fontWeight: FontWeight.w900),
+                     ),
+                   ),
+diff --git a/lib/web_live_sync/pharoah_web_manager.dart b/lib/web_live_sync/pharoah_web_manager.dart
+index f784670..0f79af4 100644
+--- a/lib/web_live_sync/pharoah_web_manager.dart
++++ b/lib/web_live_sync/pharoah_web_manager.dart
+@@ -55,6 +55,22 @@ class PharoahWebManager with ChangeNotifier {
+   String _lastRemoteSyncedAt = "";
+   int _fyParseGeneration = 0;
+   Future<void>? _pendingD1DeltaFuture;
++  final List<Future<void>> _pendingD1WriteFutures = [];
++
++  void trackPendingD1Write(Future<dynamic> future) {
++    late final Future<void> tracked;
++    tracked = future.then((_) {}).catchError((_) {}).whenComplete(() {
++      _pendingD1WriteFutures.remove(tracked);
++    });
++    _pendingD1WriteFutures.add(tracked);
++  }
++
++  Future<void> awaitPendingD1Writes() async {
++    while (_pendingD1WriteFutures.isNotEmpty) {
++      final snapshot = List<Future<void>>.from(_pendingD1WriteFutures);
++      await Future.wait(snapshot);
++    }
++  }
+   String errorMessage = "";
+   String successMessage = "";
+ 
+@@ -153,18 +169,28 @@ class PharoahWebManager with ChangeNotifier {
+     unmarkedRecordIds.removeAll(set);
+     unmarkedRecordIds.removeAll(upperSet);
+     for (var id in set) {
++      final bool keepCase = id.contains('_');
+       if (D1SalesLedgerService.isUnscopedSeriesKey(id)) {
+-        final scoped = D1SalesLedgerService.scopeSecondaryKey(id, financialYear);
++        final scoped = D1SalesLedgerService.scopeSecondaryKey(id, financialYear, keepCase);
+         if (scoped.isNotEmpty) {
+           localTombstoneRegistry[scoped] = nowTs;
+           deletedRecordIds.add(scoped);
+           unmarkedRecordIds.remove(scoped);
++          if (!keepCase) {
++            localTombstoneRegistry[scoped.toUpperCase()] = nowTs;
++            deletedRecordIds.add(scoped.toUpperCase());
++            unmarkedRecordIds.remove(scoped.toUpperCase());
++          }
+         }
+       } else {
+         localTombstoneRegistry[id] = nowTs;
+-        localTombstoneRegistry[id.toUpperCase()] = nowTs;
+         deletedRecordIds.add(id);
+-        deletedRecordIds.add(id.toUpperCase());
++        unmarkedRecordIds.remove(id);
++        if (!keepCase) {
++          localTombstoneRegistry[id.toUpperCase()] = nowTs;
++          deletedRecordIds.add(id.toUpperCase());
++          unmarkedRecordIds.remove(id.toUpperCase());
++        }
+       }
+     }
+     _saveLocalTombstones();
+@@ -1472,13 +1498,13 @@ class PharoahWebManager with ChangeNotifier {
+       }
+     }
+ 
+-    for (var s in sales) processBillItems(s.items);
+-    for (var sc in saleChallans) processBillItems(sc.items);
+-    for (var sr in saleReturns) processBillItems(sr.items);
++    for (var p in purchases.where((e) => e.isDeleted != 1)) processPurchaseItems(p.items);
++    for (var pc in purchaseChallans.where((e) => e.isDeleted != 1)) processPurchaseItems(pc.items);
++    for (var pr in purchaseReturns.where((e) => e.isDeleted != 1)) processPurchaseItems(pr.items);
+ 
+-    for (var p in purchases) processPurchaseItems(p.items);
+-    for (var pc in purchaseChallans) processPurchaseItems(pc.items);
+-    for (var pr in purchaseReturns) processPurchaseItems(pr.items);
++    for (var s in sales.where((e) => e.isDeleted != 1)) processBillItems(s.items);
++    for (var sc in saleChallans.where((e) => e.isDeleted != 1)) processBillItems(sc.items);
++    for (var sr in saleReturns.where((e) => e.isDeleted != 1)) processBillItems(sr.items);
+ 
+     if (hasUpdates) {
+       notifyListeners();
+@@ -2170,8 +2196,8 @@ class PharoahWebManager with ChangeNotifier {
+     unmarkDeletedId(purchase.id, referenceNo: purchase.internalNo);
+     if (compKey.isNotEmpty) unmarkDeletedId(compKey, preserveCase: true);
+     if (compKey2.isNotEmpty) unmarkDeletedId(compKey2, preserveCase: true);
+-    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo);
+-    if (purchase.internalNo.trim().isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(purchase.internalNo.trim());
++    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, financialYear);
++    if (purchase.internalNo.trim().isNotEmpty) D1SalesLedgerService.unmarkPermanentlyDeleted(purchase.internalNo.trim(), "", "", financialYear);
+     if (purchase.linkedChallanIds.isNotEmpty) {
+       final Set<String> lKeys = purchase.linkedChallanIds.map((k) => k.trim().toUpperCase()).toSet();
+       for (var ch in purchaseChallans) {
+@@ -2199,13 +2225,13 @@ class PharoahWebManager with ChangeNotifier {
+     if (isUpdate && purchases[existingIdx].version >= maxVer) {
+       maxVer = purchases[existingIdx].version + 1;
+     }
+-    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo);
+-    if (d1Known >= maxVer) {
++    final int d1Known = D1SalesLedgerService.getPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.internalNo, financialYear);
++    if (d1Known >= maxVer && d1Known < 99999) {
+       maxVer = d1Known + 1;
+     }
+     purchase.version = maxVer;
+     purchase.updatedAt = DateTime.now().millisecondsSinceEpoch;
+-    D1SalesLedgerService.recordPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.version, purchase.internalNo);
++    D1SalesLedgerService.recordPurchaseKnownVersion(purchase.id, purchase.partyId, purchase.billNo, purchase.version, purchase.internalNo, financialYear);
+ 
+     if (!isUpdate) {
+       purchase.date = WebFyDateRangeHelper.ensureDateInActiveFy(purchase.date, financialYear);
+@@ -2216,7 +2242,15 @@ class PharoahWebManager with ChangeNotifier {
+       purchases.insert(0, purchase);
+     }
+     PurchaseSyncModule.onPurchaseSaved(purchase, activeStoreToken);
+-    D1SalesLedgerService.onPurchaseSaved(purchase, activeStoreToken, isUpdate: isUpdate, clientSource: "WEB_PORTAL");
++    trackPendingD1Write(
++      D1SalesLedgerService.onPurchaseSaved(
++        purchase,
++        activeStoreToken,
++        isUpdate: isUpdate,
++        clientSource: "WEB_PORTAL",
++        fy: financialYear,
++      ),
++    );
+     for (var item in purchase.items) {
+       String resolvedKey = item.medicineID;
+       try {
+@@ -2252,6 +2286,7 @@ class PharoahWebManager with ChangeNotifier {
+         if (compKey.isNotEmpty) compKey,
+         if (compKey2.isNotEmpty) compKey2,
+       ],
++      fy: financialYear,
+     );
+     return true;
+   }
+@@ -2274,17 +2309,21 @@ class PharoahWebManager with ChangeNotifier {
+       targetPartyId = p.partyId.trim().toUpperCase();
+       compKey2 = (targetPartyId.isNotEmpty && targetBillNo.isNotEmpty) ? "${targetPartyId}_$targetBillNo" : "";
+       compKey3 = PurchaseSyncModule.makeCompositeKey(targetPartyId, targetBillNo, targetIntNo);
+-      D1SalesLedgerService.markPurchasePermanentlyDeleted(realId, targetPartyId, targetBillNo, targetIntNo);
+-      D1SalesLedgerService.onPurchaseDeleted(
+-        realId,
+-        targetPartyId,
+-        targetBillNo,
+-        targetIntNo,
+-        activeStoreToken,
+-        clientSource: "WEB_PORTAL",
+-        linkedChallanIds: p.linkedChallanIds,
+-      );
++      D1SalesLedgerService.markPurchasePermanentlyDeleted(realId, targetPartyId, targetBillNo, targetIntNo, financialYear);
++      D1SalesLedgerService.recordPurchaseKnownVersion(realId, targetPartyId, targetBillNo, 999999, targetIntNo, financialYear);
+       PurchaseSyncModule.onPurchaseDeleted(p, activeStoreToken);
++      trackPendingD1Write(
++        D1SalesLedgerService.onPurchaseDeleted(
++          realId,
++          targetPartyId,
++          targetBillNo,
++          targetIntNo,
++          activeStoreToken,
++          clientSource: "WEB_PORTAL",
++          linkedChallanIds: p.linkedChallanIds,
++          fy: financialYear,
++        ),
++      );
+       Set<String> targetChallanKeys = {};
+       for (var cid in p.linkedChallanIds) {
+         if (cid.trim().isNotEmpty) targetChallanKeys.add(cid.trim().toUpperCase());
+@@ -4284,11 +4323,17 @@ class PharoahWebManager with ChangeNotifier {
+   ({bool success, String message, List<BatchUsageAuditRecord> lockingRecords}) deleteBatchSafe({
+     required Medicine med,
+     required String batchNo,
++    String exp = '',
++    double mrp = 0.0,
++    double purRate = 0.0,
+     required String activeFY,
+   }) {
+     final result = BatchCascadeEngine.deleteBatchSafe(
+       medicine: med,
+       batchNo: batchNo,
++      exp: exp,
++      mrp: mrp,
++      purRate: purRate,
+       activeFY: activeFY,
+       batchHistory: batchHistory,
+       sales: sales,
+@@ -4303,7 +4348,13 @@ class PharoahWebManager with ChangeNotifier {
+     );
+ 
+     if (result.success) {
+-      final syncId = BatchSyncModule.getBatchSyncId(med.identityKey, batchNo);
++      final syncId = BatchSyncModule.getBatchSyncId(
++        med.identityKey,
++        batchNo,
++        exp: exp,
++        mrp: mrp,
++        purRate: purRate,
++      );
+       final cleanBatch = batchNo.trim().toUpperCase();
+       deletedRecordIds.add(syncId);
+       if (cleanBatch.isNotEmpty) deletedRecordIds.add(cleanBatch);
+diff --git a/lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart b/lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
+index fd09493..94991a4 100644
+--- a/lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
++++ b/lib/web_live_sync/sub_views/web_stock/product_batch_traceability_screen.dart
+@@ -1135,6 +1135,9 @@ class _ProductBatchTraceabilityScreenState extends State<ProductBatchTraceabilit
+               final result = webPh.deleteBatchSafe(
+                 med: med,
+                 batchNo: b.batch,
++                exp: b.exp,
++                mrp: b.mrp,
++                purRate: b.purRate > 0 ? b.purRate : b.rate,
+                 activeFY: activeFY,
+               );
+               Navigator.pop(c);
+diff --git a/lib/web_live_sync/sync_protocol/delta_merge_engine.dart b/lib/web_live_sync/sync_protocol/delta_merge_engine.dart
+index e431ef8..43d0bdd 100644
+--- a/lib/web_live_sync/sync_protocol/delta_merge_engine.dart
++++ b/lib/web_live_sync/sync_protocol/delta_merge_engine.dart
+@@ -180,9 +180,13 @@ class DeltaMergeEngine {
+           // Exact UUID was deleted at or after this record timestamp — never resurrect it
+           continue;
+         }
++        final String scopedComp2Upper = scopedComp2.isNotEmpty ? scopedComp2.toUpperCase() : "";
++        final String scopedComp3Upper = scopedComp3.isNotEmpty ? scopedComp3.toUpperCase() : "";
+         final int secDelTs = (scopedIntNo.isNotEmpty ? tombstoneRegistry[scopedIntNo] : null) ??
+             (scopedComp3.isNotEmpty ? tombstoneRegistry[scopedComp3] : null) ??
+             (scopedComp2.isNotEmpty ? tombstoneRegistry[scopedComp2] : null) ??
++            (scopedComp3Upper.isNotEmpty ? tombstoneRegistry[scopedComp3Upper] : null) ??
++            (scopedComp2Upper.isNotEmpty ? tombstoneRegistry[scopedComp2Upper] : null) ??
+             (getCloudCompositeKey == null && scopedBNo.isNotEmpty ? tombstoneRegistry[scopedBNo] : null) ?? 0;
+         if (secDelTs > 0 && (cloudTimestamp == 0 || secDelTs >= cloudTimestamp)) {
+           // Secondary key in this FY was deleted at or after this record timestamp — block stale snapshot record
+@@ -204,12 +208,18 @@ class DeltaMergeEngine {
+             localList.removeAt(idx);
+             changed = true;
+           }
+-          tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
+-          tombstoneRegistry[id.toUpperCase()] = tombstoneRegistry[id]!;
+-          if (getCloudCompositeKey == null && scopedBNo.isNotEmpty) tombstoneRegistry[scopedBNo] = tombstoneRegistry[id]!;
+-          if (scopedIntNo.isNotEmpty) tombstoneRegistry[scopedIntNo] = tombstoneRegistry[id]!;
+-          if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = tombstoneRegistry[id]!;
+-          if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = tombstoneRegistry[id]!;
++          final int delTs = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
++          tombstoneRegistry[id] = delTs;
++          tombstoneRegistry[id.toUpperCase()] = delTs;
++          if (getCloudCompositeKey == null && scopedBNo.isNotEmpty) tombstoneRegistry[scopedBNo] = delTs;
++          if (scopedIntNo.isNotEmpty) tombstoneRegistry[scopedIntNo] = delTs;
++          if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = delTs;
++          if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = delTs;
++          if (getCloudCompositeKey != null) {
++            D1SalesLedgerService.markPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy);
++          } else {
++            D1SalesLedgerService.markPermanentlyDeleted(id, billNo, internalNo, activeFy);
++          }
+           continue;
+         }
+ 
+diff --git a/lib/web_live_sync/sync_protocol/tombstone_engine.dart b/lib/web_live_sync/sync_protocol/tombstone_engine.dart
+index bc879e7..0f4c05c 100644
+--- a/lib/web_live_sync/sync_protocol/tombstone_engine.dart
++++ b/lib/web_live_sync/sync_protocol/tombstone_engine.dart
+@@ -80,14 +80,40 @@ class TombstoneEngine {
+     await recordTombstone(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
+   }
+ 
++  /// Returns timestamped unmark map so stale unmarks never block newer cloud deletions.
++  static Future<Map<String, int>> getUnmarkedRegistry(String companyId) async {
++    final prefs = await SharedPreferences.getInstance();
++    final raw = prefs.getString('unmarked_registry_$companyId');
++    if (raw == null || raw.isEmpty) return {};
++    try {
++      final decoded = jsonDecode(raw) as Map<String, dynamic>;
++      final res = <String, int>{};
++      decoded.forEach((k, v) {
++        final ck = k.toString().trim();
++        if (ck.isNotEmpty) res[ck] = int.tryParse(v.toString()) ?? 0;
++      });
++      return res;
++    } catch (_) {
++      return {};
++    }
++  }
++
++  static Future<void> saveUnmarkedRegistry(String companyId, Map<String, int> reg) async {
++    final prefs = await SharedPreferences.getInstance();
++    await prefs.setString('unmarked_registry_$companyId', jsonEncode(reg));
++  }
++
+   /// Unmarks a tombstone when a bill is explicitly re-created or updated with a newer timestamp
+   static Future<void> unmarkTombstoneWithTimestamp(
+     String companyId, {
+     required String id,
+     String? secondaryKey,
+     String? fy,
++    int? timestamp,
+   }) async {
++    final int unmarkTs = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+     final registry = await getTombstoneRegistry(companyId);
++    final unmarkReg = await getUnmarkedRegistry(companyId);
+     final cleanId = id.trim();
+     final bool keepIdCase = cleanId.contains('_');
+     final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, fy, keepIdCase);
+@@ -95,6 +121,9 @@ class TombstoneEngine {
+       registry.remove(cleanId);
+       if (!keepIdCase) registry.remove(cleanId.toUpperCase());
+       registry.remove(scopedId);
++      unmarkReg[cleanId] = unmarkTs;
++      if (!keepIdCase) unmarkReg[cleanId.toUpperCase()] = unmarkTs;
++      if (scopedId.isNotEmpty) unmarkReg[scopedId] = unmarkTs;
+     }
+     if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
+       final rawSec = secondaryKey.trim();
+@@ -103,8 +132,12 @@ class TombstoneEngine {
+       registry.remove(rawSec);
+       if (!keepSecCase) registry.remove(rawSec.toUpperCase());
+       registry.remove(scopedSec);
++      unmarkReg[rawSec] = unmarkTs;
++      if (!keepSecCase) unmarkReg[rawSec.toUpperCase()] = unmarkTs;
++      if (scopedSec.isNotEmpty) unmarkReg[scopedSec] = unmarkTs;
+     }
+     await saveTombstoneRegistry(companyId, registry);
++    await saveUnmarkedRegistry(companyId, unmarkReg);
+     await unmarkTombstone(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
+   }
+ 
+@@ -210,6 +243,7 @@ class TombstoneEngine {
+     final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+     final tombstones = await getLocalTombstones(companyId);
+     final unmarked = await getUnmarkedKeys(companyId);
++    final unmarkReg = await getUnmarkedRegistry(companyId);
+     for (var k in keys) {
+       final rawK = k.trim();
+       if (rawK.isEmpty) continue;
+@@ -221,17 +255,47 @@ class TombstoneEngine {
+         tombstones.add(cleanK);
+         if (!keepCase) tombstones.add(cleanK.toUpperCase());
+         unmarked.remove(cleanK);
+-        if (!keepCase) unmarked.remove(cleanK.toUpperCase());
++        unmarkReg.remove(cleanK);
++        if (!keepCase) {
++          unmarked.remove(cleanK.toUpperCase());
++          unmarkReg.remove(cleanK.toUpperCase());
++        }
+         unmarked.remove(rawK);
+-        if (!keepCase) unmarked.remove(rawK.toUpperCase());
++        unmarkReg.remove(rawK);
++        if (!keepCase) {
++          unmarked.remove(rawK.toUpperCase());
++          unmarkReg.remove(rawK.toUpperCase());
++        }
+       }
+     }
+     await saveTombstoneRegistry(companyId, registry);
+     await saveLocalTombstones(companyId, tombstones);
+     await saveUnmarkedKeys(companyId, unmarked);
++    await saveUnmarkedRegistry(companyId, unmarkReg);
+     return tombstones;
+   }
+ 
++  /// Removes unmarked status when an authoritative newer cloud deletion is observed.
++  static Future<void> clearUnmarkedForDeletedKeys(String companyId, Iterable<String> keys) async {
++    final unmarked = await getUnmarkedKeys(companyId);
++    final unmarkReg = await getUnmarkedRegistry(companyId);
++    bool changed = false;
++    for (final k in keys) {
++      final ck = k.trim();
++      if (ck.isEmpty) continue;
++      if (unmarked.remove(ck)) changed = true;
++      if (unmarkReg.remove(ck) != null) changed = true;
++      if (!ck.contains('_')) {
++        if (unmarked.remove(ck.toUpperCase())) changed = true;
++        if (unmarkReg.remove(ck.toUpperCase()) != null) changed = true;
++      }
++    }
++    if (changed) {
++      await saveUnmarkedKeys(companyId, unmarked);
++      await saveUnmarkedRegistry(companyId, unmarkReg);
++    }
++  }
++
+     /// 🛡️ SELF-HEALING DISINFECTION (#PH-REV-807):
+   /// Scans SharedPreferences and purges all poisoned legacy naked series keys (e.g. "INV-1", "W-1", "PUR-1")
+   /// that lack a financial year prefix ("FY::"), ensuring past back-year deletions stop killing bills in new FYs!
+@@ -272,14 +336,45 @@ class TombstoneEngine {
+     } catch (_) {}
+   }
+ 
+-  static Future<Set<String>> sanitizeCloudTombstones(String companyId, Iterable<String> incomingCloudTombstones) async {
++  static Future<Set<String>> sanitizeCloudTombstones(
++    String companyId,
++    Iterable<String> incomingCloudTombstones, {
++    Map<String, int>? cloudRegistry,
++    Set<String>? absentFromCloudIds,
++  }) async {
+     final unmarked = await getUnmarkedKeys(companyId);
++    final unmarkReg = await getUnmarkedRegistry(companyId);
+     final sanitized = <String>{};
+     for (var k in incomingCloudTombstones) {
+       final cleanK = k.trim();
+       if (cleanK.isEmpty) continue;
+       if (D1SalesLedgerService.isUnscopedSeriesKey(cleanK)) continue;
+-      if (!unmarked.contains(cleanK) && (cleanK.contains('_') || !unmarked.contains(cleanK.toUpperCase()))) {
++      // If cloud tombstone has a strictly newer deletion timestamp than our local unmark, accept the deletion!
++      final int unmarkTs = unmarkReg[cleanK] ?? (!cleanK.contains('_') ? (unmarkReg[cleanK.toUpperCase()] ?? 0) : 0);
++      final int cloudTs = cloudRegistry != null
++          ? (cloudRegistry[cleanK] ?? (!cleanK.contains('_') ? (cloudRegistry[cleanK.toUpperCase()] ?? 0) : 0))
++          : 0;
++      
++      if (unmarkTs > 0) {
++        if (cloudTs > 0 && cloudTs >= unmarkTs) {
++          sanitized.add(cleanK);
++        }
++        continue;
++      }
++
++      final bool isMarkedUnmarked = unmarked.contains(cleanK) || (!cleanK.contains('_') && unmarked.contains(cleanK.toUpperCase()));
++      if (!isMarkedUnmarked) {
++        sanitized.add(cleanK);
++        continue;
++      }
++      if (cloudTs > 0 && cloudTs >= unmarkTs) {
++        sanitized.add(cleanK);
++        continue;
++      }
++      // If record is explicitly absent from cloud snapshot, an older unmark must not block cloud tombstone.
++      if (absentFromCloudIds != null &&
++          !absentFromCloudIds.contains(cleanK) &&
++          (cleanK.contains('_') || !absentFromCloudIds.contains(cleanK.toUpperCase()))) {
+         sanitized.add(cleanK);
+       }
+     }
+diff --git a/lib/web_live_sync/web_batch_master.dart b/lib/web_live_sync/web_batch_master.dart
+index ca192cf..fd4ea42 100644
+--- a/lib/web_live_sync/web_batch_master.dart
++++ b/lib/web_live_sync/web_batch_master.dart
+@@ -901,6 +901,9 @@ class _WebBatchMasterViewState extends State<WebBatchMasterView> {
+               final result = webPh.deleteBatchSafe(
+                 med: med,
+                 batchNo: b.batch,
++                exp: b.exp,
++                mrp: b.mrp,
++                purRate: b.purRate > 0 ? b.purRate : b.rate,
+                 activeFY: activeFY,
+               );
+               Navigator.pop(c);
+diff --git a/test/three_issues_independent_regression_test.dart b/test/three_issues_independent_regression_test.dart
+new file mode 100644
+index 0000000..dd1e7b6
+--- /dev/null
++++ b/test/three_issues_independent_regression_test.dart
+@@ -0,0 +1,520 @@
++import 'dart:convert';
++import 'dart:io';
++import 'package:flutter/services.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:shared_preferences/shared_preferences.dart';
++import 'package:pharoah_erp/fy_transfer_engine.dart';
++import 'package:pharoah_erp/inventory_logic_center.dart';
++import 'package:pharoah_erp/logic/batch_cascade_engine.dart';
++import 'package:pharoah_erp/models.dart';
++import 'package:pharoah_erp/pharoah_manager.dart';
++import 'package:pharoah_erp/realtime_signaling/transport/cloud_signal_channel.dart';
++import 'package:pharoah_erp/sync_core/d1_sales_ledger_service.dart';
++import 'package:pharoah_erp/sync_core/models/sync_envelope.dart';
++import 'package:pharoah_erp/sync_core/modules/batch_delta_merge_module.dart';
++import 'package:pharoah_erp/sync_core/modules/batch_sync_module.dart';
++import 'package:pharoah_erp/sync_core/modules/purchase_sync_module.dart';
++import 'package:pharoah_erp/sync_core/multi_fy_cloud_vault.dart';
++import 'package:pharoah_erp/sync_core/orchestrator/master_sync_orchestrator.dart';
++import 'package:pharoah_erp/sync_core/outbox/sync_queue_manager.dart';
++import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
++import 'package:pharoah_erp/web_live_sync/services/web_batch_resolver.dart';
++import 'package:pharoah_erp/web_live_sync/sync_protocol/delta_merge_engine.dart';
++import 'package:pharoah_erp/web_live_sync/sync_protocol/tombstone_engine.dart';
++
++void main() {
++  TestWidgetsFlutterBinding.ensureInitialized();
++  late Directory mockDocsDir;
++
++  setUpAll(() async {
++    mockDocsDir = await Directory.systemTemp.createTemp('pharoah_three_issues_');
++    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
++        .setMockMethodCallHandler(
++      const MethodChannel('plugins.flutter.io/path_provider'),
++      (MethodCall methodCall) async => mockDocsDir.path,
++    );
++  });
++
++  tearDownAll(() async {
++    if (await mockDocsDir.exists()) {
++      await mockDocsDir.delete(recursive: true);
++    }
++  });
++
++  setUp(() async {
++    SharedPreferences.setMockInitialValues({});
++    await D1SalesLedgerService.loadPersistedGravestones();
++    D1SalesLedgerService.activeFinancialYear = '2026-27';
++    SyncQueueManager.debugReset();
++  });
++
++  Medicine _buildTestMed() => Medicine(
++        id: 'MED-NOBATCH',
++        systemId: 'PH-NOBATCH',
++        name: 'AMOXICILLIN 500',
++        packing: '1*10',
++        mrp: 100.0,
++        purRate: 70.0,
++        rateA: 90.0,
++        stock: 0.0,
++      );
++
++  List<Purchase> _buildTwoNoBatchMrpPurchases({required DateTime dt}) => [
++        Purchase(
++          id: 'PUR-A',
++          internalNo: 'PUR-1',
++          billNo: 'Inv-A',
++          partyId: 'SUP-1',
++          distributorName: 'ALPHA DIST',
++          date: dt,
++          entryDate: dt,
++          paymentMode: 'Credit',
++          totalAmount: 700.0,
++          items: [
++            PurchaseItem(
++              id: 'PI-A',
++              srNo: 1,
++              medicineID: 'MED-NOBATCH',
++              name: 'AMOXICILLIN 500',
++              packing: '1*10',
++              batch: '',
++              exp: '',
++              hsn: '3004',
++              mrp: 100.0,
++              qty: 10.0,
++              freeQty: 0.0,
++              purchaseRate: 70.0,
++              gstRate: 12.0,
++              total: 700.0,
++              rateA: 90.0,
++            ),
++          ],
++        ),
++        Purchase(
++          id: 'PUR-B',
++          internalNo: 'PUR-2',
++          billNo: 'Inv-B',
++          partyId: 'SUP-1',
++          distributorName: 'ALPHA DIST',
++          date: dt.add(const Duration(days: 1)),
++          entryDate: dt.add(const Duration(days: 1)),
++          paymentMode: 'Credit',
++          totalAmount: 350.0,
++          items: [
++            PurchaseItem(
++              id: 'PI-B',
++              srNo: 1,
++              medicineID: 'MED-NOBATCH',
++              name: 'AMOXICILLIN 500',
++              packing: '1*10',
++              batch: '',
++              exp: '',
++              hsn: '3004',
++              mrp: 50.0,
++              qty: 10.0,
++              freeQty: 0.0,
++              purchaseRate: 35.0,
++              gstRate: 12.0,
++              total: 350.0,
++              rateA: 45.0,
++            ),
++          ],
++        ),
++      ];
++
++  group('ISSUE A & C: Unescaped Lot Keys, Multi-MRP NO BATCH Survival across FY, Web Resolver & Delete Isolation', () {
++    test('makeLotKey & makeSyncKey produce distinct evaluated keys for different MRPs when batch & expiry are blank', () {
++      final k100 = InventoryLogicCenter.makeLotKey('', exp: '', mrp: 100.0, purRate: 70.0);
++      final k50 = InventoryLogicCenter.makeLotKey('', exp: '', mrp: 50.0, purRate: 35.0);
++      expect(k100.contains(r'$'), isFalse);
++      expect(k50.contains(r'$'), isFalse);
++      expect(k100, equals('__NOBATCH__||100.00|70.00'));
++      expect(k50, equals('__NOBATCH__||50.00|35.00'));
++      expect(k100, isNot(equals(k50)));
++
++      final s100 = BatchSyncModule.getBatchSyncId('PH-NOBATCH', '', exp: '', mrp: 100.0, purRate: 70.0);
++      final s50 = BatchSyncModule.getBatchSyncId('PH-NOBATCH', '', exp: '', mrp: 50.0, purRate: 35.0);
++      expect(s100.contains(r'$'), isFalse);
++      expect(s50.contains(r'$'), isFalse);
++      expect(s100, isNot(equals(s50)));
++    });
++
++    test('Issue C: WebBatchResolver returns BOTH distinct NO BATCH MRP lots without collapse (normal + post-FY zero purRate)', () {
++      final med = _buildTestMed();
++      final Map<String, List<BatchInfo>> batchHistory = {};
++      final purchases = _buildTwoNoBatchMrpPurchases(dt: DateTime(2026, 5, 10));
++
++      InventoryLogicCenter.rebuildAllInventory(
++        medicines: [med],
++        batchHistory: batchHistory,
++        purchases: purchases,
++        sales: [],
++        saleReturns: [],
++        purchaseReturns: [],
++      );
++
++      expect(med.stock, closeTo(20.0, 0.001));
++      final resolved = WebBatchResolver.resolveBatchesForMedicine(med, batchHistory);
++      expect(resolved.length, equals(2));
++      expect(resolved.any((b) => b.batch.trim().isEmpty && b.mrp == 100.0 && b.qty == 10.0), isTrue);
++      expect(resolved.any((b) => b.batch.trim().isEmpty && b.mrp == 50.0 && b.qty == 10.0), isTrue);
++    });
++
++    test('Issue A: Two NO BATCH MRP lots (100 & 50, qty 10 each) survive FY1 -> FY2 carry-forward, rebuild, and WebBatchResolver', () async {
++      final med = _buildTestMed();
++      final Map<String, List<BatchInfo>> fy1Batches = {};
++      final fy1Purchases = _buildTwoNoBatchMrpPurchases(dt: DateTime(2026, 5, 10));
++
++      InventoryLogicCenter.rebuildAllInventory(
++        medicines: [med],
++        batchHistory: fy1Batches,
++        purchases: fy1Purchases,
++        sales: [],
++        saleReturns: [],
++        purchaseReturns: [],
++      );
++
++      final carryFiles = FYTransferEngine.computeCarryForwardFromFiles(
++        sourceFiles: {
++          'meds.json': jsonEncode([med.toMap()]),
++          'bats.json': jsonEncode(fy1Batches.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
++          'purc.json': jsonEncode(fy1Purchases.map((p) => p.toMap()).toList()),
++        },
++        sourceFY: '2025-26',
++        targetFY: '2026-27',
++      );
++
++      final List<Medicine> fy2Meds = (jsonDecode(carryFiles['meds.json']!) as List).map((m) => Medicine.fromMap(m)).toList();
++      final Map<String, List<BatchInfo>> fy2Batches = {};
++      final rawBats = jsonDecode(carryFiles['bats.json']!) as Map<String, dynamic>;
++      rawBats.forEach((k, list) {
++        fy2Batches[k] = (list as List).map((b) => BatchInfo.fromMap(b)).toList();
++      });
++
++      expect(fy2Meds.length, equals(1));
++      expect(fy2Meds.first.stock, closeTo(20.0, 0.001));
++      expect(fy2Batches['PH-NOBATCH']?.length, equals(2));
++
++      // Verify rebuildAllInventory on FY2 keeps both opening NO BATCH lots distinct
++      InventoryLogicCenter.rebuildAllInventory(
++        medicines: fy2Meds,
++        batchHistory: fy2Batches,
++        purchases: [],
++        sales: [],
++        saleReturns: [],
++        purchaseReturns: [],
++      );
++
++      expect(fy2Meds.first.stock, closeTo(20.0, 0.001));
++      expect(fy2Batches['PH-NOBATCH']?.length, equals(2));
++
++      // Verify WebBatchResolver in FY2 returns BOTH lots (MRP 100 qty 10 AND MRP 50 qty 10)
++      final fy2Resolved = WebBatchResolver.resolveBatchesForMedicine(fy2Meds.first, fy2Batches);
++      expect(fy2Resolved.length, equals(2));
++      expect(fy2Resolved.any((b) => b.mrp == 100.0 && b.qty == 10.0), isTrue);
++      expect(fy2Resolved.any((b) => b.mrp == 50.0 && b.qty == 10.0), isTrue);
++
++      // Verify cloud vault LWW batch merge preserves both distinct NO BATCH lots across Web/App
++      final Map<String, List<BatchInfo>> mergedCloudBats = {};
++      final bool mergedChanged = BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
++        targetBatchHistory: mergedCloudBats,
++        incomingJson: fy2Batches.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList())),
++      );
++      expect(mergedChanged, isTrue);
++      expect(mergedCloudBats['PH-NOBATCH']?.length, equals(2));
++    });
++
++    test('Issue A: Deleting ONE blank-batch MRP lot via MasterSyncOrchestrator or BatchCascadeEngine preserves the OTHER MRP lot', () {
++      final med = _buildTestMed();
++      final ph = PharoahManager();
++      ph.medicines = [med];
++      ph.batchHistory = {
++        'PH-NOBATCH': [
++          BatchInfo(batch: '', exp: '', packing: '1*10', mrp: 100.0, rate: 70.0, purRate: 70.0, qty: 0.0),
++          BatchInfo(batch: '', exp: '', packing: '1*10', mrp: 50.0, rate: 35.0, purRate: 35.0, qty: 10.0),
++        ],
++      };
++
++      // 1. Delete ONLY the MRP 100 blank-batch lot via BatchCascadeEngine
++      final delRes = BatchCascadeEngine.deleteBatchSafe(
++        medicine: med,
++        batchNo: '',
++        exp: '',
++        mrp: 100.0,
++        purRate: 70.0,
++        activeFY: '2026-27',
++        batchHistory: ph.batchHistory,
++        sales: [],
++        purchases: [],
++        saleChallans: [],
++        purchaseChallans: [],
++        saleReturns: [],
++        purchaseReturns: [],
++        medicines: ph.medicines,
++        storeToken: 'TESTSTORE',
++      );
++      expect(delRes.success, isTrue);
++      expect(ph.batchHistory['PH-NOBATCH']!.length, equals(1));
++      expect(ph.batchHistory['PH-NOBATCH']!.first.mrp, equals(50.0));
++
++      // 2. Restore both, then delete ONLY MRP 50 via MasterSyncOrchestrator BATCH DELETE envelope
++      ph.batchHistory['PH-NOBATCH'] = [
++        BatchInfo(batch: '', exp: '', packing: '1*10', mrp: 100.0, rate: 70.0, purRate: 70.0, qty: 10.0),
++        BatchInfo(batch: '', exp: '', packing: '1*10', mrp: 50.0, rate: 35.0, purRate: 35.0, qty: 0.0),
++      ];
++      final envDel50 = SyncEnvelope(
++        seq: 1,
++        syncId: BatchSyncModule.getBatchSyncId('PH-NOBATCH', '', exp: '', mrp: 50.0, purRate: 35.0),
++        storeToken: 'TESTSTORE',
++        documentType: 'BATCH',
++        action: 'DELETE',
++        version: 2,
++        updatedAt: 2000000,
++        isDeleted: 1,
++        billData: {
++          'medKey': 'PH-NOBATCH',
++          'fy': '2026-27',
++          'batch': BatchInfo(batch: '', exp: '', packing: '1*10', mrp: 50.0, rate: 35.0, purRate: 35.0, qty: 0.0).toMap(),
++        },
++      );
++      final bool didMutate = MasterSyncOrchestrator.dispatchEnvelope(envelope: envDel50, phApp: ph);
++      expect(didMutate, isTrue);
++      expect(ph.batchHistory['PH-NOBATCH']!.length, equals(1));
++      expect(ph.batchHistory['PH-NOBATCH']!.first.mrp, equals(100.0));
++    });
++  });
++
++  group('ISSUE B: Purchase Edit -> Delete Cross-Sync, Mixed-Case Keys, Unmark Overcome & Burst Coalescing', () {
++    test('App Purchase (mixed-case billNo) -> Web Modify -> Web Delete cannot resurrect via stale UPDATE or Cloud JSON merge', () async {
++      const companyId = 'COMP-B1';
++      const fy = '2026-27';
++      D1SalesLedgerService.activeFinancialYear = fy;
++
++      final ph = PharoahManager();
++      ph.currentFY = fy;
++      final pur = Purchase(
++        id: 'PUR-UUID-101',
++        internalNo: 'PUR-7',
++        billNo: 'Inv-Abc-01',
++        partyId: 'SUP-9',
++        distributorName: 'SUPPLIER NINE',
++        date: DateTime(2026, 7, 10),
++        entryDate: DateTime(2026, 7, 10),
++        paymentMode: 'Credit',
++        totalAmount: 500.0,
++        version: 1,
++        updatedAt: 100000,
++        items: const [],
++      );
++      ph.purchases = [pur];
++
++      // Step 1: Simulate Web modifying Purchase (v2 @ T=200000) and App receiving unmark
++      final modEnv = SyncEnvelope(
++        seq: 2,
++        syncId: 'PUR-UUID-101',
++        storeToken: 'TK1',
++        documentType: 'PURCHASE',
++        action: 'UPDATE',
++        version: 2,
++        updatedAt: 200000,
++        isDeleted: 0,
++        billData: {
++          ...pur.toMap(),
++          'totalAmount': 650.0,
++          'version': 2,
++          'updatedAt': 200000,
++          'fy': fy,
++        },
++      );
++      expect(MasterSyncOrchestrator.dispatchEnvelope(envelope: modEnv, phApp: ph), isTrue);
++      expect(ph.purchases.first.totalAmount, equals(650.0));
++      await TombstoneEngine.unmarkTombstoneWithTimestamp(companyId, id: 'PUR-UUID-101', fy: fy, timestamp: 200000);
++
++      // Step 2: Web deletes Purchase at T=300000 -> verify newer tombstone overrides older unmark
++      final cloudReg = <String, int>{'PUR-UUID-101': 300000, '2026-27::SUP-9_Inv-Abc-01': 300000};
++      final sanitized = await TombstoneEngine.sanitizeCloudTombstones(
++        companyId,
++        ['PUR-UUID-101', '2026-27::SUP-9_Inv-Abc-01'],
++        cloudRegistry: cloudReg,
++      );
++      expect(sanitized.contains('PUR-UUID-101'), isTrue);
++      expect(sanitized.contains('2026-27::SUP-9_Inv-Abc-01'), isTrue);
++
++      await TombstoneEngine.recordBatchTombstones(companyId, sanitized, timestamp: 300000, fy: fy);
++      D1SalesLedgerService.markPurchasePermanentlyDeleted('PUR-UUID-101', 'SUP-9', 'Inv-Abc-01', 'PUR-7', fy);
++      final loadedReg = await TombstoneEngine.getTombstoneRegistry(companyId);
++      final loadedTombs = await TombstoneEngine.getLocalTombstones(companyId);
++
++      // Purge in App memory
++      TombstoneEngine.purgeDeletedRecordsWithRegistry(ph, loadedReg);
++      TombstoneEngine.purgeDeletedRecords(ph, loadedTombs, loadedReg);
++      expect(ph.purchases, isEmpty);
++
++      // Step 3: Stale UPDATE envelope from D1/Outbox MUST NOT resurrect or unmark deleted Purchase
++      final staleUpdateEnv = SyncEnvelope(
++        seq: 3,
++        syncId: 'PUR-UUID-101',
++        storeToken: 'TK1',
++        documentType: 'PURCHASE',
++        action: 'UPDATE',
++        version: 2,
++        updatedAt: 250000,
++        isDeleted: 0,
++        billData: {
++          ...pur.toMap(),
++          'totalAmount': 650.0,
++          'version': 2,
++          'updatedAt': 250000,
++          'fy': fy,
++        },
++      );
++      expect(MasterSyncOrchestrator.dispatchEnvelope(envelope: staleUpdateEnv, phApp: ph), isFalse);
++      expect(ph.purchases, isEmpty);
++
++      // Step 4: Stale D1 sale_events delta replay MUST NOT resurrect deleted Purchase
++      final d1Mutated = D1SalesLedgerService.applyEventsToLocalPurchases(
++        ph.purchases,
++        [
++          {
++            'bill_id': 'PUR-UUID-101',
++            'bill_no': 'PUR-7',
++            'version': 2,
++            'action': 'UPDATE',
++            'fy': fy,
++            'sale_data': {
++              ...pur.toMap(),
++              'doc_type': 'PURCHASE',
++              'version': 2,
++              'updatedAt': 250000,
++              'fy': fy,
++            },
++          }
++        ],
++        fy,
++      );
++      expect(d1Mutated, isFalse);
++      expect(ph.purchases, isEmpty);
++
++      // Step 5: Stale Cloud JSON snapshot containing old Purchase MUST NOT resurrect via DeltaMergeEngine
++      final cloudMutated = DeltaMergeEngine.processCloudData(
++        ph,
++        {
++          'purc.json': jsonEncode([
++            {...pur.toMap(), 'version': 2, 'updatedAt': 250000}
++          ]),
++        },
++        loadedReg,
++        {},
++      );
++      expect(cloudMutated, isFalse);
++      expect(ph.purchases, isEmpty);
++    });
++
++    test('isPurchaseDeleted checks composite keys even when UUID is non-empty and differs from tombstoned UUID', () {
++      D1SalesLedgerService.activeFinancialYear = '2026-27';
++      D1SalesLedgerService.markPurchasePermanentlyDeleted('OLD-UUID', 'SUP-5', 'Bill-MixCase-9', 'PUR-12', '2026-27');
++      expect(
++        D1SalesLedgerService.isPurchaseDeleted('DIFFERENT-UUID', 'SUP-5', 'Bill-MixCase-9', 'PUR-12', '2026-27'),
++        isTrue,
++      );
++    });
++
++    test('CloudSignalChannel.aggregateRemoteSignals sorts out-of-order modify+delete chronologically so delete wins', () {
++      // Simulate server returning DELETE (ts=5000) and earlier UPDATE (ts=4000) out of order
++      final agg = CloudSignalChannel.aggregateRemoteSignals(
++        rawEvents: [
++          {
++            'id': 'ev-del',
++            'source': 'WEB',
++            'action': 'DELETE_PURCHASE',
++            'entityId': 'PUR-X1',
++            'timestamp': 5000,
++            'deletedIds': ['PUR-X1', '2026-27::SUP-1_Inv-99'],
++            'unmarkedIds': [],
++            'financialYear': '2026-27',
++          },
++          {
++            'id': 'ev-upd',
++            'source': 'WEB',
++            'action': 'DATA_SAVED',
++            'entityId': 'PUR-X1',
++            'timestamp': 4000,
++            'deletedIds': [],
++            'unmarkedIds': ['PUR-X1', '2026-27::SUP-1_Inv-99'],
++            'financialYear': '2026-27',
++          },
++        ],
++        mySource: 'app',
++        lastSeenTs: 1000,
++      );
++
++      expect(agg.mergedEvent, isNotNull);
++      expect(agg.mergedEvent!.deletedIds.contains('PUR-X1'), isTrue);
++      expect(agg.mergedEvent!.deletedIds.contains('2026-27::SUP-1_Inv-99'), isTrue);
++      expect(agg.mergedEvent!.unmarkedIds.contains('PUR-X1'), isFalse);
++    });
++
++    test('SyncQueueManager retains all 12 rapid Purchase delete operations in frame buffer without dropping any', () {
++      for (int i = 1; i <= 12; i++) {
++        final pur = Purchase(
++          id: 'BURST-PUR-$i',
++          internalNo: 'PUR-$i',
++          billNo: 'Inv-$i',
++          partyId: 'SUP-1',
++          distributorName: 'ALPHA',
++          date: DateTime(2026, 8, 1),
++          entryDate: DateTime(2026, 8, 1),
++          paymentMode: 'Credit',
++          totalAmount: 100.0 * i,
++          version: 2,
++          items: const [],
++        );
++        // Simulate edit followed immediately by delete on all 12
++        PurchaseSyncModule.onPurchaseSaved(pur, 'TOK-BURST');
++        PurchaseSyncModule.onPurchaseDeleted(pur, 'TOK-BURST');
++      }
++      final pending = SyncQueueManager.debugPendingOperations();
++      expect(pending.length, equals(12));
++      expect(pending.every((op) => op.isDeleted == 1 && op.action == 'DELETE'), isTrue);
++      SyncQueueManager.debugReset();
++    });
++
++    test('Sale edit -> delete workflow remains intact via MasterSyncOrchestrator and D1SalesLedgerService', () async {
++      final ph = PharoahManager();
++      ph.currentFY = '2026-27';
++      final sale = Sale(
++        id: 'SALE-1',
++        billNo: 'INV-1',
++        date: DateTime(2026, 6, 15),
++        partyId: 'CUST-1',
++        partyName: 'RETAIL',
++        partyGstin: '',
++        partyState: 'Rajasthan',
++        paymentMode: 'Cash',
++        totalAmount: 200.0,
++        version: 1,
++        updatedAt: 100000,
++        items: const [],
++      );
++      ph.sales = [sale];
++
++      final delRes = D1SalesLedgerService.applyEventsToLocalSales(
++        ph.sales,
++        [
++          {
++            'bill_id': 'SALE-1',
++            'bill_no': 'INV-1',
++            'version': 99999,
++            'action': 'DELETE',
++            'fy': '2026-27',
++            'sale_data': {'id': 'SALE-1', 'billNo': 'INV-1', 'is_deleted': 1, 'fy': '2026-27'},
++          }
++        ],
++        '2026-27',
++      );
++      expect(delRes, isTrue);
++      expect(ph.sales, isEmpty);
++      expect(D1SalesLedgerService.isBillDeleted('SALE-1', 'INV-1', '', '2026-27'), isTrue);
++    });
++  });
++}

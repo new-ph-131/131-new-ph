@@ -596,6 +596,8 @@ class MultiFyCloudVault {
                   final bool batsChanged = BatchDeltaMergeModule.mergeBatchHistoryFromCloudJson(
                     targetBatchHistory: locBatches,
                     incomingJson: cldMapRaw,
+                    tombstones: localTombstones,
+                    registry: localRegistry,
                   );
                   if (batsChanged) {
                     await targetFile.writeAsString(

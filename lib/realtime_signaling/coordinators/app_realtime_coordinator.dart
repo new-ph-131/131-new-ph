@@ -43,7 +43,7 @@ class AppRealtimeCoordinator {
       mySource: 'app',
       interval: const Duration(milliseconds: 2000),
       onBatchReceived: (batchOps) async {
-        if (ph.currentFY.isEmpty) return;
+        if (ph.currentFY.isEmpty) return false;
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phApp: ph);
         try {
           final workingDir = await ph.getWorkingPath();
@@ -154,36 +154,46 @@ class AppRealtimeCoordinator {
 
     if (deletedIds.isNotEmpty) {
       for (final d in deletedIds) {
-        if (d.trim().isNotEmpty) {
-          final clean = d.trim().toUpperCase();
+        final rawD = d.trim();
+        if (rawD.isNotEmpty) {
+          final bool keepCase = rawD.contains('_');
+          final clean = keepCase ? rawD : rawD.toUpperCase();
           final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
-              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
               : clean;
           _pendingDeletedIds.add(scoped);
           _pendingUnmarkedIds.remove(scoped);
           _pendingUnmarkedIds.remove(clean);
+          _pendingUnmarkedIds.remove(rawD);
         }
       }
     }
     if (unmarkedIds.isNotEmpty) {
       for (final u in unmarkedIds) {
-        if (u.trim().isNotEmpty) {
-          final clean = u.trim().toUpperCase();
+        final rawU = u.trim();
+        if (rawU.isNotEmpty) {
+          final bool keepCase = rawU.contains('_');
+          final clean = keepCase ? rawU : rawU.toUpperCase();
           final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
-              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+              ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
               : clean;
           _pendingUnmarkedIds.add(scoped);
           _pendingDeletedIds.remove(scoped);
           _pendingDeletedIds.remove(clean);
+          _pendingDeletedIds.remove(rawU);
         }
       }
     }
     if (entityId.isNotEmpty && (action.contains('DELETE') || action.contains('REMOVE'))) {
-      final clean = entityId.trim().toUpperCase();
+      final rawE = entityId.trim();
+      final bool keepCase = rawE.contains('_');
+      final clean = keepCase ? rawE : rawE.toUpperCase();
       final scoped = D1SalesLedgerService.isUnscopedSeriesKey(clean)
-          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy)
+          ? D1SalesLedgerService.scopeSecondaryKey(clean, effFy, keepCase)
           : clean;
       _pendingDeletedIds.add(scoped);
+      _pendingUnmarkedIds.remove(scoped);
+      _pendingUnmarkedIds.remove(rawE);
     }
 
     _pushDebounceTimer?.cancel();

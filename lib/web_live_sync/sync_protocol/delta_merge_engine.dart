@@ -180,9 +180,13 @@ class DeltaMergeEngine {
           // Exact UUID was deleted at or after this record timestamp — never resurrect it
           continue;
         }
+        final String scopedComp2Upper = scopedComp2.isNotEmpty ? scopedComp2.toUpperCase() : "";
+        final String scopedComp3Upper = scopedComp3.isNotEmpty ? scopedComp3.toUpperCase() : "";
         final int secDelTs = (scopedIntNo.isNotEmpty ? tombstoneRegistry[scopedIntNo] : null) ??
             (scopedComp3.isNotEmpty ? tombstoneRegistry[scopedComp3] : null) ??
             (scopedComp2.isNotEmpty ? tombstoneRegistry[scopedComp2] : null) ??
+            (scopedComp3Upper.isNotEmpty ? tombstoneRegistry[scopedComp3Upper] : null) ??
+            (scopedComp2Upper.isNotEmpty ? tombstoneRegistry[scopedComp2Upper] : null) ??
             (getCloudCompositeKey == null && scopedBNo.isNotEmpty ? tombstoneRegistry[scopedBNo] : null) ?? 0;
         if (secDelTs > 0 && (cloudTimestamp == 0 || secDelTs >= cloudTimestamp)) {
           // Secondary key in this FY was deleted at or after this record timestamp — block stale snapshot record
@@ -204,12 +208,18 @@ class DeltaMergeEngine {
             localList.removeAt(idx);
             changed = true;
           }
-          tombstoneRegistry[id] = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
-          tombstoneRegistry[id.toUpperCase()] = tombstoneRegistry[id]!;
-          if (getCloudCompositeKey == null && scopedBNo.isNotEmpty) tombstoneRegistry[scopedBNo] = tombstoneRegistry[id]!;
-          if (scopedIntNo.isNotEmpty) tombstoneRegistry[scopedIntNo] = tombstoneRegistry[id]!;
-          if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = tombstoneRegistry[id]!;
-          if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = tombstoneRegistry[id]!;
+          final int delTs = cloudTimestamp > 0 ? cloudTimestamp : nowEpoch;
+          tombstoneRegistry[id] = delTs;
+          tombstoneRegistry[id.toUpperCase()] = delTs;
+          if (getCloudCompositeKey == null && scopedBNo.isNotEmpty) tombstoneRegistry[scopedBNo] = delTs;
+          if (scopedIntNo.isNotEmpty) tombstoneRegistry[scopedIntNo] = delTs;
+          if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = delTs;
+          if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = delTs;
+          if (getCloudCompositeKey != null) {
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy);
+          } else {
+            D1SalesLedgerService.markPermanentlyDeleted(id, billNo, internalNo, activeFy);
+          }
           continue;
         }
 
