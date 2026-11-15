@@ -34,6 +34,7 @@ class SaleChallanBillingView extends StatefulWidget {
 class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
   List<BillItem> items = [];
   final remarksC = TextEditingController();
+  bool _isSaving = false;
 
   double get totalAmt => items.fold(0, (sum, it) => sum + it.total);
 
@@ -215,7 +216,7 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
           ),
           if (!widget.isReadOnly)
             TextButton(
-              onPressed: items.isEmpty ? null : () => _handleSave(ph),
+              onPressed: (items.isEmpty || _isSaving) ? null : () => _handleSave(ph),
               child: const Text("FINISH", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
         ],
@@ -372,15 +373,27 @@ class _SaleChallanBillingViewState extends State<SaleChallanBillingView> {
     );
   }
 
-void _handleSave(PharoahManager ph) async {
+  void _handleSave(PharoahManager ph) {
+    if (_isSaving) return;
+    if (widget.existingRecord != null && widget.existingRecord!.status == "Billed") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Ye Challan already Billed ho chuka hai, modify nahi ho sakta!"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    setState(() => _isSaving = true);
+
     bool isLocal = widget.party.state.trim().toLowerCase() == (ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase();
     AppBillGstSummary summary = AppBillingGstEngine.calculate(
       items: items,
       extraDiscount: 0.0,
       isLocal: isLocal,
     );
-    // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
-    final SaleChallan? finalized = await ph.finalizeSaleChallan(
+    // 🆕 TWO-WAY SYNC TRIGGER: Synchronous in-memory save + instant navigation, background disk/cloud sync
+    final Future<SaleChallan?> saveFuture = ph.finalizeSaleChallan(
       billNo: widget.challanNo,
       date: widget.challanDate,
       party: widget.party,
@@ -390,33 +403,32 @@ void _handleSave(PharoahManager ph) async {
       partyId: widget.party.id,
       existingId: widget.existingRecord?.id,
     );
+    saveFuture.catchError((Object e, StackTrace st) {
+      debugPrint("⚠ [SaleChallanBillingView] Background save error: $e");
+      return null;
+    });
 
-    if (finalized == null && ph.saleChallans.isEmpty) {
+    if (ph.config.showCustomerSignChallan == true && ph.saleChallans.isNotEmpty) {
+      final SaleChallan createdChallan = ph.saleChallans.firstWhere(
+        (c) => (widget.existingRecord?.id != null && c.id == widget.existingRecord!.id) || c.billNo == widget.challanNo,
+        orElse: () => ph.saleChallans.last,
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (c) => ChallanSignatureView(
+            challan: createdChallan,
+            party: widget.party,
+          ),
+        ),
+      );
       return;
     }
-    final SaleChallan createdChallan = finalized ??
-        ph.saleChallans.firstWhere(
-          (c) => (widget.existingRecord?.id != null && c.id == widget.existingRecord!.id) || c.billNo == widget.challanNo,
-          orElse: () => ph.saleChallans.last,
-        );
 
-    if (ph.config.showCustomerSignChallan == true) {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context, 
-          MaterialPageRoute(builder: (c) => ChallanSignatureView(
-            challan: createdChallan, 
-            party: widget.party
-          ))
-        );
-      }
-    } else {
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Sale Challan Saved Successfully!"), backgroundColor: Colors.green)
-        );
-      }
-    }
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    messenger.showSnackBar(
+      const SnackBar(content: Text("✅ Sale Challan Saved Successfully!"), backgroundColor: Colors.green),
+    );
   }
 }

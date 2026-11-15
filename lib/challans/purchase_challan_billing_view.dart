@@ -35,6 +35,7 @@ class PurchaseChallanBillingView extends StatefulWidget {
 class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView> {
   List<PurchaseItem> items = [];
   final remarksC = TextEditingController();
+  bool _isSaving = false;
 
   double get totalAmt => items.fold(0, (sum, it) => sum + it.total);
 
@@ -215,7 +216,7 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
           ),
           if (!widget.isReadOnly)
             TextButton(
-              onPressed: items.isEmpty ? null : () => _handleSave(ph),
+              onPressed: (items.isEmpty || _isSaving) ? null : () => _handleSave(ph),
               child: const Text("FINISH", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
         ],
@@ -338,31 +339,44 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
         ),
       );
 
-  void _handleSave(PharoahManager ph) async {
+  void _handleSave(PharoahManager ph) {
+    if (_isSaving) return;
+    if (widget.existingRecord != null && widget.existingRecord!.status == "Billed") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Ye Challan already Billed ho chuka hai, modify nahi ho sakta!"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final String targetFy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
         ? widget.existingRecord!.effectiveOriginalFy
         : ph.currentFY;
     final dup = findDuplicateSupplierChallan(
       challans: ph.purchaseChallans,
       partyId: widget.distributor.id,
+      partyName: widget.distributor.name,
       billNo: widget.supplierChallanNo,
       excludeId: widget.existingRecord?.id,
       excludeInternalNo: widget.existingRecord?.internalNo,
       targetFy: targetFy,
     );
     if (dup != null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Ye challan #${dup.billNo} (${widget.distributor.name}) already purchase challan me entry ho chuka hai!"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Ye challan #${dup.billNo} (${widget.distributor.name}) already purchase challan me entry ho chuka hai!"),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
-    // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
-    final bool ok = await ph.finalizePurchaseChallan(
+
+    setState(() => _isSaving = true);
+
+    // 🆕 TWO-WAY SYNC TRIGGER: Synchronous in-memory save + instant navigation, background disk/cloud sync
+    final Future<bool> saveFuture = ph.finalizePurchaseChallan(
       billNo: widget.supplierChallanNo,
       internalNo: widget.internalNo,
       date: widget.challanDate,
@@ -373,20 +387,15 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
       partyId: widget.distributor.id,
       existingId: widget.existingRecord?.id,
     );
-    if (!ok) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Ye challan #${widget.supplierChallanNo} (${widget.distributor.name}) already purchase challan me entry ho chuka hai!"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-    if (mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Purchase Challan Saved Successfully!"), backgroundColor: Colors.green));
-    }
+    saveFuture.catchError((Object e, StackTrace st) {
+      debugPrint("⚠ [PurchaseChallanBillingView] Background save error: $e");
+      return false;
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    messenger.showSnackBar(
+      const SnackBar(content: Text("✅ Purchase Challan Saved Successfully!"), backgroundColor: Colors.green),
+    );
   }
 }

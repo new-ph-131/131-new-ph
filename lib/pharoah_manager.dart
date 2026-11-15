@@ -1565,7 +1565,6 @@ Future<bool> finalizePurchase({
         : normCurrFy);
     final String effFy = targetOfy.isNotEmpty ? targetOfy : normCurrFy;
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo, fy: effFy);
       D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(cId, billNo, effFy);
     }
     if (isEditMode) {
@@ -1589,23 +1588,7 @@ Future<bool> finalizePurchase({
       originalFy: targetOfy,
     );
     saleChallans.add(newChallan);
-    if (activeCompany != null) {
-      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
-      if (t.isNotEmpty) {
-        SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
-        await Future.wait([
-          D1SalesLedgerService.onSaleChallanSaved(
-            newChallan,
-            t,
-            isUpdate: existingCh != null,
-            clientSource: "APP_MOBILE",
-            fy: effFy,
-          ),
-          SyncQueueManager.flushOutboxAsJSONBatch(),
-        ]);
-      }
-    } 
-    
+
     // 🆕 STRICT TWO-WAY SYNC: Sale Challan items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
       String resolvedKey = item.medicineID;
@@ -1629,6 +1612,25 @@ Future<bool> finalizePurchase({
         isPurchaseRate: false,
       );
     }
+    notifyListeners();
+
+    if (activeCompany != null) {
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo, fy: effFy);
+      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      if (t.isNotEmpty) {
+        SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
+        await Future.wait([
+          D1SalesLedgerService.onSaleChallanSaved(
+            newChallan,
+            t,
+            isUpdate: existingCh != null,
+            clientSource: "APP_MOBILE",
+            fy: effFy,
+          ),
+          SyncQueueManager.flushOutboxAsJSONBatch(),
+        ]);
+      }
+    } 
     await save();
     if (activeCompany != null && activeCompany!.fYears.length > 1) {
       final sortedYears = AppDateLogic.sortFYList(activeCompany!.fYears);
@@ -1693,9 +1695,6 @@ Future<bool> finalizePurchase({
     final compKey2 = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
     final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo, fy: effFy);
-      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: effFy);
-      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: effFy);
       D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, effFy);
     }
     if (isEditMode) {
@@ -1718,23 +1717,7 @@ Future<bool> finalizePurchase({
       originalFy: targetOfy,
     );
     purchaseChallans.add(newPChallan);
-    if (activeCompany != null) {
-      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
-      if (t.isNotEmpty) {
-        PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
-        await Future.wait([
-          D1SalesLedgerService.onPurchaseChallanSaved(
-            newPChallan,
-            t,
-            isUpdate: existingCh != null,
-            clientSource: "APP_MOBILE",
-            fy: targetOfy.isNotEmpty ? targetOfy : normCurrFy,
-          ),
-          SyncQueueManager.flushOutboxAsJSONBatch(),
-        ]);
-      }
-    } 
-    
+
     // 🆕 STRICT TWO-WAY SYNC: Purchase Challan items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
       String resolvedKey = item.medicineID;
@@ -1757,6 +1740,27 @@ Future<bool> finalizePurchase({
         appliedRateType: item.appliedRateType,
       );
     }
+    notifyListeners();
+
+    if (activeCompany != null) {
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo, fy: effFy);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: effFy);
+      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: effFy);
+      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      if (t.isNotEmpty) {
+        PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
+        await Future.wait([
+          D1SalesLedgerService.onPurchaseChallanSaved(
+            newPChallan,
+            t,
+            isUpdate: existingCh != null,
+            clientSource: "APP_MOBILE",
+            fy: targetOfy.isNotEmpty ? targetOfy : normCurrFy,
+          ),
+          SyncQueueManager.flushOutboxAsJSONBatch(),
+        ]);
+      }
+    } 
     await save();
     if (activeCompany != null && activeCompany!.fYears.length > 1) {
       final sortedYears = AppDateLogic.sortFYList(activeCompany!.fYears);
