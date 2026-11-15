@@ -277,18 +277,23 @@ void main() {
       expect(isMatch(existingRecords[0], candidate), isFalse);
     });
 
-    test('T9: DeltaMergeEngine isolates records by ID: distinct UUIDs never overwrite', () {
+    test('T9: MultiFyCloudVault isolates records by ID: distinct UUIDs never overwrite', () {
       final list = [
-        {'id': 'UUID-AAA', 'billNo': 'Y-1', 'status': 'Pending', 'version': 1, 'updatedAt': 100},
+        {'id': 'UUID-AAA', 'billNo': 'Y-1', 'status': 'Pending', 'version': 1, 'updatedAt': 100, 'originalFy': '2025-2026'},
       ];
 
-      final incoming = {'id': 'UUID-BBB', 'billNo': 'Y-1', 'status': 'Pending', 'version': 1, 'updatedAt': 200};
+      final incoming = [
+        {'id': 'UUID-BBB', 'billNo': 'Y-1', 'status': 'Pending', 'version': 1, 'updatedAt': 200, 'originalFy': '2026-2027'},
+      ];
 
-      final merged = DeltaMergeEngine.mergeRecordLists(
-        localList: list,
-        incomingList: [incoming],
+      final res = MultiFyCloudVault.mergeJsonListLww(
+        fileName: 's_challan.json',
+        localRaw: jsonEncode(list),
+        cloudRaw: jsonEncode(incoming),
+        fy: '2026-2027',
       );
 
+      final merged = (jsonDecode(res.mergedJson) as List).cast<Map<String, dynamic>>();
       expect(merged.length, equals(2));
       expect(merged.any((r) => r['id'] == 'UUID-AAA'), isTrue);
       expect(merged.any((r) => r['id'] == 'UUID-BBB'), isTrue);
@@ -426,7 +431,7 @@ void main() {
         )
       ];
 
-      final dupInOtherFy = PurchaseChallan.findDuplicateSupplierChallan(
+      final dupInOtherFy = findDuplicateSupplierChallan(
         existingChallans,
         billNo: 'SUPP-100',
         partyId: 'SUP-1',
@@ -434,7 +439,7 @@ void main() {
       );
       expect(dupInOtherFy, isNull);
 
-      final dupInSameFy = PurchaseChallan.findDuplicateSupplierChallan(
+      final dupInSameFy = findDuplicateSupplierChallan(
         existingChallans,
         billNo: 'SUPP-100',
         partyId: 'SUP-1',
