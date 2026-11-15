@@ -391,15 +391,49 @@ void main() {
         originalFy: '2026-27',
       );
 
-      expect(ChallanLinkMatcher.matchesSaleChallan(oldFyChallan, links, targetFy: '2026-27'), isFalse);
-      expect(ChallanLinkMatcher.matchesSaleChallan(newFyChallan, links, targetFy: '2026-27'), isTrue);
+      expect(
+        ChallanLinkMatcher.matchesSaleChallan(
+          oldFyChallan,
+          explicitIds: links.explicitIds,
+          legacyNos: links.legacyNos,
+          billFy: '2026-27',
+        ),
+        isFalse,
+      );
+      expect(
+        ChallanLinkMatcher.matchesSaleChallan(
+          newFyChallan,
+          explicitIds: links.explicitIds,
+          legacyNos: links.legacyNos,
+          billFy: '2026-27',
+        ),
+        isTrue,
+      );
 
       final legacyLinks = ChallanLinkMatcher.extractLinks(
-        linkedChallanIds: const ['Y-1'],
-        items: const [],
+        linkedChallanIds: const [],
+        items: const [
+          {'sourceChallanNo': 'Y-1'},
+        ],
       );
-      expect(ChallanLinkMatcher.matchesSaleChallan(oldFyChallan, legacyLinks, targetFy: '2026-27'), isFalse);
-      expect(ChallanLinkMatcher.matchesSaleChallan(newFyChallan, legacyLinks, targetFy: '2026-27'), isTrue);
+      expect(
+        ChallanLinkMatcher.matchesSaleChallan(
+          oldFyChallan,
+          explicitIds: legacyLinks.explicitIds,
+          legacyNos: legacyLinks.legacyNos,
+          billFy: '2026-27',
+        ),
+        isFalse,
+      );
+      expect(
+        ChallanLinkMatcher.matchesSaleChallan(
+          newFyChallan,
+          explicitIds: legacyLinks.explicitIds,
+          legacyNos: legacyLinks.legacyNos,
+          billFy: '2026-27',
+        ),
+        isTrue,
+      );
     });
 
     test('T8: MultiFyCloudVault isolates s_challan.json & p_challan.json distinct UUIDs and uses composite key for purc.json', () {

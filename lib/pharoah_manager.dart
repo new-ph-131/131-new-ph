@@ -877,7 +877,6 @@ Future<bool> finalizePurchase({
       billNo: billNo,
       excludeId: existingIdx != -1 ? purchases[existingIdx].id : pId,
       excludeInternalNo: existingIdx != -1 ? purchases[existingIdx].internalNo : internalNo,
-      targetFy: currentFY,
     );
     if (dupPurchase != null) return false;
     if (!parties.any((pt) => pt.id == party.id)) {

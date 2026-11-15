@@ -1231,12 +1231,13 @@ PurchaseChallan? findDuplicateSupplierChallan({
 /// Separates explicit immutable challan UUID links from legacy number-only fallback.
 class ChallanLinkMatcher {
   static ({Set<String> explicitIds, Set<String> legacyNos}) extractLinks({
-    Iterable<String> linkedChallanIds = const [],
+    Iterable<dynamic> linkedChallanIds = const [],
     Iterable<dynamic> items = const [],
   }) {
     final Set<String> explicitIds = {};
     final Set<String> legacyNos = {};
     for (final raw in linkedChallanIds) {
+      if (raw == null) continue;
       final s = raw.toString().trim().toUpperCase();
       if (s.isNotEmpty) explicitIds.add(s);
     }

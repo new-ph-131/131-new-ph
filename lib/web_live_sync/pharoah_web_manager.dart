@@ -2631,7 +2631,6 @@ class PharoahWebManager with ChangeNotifier {
       billNo: purchase.billNo,
       excludeId: isUpdate ? purchases[existingIdx].id : purchase.id,
       excludeInternalNo: isUpdate ? purchases[existingIdx].internalNo : purchase.internalNo,
-      targetFy: financialYear,
     );
     if (dupPurchase != null) return false;
 
