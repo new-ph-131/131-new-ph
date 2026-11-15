@@ -432,7 +432,7 @@ void main() {
       ];
 
       final dupInOtherFy = findDuplicateSupplierChallan(
-        existingChallans,
+        challans: existingChallans,
         billNo: 'SUPP-100',
         partyId: 'SUP-1',
         targetFy: '2026-2027',
@@ -440,7 +440,7 @@ void main() {
       expect(dupInOtherFy, isNull);
 
       final dupInSameFy = findDuplicateSupplierChallan(
-        existingChallans,
+        challans: existingChallans,
         billNo: 'SUPP-100',
         partyId: 'SUP-1',
         targetFy: '2025-2026',
