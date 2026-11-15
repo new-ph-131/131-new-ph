@@ -99,6 +99,8 @@ class TombstoneEngine {
   }
 
   /// Returns timestamped unmark map so stale unmarks never block newer cloud deletions.
+  static Future<Map<String, int>> getUnmarkedTombstoneRegistry(String companyId) => getUnmarkedRegistry(companyId);
+
   static Future<Map<String, int>> getUnmarkedRegistry(String companyId) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString('unmarked_registry_$companyId');

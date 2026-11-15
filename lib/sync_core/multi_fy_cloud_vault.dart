@@ -1159,7 +1159,7 @@ class MultiFyCloudVault {
     filesPayload['registered_fyears.json'] = jsonEncode(sortedFys);
     filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
     filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
-    final unmarkedReg = await TombstoneEngine.getUnmarkedTombstoneRegistry(comp.id);
+    final unmarkedReg = await TombstoneEngine.getUnmarkedRegistry(comp.id);
     if (unmarkedReg.isNotEmpty) {
       filesPayload['unmarked_tombstones.json'] = jsonEncode(unmarkedReg);
     }

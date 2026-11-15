@@ -938,7 +938,7 @@ void main() {
           ),
       ]);
 
-      final unmarkReg = await TombstoneEngine.getUnmarkedTombstoneRegistry(cid);
+      final unmarkReg = await TombstoneEngine.getUnmarkedRegistry(cid);
       for (int i = 1; i <= 10; i++) {
         expect(unmarkReg.containsKey('SC-RECREATED-$i'), isTrue);
         expect(unmarkReg.containsKey('PC-RECREATED-$i'), isTrue);
