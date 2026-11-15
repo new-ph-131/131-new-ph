@@ -360,8 +360,6 @@ class Medicine {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
-    'originalFy': effectiveOriginalFy,
-    'original_fy': effectiveOriginalFy,
   };
 
   factory Medicine.fromMap(Map<String, dynamic> map) => Medicine(
@@ -406,8 +404,6 @@ class Party {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
-    'originalFy': effectiveOriginalFy,
-    'original_fy': effectiveOriginalFy,
   };
 
   factory Party.fromMap(Map<String, dynamic> map) => Party(
@@ -562,7 +558,6 @@ class Sale {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
   );
 
   String get syncId => id;
@@ -578,8 +573,6 @@ class Sale {
         s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
         s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
         s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
-        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
-        if (rawOfy.isNotEmpty) s.originalFy = rawOfy;
         return s;
       }
     }
@@ -643,7 +636,6 @@ class Purchase {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
   );
 
   String get syncId => id;
@@ -698,6 +690,8 @@ class SaleChallan {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
+    'originalFy': effectiveOriginalFy,
+    'original_fy': effectiveOriginalFy,
   };
 
   factory SaleChallan.fromMap(Map<String, dynamic> map) => SaleChallan(
@@ -713,6 +707,7 @@ class SaleChallan {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
+    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
   );
 
   String get syncId => id;
@@ -728,6 +723,8 @@ class SaleChallan {
         s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
         s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
         s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
+        if (rawOfy.isNotEmpty) s.originalFy = rawOfy;
         return s;
       }
     }
@@ -765,6 +762,8 @@ class PurchaseChallan {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
+    'originalFy': effectiveOriginalFy,
+    'original_fy': effectiveOriginalFy,
   };
 
   factory PurchaseChallan.fromMap(Map<String, dynamic> map) => PurchaseChallan(
@@ -777,7 +776,29 @@ class PurchaseChallan {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  ); 
+    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
+  );
+
+  String get syncId => id;
+
+  factory PurchaseChallan.fromEnvelope(Map<String, dynamic> map) {
+    if (map.containsKey('bill_data') && map['bill_data'] != null) {
+      var d = map['bill_data'];
+      if (d is String) {
+        try { d = jsonDecode(d); } catch (_) {}
+      }
+      if (d is Map<String, dynamic>) {
+        var s = PurchaseChallan.fromMap(d);
+        s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
+        s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
+        s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
+        if (rawOfy.isNotEmpty) s.originalFy = rawOfy;
+        return s;
+      }
+    }
+    return PurchaseChallan.fromMap(map);
+  } 
 }
 
 class SaleReturn { 
