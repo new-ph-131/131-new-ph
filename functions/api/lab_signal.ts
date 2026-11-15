@@ -216,11 +216,34 @@ export async function onRequestPost(context: any) {
           const evStatus = (ev.status || (evAction === "CANCEL" ? "Cancelled" : (evAction === "DELETE" ? "Deleted" : "Active"))).toString();
           const clientSource = (ev.client_source || body.source || "UNKNOWN").toString();
           const evPayloadObj = typeof ev.payload === "string" ? JSON.parse(ev.payload || "{}") : (ev.payload || ev);
-          const evFy = (reqFy || (evPayloadObj && evPayloadObj.fy) || "").toString().trim();
-          if (evPayloadObj && typeof evPayloadObj === "object" && evFy && !evPayloadObj.fy) {
-            evPayloadObj.fy = evFy;
+          const evFy = (
+            reqFy ||
+            (evPayloadObj && (evPayloadObj.fy || evPayloadObj.originalFy)) ||
+            inferFyFromDateStr(evPayloadObj && evPayloadObj.date) ||
+            ""
+          ).toString().trim();
+          const rawDocType = ((evPayloadObj && evPayloadObj.doc_type) || body.entityType || "").toString().trim().toUpperCase();
+          const upperBodyAction = (body.action || "").toString().toUpperCase();
+          const isSaleChallanEvt = rawDocType === "SALE_CHALLAN" || upperBodyAction.includes("SALE_CHALLAN");
+          const isPurchaseChallanEvt = rawDocType === "PURCHASE_CHALLAN" || upperBodyAction.includes("PURCHASE_CHALLAN");
+          const isPurchaseEvt = !isSaleChallanEvt && !isPurchaseChallanEvt && (
+            rawDocType === "PURCHASE" ||
+            upperBodyAction.includes("PURCHASE") ||
+            (evPayloadObj && evPayloadObj.internalNo !== undefined)
+          );
+          const resolvedEntityType = isSaleChallanEvt
+            ? "SALE_CHALLAN"
+            : isPurchaseChallanEvt
+              ? "PURCHASE_CHALLAN"
+              : isPurchaseEvt
+                ? "PURCHASE"
+                : "SALE";
+          const isPurchaseStyleDoc = isPurchaseEvt || isPurchaseChallanEvt;
+          if (evPayloadObj && typeof evPayloadObj === "object") {
+            if (evFy && !evPayloadObj.fy) evPayloadObj.fy = evFy;
+            if (!evPayloadObj.doc_type) evPayloadObj.doc_type = resolvedEntityType;
           }
-          const payload = typeof ev.payload === "string" ? ev.payload : JSON.stringify(evPayloadObj || {});
+          const payload = JSON.stringify(evPayloadObj || {});
 
           // Sticky DELETE + Optimistic Concurrency Control (OCC) Check
           if (evAction !== "DELETE" && billId) {
@@ -260,23 +283,46 @@ export async function onRequestPost(context: any) {
 
           const delIds: string[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
           const unmIds: string[] = Array.isArray(body.unmarkedIds) ? body.unmarkedIds : [];
-          const isPurchaseEvt = (body.action || "").toString().toUpperCase().includes("PURCHASE") ||
-            (evPayloadObj && (evPayloadObj.doc_type === "PURCHASE" || evPayloadObj.internalNo !== undefined));
 
           const atomicDelKeys: string[] = [];
           const atomicUnmKeys: string[] = [];
           if (evAction === "DELETE") {
             if (billId) atomicDelKeys.push(billId);
+            if (billNo && !isPurchaseStyleDoc) {
+              if (evFy) atomicDelKeys.push(`${evFy}::${billNo.toUpperCase()}`);
+              else atomicDelKeys.push(billNo.toUpperCase());
+            }
+            if (isPurchaseStyleDoc && evPayloadObj && typeof evPayloadObj === "object") {
+              const pParty = (evPayloadObj.partyId || "").toString().trim().toUpperCase();
+              const pBill = (evPayloadObj.billNo || "").toString().trim();
+              const pInt = (evPayloadObj.internalNo || "").toString().trim().toUpperCase();
+              const effEvFy = evFy || inferFyFromDateStr(evPayloadObj.date);
+              if (pInt) {
+                if (effEvFy) atomicDelKeys.push(`${effEvFy}::${pInt}`);
+                else atomicDelKeys.push(pInt);
+              }
+              if (pParty && pBill) {
+                const c2 = `${pParty}_${pBill}`;
+                if (effEvFy) atomicDelKeys.push(`${effEvFy}::${c2}`);
+                else atomicDelKeys.push(c2);
+                if (pInt) {
+                  const c3 = `${pParty}_${pBill}_${pInt}`;
+                  if (effEvFy) atomicDelKeys.push(`${effEvFy}::${c3}`);
+                  else atomicDelKeys.push(c3);
+                }
+              }
+            }
             for (const d of delIds) {
               if (d && typeof d === "string" && d.trim()) atomicDelKeys.push(d.trim());
             }
           } else {
             if (billId) atomicUnmKeys.push(billId);
-            if (billNo && !isPurchaseEvt) {
+            if (billNo && !isPurchaseStyleDoc) {
               atomicUnmKeys.push(billNo);
+              atomicUnmKeys.push(billNo.toUpperCase());
               if (evFy) atomicUnmKeys.push(`${evFy}::${billNo.toUpperCase()}`);
             }
-            if (isPurchaseEvt && evPayloadObj && typeof evPayloadObj === "object") {
+            if (isPurchaseStyleDoc && evPayloadObj && typeof evPayloadObj === "object") {
               const pParty = (evPayloadObj.partyId || "").toString().trim().toUpperCase();
               const pBill = (evPayloadObj.billNo || "").toString().trim();
               const pInt = (evPayloadObj.internalNo || "").toString().trim().toUpperCase();
@@ -306,7 +352,7 @@ export async function onRequestPost(context: any) {
             storeToken,
             source: clientSource.toUpperCase().includes("WEB") ? "WEB" : (clientSource.toUpperCase().includes("APP") ? "APP" : clientSource.toUpperCase()),
             action: body.action || evAction,
-            entityType: isPurchaseEvt ? "PURCHASE" : "SALE",
+            entityType: resolvedEntityType,
             entityId: billId,
             financialYear: evFy,
             fy: evFy,
@@ -396,6 +442,10 @@ export async function onRequestPost(context: any) {
           else if (compKey) extractedBatchDeletedIds.push(compKey);
           if (scopedComp3) extractedBatchDeletedIds.push(scopedComp3);
           else if (compKey3) extractedBatchDeletedIds.push(compKey3);
+          if (rawBill && !isPurchaseDoc) {
+            if (scopedBill) extractedBatchDeletedIds.push(scopedBill);
+            else extractedBatchDeletedIds.push(rawBill.toUpperCase());
+          }
         } else {
           if (sId) extractedBatchUnmarkedIds.push(sId);
           if (rawInt) extractedBatchUnmarkedIds.push(rawInt);
