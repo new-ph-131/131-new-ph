@@ -285,9 +285,14 @@ class MultiFyCloudVault {
 
         if (candId.isNotEmpty && exId.isNotEmpty) {
           if (candId == exId) return i;
-          // For Challans across different FYs: never match distinct IDs!
-          final candFy = (candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString().trim();
-          final exFy = (existing['originalFy'] ?? existing['original_fy'] ?? existing['fy'] ?? '').toString().trim();
+          // 🛡️ STRICT PRIMARY ID RULE FOR PURCHASE CHALLANS (#F-03):
+          // Two Purchase Challans with distinct non-empty IDs NEVER collapse or overwrite,
+          // even inside the same FY. Only purc.json retains exact composite collapse (#PH-REV-812).
+          if (fileName == 'p_challan.json') {
+            continue;
+          }
+          final candFy = normalizeFyString((candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString());
+          final exFy = normalizeFyString((existing['originalFy'] ?? existing['original_fy'] ?? existing['fy'] ?? '').toString());
           if (candFy.isNotEmpty && exFy.isNotEmpty && candFy != exFy) {
             continue;
           }
@@ -304,8 +309,8 @@ class MultiFyCloudVault {
         }
 
         // Legacy fallback when at least one side has an empty ID:
-        final candFy = (candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString().trim();
-        final exFy = (existing['originalFy'] ?? existing['original_fy'] ?? existing['fy'] ?? '').toString().trim();
+        final candFy = normalizeFyString((candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString());
+        final exFy = normalizeFyString((existing['originalFy'] ?? existing['original_fy'] ?? existing['fy'] ?? '').toString());
         if (candFy.isNotEmpty && exFy.isNotEmpty && candFy != exFy) {
           continue; // Distinct financial years: never match legacy fallback!
         }

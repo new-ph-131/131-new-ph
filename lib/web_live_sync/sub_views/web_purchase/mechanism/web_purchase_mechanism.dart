@@ -118,18 +118,7 @@ class WebPurchaseMechanism {
       );
     }
 
-    // Mark any linked challans as Billed with full sync metadata if not already marked by addPurchaseAndSync
-    if (linkedChallanIds.isNotEmpty) {
-      for (var id in linkedChallanIds) {
-        int idx = webPh.purchaseChallans.indexWhere((c) => c.id == id || c.internalNo == id || c.billNo == id);
-        if (idx != -1 && webPh.purchaseChallans[idx].status != "Billed") {
-          webPh.purchaseChallans[idx].status = "Billed";
-          webPh.purchaseChallans[idx].version += 1;
-          webPh.purchaseChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
-          PurchaseChallanSyncModule.onPurchaseChallanSaved(webPh.purchaseChallans[idx], webPh.activeStoreToken);
-        }
-      }
-    }
+    // Linked challan transitions (Billed + cross-FY vault propagation + sync token) are handled monotonically inside addPurchaseAndSync.
 
     // 🛡️ Enterprise Ledger Protocol: Supplier balances are dynamically computed from transactions.
     webPh.rebuildInventory();

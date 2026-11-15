@@ -20,19 +20,27 @@ class PurchaseChallanRegister extends StatefulWidget {
 
 class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
   String searchQuery = "";
+  String fyFilter = "ALL"; // ALL | CURRENT | CARRY
   DateTime fromDate = DateTime.now();
   DateTime toDate = DateTime.now();
   bool _isInit = false;
+  String _boundFy = "";
+
+  bool _isCarryForward(PurchaseChallan ch, String currentFy) {
+    final ofy = ch.effectiveOriginalFy;
+    final curr = normalizeFyString(currentFy);
+    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInit) {
-      final ph = Provider.of<PharoahManager>(context, listen: false);
-      toDate = AppDateLogic.getSmartDate(ph.currentFY);
-      fromDate = toDate.subtract(const Duration(days: 30));
-      DateTime fyStart = AppDateLogic.getFYStart(ph.currentFY);
-      if (fromDate.isBefore(fyStart)) fromDate = fyStart;
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    if (!_isInit || _boundFy != ph.currentFY) {
+      final range = AppDateLogic.getRegisterDateRange(ph.currentFY);
+      fromDate = range.fromDate;
+      toDate = range.toDate;
+      _boundFy = ph.currentFY;
       _isInit = true;
     }
   }
@@ -40,14 +48,22 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
   @override
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
+    DateTime dOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    final fOnly = dOnly(fromDate);
+    final tOnly = dOnly(toDate);
 
     final list = ph.purchaseChallans.reversed.where((ch) {
-      bool matchesSearch = ch.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
+      if (ch.isDeleted == 1) return false;
+      bool matchesSearch = ch.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) ||
                            ch.billNo.toLowerCase().contains(searchQuery.toLowerCase()) ||
                            ch.internalNo.toLowerCase().contains(searchQuery.toLowerCase());
-      bool matchesDate = ch.date.isAfter(fromDate.subtract(const Duration(days: 1))) && 
-                         ch.date.isBefore(toDate.add(const Duration(days: 1)));
-      return matchesSearch && matchesDate;
+      final cOnly = dOnly(ch.date);
+      bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) || ch.status == "Pending";
+      bool isCarry = _isCarryForward(ch, ph.currentFY);
+      bool matchesFy = fyFilter == "ALL" ||
+          (fyFilter == "CURRENT" && !isCarry) ||
+          (fyFilter == "CARRY" && isCarry);
+      return matchesSearch && matchesDate && matchesFy;
     }).toList();
 
     return Scaffold(
@@ -122,8 +138,45 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
                 if(p != null) setState(() => toDate = p);
               }),
             ],
-          )
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _fyTabChip("ALL", "ALL"),
+              const SizedBox(width: 8),
+              _fyTabChip("CURRENT FY", "CURRENT"),
+              const SizedBox(width: 8),
+              _fyTabChip("CARRY-FORWARD", "CARRY"),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _fyTabChip(String label, String key) {
+    final bool selected = fyFilter == key;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => fyFilter = key),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: selected ? Colors.white : Colors.white24),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.amber.shade900 : Colors.white70,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -150,6 +203,11 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
 
   Widget _buildChallanCard(PurchaseChallan ch, PharoahManager ph) {
     bool isWeb = ch.id.startsWith("PCH-WEB") || ch.internalNo.startsWith("PCH-WEB") || ch.remarks.contains("WEB-PORTAL");
+    bool isCarry = _isCarryForward(ch, ph.currentFY);
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: true);
+    final String cfLabel = (!ch.hasValidDate && ch.effectiveOriginalFy.isEmpty)
+        ? "CF / LEGACY"
+        : (ch.effectiveOriginalFy.isNotEmpty ? "CF • ${ch.effectiveOriginalFy}" : "CF / LEGACY");
 
     return Card(
       elevation: 2,
@@ -195,6 +253,21 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
                       ],
                     ),
                     Text(DateFormat('dd MMM yyyy').format(ch.date), style: TextStyle(color: Colors.amber.shade900, fontSize: 10, fontWeight: FontWeight.bold)),
+                    if (isCarry || fwd.billedFy != null || fwd.shiftedFy != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (isCarry) _fyOriginBadge(cfLabel, Colors.deepPurple),
+                            if (fwd.billedFy != null)
+                              _fyOriginBadge("BILLED IN ${fwd.billedFy}", Colors.teal)
+                            else if (fwd.shiftedFy != null)
+                              _fyOriginBadge("SHIFTED → ${fwd.shiftedFy}", Colors.indigo),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -256,7 +329,24 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
     );
   }
 
+  Widget _fyOriginBadge(String text, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.shade300, width: 0.6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color.shade900, fontSize: 8, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
   void _showActionMenu(PurchaseChallan ch, PharoahManager ph) {
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: true);
+    final bool isBilledLocked = ch.status == "Billed" || fwd.billedFy != null;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -277,9 +367,9 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseChallanView(existingRecord: ch, isReadOnly: true)));
             }),
 
-            _menuTile(Icons.edit_note_rounded, "Modify / Edit Items", ch.status == "Billed" ? Colors.grey : Colors.orange, () {
-              if (ch.status == "Billed") {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Locked: Bill has already been generated!")));
+            _menuTile(Icons.edit_note_rounded, "Modify / Edit Items", isBilledLocked ? Colors.grey : Colors.orange, () {
+              if (isBilledLocked) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("🔒 Locked: Bill already generated. Delete linked Bill first.")));
                 return;
               }
               Navigator.pop(c);
@@ -299,10 +389,25 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
               }
             }),
 
-            _menuTile(Icons.delete_forever_rounded, "Delete Permanently", Colors.red, () {
-              Navigator.pop(c);
-              _confirmDelete(ch, ph);
-            }),
+            _menuTile(
+              isBilledLocked ? Icons.lock_outline : Icons.delete_forever_rounded,
+              isBilledLocked ? "Delete Locked (Billed)" : "Delete Permanently",
+              isBilledLocked ? Colors.grey : Colors.red,
+              () {
+                if (isBilledLocked) {
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(c);
+                _confirmDelete(ch, ph);
+              },
+            ),
             
             const SizedBox(height: 20),
           ],
@@ -315,6 +420,16 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
       ListTile(leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: c.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: c, size: 20)), title: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), onTap: onTap);
 
   void _confirmDelete(PurchaseChallan ch, PharoahManager ph) {
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: true);
+    if (ch.status == "Billed" || fwd.billedFy != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -322,10 +437,22 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
         content: const Text("This will reverse stock and remove the entry permanently."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("CANCEL")),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () {
-            ph.deletePurchaseChallan(ch.id);
-            Navigator.pop(c);
-          }, child: const Text("YES, DELETE", style: TextStyle(color: Colors.white))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              final bool ok = ph.deletePurchaseChallan(ch.id);
+              Navigator.pop(c);
+              if (!ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            child: const Text("YES, DELETE", style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
     );

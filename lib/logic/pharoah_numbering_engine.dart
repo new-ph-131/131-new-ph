@@ -19,7 +19,7 @@ class PharoahNumberingEngine {
     final prefs = await SharedPreferences.getInstance();
     
     // --- NAYA: Active FY ko read karke namespace banana ---
-    String currentFY = prefs.getString('active_fy_$companyID') ?? "default_fy";
+    String currentFY = normalizeFyString(prefs.getString('active_fy_$companyID') ?? "default_fy");
     String counterKey = 'lastID_${type}_${prefix}_${companyID}_$currentFY';
     
     List<int> existingNumbers = [];
@@ -30,11 +30,15 @@ class PharoahNumberingEngine {
       // Carry-forward pending challans from prior financial years must NEVER advance or consume
       // the new financial year's sequential numbers (e.g. Y-1 from 2025-26 must not force 2026-27 to start at Y-2).
       if (item is SaleChallan) {
-        if (currentFY.isNotEmpty && currentFY != "default_fy" && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != currentFY) {
+        if (item.isDeleted == 1) continue;
+        if (currentFY.isNotEmpty && currentFY != "default_fy" &&
+            normalizeFyString(item.effectiveOriginalFy) != currentFY) {
           continue;
         }
       } else if (item is PurchaseChallan) {
-        if (currentFY.isNotEmpty && currentFY != "default_fy" && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != currentFY) {
+        if (item.isDeleted == 1) continue;
+        if (currentFY.isNotEmpty && currentFY != "default_fy" &&
+            normalizeFyString(item.effectiveOriginalFy) != currentFY) {
           continue;
         }
       }
@@ -42,7 +46,7 @@ class PharoahNumberingEngine {
       String idToParse = "";
       
       try {
-        if (type == "PURCHASE" || type == "CHALLAN_PUR") {
+        if (type == "PURCHASE" || type == "CHALLAN_PUR" || type == "PURCHASE_CHALLAN") {
           idToParse = item.internalNo;
         } 
         else if (type == "PRODUCT") {

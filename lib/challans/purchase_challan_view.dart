@@ -161,12 +161,16 @@ class _PurchaseChallanViewState extends State<PurchaseChallanView> {
 
             if (!widget.isReadOnly && selectedDistributor != null && supplierChallanNoC.text.trim().isNotEmpty)
               Builder(builder: (context) {
+                final String targetFy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+                    ? widget.existingRecord!.effectiveOriginalFy
+                    : ph.currentFY;
                 final dup = findDuplicateSupplierChallan(
                   challans: ph.purchaseChallans,
                   partyId: selectedDistributor!.id,
                   billNo: supplierChallanNoC.text.trim(),
                   excludeId: widget.existingRecord?.id,
                   excludeInternalNo: widget.existingRecord?.internalNo,
+                  targetFy: targetFy,
                 );
                 if (dup == null) return const SizedBox.shrink();
                 return Container(
@@ -208,12 +212,16 @@ class _PurchaseChallanViewState extends State<PurchaseChallanView> {
                       return;
                     }
                     if (!widget.isReadOnly) {
+                      final String targetFy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+                          ? widget.existingRecord!.effectiveOriginalFy
+                          : ph.currentFY;
                       final dup = findDuplicateSupplierChallan(
                         challans: ph.purchaseChallans,
                         partyId: selectedDistributor!.id,
                         billNo: supplierChallanNoC.text.trim(),
                         excludeId: widget.existingRecord?.id,
                         excludeInternalNo: widget.existingRecord?.internalNo,
+                        targetFy: targetFy,
                       );
                       if (dup != null) {
                         ScaffoldMessenger.of(context).showSnackBar(

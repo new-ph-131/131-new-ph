@@ -617,9 +617,21 @@ void main() {
       expect(webPh.addPurchaseAndSync(pur), isTrue);
       expect(webPh.purchaseChallans.first.status, 'Billed');
 
-      // Delete SaleChallan & PurchaseChallan updates fyVault immediately
-      webPh.deleteSaleChallan('SC-WEB-1');
-      webPh.deletePurchaseChallan('PC-WEB-1');
+      // Hard Delete Lock: Billed challans cannot be deleted directly until linked Bill is deleted
+      expect(webPh.deleteSaleChallan('SC-WEB-1'), isFalse);
+      expect(webPh.deletePurchaseChallan('PC-WEB-1'), isFalse);
+      expect((jsonDecode(webPh.fyVault[fy]!['s_challan.json']!) as List).length, 1);
+      expect((jsonDecode(webPh.fyVault[fy]!['p_challan.json']!) as List).length, 1);
+
+      // Deleting linked Bills reverts both challans back to Pending
+      webPh.deleteSale('SALE-CONV-1');
+      webPh.deletePurchase('PUR-CONV-1');
+      expect(webPh.saleChallans.first.status, 'Pending');
+      expect(webPh.purchaseChallans.first.status, 'Pending');
+
+      // Now Pending challans CAN be deleted and update fyVault immediately
+      expect(webPh.deleteSaleChallan('SC-WEB-1'), isTrue);
+      expect(webPh.deletePurchaseChallan('PC-WEB-1'), isTrue);
       expect(jsonDecode(webPh.fyVault[fy]!['s_challan.json']!) as List, isEmpty);
       expect(jsonDecode(webPh.fyVault[fy]!['p_challan.json']!) as List, isEmpty);
     });

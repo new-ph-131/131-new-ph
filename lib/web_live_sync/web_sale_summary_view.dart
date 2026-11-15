@@ -688,17 +688,8 @@ class _WebSaleSummaryViewState extends State<WebSaleSummaryView> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
-            onPressed: () { 
-              if (sale.linkedChallanIds.isNotEmpty) {
-                for (var cid in sale.linkedChallanIds) {
-                  int idx = webPh.saleChallans.indexWhere((ch) => ch.id == cid);
-                  if (idx != -1) {
-                    webPh.saleChallans[idx].status = "Pending";
-                  }
-                }
-              }
-
-              webPh.deleteSale(sale.id); 
+            onPressed: () {
+              webPh.deleteSale(sale.id);
               Navigator.pop(c); 
 
               ScaffoldMessenger.of(context).showSnackBar(

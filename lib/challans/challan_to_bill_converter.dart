@@ -160,7 +160,7 @@ class _ChallanToBillConverterState extends State<ChallanToBillConverter> {
     for (var cid in selectedChallanIds) {
       var ch = ph.saleChallans.firstWhere((x) => x.id == cid);
       for (var item in ch.items) {
-        combinedItems.add(item.copyWith(sourceChallanNo: ch.billNo));
+        combinedItems.add(item.copyWith(sourceChallanNo: ch.billNo, sourceChallanId: ch.id));
       }
     }
 

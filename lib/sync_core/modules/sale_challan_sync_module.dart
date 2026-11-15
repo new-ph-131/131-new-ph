@@ -1,4 +1,5 @@
 // FILE: lib/sync_core/modules/sale_challan_sync_module.dart
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../../models.dart';
 import '../models/sync_envelope.dart';
@@ -58,6 +59,7 @@ class SaleChallanSyncModule {
     if (incoming.isDeleted == 1) {
       if (idx != -1) {
         final local = currentChallans[idx];
+        if (local.status == "Billed") return false;
         if (incoming.version > local.version || (incoming.version == local.version && incoming.updatedAt >= local.updatedAt)) {
           currentChallans.removeAt(idx);
           debugPrint("🗑️ [SaleChallanSyncModule] Evicted deleted sale challan: ${incoming.billNo}");
@@ -68,9 +70,17 @@ class SaleChallanSyncModule {
     }
     if (idx > -1) {
       final local = currentChallans[idx];
-      // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing
+      // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing (#F-06 Deterministic Equal-Ver/Equal-Ts)
       if (incoming.version < local.version) return false;
-      if (incoming.version == local.version && incoming.updatedAt < local.updatedAt) return false;
+      if (incoming.version == local.version) {
+        if (incoming.updatedAt < local.updatedAt) return false;
+        if (incoming.updatedAt == local.updatedAt) {
+          final String localCanon = _canonicalDigest(local);
+          final String incomingCanon = _canonicalDigest(incoming);
+          if (localCanon == incomingCanon) return false;
+          if (incomingCanon.compareTo(localCanon) <= 0) return false;
+        }
+      }
       currentChallans[idx] = incoming;
       return true;
     } else {
@@ -90,5 +100,22 @@ class SaleChallanSyncModule {
         return true;
       }
     }
+  }
+
+  static String _canonicalDigest(SaleChallan c) {
+    return jsonEncode({
+      'id': c.id.trim(),
+      'billNo': c.billNo.trim(),
+      'partyId': c.partyId.trim(),
+      'partyName': c.partyName.trim(),
+      'status': c.status.trim(),
+      'totalAmount': c.totalAmount,
+      'date': c.date.toIso8601String(),
+      'originalFy': c.effectiveOriginalFy,
+      'remarks': c.remarks.trim(),
+      'isDeleted': c.isDeleted,
+      'isSigned': c.isSigned,
+      'items': c.items.map((i) => i.toMap()).toList(),
+    });
   }
 }

@@ -1330,6 +1330,9 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
   // --- PROCEED BUTTON ---
   Widget _buildProceedButton() {
     final webPh = Provider.of<PharoahWebManager>(context, listen: false);
+    final String dupTargetFy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+        ? widget.existingRecord!.effectiveOriginalFy
+        : webPh.financialYear;
     final dupChallan = (!widget.isReadOnly && selectedSupplier != null && supplierRefC.text.trim().isNotEmpty)
         ? findDuplicateSupplierChallan(
             challans: webPh.purchaseChallans,
@@ -1337,6 +1340,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
             billNo: supplierRefC.text.trim(),
             excludeId: widget.existingRecord?.id,
             excludeInternalNo: widget.existingRecord?.internalNo,
+            targetFy: dupTargetFy,
           )
         : null;
     return Column(

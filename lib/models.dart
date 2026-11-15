@@ -658,8 +658,53 @@ class Purchase {
   } 
 }
 
-class SaleChallan { 
-  String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks, originalFy; DateTime date; List<BillItem> items; double totalAmount; List<ChallanSignature> sigHistory; bool isSigned;
+String normalizeFyString(String raw) {
+  final clean = raw.trim();
+  if (clean.isEmpty || !clean.contains('-')) return clean;
+  final parts = clean.split('-');
+  if (parts.length != 2) return clean;
+  int? y1 = int.tryParse(parts[0].trim());
+  int? y2 = int.tryParse(parts[1].trim());
+  if (y1 == null || y2 == null) return clean;
+  if (y1 < 100 && y1 >= 0) y1 += 2000;
+  final endTwo = (y2 % 100).toString().padLeft(2, '0');
+  return '$y1-$endTwo';
+}
+
+String deriveFyFromDate(DateTime dt) {
+  final int startYr = dt.month >= 4 ? dt.year : dt.year - 1;
+  final int endYr = startYr + 1;
+  return '$startYr-${(endYr % 100).toString().padLeft(2, '0')}';
+}
+
+({DateTime date, bool isValid}) parseChallanDateWithValidity(dynamic raw, {dynamic hasValidFlag}) {
+  DateTime? parsed;
+  if (raw is DateTime) {
+    parsed = raw;
+  } else if (raw != null) {
+    final s = raw.toString().trim();
+    if (s.isNotEmpty) {
+      parsed = DateTime.tryParse(s);
+    }
+  }
+  final bool explicitlyInvalid = hasValidFlag == false || hasValidFlag?.toString().toLowerCase() == 'false';
+  if (parsed == null || explicitlyInvalid) {
+    return (date: parsed ?? DateTime(1970, 1, 1), isValid: false);
+  }
+  if (parsed.year <= 1971) {
+    return (date: parsed, isValid: false);
+  }
+  return (date: parsed, isValid: true);
+}
+
+class SaleChallan {
+  String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks, originalFy;
+  DateTime date;
+  bool hasValidDate;
+  List<BillItem> items;
+  double totalAmount;
+  List<ChallanSignature> sigHistory;
+  bool isSigned;
   int updatedAt, version, isDeleted;
 
   SaleChallan({
@@ -669,46 +714,67 @@ class SaleChallan {
     this.salesmanName = "", this.remarks = "", this.sigHistory = const [], this.isSigned = false,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
     this.originalFy = "",
+    this.hasValidDate = true,
   });
 
   String get effectiveOriginalFy {
-    final clean = originalFy.trim();
-    if (clean.isNotEmpty && clean.contains("-")) {
+    final clean = normalizeFyString(originalFy);
+    if (clean.isNotEmpty && clean.contains('-')) {
       return clean;
     }
-    return '${date.month >= 4 ? date.year : date.year - 1}-${date.month >= 4 ? date.year + 1 : date.year}';
+    if (hasValidDate && date.year > 1971) {
+      return deriveFyFromDate(date);
+    }
+    return '';
   }
 
-  Map<String, dynamic> toMap() => {
-    'id': id, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(),
-    'partyName': partyName, 'partyGstin': partyGstin, 'partyState': partyState,
-    'totalAmount': totalAmount, 'status': status, 'salesmanName': salesmanName,
-    'remarks': remarks, 'items': items.map((i) => i.toMap()).toList(),
-    'sigHistory': sigHistory.map((s) => s.toMap()).toList(), 'isSigned': isSigned,
-    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
-    'version': version,
-    'isDeleted': isDeleted,
-    'is_deleted': isDeleted,
-    'sync_id': id,
-    'originalFy': effectiveOriginalFy,
-    'original_fy': effectiveOriginalFy,
-  };
+  Map<String, dynamic> toMap() {
+    final persistedOfy = normalizeFyString(originalFy);
+    return {
+      'id': id, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(),
+      'hasValidDate': hasValidDate,
+      'partyName': partyName, 'partyGstin': partyGstin, 'partyState': partyState,
+      'totalAmount': totalAmount, 'status': status, 'salesmanName': salesmanName,
+      'remarks': remarks, 'items': items.map((i) => i.toMap()).toList(),
+      'sigHistory': sigHistory.map((s) => s.toMap()).toList(), 'isSigned': isSigned,
+      'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+      'version': version,
+      'isDeleted': isDeleted,
+      'is_deleted': isDeleted,
+      'sync_id': id,
+      'originalFy': persistedOfy,
+      'original_fy': persistedOfy,
+    };
+  }
 
-  factory SaleChallan.fromMap(Map<String, dynamic> map) => SaleChallan(
-    id: map['id'] ?? "", billNo: map['billNo'] ?? "", partyId: map['partyId'] ?? "",
-    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
-    partyName: map['partyName'] ?? "", partyGstin: map['partyGstin'] ?? "",
-    partyState: map['partyState'] ?? "Rajasthan", totalAmount: (map['totalAmount'] ?? 0.0).toDouble(),
-    status: map['status'] ?? "Pending", salesmanName: map['salesmanName'] ?? "",
-    remarks: map['remarks'] ?? "",
-    items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
-    isSigned: map['isSigned'] ?? false,
-    sigHistory: (map['sigHistory'] as List?)?.map((s) => ChallanSignature.fromMap(s)).toList() ?? [],
-    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
-    version: (map['version'] ?? 1).toInt(),
-    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
-  );
+  factory SaleChallan.fromMap(Map<String, dynamic> map) {
+    final parsedDate = parseChallanDateWithValidity(
+      map['date'],
+      hasValidFlag: map['hasValidDate'],
+    );
+    final rawOfy = (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
+    return SaleChallan(
+      id: (map['id'] ?? '').toString(),
+      billNo: (map['billNo'] ?? '').toString(),
+      partyId: (map['partyId'] ?? '').toString(),
+      date: parsedDate.date,
+      hasValidDate: parsedDate.isValid,
+      partyName: (map['partyName'] ?? '').toString(),
+      partyGstin: (map['partyGstin'] ?? '').toString(),
+      partyState: (map['partyState'] ?? 'Rajasthan').toString(),
+      totalAmount: ((map['totalAmount'] ?? 0.0) as num).toDouble(),
+      status: (map['status'] ?? 'Pending').toString(),
+      salesmanName: (map['salesmanName'] ?? '').toString(),
+      remarks: (map['remarks'] ?? '').toString(),
+      items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
+      isSigned: map['isSigned'] == true,
+      sigHistory: (map['sigHistory'] as List?)?.map((s) => ChallanSignature.fromMap(s)).toList() ?? [],
+      updatedAt: int.tryParse((map['updatedAt'] ?? (parsedDate.isValid ? parsedDate.date.millisecondsSinceEpoch : 0)).toString()) ?? 0,
+      version: int.tryParse((map['version'] ?? 1).toString()) ?? 1,
+      isDeleted: int.tryParse((map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toString()) ?? 0,
+      originalFy: normalizeFyString(rawOfy),
+    );
+  }
 
   String get syncId => id;
 
@@ -723,17 +789,23 @@ class SaleChallan {
         s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
         s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
         s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
-        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
-        if (rawOfy.isNotEmpty) s.originalFy = rawOfy;
+        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? map['fy'] ?? '').toString().trim();
+        if (rawOfy.isNotEmpty) {
+          s.originalFy = normalizeFyString(rawOfy);
+        }
         return s;
       }
     }
     return SaleChallan.fromMap(map);
-  } 
+  }
 }
 
-class PurchaseChallan { 
-  String id, internalNo, billNo, partyId, distributorName, status, remarks, originalFy; DateTime date; List<PurchaseItem> items; double totalAmount;
+class PurchaseChallan {
+  String id, internalNo, billNo, partyId, distributorName, status, remarks, originalFy;
+  DateTime date;
+  bool hasValidDate;
+  List<PurchaseItem> items;
+  double totalAmount;
   int updatedAt, version, isDeleted;
 
   PurchaseChallan({
@@ -742,42 +814,62 @@ class PurchaseChallan {
     this.status = "Pending", this.remarks = "",
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
     this.originalFy = "",
+    this.hasValidDate = true,
   });
 
   String get effectiveOriginalFy {
-    final clean = originalFy.trim();
-    if (clean.isNotEmpty && clean.contains("-")) {
+    final clean = normalizeFyString(originalFy);
+    if (clean.isNotEmpty && clean.contains('-')) {
       return clean;
     }
-    return '${date.month >= 4 ? date.year : date.year - 1}-${date.month >= 4 ? date.year + 1 : date.year}';
+    if (hasValidDate && date.year > 1971) {
+      return deriveFyFromDate(date);
+    }
+    return '';
   }
 
-  Map<String, dynamic> toMap() => {
-    'id': id, 'internalNo': internalNo, 'billNo': billNo, 'partyId': partyId,
-    'date': date.toIso8601String(), 'distributorName': distributorName,
-    'totalAmount': totalAmount, 'status': status, 'remarks': remarks,
-    'items': items.map((i) => i.toMap()).toList(),
-    'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
-    'version': version,
-    'isDeleted': isDeleted,
-    'is_deleted': isDeleted,
-    'sync_id': id,
-    'originalFy': effectiveOriginalFy,
-    'original_fy': effectiveOriginalFy,
-  };
+  Map<String, dynamic> toMap() {
+    final persistedOfy = normalizeFyString(originalFy);
+    return {
+      'id': id, 'internalNo': internalNo, 'billNo': billNo, 'partyId': partyId,
+      'date': date.toIso8601String(), 'hasValidDate': hasValidDate,
+      'distributorName': distributorName,
+      'totalAmount': totalAmount, 'status': status, 'remarks': remarks,
+      'items': items.map((i) => i.toMap()).toList(),
+      'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
+      'version': version,
+      'isDeleted': isDeleted,
+      'is_deleted': isDeleted,
+      'sync_id': id,
+      'originalFy': persistedOfy,
+      'original_fy': persistedOfy,
+    };
+  }
 
-  factory PurchaseChallan.fromMap(Map<String, dynamic> map) => PurchaseChallan(
-    id: map['id'] ?? "", internalNo: map['internalNo'] ?? "", billNo: map['billNo'] ?? "",
-    partyId: map['partyId'] ?? "", distributorName: map['distributorName'] ?? "",
-    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
-    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), status: map['status'] ?? "Pending",
-    remarks: map['remarks'] ?? "",
-    items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
-    updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
-    version: (map['version'] ?? 1).toInt(),
-    isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
-  );
+  factory PurchaseChallan.fromMap(Map<String, dynamic> map) {
+    final parsedDate = parseChallanDateWithValidity(
+      map['date'],
+      hasValidFlag: map['hasValidDate'],
+    );
+    final rawOfy = (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
+    return PurchaseChallan(
+      id: (map['id'] ?? '').toString(),
+      internalNo: (map['internalNo'] ?? '').toString(),
+      billNo: (map['billNo'] ?? '').toString(),
+      partyId: (map['partyId'] ?? '').toString(),
+      distributorName: (map['distributorName'] ?? '').toString(),
+      date: parsedDate.date,
+      hasValidDate: parsedDate.isValid,
+      totalAmount: ((map['totalAmount'] ?? 0.0) as num).toDouble(),
+      status: (map['status'] ?? 'Pending').toString(),
+      remarks: (map['remarks'] ?? '').toString(),
+      items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],
+      updatedAt: int.tryParse((map['updatedAt'] ?? (parsedDate.isValid ? parsedDate.date.millisecondsSinceEpoch : 0)).toString()) ?? 0,
+      version: int.tryParse((map['version'] ?? 1).toString()) ?? 1,
+      isDeleted: int.tryParse((map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toString()) ?? 0,
+      originalFy: normalizeFyString(rawOfy),
+    );
+  }
 
   String get syncId => id;
 
@@ -792,13 +884,15 @@ class PurchaseChallan {
         s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
         s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
         s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
-        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
-        if (rawOfy.isNotEmpty) s.originalFy = rawOfy;
+        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? map['fy'] ?? '').toString().trim();
+        if (rawOfy.isNotEmpty) {
+          s.originalFy = normalizeFyString(rawOfy);
+        }
         return s;
       }
     }
     return PurchaseChallan.fromMap(map);
-  } 
+  }
 }
 
 class SaleReturn { 
@@ -1112,13 +1206,14 @@ PurchaseChallan? findDuplicateSupplierChallan({
   final String cleanBill = billNo.trim();
   final String cleanExId = (excludeId ?? '').trim();
   final String cleanExInt = (excludeInternalNo ?? '').trim().toUpperCase();
-  final String cleanTargetFy = (targetFy ?? '').trim();
+  final String cleanTargetFy = normalizeFyString(targetFy ?? '');
   if ((cleanParty.isEmpty && cleanPartyName.isEmpty) || cleanBill.isEmpty) return null;
   for (final c in challans) {
     if (c.isDeleted == 1) continue;
     if (cleanExId.isNotEmpty && c.id.trim() == cleanExId) continue;
     if (cleanExInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanExInt) continue;
-    if (cleanTargetFy.isNotEmpty && c.effectiveOriginalFy.isNotEmpty && c.effectiveOriginalFy != cleanTargetFy) {
+    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
+    if (cleanTargetFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanTargetFy) {
       continue; // 🛡️ FY-Isolated: Carry-forward challan from another FY does not block active FY supplier billNo
     }
     final String cParty = c.partyId.trim().toUpperCase();
@@ -1130,4 +1225,100 @@ PurchaseChallan? findDuplicateSupplierChallan({
     }
   }
   return null;
+}
+
+/// Typed Bill-to-Challan Identity Resolution (#PH-CHALLAN-ID):
+/// Separates explicit immutable challan UUID links from legacy number-only fallback.
+class ChallanLinkMatcher {
+  static ({Set<String> explicitIds, Set<String> legacyNos}) extractLinks({
+    Iterable<String> linkedChallanIds = const [],
+    Iterable<dynamic> items = const [],
+  }) {
+    final Set<String> explicitIds = {};
+    final Set<String> legacyNos = {};
+    for (final raw in linkedChallanIds) {
+      final s = raw.toString().trim().toUpperCase();
+      if (s.isNotEmpty) explicitIds.add(s);
+    }
+    for (final it in items) {
+      String scId = '';
+      String scNo = '';
+      if (it is Map) {
+        scId = (it['sourceChallanId'] ?? '').toString().trim().toUpperCase();
+        scNo = (it['sourceChallanNo'] ?? '').toString().trim().toUpperCase();
+      } else {
+        try {
+          scId = (it.sourceChallanId as String).trim().toUpperCase();
+        } catch (_) {}
+        try {
+          scNo = (it.sourceChallanNo as String).trim().toUpperCase();
+        } catch (_) {}
+      }
+      if (scId.isNotEmpty) {
+        explicitIds.add(scId);
+      } else if (scNo.isNotEmpty) {
+        legacyNos.add(scNo);
+      }
+    }
+    return (explicitIds: explicitIds, legacyNos: legacyNos);
+  }
+
+  static bool matchesSaleChallan(
+    SaleChallan c, {
+    required Set<String> explicitIds,
+    required Set<String> legacyNos,
+    String? billPartyId,
+    String? billFy,
+  }) {
+    final String cid = c.id.trim().toUpperCase();
+    if (cid.isNotEmpty && explicitIds.contains(cid)) {
+      return true;
+    }
+    if (legacyNos.isEmpty) return false;
+    final String bNo = c.billNo.trim().toUpperCase();
+    if (bNo.isEmpty || !legacyNos.contains(bNo)) return false;
+
+    final String cleanBillFy = normalizeFyString(billFy ?? '');
+    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanBillFy) {
+      return false;
+    }
+    final String bParty = (billPartyId ?? '').trim().toUpperCase();
+    final String cParty = c.partyId.trim().toUpperCase();
+    if (bParty.isNotEmpty && cParty.isNotEmpty && bParty != cParty) {
+      return false;
+    }
+    return true;
+  }
+
+  static bool matchesPurchaseChallan(
+    PurchaseChallan c, {
+    required Set<String> explicitIds,
+    required Set<String> legacyNos,
+    String? billPartyId,
+    String? billFy,
+  }) {
+    final String cid = c.id.trim().toUpperCase();
+    if (cid.isNotEmpty && explicitIds.contains(cid)) {
+      return true;
+    }
+    if (legacyNos.isEmpty) return false;
+    final String iNo = c.internalNo.trim().toUpperCase();
+    final String bNo = c.billNo.trim().toUpperCase();
+    final bool noMatch = (iNo.isNotEmpty && legacyNos.contains(iNo)) ||
+        (bNo.isNotEmpty && legacyNos.contains(bNo));
+    if (!noMatch) return false;
+
+    final String cleanBillFy = normalizeFyString(billFy ?? '');
+    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanBillFy) {
+      return false;
+    }
+    final String bParty = (billPartyId ?? '').trim().toUpperCase();
+    final String cParty = c.partyId.trim().toUpperCase();
+    if (bParty.isNotEmpty && cParty.isNotEmpty && bParty != cParty) {
+      return false;
+    }
+    return true;
+  }
 }

@@ -17,7 +17,7 @@ class WebPharoahNumberingEngine {
   }) {
     List<int> existingNumbers = [];
     final String cleanPrefix = prefix.trim().toUpperCase();
-    final String cleanTargetFy = (targetFy ?? '').trim();
+    final String cleanTargetFy = normalizeFyString(targetFy ?? '');
 
     for (var item in currentList) {
       String idToParse = "";
@@ -27,14 +27,16 @@ class WebPharoahNumberingEngine {
         } else if (item is Purchase) {
           idToParse = item.internalNo;
         } else if (item is SaleChallan) {
+          if (item.isDeleted == 1) continue;
           // 🛡️ STRICT FY ISOLATION: Do not count carry-forward challans from prior financial years
-          if (cleanTargetFy.isNotEmpty && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != cleanTargetFy) {
+          if (cleanTargetFy.isNotEmpty && normalizeFyString(item.effectiveOriginalFy) != cleanTargetFy) {
             continue;
           }
           idToParse = item.billNo;
         } else if (item is PurchaseChallan) {
+          if (item.isDeleted == 1) continue;
           // 🛡️ STRICT FY ISOLATION: Do not count carry-forward purchase challans from prior financial years
-          if (cleanTargetFy.isNotEmpty && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != cleanTargetFy) {
+          if (cleanTargetFy.isNotEmpty && normalizeFyString(item.effectiveOriginalFy) != cleanTargetFy) {
             continue;
           }
           idToParse = item.internalNo;
@@ -47,7 +49,7 @@ class WebPharoahNumberingEngine {
         } else if (item is Medicine) {
           idToParse = item.systemId;
         } else if (item is Map<String, dynamic>) {
-          final String mapFy = (item['originalFy'] ?? item['original_fy'] ?? item['fy'] ?? '').toString().trim();
+          final String mapFy = normalizeFyString((item['originalFy'] ?? item['original_fy'] ?? item['fy'] ?? '').toString());
           if (cleanTargetFy.isNotEmpty && mapFy.isNotEmpty && mapFy != cleanTargetFy) {
             continue;
           }

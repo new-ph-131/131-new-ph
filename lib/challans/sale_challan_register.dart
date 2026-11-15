@@ -22,10 +22,17 @@ class SaleChallanRegister extends StatefulWidget {
 
 class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   String searchQuery = "";
+  String fyFilter = "ALL"; // ALL | CURRENT | CARRY
   DateTime fromDate = DateTime.now();
   DateTime toDate = DateTime.now();
   bool _isInit = false;
   String _boundFy = "";
+
+  bool _isCarryForward(SaleChallan ch, String currentFy) {
+    final ofy = ch.effectiveOriginalFy;
+    final curr = normalizeFyString(currentFy);
+    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+  }
 
   @override
   void didChangeDependencies() {
@@ -49,11 +56,15 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
 
     final list = ph.saleChallans.reversed.where((ch) {
       if (ch.isDeleted == 1) return false;
-      bool matchesSearch = ch.partyName.toLowerCase().contains(searchQuery.toLowerCase()) || 
+      bool matchesSearch = ch.partyName.toLowerCase().contains(searchQuery.toLowerCase()) ||
                            ch.billNo.toLowerCase().contains(searchQuery.toLowerCase());
       final cOnly = dOnly(ch.date);
       bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) || ch.status == "Pending";
-      return matchesSearch && matchesDate;
+      bool isCarry = _isCarryForward(ch, ph.currentFY);
+      bool matchesFy = fyFilter == "ALL" ||
+          (fyFilter == "CURRENT" && !isCarry) ||
+          (fyFilter == "CARRY" && isCarry);
+      return matchesSearch && matchesDate && matchesFy;
     }).toList();
 
     return Scaffold(
@@ -125,8 +136,45 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                 if(p != null) setState(() => toDate = p);
               }),
             ],
-          )
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _fyTabChip("ALL", "ALL"),
+              const SizedBox(width: 8),
+              _fyTabChip("CURRENT FY", "CURRENT"),
+              const SizedBox(width: 8),
+              _fyTabChip("CARRY-FORWARD", "CARRY"),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _fyTabChip(String label, String key) {
+    final bool selected = fyFilter == key;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => fyFilter = key),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: selected ? Colors.white : Colors.white24),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? const Color(0xFF1A237E) : Colors.white70,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -154,6 +202,11 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   Widget _buildChallanCard(SaleChallan ch, PharoahManager ph) {
     bool isPending = ch.status == "Pending";
     bool isWeb = ch.id.startsWith("SCH-WEB") || ch.salesmanName == "WEB-PORTAL";
+    bool isCarry = _isCarryForward(ch, ph.currentFY);
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
+    final String cfLabel = (!ch.hasValidDate && ch.effectiveOriginalFy.isEmpty)
+        ? "CF / LEGACY"
+        : (ch.effectiveOriginalFy.isNotEmpty ? "CF • ${ch.effectiveOriginalFy}" : "CF / LEGACY");
     
     // --- INTEGRITY LOGIC ---
     bool hasSign = ch.isSigned && ch.sigHistory.isNotEmpty;
@@ -213,6 +266,21 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                         ],
                       ],
                     ),
+                    if (isCarry || fwd.billedFy != null || fwd.shiftedFy != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (isCarry) _fyOriginBadge(cfLabel, Colors.deepPurple),
+                            if (fwd.billedFy != null)
+                              _fyOriginBadge("BILLED IN ${fwd.billedFy}", Colors.teal)
+                            else if (fwd.shiftedFy != null)
+                              _fyOriginBadge("SHIFTED → ${fwd.shiftedFy}", Colors.indigo),
+                          ],
+                        ),
+                      ),
                     if (isTampered) const Text("⚠️ EDITED AFTER SIGNING", style: TextStyle(color: Colors.orange, fontSize: 8, fontWeight: FontWeight.bold)),
                   ],
                 ),
@@ -266,6 +334,21 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
     );
   }
 
+  Widget _fyOriginBadge(String text, MaterialColor color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.shade50,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.shade300, width: 0.6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color.shade900, fontSize: 8, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
   Widget _statusBadge(String status, bool isPending) {
     return Container(
       margin: const EdgeInsets.only(top: 5),
@@ -281,6 +364,8 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
     if (hasSign) {
       isTampered = ch.totalAmount.toStringAsFixed(2) != ch.sigHistory.last.signedAmount.toStringAsFixed(2);
     }
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
+    final bool isBilledLocked = ch.status == "Billed" || fwd.billedFy != null;
 
     showModalBottomSheet(
       context: context,
@@ -300,7 +385,7 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                 _showSignaturePreview(ch);
               }),
 
-            if (isTampered && ch.status != "Billed")
+            if (isTampered && !isBilledLocked)
               _menuTile(Icons.draw_rounded, "Re-Verify (Re-Sign)", Colors.orange, () {
                 Navigator.pop(c);
                 _reSignChallan(ch, ph);
@@ -311,9 +396,9 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => SaleChallanView(existingRecord: ch, isReadOnly: true)));
             }),
 
-            _menuTile(Icons.edit, "Modify Challan", ch.status == "Billed" ? Colors.grey : Colors.orange, () {
-              if (ch.status == "Billed") {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Locked: Bill has already been generated!")));
+            _menuTile(Icons.edit, "Modify Challan", isBilledLocked ? Colors.grey : Colors.orange, () {
+              if (isBilledLocked) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("🔒 Locked: Bill already generated. Delete linked Bill first.")));
                 return;
               }
               Navigator.pop(c);
@@ -337,10 +422,25 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
               );
             }),
 
-            _menuTile(Icons.delete_forever, "Delete Challan", Colors.red, () {
-              Navigator.pop(c);
-              _confirmDelete(ch, ph);
-            }),
+            _menuTile(
+              isBilledLocked ? Icons.lock_outline : Icons.delete_forever,
+              isBilledLocked ? "Delete Locked (Billed)" : "Delete Challan",
+              isBilledLocked ? Colors.grey : Colors.red,
+              () {
+                if (isBilledLocked) {
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(c);
+                _confirmDelete(ch, ph);
+              },
+            ),
           ],
         ),
       ),
@@ -383,6 +483,16 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   }
 
   void _confirmDelete(SaleChallan ch, PharoahManager ph) {
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
+    if (ch.status == "Billed" || fwd.billedFy != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -390,10 +500,22 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
         content: const Text("Are you sure? This will remove the record and reverse stock impact."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("NO")),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.red), onPressed: () {
-            ph.deleteSaleChallan(ch.id);
-            Navigator.pop(c);
-          }, child: const Text("YES, DELETE", style: TextStyle(color: Colors.white))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              final bool ok = ph.deleteSaleChallan(ch.id);
+              Navigator.pop(c);
+              if (!ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            child: const Text("YES, DELETE", style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
     );

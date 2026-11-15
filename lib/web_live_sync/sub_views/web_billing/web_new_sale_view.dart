@@ -439,15 +439,6 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     webPh.addSaleAndSync(newSale);
     
     if (widget.linkedChallanIds != null && widget.linkedChallanIds!.isNotEmpty) {
-      for (var id in widget.linkedChallanIds!) {
-        int idx = webPh.saleChallans.indexWhere((c) => c.id == id || c.billNo == id);
-        if (idx != -1 && webPh.saleChallans[idx].status != "Billed") {
-          webPh.saleChallans[idx].status = "Billed";
-          webPh.saleChallans[idx].version += 1;
-          webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
-          SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
-        }
-      }
       await webPh.pushUpdatedDataToCloud();
     }
 

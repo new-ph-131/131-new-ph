@@ -276,10 +276,21 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     return const SizedBox();
   }
 
+  bool _isCarryForwardChallan(String effectiveOriginalFy, String currentFy) {
+    final ofy = normalizeFyString(effectiveOriginalFy);
+    final curr = normalizeFyString(currentFy);
+    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+  }
+
   Widget _stepMode(PharoahManager ph, Color color) => Center(child: Padding(padding: const EdgeInsets.all(30.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
     _modeCard("MONTHLY BATCH", "Select a month from Apr to Mar", Icons.calendar_month, color, () => _showMonthPicker(ph.currentFY)),
-    const SizedBox(height: 25),
+    const SizedBox(height: 20),
     _modeCard("RANDOM RANGE", "Custom selection in current FY", Icons.date_range, Colors.blueGrey, () => _pickRandom(ph.currentFY)),
+    const SizedBox(height: 20),
+    _modeCard("CARRY-FORWARD PENDING", "Stitch previous FY carried-forward pending challans", Icons.history, Colors.deepPurple, () => setState(() {
+      selectionMode = "CARRY_ONLY";
+      funnelStep = "ROUTE";
+    })),
   ])));
 
   Widget _stepRoute(PharoahManager ph, Color color) => Column(children: [
@@ -288,10 +299,22 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     Expanded(child: ListView.builder(itemCount: ph.routes.length, itemBuilder: (c, i) => ListTile(tileColor: Colors.white, title: Text(ph.routes[i].name, style: const TextStyle(fontWeight: FontWeight.bold)), onTap: () => setState(() { selectedRoute = ph.routes[i].name; funnelStep = "PARTY"; }))))
   ]);
 
+  bool _isChallanEligible(dynamic c, PharoahManager ph) {
+    if ((c.isDeleted ?? 0) == 1) return false;
+    if (c.status != "Pending") return false;
+    if (selectionMode == "CARRY_ONLY") {
+      final String ofy = c is SaleChallan ? c.effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
+      return _isCarryForwardChallan(ofy, ph.currentFY);
+    }
+    return true;
+  }
+
   Widget _stepParty(PharoahManager ph, Color color) {
     bool isSale = _tabController.index == 0;
     final list = ph.parties.where((p) {
-      bool hasPend = isSale ? ph.saleChallans.any((c)=>c.partyName==p.name && c.status=="Pending") : ph.purchaseChallans.any((c)=>c.distributorName==p.name && c.status=="Pending");
+      bool hasPend = isSale
+          ? ph.saleChallans.any((c) => c.partyName == p.name && _isChallanEligible(c, ph))
+          : ph.purchaseChallans.any((c) => c.distributorName == p.name && _isChallanEligible(c, ph));
       return hasPend && (selectedRoute == null || p.route == selectedRoute) && p.name.toLowerCase().contains(partySearch.toLowerCase());
     }).toList();
     return Column(children: [
@@ -300,7 +323,26 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
         Expanded(child: TextField(decoration: const InputDecoration(hintText: "Search Party..."), onChanged: (v)=>setState(()=>partySearch=v))),
         TextButton(onPressed: () => setState(() => selectedPartyNames = list.map((e)=>e.name).toList()), child: const Text("SELECT ALL")),
       ])),
-      Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (c, i) => CheckboxListTile(activeColor: color, value: selectedPartyNames.contains(list[i].name), title: Text(list[i].name, style: const TextStyle(fontWeight: FontWeight.bold)), onChanged: (v) => setState(() { v! ? selectedPartyNames.add(list[i].name) : selectedPartyNames.remove(list[i].name); })))),
+      Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (c, i) {
+        final party = list[i];
+        final pChs = isSale
+            ? ph.saleChallans.where((ch) => ch.partyName == party.name && _isChallanEligible(ch, ph)).toList()
+            : ph.purchaseChallans.where((ch) => ch.distributorName == party.name && _isChallanEligible(ch, ph)).toList();
+        final cfCount = pChs.where((ch) {
+          final String ofy = isSale ? (ch as SaleChallan).effectiveOriginalFy : (ch as PurchaseChallan).effectiveOriginalFy;
+          return _isCarryForwardChallan(ofy, ph.currentFY);
+        }).length;
+        return CheckboxListTile(
+          activeColor: color,
+          value: selectedPartyNames.contains(party.name),
+          title: Text(party.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            cfCount > 0 ? "${pChs.length} Pending ($cfCount Carry-Fwd)" : "${pChs.length} Pending",
+            style: TextStyle(fontSize: 11, color: cfCount > 0 ? Colors.deepPurple : Colors.grey),
+          ),
+          onChanged: (v) => setState(() { v! ? selectedPartyNames.add(party.name) : selectedPartyNames.remove(party.name); }),
+        );
+      })),
       if(selectedPartyNames.isNotEmpty) Container(padding: const EdgeInsets.all(20), child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: color, minimumSize: const Size(double.infinity, 50)), onPressed: () => _generateDrafts(ph), child: const Text("CONVERT SELECTED", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)))),
     ]);
   }
@@ -342,7 +384,9 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     List<Map<String, dynamic>> temp = []; bool isSale = _tabController.index == 0;
     for (var pName in selectedPartyNames) {
       var pObj = ph.parties.firstWhere((p) => p.name == pName);
-      var chs = isSale ? ph.saleChallans.where((c)=>c.partyName==pName && c.status=="Pending").toList() : ph.purchaseChallans.where((c)=>c.distributorName==pName && c.status=="Pending").toList();
+      var chs = isSale
+          ? ph.saleChallans.where((c) => c.partyName == pName && _isChallanEligible(c, ph)).toList()
+          : ph.purchaseChallans.where((c) => c.distributorName == pName && _isChallanEligible(c, ph)).toList();
       if(chs.isEmpty) continue;
       List<dynamic> items = [];
       for(var c in chs) { 

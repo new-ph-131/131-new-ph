@@ -115,18 +115,18 @@ extension PharoahSyncExtension on PharoahManager {
     );
   }
 
-  /// Safe Delete for Challans: Permanently logs tombstone and syncs to cloud
-  Future<void> syncDeleteChallan(String challanId, {String? challanNo, bool isSale = true}) async {
-    if (isSale) {
-      deleteSaleChallan(challanId);
-    } else {
-      deletePurchaseChallan(challanId);
-    }
+  /// Safe Delete for Challans: Permanently logs tombstone and syncs to cloud (blocked if Billed)
+  Future<bool> syncDeleteChallan(String challanId, {String? challanNo, bool isSale = true}) async {
+    final bool deleted = isSale
+        ? deleteSaleChallan(challanId)
+        : deletePurchaseChallan(challanId);
+    if (!deleted) return false;
     await SyncActionOrchestrator.instance.onChallanDeleted(
       ph: this,
       challanId: challanId,
       challanNo: challanNo,
     );
+    return true;
   }
 
   /// Safe Delete for Returns: Permanently logs tombstone and syncs to cloud

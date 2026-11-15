@@ -247,10 +247,20 @@ class DeltaMergeEngine {
           int localTimestamp = (localMap["updated_at"] ?? localMap["updatedAt"] ?? 0).toInt();
           int localVer = (localMap["version"] ?? 1).toInt();
 
-          // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing
-          if (cloudVersion > localVer ||
-              (cloudVersion == localVer && cloudTimestamp >= localTimestamp) ||
-              localTimestamp == 0) {
+          // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing (#F-06 Deterministic Equal-Ver/Equal-Ts)
+          bool shouldAccept = false;
+          if (cloudVersion > localVer || localTimestamp == 0) {
+            shouldAccept = true;
+          } else if (cloudVersion == localVer) {
+            if (cloudTimestamp > localTimestamp) {
+              shouldAccept = true;
+            } else if (cloudTimestamp == localTimestamp) {
+              final String locSig = jsonEncode(localMap);
+              final String cldSig = jsonEncode(cloudMap);
+              shouldAccept = cldSig != locSig && cldSig.compareTo(locSig) > 0;
+            }
+          }
+          if (shouldAccept) {
             localList[idx] = fromMap(cloudMap);
             changed = true;
           }

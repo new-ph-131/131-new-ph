@@ -58,13 +58,76 @@ import 'realtime_signaling/engines/fast_pull_engine.dart';
 import 'web_live_sync/sync_protocol/tombstone_engine.dart';
 import 'sync_bridge/core/sync_tombstone_hub.dart';
 import 'web_live_sync/sync_protocol/snapshot_watcher.dart';
+import 'sync_core/models/sync_envelope.dart';
 
 class PharoahManager with ChangeNotifier {
   // ===========================================================================
   // 1. GLOBAL STATE & SECURITY VARIABLES (CLASS LEVEL)
   // ===========================================================================
   
-  String activeModule = "HOME"; 
+  String activeModule = "HOME";
+  final Map<String, ({String? shiftedFy, String? billedFy})> _forwardChallanStatusCache = {};
+
+  /// Read-only status of a challan in FYs strictly newer than [currentFY].
+  /// Returns `(shiftedFy, billedFy)` for displaying Old-FY `[SHIFTED → ...]` / `[BILLED IN ...]` badges
+  /// and enforcing forward Billed delete locks.
+  ({String? shiftedFy, String? billedFy}) getForwardChallanStatus(
+    String challanId, {
+    required bool isPurchase,
+  }) {
+    final cleanId = challanId.trim();
+    if (cleanId.isEmpty) return (shiftedFy: null, billedFy: null);
+    final key = '${isPurchase ? 'P' : 'S'}:$cleanId';
+    return _forwardChallanStatusCache[key] ?? (shiftedFy: null, billedFy: null);
+  }
+
+  Future<void> _refreshForwardChallanStatusCache() async {
+    _forwardChallanStatusCache.clear();
+    if (activeCompany == null || activeCompany!.fYears.length < 2 || currentFY.trim().isEmpty) {
+      return;
+    }
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final basePath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}';
+      final List<String> years = AppDateLogic.sortFYList(activeCompany!.fYears);
+      final String normCurr = normalizeFyString(currentFY);
+      final int currIdx = years.indexWhere((y) => normalizeFyString(y) == normCurr);
+      if (currIdx == -1 || currIdx >= years.length - 1) return;
+
+      for (int i = currIdx + 1; i < years.length; i++) {
+        final String fy = years[i];
+        for (final isPur in const [false, true]) {
+          final String fn = isPur ? 'p_challan.json' : 's_challan.json';
+          final File f = File('$basePath/$fy/$fn');
+          if (!await f.exists()) continue;
+          try {
+            final raw = jsonDecode(await f.readAsString());
+            if (raw is! List) continue;
+            for (final item in raw) {
+              if (item is! Map) continue;
+              if ((item['isDeleted'] ?? 0) == 1) continue;
+              final String cid = (item['id'] ?? '').toString().trim();
+              if (cid.isEmpty) continue;
+              final String st = (item['status'] ?? 'Pending').toString().trim();
+              final String key = '${isPur ? 'P' : 'S'}:$cid';
+              final prev = _forwardChallanStatusCache[key] ?? (shiftedFy: null, billedFy: null);
+              if (st == 'Billed') {
+                _forwardChallanStatusCache[key] = (
+                  shiftedFy: prev.shiftedFy ?? fy,
+                  billedFy: fy,
+                );
+              } else {
+                _forwardChallanStatusCache[key] = (
+                  shiftedFy: prev.shiftedFy ?? fy,
+                  billedFy: prev.billedFy,
+                );
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  } 
   // --- CONDITIONAL BATCH FILTER WATCHDOG (NEW) ---
   // Yeh tabhi true dega jab company ke paas 1 se zyada Financial Years honge
   bool get showBatchFilter => activeCompany != null && activeCompany!.fYears.length > 1;
@@ -617,6 +680,7 @@ class PharoahManager with ChangeNotifier {
         saleReturns: saleReturns,      
         purchaseReturns: purchaseReturns 
       );
+      await _refreshForwardChallanStatusCache();
     } catch (e) {
       debugPrint("⚠ [loadAllData] Unexpected error in $currentFY: $e");
     } finally {
@@ -709,20 +773,20 @@ Future<void> finalizeSale({
       );
     }
 
-    final Set<String> allSaleChallanLinks = {
-      if (linkedIds != null)
-        for (final id in linkedIds)
-          if (id.trim().isNotEmpty) id.trim().toUpperCase(),
-      for (final it in items) ...[
-        if (it.sourceChallanId.trim().isNotEmpty) it.sourceChallanId.trim().toUpperCase(),
-        if (it.sourceChallanNo.trim().isNotEmpty) it.sourceChallanNo.trim().toUpperCase(),
-      ],
-    };
-    if (allSaleChallanLinks.isNotEmpty) {
+    final saleLinks = ChallanLinkMatcher.extractLinks(
+      linkedChallanIds: linkedIds ?? const [],
+      items: items,
+    );
+    if (saleLinks.explicitIds.isNotEmpty || saleLinks.legacyNos.isNotEmpty) {
       for (int i = 0; i < saleChallans.length; i++) {
         final c = saleChallans[i];
-        if (allSaleChallanLinks.contains(c.id.trim().toUpperCase()) ||
-            (c.billNo.trim().isNotEmpty && allSaleChallanLinks.contains(c.billNo.trim().toUpperCase()))) {
+        if (ChallanLinkMatcher.matchesSaleChallan(
+          c,
+          explicitIds: saleLinks.explicitIds,
+          legacyNos: saleLinks.legacyNos,
+          billPartyId: p.id,
+          billFy: currentFY,
+        )) {
           if (c.status != "Billed") {
             c.status = "Billed";
             c.version += 1;
@@ -813,6 +877,7 @@ Future<bool> finalizePurchase({
       billNo: billNo,
       excludeId: existingIdx != -1 ? purchases[existingIdx].id : pId,
       excludeInternalNo: existingIdx != -1 ? purchases[existingIdx].internalNo : internalNo,
+      targetFy: currentFY,
     );
     if (dupPurchase != null) return false;
     if (!parties.any((pt) => pt.id == party.id)) {
@@ -886,21 +951,20 @@ Future<bool> finalizePurchase({
       D1SalesLedgerService.onPurchaseSaved(newFinalPurchase, activeToken, isUpdate: isModify, clientSource: "APP_MOBILE", fy: currentFY);
     }
 
-    final Set<String> allPurChallanLinks = {
-      if (linkedChallanIds != null)
-        for (final id in linkedChallanIds)
-          if (id.trim().isNotEmpty) id.trim().toUpperCase(),
-      for (final it in items) ...[
-        if (it.sourceChallanId.trim().isNotEmpty) it.sourceChallanId.trim().toUpperCase(),
-        if (it.sourceChallanNo.trim().isNotEmpty) it.sourceChallanNo.trim().toUpperCase(),
-      ],
-    };
-    if (allPurChallanLinks.isNotEmpty) {
+    final purLinks = ChallanLinkMatcher.extractLinks(
+      linkedChallanIds: linkedChallanIds ?? const [],
+      items: items,
+    );
+    if (purLinks.explicitIds.isNotEmpty || purLinks.legacyNos.isNotEmpty) {
       for (int i = 0; i < purchaseChallans.length; i++) {
         final c = purchaseChallans[i];
-        if (allPurChallanLinks.contains(c.id.trim().toUpperCase()) ||
-            (c.internalNo.trim().isNotEmpty && allPurChallanLinks.contains(c.internalNo.trim().toUpperCase())) ||
-            (c.billNo.trim().isNotEmpty && allPurChallanLinks.contains(c.billNo.trim().toUpperCase()))) {
+        if (ChallanLinkMatcher.matchesPurchaseChallan(
+          c,
+          explicitIds: purLinks.explicitIds,
+          legacyNos: purLinks.legacyNos,
+          billPartyId: party.id,
+          billFy: currentFY,
+        )) {
           if (c.status != "Billed") {
             c.status = "Billed";
             c.version += 1;
@@ -1077,33 +1141,49 @@ Future<bool> finalizePurchase({
     return true;
   }
 
-  Future<void> finalizeBatchSales(List<Sale> batch) async { 
-    sales.addAll(batch); 
-    for (var s in batch) { 
-      if (s.linkedChallanIds.isNotEmpty) { 
-        for (var id in s.linkedChallanIds) { 
-          int i = saleChallans.indexWhere((c) => c.id == id || c.billNo == id); 
-          if (i != -1) {
-            saleChallans[i].status = "Billed";
-            saleChallans[i].version += 1;
-            saleChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
-            if (activeCompany != null) {
-              WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-                if (t.isNotEmpty) SaleChallanSyncModule.onSaleChallanSaved(saleChallans[i], t);
-              });
+  Future<void> finalizeBatchSales(List<Sale> batch) async {
+    sales.addAll(batch);
+    final String activeToken = activeCompany != null
+        ? await WebLiveToken.getOrCreateToken(activeCompany!.id)
+        : '';
+    for (var s in batch) {
+      final links = ChallanLinkMatcher.extractLinks(
+        linkedChallanIds: s.linkedChallanIds,
+        items: s.items,
+      );
+      if (links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) {
+        for (int i = 0; i < saleChallans.length; i++) {
+          final c = saleChallans[i];
+          if (ChallanLinkMatcher.matchesSaleChallan(
+            c,
+            explicitIds: links.explicitIds,
+            legacyNos: links.legacyNos,
+            billPartyId: s.partyId,
+            billFy: currentFY,
+          )) {
+            if (c.status != "Billed") {
+              c.status = "Billed";
+              c.version += 1;
+              c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+              if (activeToken.isNotEmpty) {
+                SaleChallanSyncModule.onSaleChallanSaved(c, activeToken);
+              }
+              await propagateChallanStatusAcrossDiskFolders(
+                challanId: c.id,
+                newStatus: "Billed",
+                isPurchase: false,
+                customVersion: c.version,
+                customUpdatedAt: c.updatedAt,
+              );
             }
           }
-        } 
+        }
       }
-      if (activeCompany != null) {
-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) {
-            SalesSyncModule.onSaleSaved(s, t);
-            D1SalesLedgerService.onSaleSaved(s, t, clientSource: "APP_MOBILE");
-          }
-        });
+      if (activeToken.isNotEmpty) {
+        SalesSyncModule.onSaleSaved(s, activeToken);
+        D1SalesLedgerService.onSaleSaved(s, activeToken, clientSource: "APP_MOBILE");
       }
-    } 
+    }
     if (batch.isNotEmpty && activeCompany != null) { 
       String l = batch.last.billNo; 
       String p = l.split(RegExp(r'\d')).first; 
@@ -1114,33 +1194,49 @@ Future<bool> finalizePurchase({
     notifyListeners(); 
   }
 
-  Future<void> finalizeBatchPurchases(List<Purchase> batch) async { 
-    purchases.addAll(batch); 
-    for (var p in batch) { 
-      if (p.linkedChallanIds.isNotEmpty) { 
-        for (var id in p.linkedChallanIds) { 
-          int i = purchaseChallans.indexWhere((c) => c.id == id || c.internalNo == id || c.billNo == id); 
-          if (i != -1) {
-            purchaseChallans[i].status = "Billed";
-            purchaseChallans[i].version += 1;
-            purchaseChallans[i].updatedAt = DateTime.now().millisecondsSinceEpoch;
-            if (activeCompany != null) {
-              WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-                if (t.isNotEmpty) PurchaseChallanSyncModule.onPurchaseChallanSaved(purchaseChallans[i], t);
-              });
+  Future<void> finalizeBatchPurchases(List<Purchase> batch) async {
+    purchases.addAll(batch);
+    final String activeToken = activeCompany != null
+        ? await WebLiveToken.getOrCreateToken(activeCompany!.id)
+        : '';
+    for (var p in batch) {
+      final links = ChallanLinkMatcher.extractLinks(
+        linkedChallanIds: p.linkedChallanIds,
+        items: p.items,
+      );
+      if (links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) {
+        for (int i = 0; i < purchaseChallans.length; i++) {
+          final c = purchaseChallans[i];
+          if (ChallanLinkMatcher.matchesPurchaseChallan(
+            c,
+            explicitIds: links.explicitIds,
+            legacyNos: links.legacyNos,
+            billPartyId: p.partyId,
+            billFy: currentFY,
+          )) {
+            if (c.status != "Billed") {
+              c.status = "Billed";
+              c.version += 1;
+              c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+              if (activeToken.isNotEmpty) {
+                PurchaseChallanSyncModule.onPurchaseChallanSaved(c, activeToken);
+              }
+              await propagateChallanStatusAcrossDiskFolders(
+                challanId: c.id,
+                newStatus: "Billed",
+                isPurchase: true,
+                customVersion: c.version,
+                customUpdatedAt: c.updatedAt,
+              );
             }
           }
-        } 
+        }
       }
-      if (activeCompany != null) {
-        WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
-          if (t.isNotEmpty) {
-            PurchaseSyncModule.onPurchaseSaved(p, t);
-            D1SalesLedgerService.onPurchaseSaved(p, t, clientSource: "APP_MOBILE");
-          }
-        });
+      if (activeToken.isNotEmpty) {
+        PurchaseSyncModule.onPurchaseSaved(p, activeToken);
+        D1SalesLedgerService.onPurchaseSaved(p, activeToken, clientSource: "APP_MOBILE");
       }
-    } 
+    }
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
     await save(); 
     notifyListeners(); 
@@ -1176,8 +1272,14 @@ Future<bool> finalizePurchase({
         final updatedList = raw.map((item) {
           if (item is Map && (item['id'] ?? '').toString().trim() == cleanTargetId) {
             if ((item['isDeleted'] ?? 0) != 1) {
+              final int destVer = int.tryParse((item['version'] ?? 1).toString()) ?? 1;
+              final int destTs = int.tryParse((item['updatedAt'] ?? 0).toString()) ?? 0;
+              final int targetVer = customVersion ?? (destVer + 1);
+              if (destVer > targetVer || (destVer == targetVer && destTs >= nowMs)) {
+                return item;
+              }
               item['status'] = newStatus;
-              item['version'] = customVersion ?? ((item['version'] ?? 1) + 1);
+              item['version'] = targetVer;
               item['updatedAt'] = nowMs;
               modified = true;
             }
@@ -1189,9 +1291,239 @@ Future<bool> finalizePurchase({
           debugPrint("✅ [App Cross-FY] Propagated challan $cleanTargetId status=$newStatus in $fy");
         }
       }
+      await _refreshForwardChallanStatusCache();
     } catch (e) {
       debugPrint("⚠ [propagateChallanStatusAcrossDiskFolders] Error: $e");
     }
+  }
+
+  /// 🛡️ CROSS-FY PENDING CHALLAN DELETION PROPAGATOR (App Local Files):
+  /// When a Pending challan is deleted in [sourceFy], removes its Pending carried-forward
+  /// copies in newer FYs (`> sourceFy`) and records target-FY tombstones so it never resurrects.
+  /// Never deletes any copy that has already been marked `"Billed"` in a newer FY.
+  Future<void> propagateChallanDeletionAcrossDiskFolders({
+    required String challanId,
+    required String sourceFy,
+    required bool isPurchase,
+    List<String> extraTombstoneKeys = const [],
+    int? customDeletedAt,
+  }) async {
+    if (activeCompany == null || challanId.trim().isEmpty) return;
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final basePath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}';
+      final fileName = isPurchase ? 'p_challan.json' : 's_challan.json';
+      final String cleanTargetId = challanId.trim();
+      final int delTs = customDeletedAt ?? DateTime.now().millisecondsSinceEpoch;
+      final List<String> years = AppDateLogic.sortFYList(activeCompany!.fYears);
+      final String normSource = normalizeFyString(sourceFy);
+      final int srcIdx = years.indexWhere((y) => normalizeFyString(y) == normSource);
+      if (srcIdx == -1 || srcIdx >= years.length - 1) {
+        await _refreshForwardChallanStatusCache();
+        return;
+      }
+      for (int i = srcIdx + 1; i < years.length; i++) {
+        final String targetFy = years[i];
+        final File file = File('$basePath/$targetFy/$fileName');
+        if (!await file.exists()) continue;
+        final raw = jsonDecode(await file.readAsString());
+        if (raw is! List) continue;
+        bool removedAny = false;
+        final List<dynamic> kept = [];
+        for (final item in raw) {
+          if (item is Map && (item['id'] ?? '').toString().trim() == cleanTargetId) {
+            final String st = (item['status'] ?? 'Pending').toString().trim();
+            if (st == 'Billed') {
+              kept.add(item);
+              continue;
+            }
+            removedAny = true;
+            continue;
+          }
+          kept.add(item);
+        }
+        final List<String> fyKeys = <String>[
+          cleanTargetId,
+          for (final k in extraTombstoneKeys)
+            if (k.trim().isNotEmpty) D1SalesLedgerService.scopeSecondaryKey(k.trim(), targetFy, k.contains('_')),
+        ];
+        await TombstoneEngine.recordBatchTombstones(activeCompany!.id, fyKeys, timestamp: delTs, fy: targetFy);
+        if (removedAny) {
+          await file.writeAsString(jsonEncode(kept));
+          debugPrint("🗑️ [App Cross-FY] Removed Pending carry-forward challan $cleanTargetId in $targetFy");
+        }
+      }
+      await _refreshForwardChallanStatusCache();
+    } catch (e) {
+      debugPrint("⚠ [propagateChallanDeletionAcrossDiskFolders] Error: $e");
+    }
+  }
+
+  /// 🛡️ CROSS-FY APP REALTIME DISK DISPATCHER:
+  /// Handles incoming envelopes (bill delete / challan save or delete) belonging to an inactive [eventFy]
+  /// directly inside that FY's disk folder and cascades Pending challans forward.
+  Future<bool> applyCrossFyChallanOrBillDeleteToDisk({
+    required String eventFy,
+    required String docType,
+    required SyncEnvelope envelope,
+  }) async {
+    if (activeCompany == null) return false;
+    final String cleanFy = normalizeFyString(eventFy);
+    if (cleanFy.isEmpty) return false;
+    bool mutated = false;
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final String dirPath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}/$cleanFy';
+      final Directory dir = Directory(dirPath);
+      if (!await dir.exists()) return false;
+      final bool isDelete = envelope.isDeleted == 1 || envelope.action.toUpperCase() == 'DELETE';
+      final String cid = activeCompany!.id;
+
+      if (docType == 'SALE' && isDelete) {
+        final File salesFile = File('$dirPath/sales.json');
+        final File scFile = File('$dirPath/s_challan.json');
+        List<Sale> fSales = [];
+        if (await salesFile.exists()) {
+          final raw = jsonDecode(await salesFile.readAsString());
+          if (raw is List) fSales = raw.map((e) => Sale.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        List<SaleChallan> fSc = [];
+        if (await scFile.exists()) {
+          final raw = jsonDecode(await scFile.readAsString());
+          if (raw is List) fSc = raw.map((e) => SaleChallan.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        final String sBNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+        D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, sBNo, "", cleanFy);
+        final rev = D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
+          events: [
+            {
+              'bill_id': envelope.syncId,
+              'bill_no': envelope.billData['billNo'] ?? '',
+              'action': 'DELETE_SALE',
+              'fy': cleanFy,
+              'created_at': envelope.updatedAt,
+              'sale_data': {...envelope.billData, 'fy': cleanFy, 'is_deleted': 1},
+            }
+          ],
+          targetFy: cleanFy,
+          existingSalesBeforeDelete: fSales,
+          saleChallans: fSc,
+          onSaleChallanReverted: (ch) {
+            TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: ch.id, secondaryKey: ch.billNo, fy: cleanFy);
+          },
+        );
+        final int beforeLen = fSales.length;
+        fSales.removeWhere((s) => (s.id == envelope.syncId || (sBNo.isNotEmpty && s.billNo.trim().toUpperCase() == sBNo)) && (envelope.updatedAt <= 0 || s.updatedAt <= envelope.updatedAt));
+        if (fSales.length != beforeLen) {
+          await salesFile.writeAsString(jsonEncode(fSales.map((e) => e.toMap()).toList()));
+          mutated = true;
+        }
+        if (rev.saleChallansMutated) {
+          await scFile.writeAsString(jsonEncode(fSc.map((e) => e.toMap()).toList()));
+          mutated = true;
+        }
+      } else if (docType == 'PURCHASE' && isDelete) {
+        final File purcFile = File('$dirPath/purc.json');
+        final File pcFile = File('$dirPath/p_challan.json');
+        List<Purchase> fPurc = [];
+        if (await purcFile.exists()) {
+          final raw = jsonDecode(await purcFile.readAsString());
+          if (raw is List) fPurc = raw.map((e) => Purchase.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        List<PurchaseChallan> fPc = [];
+        if (await pcFile.exists()) {
+          final raw = jsonDecode(await pcFile.readAsString());
+          if (raw is List) fPc = raw.map((e) => PurchaseChallan.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        final String pId = (envelope.billData['partyId'] ?? '').toString().trim().toUpperCase();
+        final String bNo = (envelope.billData['billNo'] ?? '').toString().trim();
+        final String iNo = (envelope.billData['internalNo'] ?? '').toString().trim().toUpperCase();
+        D1SalesLedgerService.markPurchasePermanentlyDeleted(
+          envelope.syncId, pId, bNo, iNo, cleanFy,
+          envelope.updatedAt > 0 ? envelope.updatedAt : null,
+        );
+        final rev = D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
+          events: [
+            {
+              'bill_id': envelope.syncId,
+              'bill_no': bNo,
+              'action': 'DELETE_PURCHASE',
+              'fy': cleanFy,
+              'created_at': envelope.updatedAt,
+              'sale_data': {...envelope.billData, 'doc_type': 'PURCHASE', 'fy': cleanFy, 'is_deleted': 1},
+            }
+          ],
+          targetFy: cleanFy,
+          existingPurchasesBeforeDelete: fPurc,
+          purchaseChallans: fPc,
+          onPurchaseChallanReverted: (ch) {
+            TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: ch.id, secondaryKey: ch.internalNo, fy: cleanFy);
+          },
+        );
+        final int beforeLen = fPurc.length;
+        fPurc.removeWhere((p) =>
+          (p.id == envelope.syncId ||
+           (iNo.isNotEmpty && p.internalNo.trim().toUpperCase() == iNo) ||
+           (pId.isNotEmpty && bNo.isNotEmpty && p.partyId.trim().toUpperCase() == pId && p.billNo.trim() == bNo)) &&
+          (envelope.updatedAt <= 0 || p.updatedAt <= envelope.updatedAt));
+        if (fPurc.length != beforeLen) {
+          await purcFile.writeAsString(jsonEncode(fPurc.map((e) => e.toMap()).toList()));
+          mutated = true;
+        }
+        if (rev.purchaseChallansMutated) {
+          await pcFile.writeAsString(jsonEncode(fPc.map((e) => e.toMap()).toList()));
+          mutated = true;
+        }
+      } else if (docType == 'CHALLAN' || docType == 'SALE_CHALLAN') {
+        final File scFile = File('$dirPath/s_challan.json');
+        List<SaleChallan> fSc = [];
+        if (await scFile.exists()) {
+          final raw = jsonDecode(await scFile.readAsString());
+          if (raw is List) fSc = raw.map((e) => SaleChallan.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        final String bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+        if (isDelete) {
+          D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, "", cleanFy);
+          await TombstoneEngine.recordBatchTombstones(cid, [envelope.syncId, if (bNo.isNotEmpty) D1SalesLedgerService.scopeSecondaryKey(bNo, cleanFy)], fy: cleanFy);
+        } else {
+          D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, "", cleanFy);
+          await TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: envelope.syncId, secondaryKey: bNo, fy: cleanFy);
+        }
+        if (SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(fSc, envelope)) {
+          await scFile.writeAsString(jsonEncode(fSc.map((e) => e.toMap()).toList()));
+          mutated = true;
+        }
+      } else if (docType == 'PURCHASE_CHALLAN') {
+        final File pcFile = File('$dirPath/p_challan.json');
+        List<PurchaseChallan> fPc = [];
+        if (await pcFile.exists()) {
+          final raw = jsonDecode(await pcFile.readAsString());
+          if (raw is List) fPc = raw.map((e) => PurchaseChallan.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+        }
+        final String bNo = (envelope.billData['billNo'] ?? '').toString().trim();
+        final String pId = (envelope.billData['partyId'] ?? '').toString().trim().toUpperCase();
+        final String iNo = (envelope.billData['internalNo'] ?? '').toString().trim().toUpperCase();
+        if (isDelete) {
+          D1SalesLedgerService.markPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, cleanFy, envelope.updatedAt > 0 ? envelope.updatedAt : null);
+        } else {
+          D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(envelope.syncId, pId, bNo, iNo, cleanFy);
+        }
+        if (PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(fPc, envelope)) {
+          await pcFile.writeAsString(jsonEncode(fPc.map((e) => e.toMap()).toList()));
+          mutated = true;
+        }
+      }
+
+      if (mutated) {
+        await syncPendingChallansFromPreviousYears(
+          startYear: cleanFy,
+          reloadActiveIfMutated: true,
+        );
+      }
+    } catch (e) {
+      debugPrint("⚠ [applyCrossFyChallanOrBillDeleteToDisk] Error: $e");
+    }
+    return mutated;
   }
 
   Future<void> finalizeSaleChallan({
@@ -1211,9 +1543,17 @@ Future<bool> finalizePurchase({
     final int existingIdx = isEditMode
         ? saleChallans.indexWhere((c) => c.id == cId)
         : saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.effectiveOriginalFy == currentFY));
-    if (existingIdx != -1) {
-      currentVer = saleChallans[existingIdx].version + 1;
+    final SaleChallan? existingCh = existingIdx != -1 ? saleChallans[existingIdx] : null;
+    if (existingCh != null && existingCh.status == "Billed") {
+      return;
     }
+    if (existingCh != null) {
+      currentVer = existingCh.version + 1;
+    }
+    final String normCurrFy = normalizeFyString(currentFY);
+    final String targetOfy = normalizeFyString(existingCh != null
+        ? (existingCh.effectiveOriginalFy.isNotEmpty ? existingCh.effectiveOriginalFy : normCurrFy)
+        : normCurrFy);
     if (activeCompany != null) {
       await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo);
       D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo);
@@ -1221,11 +1561,8 @@ Future<bool> finalizePurchase({
     if (isEditMode) {
       saleChallans.removeWhere((c) => c.id == cId);
     } else {
-      saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.effectiveOriginalFy == currentFY));
+      saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
     }
-    final String targetOfy = (existingIdx != -1)
-        ? saleChallans[existingIdx].effectiveOriginalFy
-        : currentFY;
     final newChallan = SaleChallan(
       id: cId, 
       billNo: billNo, 
@@ -1273,6 +1610,14 @@ Future<bool> finalizePurchase({
       );
     }
     await save();
+    if (activeCompany != null && activeCompany!.fYears.length > 1) {
+      final sortedYears = AppDateLogic.sortFYList(activeCompany!.fYears);
+      if (sortedYears.isNotEmpty && normCurrFy != normalizeFyString(sortedYears.last)) {
+        await cascadePendingChallansOnlyFromBackYear(currentFY);
+      } else {
+        await _refreshForwardChallanStatusCache();
+      }
+    }
     AppRealtimeCoordinator.instance.notifyAppMutation(
       this,
       action: 'SALE_CHALLAN_SAVED',
@@ -1297,21 +1642,29 @@ Future<bool> finalizePurchase({
     int currentVer = 1;
     final cleanINo = internalNo.trim().toUpperCase();
     final bool isEditMode = existingId != null && existingId.isNotEmpty;
+    final String normCurrFy = normalizeFyString(currentFY);
     final int existingIdx = isEditMode
         ? purchaseChallans.indexWhere((c) => c.id == cId)
-        : purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && c.effectiveOriginalFy == currentFY));
+        : purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
+    final PurchaseChallan? existingCh = existingIdx != -1 ? purchaseChallans[existingIdx] : null;
+    if (existingCh != null && existingCh.status == "Billed") {
+      return false;
+    }
+    final String targetOfy = normalizeFyString(existingCh != null
+        ? (existingCh.effectiveOriginalFy.isNotEmpty ? existingCh.effectiveOriginalFy : normCurrFy)
+        : normCurrFy);
     final PurchaseChallan? dupChallan = findDuplicateSupplierChallan(
       challans: purchaseChallans,
       partyId: partyId,
       partyName: party.name,
       billNo: billNo,
-      excludeId: existingIdx != -1 ? purchaseChallans[existingIdx].id : cId,
-      excludeInternalNo: existingIdx != -1 ? purchaseChallans[existingIdx].internalNo : internalNo,
-      targetFy: currentFY,
+      excludeId: existingCh != null ? existingCh.id : cId,
+      excludeInternalNo: existingCh != null ? existingCh.internalNo : internalNo,
+      targetFy: targetOfy,
     );
     if (dupChallan != null) return false;
-    if (existingIdx != -1) {
-      currentVer = purchaseChallans[existingIdx].version + 1;
+    if (existingCh != null) {
+      currentVer = existingCh.version + 1;
     }
     final cleanBNo = billNo.trim();
     final cleanPId = partyId.trim().toUpperCase();
@@ -1326,11 +1679,8 @@ Future<bool> finalizePurchase({
     if (isEditMode) {
       purchaseChallans.removeWhere((c) => c.id == cId);
     } else {
-      purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && c.effectiveOriginalFy == currentFY));
+      purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
     }
-    final String targetOfy = (existingIdx != -1)
-        ? purchaseChallans[existingIdx].effectiveOriginalFy
-        : currentFY;
     final newPChallan = PurchaseChallan(
       id: cId, 
       internalNo: internalNo, 
@@ -1376,6 +1726,14 @@ Future<bool> finalizePurchase({
       );
     }
     await save();
+    if (activeCompany != null && activeCompany!.fYears.length > 1) {
+      final sortedYears = AppDateLogic.sortFYList(activeCompany!.fYears);
+      if (sortedYears.isNotEmpty && normCurrFy != normalizeFyString(sortedYears.last)) {
+        await cascadePendingChallansOnlyFromBackYear(currentFY);
+      } else {
+        await _refreshForwardChallanStatusCache();
+      }
+    }
     AppRealtimeCoordinator.instance.notifyAppMutation(
       this,
       action: 'PURCHASE_CHALLAN_SAVED',
@@ -2870,24 +3228,25 @@ void registerBatchActivity({
     try {
       final s = sales.firstWhere((x) => x.id == id || x.billNo == id);
       final String delFy = currentFY;
-      final Set<String> targetCids = {
-        for (final cid in s.linkedChallanIds)
-          if (cid.trim().isNotEmpty) cid.trim().toUpperCase(),
-        for (final it in s.items) ...[
-          if (it.sourceChallanId.trim().isNotEmpty) it.sourceChallanId.trim().toUpperCase(),
-          if (it.sourceChallanNo.trim().isNotEmpty) it.sourceChallanNo.trim().toUpperCase(),
-        ],
-      };
+      final saleLinks = ChallanLinkMatcher.extractLinks(
+        linkedChallanIds: s.linkedChallanIds,
+        items: s.items,
+      );
       final List<SaleChallan> revertedChallans = [];
       final List<String> revertedChallanIds = [];
       final List<String> revertedChallanBillNos = [];
 
-      if (targetCids.isNotEmpty) {
+      if (saleLinks.explicitIds.isNotEmpty || saleLinks.legacyNos.isNotEmpty) {
         final int revTs = DateTime.now().millisecondsSinceEpoch;
         for (int i = 0; i < saleChallans.length; i++) {
           final c = saleChallans[i];
-          if (targetCids.contains(c.id.trim().toUpperCase()) ||
-              (c.billNo.trim().isNotEmpty && targetCids.contains(c.billNo.trim().toUpperCase()))) {
+          if (ChallanLinkMatcher.matchesSaleChallan(
+            c,
+            explicitIds: saleLinks.explicitIds,
+            legacyNos: saleLinks.legacyNos,
+            billPartyId: s.partyId,
+            billFy: delFy,
+          )) {
             c.status = "Pending";
             c.version += 1;
             c.updatedAt = revTs;
@@ -2987,25 +3346,25 @@ void registerBatchActivity({
     try {
       final p = purchases.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
       final String delFy = currentFY;
-      final Set<String> targetCids = {
-        for (final cid in p.linkedChallanIds)
-          if (cid.trim().isNotEmpty) cid.trim().toUpperCase(),
-        for (final it in p.items) ...[
-          if (it.sourceChallanId.trim().isNotEmpty) it.sourceChallanId.trim().toUpperCase(),
-          if (it.sourceChallanNo.trim().isNotEmpty) it.sourceChallanNo.trim().toUpperCase(),
-        ],
-      };
+      final purLinks = ChallanLinkMatcher.extractLinks(
+        linkedChallanIds: p.linkedChallanIds,
+        items: p.items,
+      );
       final List<PurchaseChallan> revertedPChallans = [];
       final List<String> revertedPChallanIds = [];
       final List<String> revertedPChallanNos = [];
 
-      if (targetCids.isNotEmpty) {
+      if (purLinks.explicitIds.isNotEmpty || purLinks.legacyNos.isNotEmpty) {
         final int revTs = DateTime.now().millisecondsSinceEpoch;
         for (int i = 0; i < purchaseChallans.length; i++) {
           final c = purchaseChallans[i];
-          if (targetCids.contains(c.id.trim().toUpperCase()) ||
-              (c.internalNo.trim().isNotEmpty && targetCids.contains(c.internalNo.trim().toUpperCase())) ||
-              (c.billNo.trim().isNotEmpty && targetCids.contains(c.billNo.trim().toUpperCase()))) {
+          if (ChallanLinkMatcher.matchesPurchaseChallan(
+            c,
+            explicitIds: purLinks.explicitIds,
+            legacyNos: purLinks.legacyNos,
+            billPartyId: p.partyId,
+            billFy: delFy,
+          )) {
             c.status = "Pending";
             c.version += 1;
             c.updatedAt = revTs;
@@ -3109,19 +3468,37 @@ void registerBatchActivity({
       notifyListeners();
     } catch (e) {}
   }
-  void deleteSaleChallan(String id) {
+  bool deleteSaleChallan(String id) {
     try {
       final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
-      final cId = c.id;
+      if (c.status == "Billed") {
+        debugPrint("🔒 [deleteSaleChallan] Blocked delete on Billed challan ${c.id}");
+        return false;
+      }
+      final fwd = getForwardChallanStatus(c.id, isPurchase: false);
+      if (fwd.billedFy != null) {
+        debugPrint("🔒 [deleteSaleChallan] Blocked delete on challan ${c.id} already Billed in ${fwd.billedFy}");
+        return false;
+      }
+      final cId = c.id.trim();
       final bNo = c.billNo.trim().toUpperCase();
-      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, currentFY) : "";
-      final List<String> delKeys = [cId, if (scopedBNo.isNotEmpty) scopedBNo];
-      D1SalesLedgerService.markPermanentlyDeleted(cId, bNo, "", currentFY);
+      final String delFy = currentFY;
+      final String cOfy = c.effectiveOriginalFy;
+      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, delFy) : "";
+      final List<String> delKeys = [if (cId.isNotEmpty) cId else id, if (scopedBNo.isNotEmpty) scopedBNo];
+      final int delTs = DateTime.now().millisecondsSinceEpoch;
+      D1SalesLedgerService.markPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, "", delFy);
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
-        final String delFy = currentFY;
         Future<void>(() async {
-          await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
+          await propagateChallanDeletionAcrossDiskFolders(
+            challanId: cId.isNotEmpty ? cId : id,
+            sourceFy: delFy,
+            isPurchase: false,
+            extraTombstoneKeys: [if (bNo.isNotEmpty) bNo],
+            customDeletedAt: delTs,
+          );
           final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             SaleChallanSyncModule.onSaleChallanDeleted(c, t);
@@ -3130,43 +3507,75 @@ void registerBatchActivity({
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
             action: 'DELETE_SALE_CHALLAN',
-            entityId: cId,
+            entityId: cId.isNotEmpty ? cId : id,
             deletedIds: delKeys,
             fy: delFy,
           );
         });
       }
-      saleChallans.removeWhere((x) => x.id == cId || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo));
+      if (cId.isNotEmpty) {
+        saleChallans.removeWhere((x) => x.id.trim() == cId);
+      } else {
+        saleChallans.removeWhere((x) => x.id == id || (bNo.isNotEmpty && x.billNo.trim().toUpperCase() == bNo && x.effectiveOriginalFy == cOfy));
+      }
       save();
       notifyListeners();
+      return true;
     } catch (_) {
-      saleChallans.removeWhere((c) => c.id == id);
-      save();
-      notifyListeners();
+      final int before = saleChallans.length;
+      saleChallans.removeWhere((c) => c.id == id && c.status != "Billed");
+      if (saleChallans.length != before) {
+        save();
+        notifyListeners();
+        return true;
+      }
+      return false;
     }
   }
-  void deletePurchaseChallan(String id) {
+  bool deletePurchaseChallan(String id) {
     try {
       final c = purchaseChallans.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
-      final cId = c.id;
+      if (c.status == "Billed") {
+        debugPrint("🔒 [deletePurchaseChallan] Blocked delete on Billed challan ${c.id}");
+        return false;
+      }
+      final fwd = getForwardChallanStatus(c.id, isPurchase: true);
+      if (fwd.billedFy != null) {
+        debugPrint("🔒 [deletePurchaseChallan] Blocked delete on challan ${c.id} already Billed in ${fwd.billedFy}");
+        return false;
+      }
+      final cId = c.id.trim();
       final iNo = c.internalNo.trim().toUpperCase();
       final bNo = c.billNo.trim();
       final pId = c.partyId.trim().toUpperCase();
+      final String delFy = currentFY;
+      final String cOfy = c.effectiveOriginalFy;
       final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
       final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
       final List<String> delKeys = [
-        cId,
+        if (cId.isNotEmpty) cId else id,
         if (iNo.isNotEmpty) iNo,
         if (compKey2.isNotEmpty) compKey2,
         if (compKey3.isNotEmpty) compKey3,
       ];
-      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId, pId, bNo, iNo, currentFY);
+      final int delTs = DateTime.now().millisecondsSinceEpoch;
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, delFy);
 
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
-        final String delFy = currentFY;
         Future<void>(() async {
-          await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
+          await propagateChallanDeletionAcrossDiskFolders(
+            challanId: cId.isNotEmpty ? cId : id,
+            sourceFy: delFy,
+            isPurchase: true,
+            extraTombstoneKeys: [
+              if (iNo.isNotEmpty) iNo,
+              if (compKey2.isNotEmpty) compKey2,
+              if (compKey3.isNotEmpty) compKey3,
+            ],
+            customDeletedAt: delTs,
+          );
           final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
@@ -3175,23 +3584,33 @@ void registerBatchActivity({
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
             action: 'DELETE_PURCHASE_CHALLAN',
-            entityId: cId,
+            entityId: cId.isNotEmpty ? cId : id,
             deletedIds: delKeys,
             fy: delFy,
           );
         });
       }
-      purchaseChallans.removeWhere((x) =>
-        x.id == cId ||
-        (iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) ||
-        (pId.isNotEmpty && bNo.isNotEmpty && x.partyId.trim().toUpperCase() == pId && x.billNo.trim() == bNo)
-      );
+      if (cId.isNotEmpty) {
+        purchaseChallans.removeWhere((x) => x.id.trim() == cId);
+      } else {
+        purchaseChallans.removeWhere((x) =>
+          x.id == id ||
+          (x.effectiveOriginalFy == cOfy && ((iNo.isNotEmpty && x.internalNo.trim().toUpperCase() == iNo) ||
+          (pId.isNotEmpty && bNo.isNotEmpty && x.partyId.trim().toUpperCase() == pId && x.billNo.trim() == bNo)))
+        );
+      }
       save();
       notifyListeners();
+      return true;
     } catch (_) {
-      purchaseChallans.removeWhere((c) => c.id == id);
-      save();
-      notifyListeners();
+      final int before = purchaseChallans.length;
+      purchaseChallans.removeWhere((c) => c.id == id && c.status != "Billed");
+      if (purchaseChallans.length != before) {
+        save();
+        notifyListeners();
+        return true;
+      }
+      return false;
     }
   }
   void deleteSaleReturn(String id) {
@@ -4041,6 +4460,7 @@ void registerBatchActivity({
         final res = FYTransferEngine.cascadePendingChallansOnlyStep(
           prevFiles: prevFiles,
           targetFiles: nextFiles,
+          prevFY: prevFY,
           isSaleChallanDeletedInTarget: isScBlocked,
           isPurchaseChallanDeletedInTarget: isPcBlocked,
         );
@@ -4059,6 +4479,8 @@ void registerBatchActivity({
 
       if (reloadActiveIfMutated && activeFyMutated && currentFY.isNotEmpty) {
         await loadAllData();
+      } else {
+        await _refreshForwardChallanStatusCache();
       }
       return anyMutated;
     } catch (e) {

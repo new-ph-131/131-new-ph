@@ -117,12 +117,25 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       return;
     }
 
+    if (widget.existingRecord?.status == "Billed") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Locked: This challan is already Billed and cannot be modified!"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => isSaving = true);
 
     String challanId = widget.existingRecord?.id ?? "SCH-WEB-${DateTime.now().millisecondsSinceEpoch}";
 
     List<ChallanSignature> sigHistory = List.from(widget.existingRecord?.sigHistory ?? []);
     bool isSigned = widget.existingRecord?.isSigned ?? false;
+    final String preservedOfy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+        ? widget.existingRecord!.effectiveOriginalFy
+        : normalizeFyString(webPh.financialYear);
 
     final newChallan = SaleChallan(
       id: challanId,
@@ -136,9 +149,11 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
       totalAmount: totalAmt,
       status: widget.existingRecord?.status ?? "Pending",
       remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Verified.",
-      salesmanName: "WEB-PORTAL",
+      originalFy: preservedOfy,
+      salesmanName: widget.existingRecord?.salesmanName ?? "WEB-PORTAL",
       sigHistory: sigHistory,
       isSigned: isSigned,
+      version: widget.existingRecord != null ? widget.existingRecord!.version + 1 : 1,
     );
 
     webPh.addSaleChallanAndSync(newChallan);

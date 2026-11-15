@@ -17,12 +17,13 @@ class ModifyChallanList extends StatelessWidget {
   Widget build(BuildContext context) {
     final ph = Provider.of<PharoahManager>(context);
     
-    // Combine both Sale and Purchase Challans
+    // Combine both Sale and Purchase Challans (excluding tombstoned)
     List<dynamic> allChallans = [...ph.saleChallans, ...ph.purchaseChallans];
-    
+
     final filtered = allChallans.where((c) {
+      if ((c.isDeleted ?? 0) == 1) return false;
       String name = (c is SaleChallan) ? c.partyName : (c as PurchaseChallan).distributorName;
-      return c.billNo.toLowerCase().contains(searchQuery.toLowerCase()) || 
+      return c.billNo.toLowerCase().contains(searchQuery.toLowerCase()) ||
              name.toLowerCase().contains(searchQuery.toLowerCase());
     }).toList();
 
@@ -41,6 +42,16 @@ class ModifyChallanList extends StatelessWidget {
         bool isSale = ch is SaleChallan;
         String partyName = isSale ? ch.partyName : (ch as PurchaseChallan).distributorName;
         Color themeColor = isSale ? Colors.blueGrey : Colors.amber.shade800;
+        final String ofy = isSale ? (ch as SaleChallan).effectiveOriginalFy : (ch as PurchaseChallan).effectiveOriginalFy;
+        final bool hasValidDt = isSale ? (ch as SaleChallan).hasValidDate : (ch as PurchaseChallan).hasValidDate;
+        final String currFy = normalizeFyString(ph.currentFY);
+        final bool isCarry = ofy.isEmpty || (currFy.isNotEmpty && ofy != currFy);
+        final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: !isSale);
+        final String cfTag = (!hasValidDt && ofy.isEmpty) ? "CF / LEGACY" : (ofy.isNotEmpty ? "CF • $ofy" : "CF / LEGACY");
+        final String fwdTag = fwd.billedFy != null
+            ? "BILLED IN ${fwd.billedFy}"
+            : (fwd.shiftedFy != null ? "SHIFTED → ${fwd.shiftedFy}" : "");
+        final String extraTag = [if (isCarry) cfTag, if (fwdTag.isNotEmpty) fwdTag].join(" • ");
 
         return Card(
           elevation: 2,
@@ -53,7 +64,10 @@ class ModifyChallanList extends StatelessWidget {
               child: Text(isSale ? "SC" : "PC", style: TextStyle(color: themeColor, fontSize: 10, fontWeight: FontWeight.bold)),
             ),
             title: Text(partyName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-            subtitle: Text("${ch.billNo} | ${DateFormat('dd/MM/yy').format(ch.date)}"),
+            subtitle: Text(
+              "${ch.billNo} | ${DateFormat('dd/MM/yy').format(ch.date)} | ${ch.status.toUpperCase()}${extraTag.isNotEmpty ? ' • $extraTag' : ''}",
+              style: const TextStyle(fontSize: 12),
+            ),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -71,6 +85,8 @@ class ModifyChallanList extends StatelessWidget {
 
   void _showActionMenu(BuildContext context, PharoahManager ph, dynamic challan) {
     bool isSale = challan is SaleChallan;
+    final fwd = ph.getForwardChallanStatus(challan.id, isPurchase: !isSale);
+    final bool isBilledLocked = challan.status == "Billed" || fwd.billedFy != null;
     
     showModalBottomSheet(
       context: context,
@@ -97,14 +113,29 @@ class ModifyChallanList extends StatelessWidget {
             }),
 
             // 2. EDIT
-            _menuTile(Icons.edit, "Modify / Edit Record", Colors.orange, () {
-              Navigator.pop(c);
-              Navigator.push(context, MaterialPageRoute(
-                builder: (context) => isSale 
-                  ? SaleChallanView(existingRecord: challan)
-                  : PurchaseChallanView(existingRecord: challan)
-              ));
-            }),
+            _menuTile(
+              isBilledLocked ? Icons.lock_outline : Icons.edit,
+              isBilledLocked ? "Modify Locked (Billed)" : "Modify / Edit Record",
+              isBilledLocked ? Colors.grey : Colors.orange,
+              () {
+                if (isBilledLocked) {
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(c);
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => isSale
+                    ? SaleChallanView(existingRecord: challan)
+                    : PurchaseChallanView(existingRecord: challan)
+                ));
+              },
+            ),
 
             // 3. PRINT (Via Universal Router)
             _menuTile(Icons.print, "Print PDF", Colors.teal, () {
@@ -128,10 +159,25 @@ class ModifyChallanList extends StatelessWidget {
             }),
 
             // 4. DELETE
-            _menuTile(Icons.delete_forever, "Delete Permanently", Colors.red, () {
-              Navigator.pop(c);
-              _confirmDelete(context, ph, challan);
-            }),
+            _menuTile(
+              isBilledLocked ? Icons.lock_outline : Icons.delete_forever,
+              isBilledLocked ? "Delete Locked (Billed)" : "Delete Permanently",
+              isBilledLocked ? Colors.grey : Colors.red,
+              () {
+                if (isBilledLocked) {
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(c);
+                _confirmDelete(context, ph, challan);
+              },
+            ),
             
             const SizedBox(height: 20),
           ],
@@ -144,6 +190,17 @@ class ModifyChallanList extends StatelessWidget {
       ListTile(leading: Icon(icon, color: c), title: Text(t, style: const TextStyle(fontWeight: FontWeight.bold)), onTap: onTap);
 
   void _confirmDelete(BuildContext context, PharoahManager ph, dynamic ch) {
+    final bool isSale = ch is SaleChallan;
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: !isSale);
+    if (ch.status == "Billed" || fwd.billedFy != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -154,10 +211,19 @@ class ModifyChallanList extends StatelessWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
-              if (ch is SaleChallan) ph.deleteSaleChallan(ch.id);
-              else ph.deletePurchaseChallan(ch.id);
+              final bool ok = isSale
+                  ? ph.deleteSaleChallan(ch.id)
+                  : ph.deletePurchaseChallan(ch.id);
               Navigator.pop(c);
-            }, 
+              if (!ok) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
             child: const Text("YES, DELETE", style: TextStyle(color: Colors.white)),
           )
         ],

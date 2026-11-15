@@ -339,12 +339,16 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
       );
 
   void _handleSave(PharoahManager ph) async {
+    final String targetFy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+        ? widget.existingRecord!.effectiveOriginalFy
+        : ph.currentFY;
     final dup = findDuplicateSupplierChallan(
       challans: ph.purchaseChallans,
       partyId: widget.distributor.id,
       billNo: widget.supplierChallanNo,
       excludeId: widget.existingRecord?.id,
       excludeInternalNo: widget.existingRecord?.internalNo,
+      targetFy: targetFy,
     );
     if (dup != null) {
       if (mounted) {

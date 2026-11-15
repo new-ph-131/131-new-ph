@@ -359,8 +359,27 @@ class FYTransferEngine {
     // 4. PENDING CHALLANS CARRY-FORWARD
     final List<SaleChallan> oldSaleChallans = (loadJson('s_challan.json') as List?)?.map((e) => SaleChallan.fromMap(e)).toList() ?? [];
     final List<PurchaseChallan> oldPurChallans = (loadJson('p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
-    final List<SaleChallan> pendingSaleChallans = oldSaleChallans.where((c) => c.isDeleted != 1 && c.status == "Pending").toList();
-    final List<PurchaseChallan> pendingPurChallans = oldPurChallans.where((c) => c.isDeleted != 1 && c.status == "Pending").toList();
+    final String cleanSourceFy = normalizeFyString(sourceFY);
+    final List<SaleChallan> pendingSaleChallans = oldSaleChallans
+        .where((c) => c.isDeleted != 1 && c.status == "Pending")
+        .map((c) {
+          final copy = SaleChallan.fromMap(c.toMap());
+          if (copy.originalFy.trim().isEmpty) {
+            copy.originalFy = copy.effectiveOriginalFy.isNotEmpty ? copy.effectiveOriginalFy : cleanSourceFy;
+          }
+          return copy;
+        })
+        .toList();
+    final List<PurchaseChallan> pendingPurChallans = oldPurChallans
+        .where((c) => c.isDeleted != 1 && c.status == "Pending")
+        .map((c) {
+          final copy = PurchaseChallan.fromMap(c.toMap());
+          if (copy.originalFy.trim().isEmpty) {
+            copy.originalFy = copy.effectiveOriginalFy.isNotEmpty ? copy.effectiveOriginalFy : cleanSourceFy;
+          }
+          return copy;
+        })
+        .toList();
 
     // 5. BATCH HISTORY CARRY-FORWARD (Closing qty -> New Opening qty)
     final Map<String, dynamic> correctedBatches = {};
@@ -515,7 +534,9 @@ class FYTransferEngine {
     required List<SaleChallan> prevChallans,
     required List<SaleChallan> targetChallans,
     bool Function(SaleChallan)? isDeletedInTarget,
+    String? prevFY,
   }) {
+    final String cleanPrevFy = normalizeFyString(prevFY ?? '');
     final List<SaleChallan> out = targetChallans.map((e) => SaleChallan.fromMap(e.toMap())).toList();
     int findMatch(SaleChallan sc) {
       final cleanId = sc.id.trim();
@@ -532,13 +553,20 @@ class FYTransferEngine {
       final bool prevIsPending = sc.isDeleted != 1 && sc.status == "Pending";
       final bool targetBlocked = isDeletedInTarget?.call(sc) ?? false;
 
+      SaleChallan stampedCopy(SaleChallan src) {
+        final copy = SaleChallan.fromMap(src.toMap());
+        if (copy.originalFy.trim().isEmpty) {
+          copy.originalFy = copy.effectiveOriginalFy.isNotEmpty ? copy.effectiveOriginalFy : cleanPrevFy;
+        }
+        return copy;
+      }
       if (prevIsPending) {
         if (targetBlocked) {
           if (idx != -1) out.removeAt(idx);
           continue;
         }
         if (idx == -1) {
-          out.add(SaleChallan.fromMap(sc.toMap()));
+          out.add(stampedCopy(sc));
         } else {
           final existing = out[idx];
           final bool existingNewerBilled = existing.status == "Billed" &&
@@ -549,7 +577,7 @@ class FYTransferEngine {
           final bool prevStrictlyNewer = sc.version > existing.version ||
               (sc.version == existing.version && sc.updatedAt > existing.updatedAt);
           if (prevStrictlyNewer) {
-            out[idx] = SaleChallan.fromMap(sc.toMap());
+            out[idx] = stampedCopy(sc);
           }
         }
       } else if (idx != -1) {
@@ -560,7 +588,7 @@ class FYTransferEngine {
           if (sc.isDeleted == 1 || sc.status == "Cancelled") {
             out.removeAt(idx);
           } else if (sc.status == "Billed") {
-            out[idx] = SaleChallan.fromMap(sc.toMap());
+            out[idx] = stampedCopy(sc);
           }
         }
       }
@@ -574,7 +602,9 @@ class FYTransferEngine {
     required List<PurchaseChallan> prevChallans,
     required List<PurchaseChallan> targetChallans,
     bool Function(PurchaseChallan)? isDeletedInTarget,
+    String? prevFY,
   }) {
+    final String cleanPrevFy = normalizeFyString(prevFY ?? '');
     final List<PurchaseChallan> out = targetChallans.map((e) => PurchaseChallan.fromMap(e.toMap())).toList();
     int findMatch(PurchaseChallan pc) {
       final cleanId = pc.id.trim();
@@ -600,13 +630,20 @@ class FYTransferEngine {
       final bool prevIsPending = pc.isDeleted != 1 && pc.status == "Pending";
       final bool targetBlocked = isDeletedInTarget?.call(pc) ?? false;
 
+      PurchaseChallan stampedCopy(PurchaseChallan src) {
+        final copy = PurchaseChallan.fromMap(src.toMap());
+        if (copy.originalFy.trim().isEmpty) {
+          copy.originalFy = copy.effectiveOriginalFy.isNotEmpty ? copy.effectiveOriginalFy : cleanPrevFy;
+        }
+        return copy;
+      }
       if (prevIsPending) {
         if (targetBlocked) {
           if (idx != -1) out.removeAt(idx);
           continue;
         }
         if (idx == -1) {
-          out.add(PurchaseChallan.fromMap(pc.toMap()));
+          out.add(stampedCopy(pc));
         } else {
           final existing = out[idx];
           final bool existingNewerBilled = existing.status == "Billed" &&
@@ -617,7 +654,7 @@ class FYTransferEngine {
           final bool prevStrictlyNewer = pc.version > existing.version ||
               (pc.version == existing.version && pc.updatedAt > existing.updatedAt);
           if (prevStrictlyNewer) {
-            out[idx] = PurchaseChallan.fromMap(pc.toMap());
+            out[idx] = stampedCopy(pc);
           }
         }
       } else if (idx != -1) {
@@ -628,7 +665,7 @@ class FYTransferEngine {
           if (pc.isDeleted == 1 || pc.status == "Cancelled") {
             out.removeAt(idx);
           } else if (pc.status == "Billed") {
-            out[idx] = PurchaseChallan.fromMap(pc.toMap());
+            out[idx] = stampedCopy(pc);
           }
         }
       }
@@ -642,6 +679,7 @@ class FYTransferEngine {
     required Map<String, String> targetFiles,
     bool Function(SaleChallan)? isSaleChallanDeletedInTarget,
     bool Function(PurchaseChallan)? isPurchaseChallanDeletedInTarget,
+    String? prevFY,
   }) {
     dynamic decodeMapJson(Map<String, String> map, String key) {
       try {
@@ -665,6 +703,7 @@ class FYTransferEngine {
       prevChallans: prevSc,
       targetChallans: targetSc,
       isDeletedInTarget: isSaleChallanDeletedInTarget,
+      prevFY: prevFY,
     );
     final String newScJson = jsonEncode(reconciledSc.map((e) => e.toMap()).toList());
     final bool sChanged = newScJson != (targetFiles['s_challan.json'] ?? '');
@@ -681,6 +720,7 @@ class FYTransferEngine {
       prevChallans: prevPc,
       targetChallans: targetPc,
       isDeletedInTarget: isPurchaseChallanDeletedInTarget,
+      prevFY: prevFY,
     );
     final String newPcJson = jsonEncode(reconciledPc.map((e) => e.toMap()).toList());
     final bool pChanged = newPcJson != (targetFiles['p_challan.json'] ?? '');
@@ -1016,6 +1056,7 @@ class FYTransferEngine {
       prevChallans: prevSaleChallans,
       targetChallans: rawTargetSaleChallans,
       isDeletedInTarget: isSaleChallanDeletedInTarget,
+      prevFY: prevFY,
     );
 
     final List<PurchaseChallan> prevPurChallans = (loadMapJson(outPrev, 'p_challan.json') as List?)?.map((e) => PurchaseChallan.fromMap(e)).toList() ?? [];
@@ -1024,6 +1065,7 @@ class FYTransferEngine {
       prevChallans: prevPurChallans,
       targetChallans: rawTargetPurChallans,
       isDeletedInTarget: isPurchaseChallanDeletedInTarget,
+      prevFY: prevFY,
     );
 
     // Delta merge static master lists (Routes, Companies, Salts)

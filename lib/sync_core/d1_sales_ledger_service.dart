@@ -24,24 +24,24 @@ class D1SalesLedgerService {
   /// Strict Financial Year Isolation Guard:
   /// Ensures D1 events from 2026-27 never pollute a fresh 2027-28 year or a 2025-26 back-year.
   static bool doesEventBelongToActiveFY(dynamic rawPayload, DateTime? recordDate, [String? targetFy]) {
-    final String fy = (targetFy != null && targetFy.trim().isNotEmpty)
+    final String fy = normalizeFyString((targetFy != null && targetFy.trim().isNotEmpty)
         ? targetFy.trim()
-        : activeFinancialYear.trim();
+        : activeFinancialYear.trim());
     if (fy.isEmpty) return true;
     if (rawPayload is Map) {
-      final String payloadFy = (rawPayload["fy"] ?? "").toString().trim();
+      final String payloadFy = normalizeFyString((rawPayload["fy"] ?? "").toString());
       if (payloadFy.isNotEmpty) {
         return payloadFy == fy;
       }
       // Check if primary or secondary key has explicit FY scoping (e.g. 2026-27::INV-1)
       final idStr = (rawPayload["id"] ?? rawPayload["sync_id"] ?? rawPayload["bill_id"] ?? "").toString().trim();
       if (idStr.contains("::")) {
-        final scopedFy = idStr.split("::")[0].trim();
+        final scopedFy = normalizeFyString(idStr.split("::")[0]);
         if (scopedFy.isNotEmpty) return scopedFy == fy;
       }
       final secStr = (rawPayload["billNo"] ?? rawPayload["bill_no"] ?? rawPayload["internalNo"] ?? "").toString().trim();
       if (secStr.contains("::")) {
-        final scopedFy = secStr.split("::")[0].trim();
+        final scopedFy = normalizeFyString(secStr.split("::")[0]);
         if (scopedFy.isNotEmpty) return scopedFy == fy;
       }
     }
@@ -69,7 +69,7 @@ class D1SalesLedgerService {
   /// Extracts the Financial Year from an incoming raw edge event payload or record date
   static String extractEventFy(dynamic rawPayload, DateTime? recordDate) {
     if (rawPayload is Map) {
-      final String payloadFy = (rawPayload["fy"] ?? "").toString().trim();
+      final String payloadFy = normalizeFyString((rawPayload["fy"] ?? "").toString());
       if (payloadFy.isNotEmpty) return payloadFy;
     }
     if (recordDate != null) {
@@ -1166,13 +1166,14 @@ class D1SalesLedgerService {
         continue;
       }
 
-      final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
+      final String evFy = normalizeFyString((ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString());
+      final String normEffFy = normalizeFyString(effFy);
       DateTime? evDate;
       if (rawData is Map && rawData["date"] != null) {
         evDate = DateTime.tryParse(rawData["date"].toString());
       }
-      if (evFy.isNotEmpty && evFy != effFy) continue;
-      if (evDate != null && !doesEventBelongToActiveFY(rawData, evDate, effFy)) continue;
+      if (evFy.isNotEmpty && evFy != normEffFy) continue;
+      if (evDate != null && !doesEventBelongToActiveFY(rawData, evDate, normEffFy)) continue;
 
       final bool isPurchaseEvent = action.contains("PURCHASE") ||
           (rawData is Map &&
@@ -1188,34 +1189,31 @@ class D1SalesLedgerService {
           0;
       final int evVer = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
 
-      final Set<String> targetCids = {};
-      if (rawData is Map) {
-        if (rawData["linkedChallanIds"] is List) {
-          for (final l in (rawData["linkedChallanIds"] as List)) {
-            if (l != null && l.toString().trim().isNotEmpty) {
-              targetCids.add(l.toString().trim().toUpperCase());
-            }
-          }
-        }
-        if (rawData["items"] is List) {
-          for (final item in (rawData["items"] as List)) {
-            if (item is Map) {
-              final scId = (item["sourceChallanId"] ?? "").toString().trim().toUpperCase();
-              final scNo = (item["sourceChallanNo"] ?? "").toString().trim().toUpperCase();
-              if (scId.isNotEmpty) targetCids.add(scId);
-              if (scNo.isNotEmpty && !targetCids.contains(scId)) targetCids.add(scNo);
-            }
-          }
-        }
-      }
+      final links = ChallanLinkMatcher.extractLinks(
+        linkedChallanIds: (rawData is Map && rawData["linkedChallanIds"] is List)
+            ? (rawData["linkedChallanIds"] as List)
+            : const [],
+        items: (rawData is Map && rawData["items"] is List)
+            ? (rawData["items"] as List)
+            : const [],
+      );
+      if (links.explicitIds.isEmpty && links.legacyNos.isEmpty) continue;
 
-      if (targetCids.isEmpty) continue;
+      final String billPartyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim();
+      final String billFy = evFy.isNotEmpty
+          ? evFy
+          : (evDate != null ? deriveFyFromDate(evDate) : normEffFy);
 
       if (isPurchaseEvent && purchaseChallans != null) {
         for (final ch in purchaseChallans) {
           if (ch.isDeleted == 1) continue;
-          final bool match = targetCids.contains(ch.id.trim().toUpperCase()) ||
-              (ch.internalNo.trim().isNotEmpty && targetCids.contains(ch.internalNo.trim().toUpperCase()));
+          final bool match = ChallanLinkMatcher.matchesPurchaseChallan(
+            ch,
+            explicitIds: links.explicitIds,
+            legacyNos: links.legacyNos,
+            billPartyId: billPartyId,
+            billFy: billFy,
+          );
           if (match && ch.status != "Billed" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
             ch.status = "Billed";
             ch.version = (ch.version < evVer ? evVer : ch.version) + 1;
@@ -1227,8 +1225,13 @@ class D1SalesLedgerService {
       } else if (!isPurchaseEvent && saleChallans != null) {
         for (final ch in saleChallans) {
           if (ch.isDeleted == 1) continue;
-          final bool match = targetCids.contains(ch.id.trim().toUpperCase()) ||
-              (ch.billNo.trim().isNotEmpty && targetCids.contains(ch.billNo.trim().toUpperCase()));
+          final bool match = ChallanLinkMatcher.matchesSaleChallan(
+            ch,
+            explicitIds: links.explicitIds,
+            legacyNos: links.legacyNos,
+            billPartyId: billPartyId,
+            billFy: billFy,
+          );
           if (match && ch.status != "Billed" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
             ch.status = "Billed";
             ch.version = (ch.version < evVer ? evVer : ch.version) + 1;
@@ -1290,13 +1293,14 @@ class D1SalesLedgerService {
 
       final String billId = (ev["bill_id"] ?? "").toString().trim();
       final String billNo = (ev["bill_no"] ?? "").toString().trim();
-      final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
+      final String evFy = normalizeFyString((ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString());
+      final String normEffFy = normalizeFyString(effFy);
       DateTime? evDate;
       if (rawData is Map && rawData["date"] != null) {
         evDate = DateTime.tryParse(rawData["date"].toString());
       }
-      if (evFy.isNotEmpty && evFy != effFy) continue;
-      if (evDate != null && !doesEventBelongToActiveFY(rawData, evDate, effFy)) continue;
+      if (evFy.isNotEmpty && evFy != normEffFy) continue;
+      if (evDate != null && !doesEventBelongToActiveFY(rawData, evDate, normEffFy)) continue;
 
       final bool isPurchaseEvent = action.contains("PURCHASE") ||
           (rawData is Map &&
@@ -1312,54 +1316,48 @@ class D1SalesLedgerService {
           ) ??
           0;
 
-      final Set<String> targetCids = {};
-      if (rawData is Map) {
-        if (rawData["linkedChallanIds"] is List) {
-          for (final l in (rawData["linkedChallanIds"] as List)) {
-            if (l != null && l.toString().trim().isNotEmpty) {
-              targetCids.add(l.toString().trim().toUpperCase());
-            }
-          }
-        }
-        if (rawData["items"] is List) {
-          for (final item in (rawData["items"] as List)) {
-            if (item is Map) {
-              final scId = (item["sourceChallanId"] ?? "").toString().trim().toUpperCase();
-              final scNo = (item["sourceChallanNo"] ?? "").toString().trim().toUpperCase();
-              if (scId.isNotEmpty) targetCids.add(scId);
-              if (scNo.isNotEmpty) targetCids.add(scNo);
-            }
-          }
-        }
-      }
+      final List<dynamic> combinedLinked = <dynamic>[
+        if (rawData is Map && rawData["linkedChallanIds"] is List)
+          ...(rawData["linkedChallanIds"] as List),
+      ];
+      final List<dynamic> combinedItems = <dynamic>[
+        if (rawData is Map && rawData["items"] is List)
+          ...(rawData["items"] as List),
+      ];
+      String billPartyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim();
+      String billFy = evFy.isNotEmpty ? evFy : (evDate != null ? deriveFyFromDate(evDate) : normEffFy);
 
       if (isPurchaseEvent) {
         final String pIntNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
         final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
-        final String pPartyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
+        final String pPartyId = billPartyId.toUpperCase();
         for (final p in existingPurchasesBeforeDelete) {
           final bool idMatch = billId.isNotEmpty && p.id == billId;
-          final bool intMatch = pIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == pIntNo && inferFyFromDate(p.date) == effFy;
+          final bool intMatch = pIntNo.isNotEmpty && p.internalNo.trim().toUpperCase() == pIntNo && inferFyFromDate(p.date) == normEffFy;
           final bool compMatch = pPartyId.isNotEmpty && pBillNo.isNotEmpty &&
               p.partyId.trim().toUpperCase() == pPartyId &&
               p.billNo.trim() == pBillNo &&
-              inferFyFromDate(p.date) == effFy;
+              inferFyFromDate(p.date) == normEffFy;
           if (idMatch || intMatch || compMatch) {
-            for (final l in p.linkedChallanIds) {
-              if (l.trim().isNotEmpty) targetCids.add(l.trim().toUpperCase());
-            }
-            for (final it in p.items) {
-              if (it.sourceChallanNo.trim().isNotEmpty) targetCids.add(it.sourceChallanNo.trim().toUpperCase());
-              if (it.sourceChallanId.trim().isNotEmpty) targetCids.add(it.sourceChallanId.trim().toUpperCase());
-            }
+            if (billPartyId.isEmpty && p.partyId.trim().isNotEmpty) billPartyId = p.partyId.trim();
+            combinedLinked.addAll(p.linkedChallanIds);
+            combinedItems.addAll(p.items);
           }
         }
-        if (targetCids.isNotEmpty && purchaseChallans != null) {
+        final links = ChallanLinkMatcher.extractLinks(
+          linkedChallanIds: combinedLinked,
+          items: combinedItems,
+        );
+        if ((links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) && purchaseChallans != null) {
           for (final ch in purchaseChallans) {
             if (ch.isDeleted == 1) continue;
-            final bool match = targetCids.contains(ch.id.trim().toUpperCase()) ||
-                (ch.internalNo.trim().isNotEmpty && targetCids.contains(ch.internalNo.trim().toUpperCase())) ||
-                (ch.billNo.trim().isNotEmpty && targetCids.contains(ch.billNo.trim().toUpperCase()));
+            final bool match = ChallanLinkMatcher.matchesPurchaseChallan(
+              ch,
+              explicitIds: links.explicitIds,
+              legacyNos: links.legacyNos,
+              billPartyId: billPartyId,
+              billFy: billFy,
+            );
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
               ch.status = "Pending";
               ch.version = (ch.version < 1 ? 1 : ch.version) + 1;
@@ -1374,22 +1372,27 @@ class D1SalesLedgerService {
         final String cleanBNo = billNo.trim().toUpperCase();
         for (final s in existingSalesBeforeDelete) {
           final bool idMatch = billId.isNotEmpty && s.id == billId;
-          final bool noMatch = cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo && inferFyFromDate(s.date) == effFy;
+          final bool noMatch = cleanBNo.isNotEmpty && s.billNo.trim().toUpperCase() == cleanBNo && inferFyFromDate(s.date) == normEffFy;
           if (idMatch || noMatch) {
-            for (final l in s.linkedChallanIds) {
-              if (l.trim().isNotEmpty) targetCids.add(l.trim().toUpperCase());
-            }
-            for (final it in s.items) {
-              if (it.sourceChallanNo.trim().isNotEmpty) targetCids.add(it.sourceChallanNo.trim().toUpperCase());
-              if (it.sourceChallanId.trim().isNotEmpty) targetCids.add(it.sourceChallanId.trim().toUpperCase());
-            }
+            if (billPartyId.isEmpty && s.partyId.trim().isNotEmpty) billPartyId = s.partyId.trim();
+            combinedLinked.addAll(s.linkedChallanIds);
+            combinedItems.addAll(s.items);
           }
         }
-        if (targetCids.isNotEmpty && saleChallans != null) {
+        final links = ChallanLinkMatcher.extractLinks(
+          linkedChallanIds: combinedLinked,
+          items: combinedItems,
+        );
+        if ((links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) && saleChallans != null) {
           for (final ch in saleChallans) {
             if (ch.isDeleted == 1) continue;
-            final bool match = targetCids.contains(ch.id.trim().toUpperCase()) ||
-                (ch.billNo.trim().isNotEmpty && targetCids.contains(ch.billNo.trim().toUpperCase()));
+            final bool match = ChallanLinkMatcher.matchesSaleChallan(
+              ch,
+              explicitIds: links.explicitIds,
+              legacyNos: links.legacyNos,
+              billPartyId: billPartyId,
+              billFy: billFy,
+            );
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
               ch.status = "Pending";
               ch.version = (ch.version < 1 ? 1 : ch.version) + 1;

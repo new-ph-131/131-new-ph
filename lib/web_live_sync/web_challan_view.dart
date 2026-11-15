@@ -35,7 +35,14 @@ class _WebChallanViewState extends State<WebChallanView> {
   DateTime regFromDate = DateTime.now();
   DateTime regToDate = DateTime.now();
   String registerSearch = "";
+  String fyFilter = "ALL"; // ALL | CURRENT | CARRY
   bool _isInit = false;
+
+  bool _isCarryForward(String effectiveOriginalFy, String currentFy) {
+    final ofy = normalizeFyString(effectiveOriginalFy);
+    final curr = normalizeFyString(currentFy);
+    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+  }
 
   @override
   void initState() {
@@ -125,12 +132,17 @@ class _WebChallanViewState extends State<WebChallanView> {
     list.sort((a, b) => b.date.compareTo(a.date));
 
     final filtered = list.where((c) {
+      if (c.isDeleted == 1) return false;
       final cDateOnly = _dateOnly(c.date);
-      bool dateMatch = !cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly);
+      bool dateMatch = (!cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly)) || c.status == "Pending";
       bool searchMatch = registerSearch.isEmpty ||
-          c.partyName.toLowerCase().contains(registerSearch.toLowerCase()) || 
+          c.partyName.toLowerCase().contains(registerSearch.toLowerCase()) ||
           c.billNo.toString().toLowerCase().contains(registerSearch.toLowerCase());
-      return dateMatch && searchMatch;
+      bool isCarry = _isCarryForward(c.effectiveOriginalFy, webPh.financialYear);
+      bool fyMatch = fyFilter == "ALL" ||
+          (fyFilter == "CURRENT" && !isCarry) ||
+          (fyFilter == "CARRY" && isCarry);
+      return dateMatch && searchMatch && fyMatch;
     }).toList();
 
     double totalVal = filtered.fold(0.0, (s, c) => s + c.totalAmount);
@@ -158,6 +170,12 @@ class _WebChallanViewState extends State<WebChallanView> {
                   final item = filtered[i];
                   bool isPending = item.status == "Pending";
                   bool isBilled = item.status == "Billed";
+                  final fwd = webPh.getForwardChallanStatus(item.id, isPurchase: false);
+                  bool isBilledLocked = isBilled || fwd.billedFy != null;
+                  bool isCarry = _isCarryForward(item.effectiveOriginalFy, webPh.financialYear);
+                  final String cfLabel = (!item.hasValidDate && item.effectiveOriginalFy.isEmpty)
+                      ? "CF / LEGACY"
+                      : (item.effectiveOriginalFy.isNotEmpty ? "CF • ${item.effectiveOriginalFy}" : "CF / LEGACY");
                   bool isWeb = item.id.startsWith("SCH-WEB") || (item.salesmanName == "WEB-PORTAL");
 
                   return Container(
@@ -188,6 +206,17 @@ class _WebChallanViewState extends State<WebChallanView> {
                           ),
                           const SizedBox(width: 8),
                           _statusBadge(item.status.toUpperCase(), isPending),
+                          if (isCarry) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge(cfLabel, const Color(0xFFA855F7)),
+                          ],
+                          if (fwd.billedFy != null) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge("BILLED IN ${fwd.billedFy}", const Color(0xFF10B981)),
+                          ] else if (fwd.shiftedFy != null) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge("SHIFTED → ${fwd.shiftedFy}", const Color(0xFF38BDF8)),
+                          ],
                           if (isWeb) ...[
                             const SizedBox(width: 6),
                             Container(
@@ -223,16 +252,16 @@ class _WebChallanViewState extends State<WebChallanView> {
                           // ✏️ EDIT / MODIFY CHALLAN (GUARDED)
                           IconButton(
                             icon: Icon(
-                              Icons.edit_note_rounded, 
-                              color: isBilled ? Colors.white24 : Colors.orangeAccent, 
+                              Icons.edit_note_rounded,
+                              color: isBilledLocked ? Colors.white24 : Colors.orangeAccent,
                               size: 20
                             ),
-                            tooltip: isBilled ? "Locked: Already Billed" : "Modify Challan",
+                            tooltip: isBilledLocked ? "Locked: Already Billed" : "Modify Challan",
                             onPressed: () {
-                              if (isBilled) {
+                              if (isBilledLocked) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text("🔒 Locked: Sale Bill has already been generated from this Challan!"),
+                                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
                                     backgroundColor: Colors.orange,
                                   ),
                                 );
@@ -277,11 +306,26 @@ class _WebChallanViewState extends State<WebChallanView> {
                               WebPdfRouterService.downloadSaleChallanPdf(challan: item, party: pObj, shop: activeShop);
                             },
                           ),
-                          // 🗑️ DELETE (WITH CONFIRMATION & BILL CHECK)
+                          // 🗑️ DELETE (HARD LOCK WHEN BILLED)
                           IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                            tooltip: "Delete Challan",
-                            onPressed: () => _confirmDeleteSaleChallan(context, webPh, item),
+                            icon: Icon(
+                              isBilledLocked ? Icons.lock_outline_rounded : Icons.delete_outline_rounded,
+                              color: isBilledLocked ? Colors.white24 : Colors.redAccent,
+                              size: 18,
+                            ),
+                            tooltip: isBilledLocked ? "Locked: Billed (Delete Bill first)" : "Delete Challan",
+                            onPressed: () {
+                              if (isBilledLocked) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              _confirmDeleteSaleChallan(context, webPh, item);
+                            },
                           ),
                         ],
                       ),
@@ -315,13 +359,18 @@ class _WebChallanViewState extends State<WebChallanView> {
     list.sort((a, b) => b.date.compareTo(a.date));
 
     final filtered = list.where((c) {
+      if (c.isDeleted == 1) return false;
       final cDateOnly = _dateOnly(c.date);
-      bool dateMatch = !cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly);
+      bool dateMatch = (!cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly)) || c.status == "Pending";
       bool searchMatch = registerSearch.isEmpty ||
-          c.distributorName.toLowerCase().contains(registerSearch.toLowerCase()) || 
-          c.internalNo.toLowerCase().contains(registerSearch.toLowerCase()) || 
+          c.distributorName.toLowerCase().contains(registerSearch.toLowerCase()) ||
+          c.internalNo.toLowerCase().contains(registerSearch.toLowerCase()) ||
           c.billNo.toLowerCase().contains(registerSearch.toLowerCase());
-      return dateMatch && searchMatch;
+      bool isCarry = _isCarryForward(c.effectiveOriginalFy, webPh.financialYear);
+      bool fyMatch = fyFilter == "ALL" ||
+          (fyFilter == "CURRENT" && !isCarry) ||
+          (fyFilter == "CARRY" && isCarry);
+      return dateMatch && searchMatch && fyMatch;
     }).toList();
 
     double totalVal = filtered.fold(0.0, (s, c) => s + c.totalAmount);
@@ -349,6 +398,12 @@ class _WebChallanViewState extends State<WebChallanView> {
                   final item = filtered[i];
                   bool isPending = item.status == "Pending";
                   bool isBilled = item.status == "Billed";
+                  final fwd = webPh.getForwardChallanStatus(item.id, isPurchase: true);
+                  bool isBilledLocked = isBilled || fwd.billedFy != null;
+                  bool isCarry = _isCarryForward(item.effectiveOriginalFy, webPh.financialYear);
+                  final String cfLabel = (!item.hasValidDate && item.effectiveOriginalFy.isEmpty)
+                      ? "CF / LEGACY"
+                      : (item.effectiveOriginalFy.isNotEmpty ? "CF • ${item.effectiveOriginalFy}" : "CF / LEGACY");
                   bool isWeb = item.id.startsWith("PCH-WEB") || item.internalNo.startsWith("PCH-WEB") || item.remarks.contains("WEB-PORTAL");
 
                   return Container(
@@ -379,6 +434,17 @@ class _WebChallanViewState extends State<WebChallanView> {
                           ),
                           const SizedBox(width: 8),
                           _statusBadge(item.status.toUpperCase(), isPending),
+                          if (isCarry) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge(cfLabel, const Color(0xFFA855F7)),
+                          ],
+                          if (fwd.billedFy != null) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge("BILLED IN ${fwd.billedFy}", const Color(0xFF10B981)),
+                          ] else if (fwd.shiftedFy != null) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge("SHIFTED → ${fwd.shiftedFy}", const Color(0xFF38BDF8)),
+                          ],
                           if (isWeb) ...[
                             const SizedBox(width: 6),
                             Container(
@@ -414,16 +480,16 @@ class _WebChallanViewState extends State<WebChallanView> {
                           // ✏️ EDIT / MODIFY INWARD CHALLAN (GUARDED)
                           IconButton(
                             icon: Icon(
-                              Icons.edit_note_rounded, 
-                              color: isBilled ? Colors.white24 : Colors.orangeAccent, 
+                              Icons.edit_note_rounded,
+                              color: isBilledLocked ? Colors.white24 : Colors.orangeAccent,
                               size: 20
                             ),
-                            tooltip: isBilled ? "Locked: Already Invoiced" : "Modify Inward Challan",
+                            tooltip: isBilledLocked ? "Locked: Already Invoiced" : "Modify Inward Challan",
                             onPressed: () {
-                              if (isBilled) {
+                              if (isBilledLocked) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text("🔒 Locked: Purchase Invoice has already been generated from this Inward Challan!"),
+                                    content: Text("🔒 Locked: Purchase Invoice already generated. Delete linked Bill first."),
                                     backgroundColor: Colors.orange,
                                   ),
                                 );
@@ -468,11 +534,26 @@ class _WebChallanViewState extends State<WebChallanView> {
                               WebPdfRouterService.downloadPurchaseChallanPdf(challan: item, party: pObj, shop: activeShop);
                             },
                           ),
-                          // 🗑️ DELETE (WITH CONFIRMATION & BILL CHECK)
+                          // 🗑️ DELETE (HARD LOCK WHEN BILLED)
                           IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                            tooltip: "Delete Inward Challan",
-                            onPressed: () => _confirmDeletePurchaseChallan(context, webPh, item),
+                            icon: Icon(
+                              isBilledLocked ? Icons.lock_outline_rounded : Icons.delete_outline_rounded,
+                              color: isBilledLocked ? Colors.white24 : Colors.redAccent,
+                              size: 18,
+                            ),
+                            tooltip: isBilledLocked ? "Locked: Invoiced (Delete Bill first)" : "Delete Inward Challan",
+                            onPressed: () {
+                              if (isBilledLocked) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Purchase Invoice already generated. Delete linked Bill first."),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              _confirmDeletePurchaseChallan(context, webPh, item);
+                            },
                           ),
                         ],
                       ),
@@ -523,9 +604,18 @@ class _WebChallanViewState extends State<WebChallanView> {
     );
   }
 
-  // --- SAFE DELETION DIALOGS ---
+  // --- SAFE DELETION DIALOGS (WITH HARD BILLED LOCK) ---
   void _confirmDeleteSaleChallan(BuildContext context, PharoahWebManager webPh, SaleChallan ch) {
-    bool isBilled = ch.status == "Billed";
+    final fwd = webPh.getForwardChallanStatus(ch.id, isPurchase: false);
+    if (ch.status == "Billed" || fwd.billedFy != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     showDialog(
       context: context,
@@ -548,11 +638,9 @@ class _WebChallanViewState extends State<WebChallanView> {
               style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text(
-              isBilled
-                  ? "⚠️ WARNING: This challan is already marked as BILLED. Deleting it may cause mismatches with existing sale bills!"
-                  : "Are you sure you want to permanently delete this challan? This will remove the record and reverse stock impact.",
-              style: TextStyle(color: isBilled ? Colors.orangeAccent : Colors.white60, fontSize: 11.5),
+            const Text(
+              "Are you sure you want to permanently delete this challan? This will remove the record and reverse stock impact.",
+              style: TextStyle(color: Colors.white60, fontSize: 11.5),
             ),
           ],
         ),
@@ -564,10 +652,15 @@ class _WebChallanViewState extends State<WebChallanView> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
             onPressed: () {
-              webPh.deleteSaleChallan(ch.id);
+              final bool ok = webPh.deleteSaleChallan(ch.id);
               Navigator.pop(c);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("🗑️ Sale Challan Deleted Permanently!"), backgroundColor: Colors.redAccent),
+                SnackBar(
+                  content: Text(ok
+                      ? "🗑️ Sale Challan Deleted Permanently!"
+                      : "🔒 Locked: Bill already generated. Delete linked Bill first."),
+                  backgroundColor: ok ? Colors.redAccent : Colors.orange,
+                ),
               );
             },
             icon: const Icon(Icons.delete_forever_rounded, size: 16),
@@ -579,7 +672,16 @@ class _WebChallanViewState extends State<WebChallanView> {
   }
 
   void _confirmDeletePurchaseChallan(BuildContext context, PharoahWebManager webPh, PurchaseChallan ch) {
-    bool isBilled = ch.status == "Billed";
+    final fwd = webPh.getForwardChallanStatus(ch.id, isPurchase: true);
+    if (ch.status == "Billed" || fwd.billedFy != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     showDialog(
       context: context,
@@ -602,11 +704,9 @@ class _WebChallanViewState extends State<WebChallanView> {
               style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text(
-              isBilled
-                  ? "⚠️ WARNING: This inward challan is already converted to a Purchase Bill. Deleting it may impact purchase records!"
-                  : "Are you sure you want to permanently delete this inward entry? This will reverse stock and delete the record.",
-              style: TextStyle(color: isBilled ? Colors.orangeAccent : Colors.white60, fontSize: 11.5),
+            const Text(
+              "Are you sure you want to permanently delete this inward entry? This will reverse stock and delete the record.",
+              style: TextStyle(color: Colors.white60, fontSize: 11.5),
             ),
           ],
         ),
@@ -618,10 +718,15 @@ class _WebChallanViewState extends State<WebChallanView> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
             onPressed: () {
-              webPh.deletePurchaseChallan(ch.id);
+              final bool ok = webPh.deletePurchaseChallan(ch.id);
               Navigator.pop(c);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("🗑️ Inward Challan Deleted Permanently!"), backgroundColor: Colors.redAccent),
+                SnackBar(
+                  content: Text(ok
+                      ? "🗑️ Inward Challan Deleted Permanently!"
+                      : "🔒 Locked: Bill already generated. Delete linked Bill first."),
+                  backgroundColor: ok ? Colors.redAccent : Colors.orange,
+                ),
               );
             },
             icon: const Icon(Icons.delete_forever_rounded, size: 16),
@@ -665,7 +770,59 @@ class _WebChallanViewState extends State<WebChallanView> {
             ),
             onChanged: (v) => setState(() => registerSearch = v),
           ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _webFyFilterChip("ALL", "ALL"),
+              const SizedBox(width: 8),
+              _webFyFilterChip("CURRENT FY", "CURRENT"),
+              const SizedBox(width: 8),
+              _webFyFilterChip("CARRY-FORWARD", "CARRY"),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _webFyFilterChip(String label, String key) {
+    final bool selected = fyFilter == key;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => fyFilter = key),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFF0F766E) : Colors.black26,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: selected ? const Color(0xFF2DD4BF) : Colors.white12),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white54,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fyTagBadge(String text, Color accent) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: accent, width: 0.5),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: accent, fontSize: 7.5, fontWeight: FontWeight.w900),
       ),
     );
   }

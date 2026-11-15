@@ -153,11 +153,15 @@ class FastPullEngine {
             );
             final bool d1ScReverted = d1ChRev.saleChallansMutated;
             final bool d1PcReverted = d1ChRev.purchaseChallansMutated;
+            final List<SaleChallan> bilScList = [];
+            final List<PurchaseChallan> bilPcList = [];
             final d1ChBill = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
               events: edgeEvents,
               targetFy: targetFyAtStart,
               saleChallans: ph.saleChallans,
               purchaseChallans: ph.purchaseChallans,
+              onSaleChallanBilled: (ch) => bilScList.add(ch),
+              onPurchaseChallanBilled: (ch) => bilPcList.add(ch),
             );
             final bool d1ScBilled = d1ChBill.saleChallansMutated;
             final bool d1PcBilled = d1ChBill.purchaseChallansMutated;
@@ -349,11 +353,50 @@ class FastPullEngine {
                 await File('$workingDir/s_challan.json').writeAsString(
                   jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()),
                 );
+                for (final ch in revScList) {
+                  await ph.propagateChallanStatusAcrossDiskFolders(
+                    challanId: ch.id,
+                    newStatus: 'Pending',
+                    isPurchase: false,
+                    customVersion: ch.version,
+                    customUpdatedAt: ch.updatedAt,
+                  );
+                }
+                for (final ch in bilScList) {
+                  await ph.propagateChallanStatusAcrossDiskFolders(
+                    challanId: ch.id,
+                    newStatus: 'Billed',
+                    isPurchase: false,
+                    customVersion: ch.version,
+                    customUpdatedAt: ch.updatedAt,
+                  );
+                }
               }
               if (d1PcReverted || d1PcBilled) {
                 await File('$workingDir/p_challan.json').writeAsString(
                   jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()),
                 );
+                for (final ch in revPcList) {
+                  await ph.propagateChallanStatusAcrossDiskFolders(
+                    challanId: ch.id,
+                    newStatus: 'Pending',
+                    isPurchase: true,
+                    customVersion: ch.version,
+                    customUpdatedAt: ch.updatedAt,
+                  );
+                }
+                for (final ch in bilPcList) {
+                  await ph.propagateChallanStatusAcrossDiskFolders(
+                    challanId: ch.id,
+                    newStatus: 'Billed',
+                    isPurchase: true,
+                    customVersion: ch.version,
+                    customUpdatedAt: ch.updatedAt,
+                  );
+                }
+              }
+              if ((revScList.isNotEmpty || revPcList.isNotEmpty) && targetFyAtStart.isNotEmpty) {
+                await ph.cascadePendingChallansOnlyFromBackYear(targetFyAtStart);
               }
               if (d1VoucMutated) {
                 await File('$workingDir/vouc.json').writeAsString(

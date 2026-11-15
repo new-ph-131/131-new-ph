@@ -609,12 +609,16 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
     }
 
     if (!widget.isReadOnly) {
+      final String targetFy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+          ? widget.existingRecord!.effectiveOriginalFy
+          : webPh.financialYear;
       final dup = findDuplicateSupplierChallan(
         challans: webPh.purchaseChallans,
         partyId: widget.supplier.id,
         billNo: widget.supplierRefNo,
         excludeId: widget.existingRecord?.id,
         excludeInternalNo: widget.existingRecord?.internalNo,
+        targetFy: targetFy,
       );
       if (dup != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -629,6 +633,10 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
 
     setState(() => isSaving = true);
 
+    final String preservedOfy = (widget.existingRecord != null && widget.existingRecord!.effectiveOriginalFy.isNotEmpty)
+        ? widget.existingRecord!.effectiveOriginalFy
+        : normalizeFyString(webPh.financialYear);
+
     final newChallan = PurchaseChallan(
       id: widget.existingRecord?.id ?? "PCH-WEB-${DateTime.now().millisecondsSinceEpoch}",
       internalNo: widget.internalNo,
@@ -640,6 +648,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       totalAmount: totalAmt,
       status: widget.existingRecord?.status ?? "Pending",
       remarks: remarksC.text.trim().isNotEmpty ? remarksC.text.trim() : "Stock inward verified.",
+      originalFy: preservedOfy,
+      version: widget.existingRecord != null ? widget.existingRecord!.version + 1 : 1,
     );
 
     final bool ok = webPh.addPurchaseChallanAndSync(newChallan);

@@ -31,7 +31,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
   late TabController _tabController;
 
   String funnelStep = "MODE"; // MODE -> ROUTE -> PARTY -> REVIEW
-  String selectionMode = "NONE";
+  String selectionMode = "NONE"; // MONTHLY | RANDOM | ALL_PENDING | CARRY_ONLY
+  bool includeCarryForward = true;
   bool isProcessing = false;
   double progressValue = 0.0;
   String progressText = "";
@@ -80,7 +81,17 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
     super.dispose();
   }
 
-  bool _isInDateRange(DateTime dt) {
+  bool _isCarryForwardChallan(String effectiveOriginalFy, String currentFy) {
+    final ofy = normalizeFyString(effectiveOriginalFy);
+    final curr = normalizeFyString(currentFy);
+    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+  }
+
+  bool _isChallanEligible(DateTime dt, String effectiveOriginalFy, String currentFy) {
+    final bool isCarry = _isCarryForwardChallan(effectiveOriginalFy, currentFy);
+    if (selectionMode == "CARRY_ONLY") return isCarry;
+    if (selectionMode == "ALL_PENDING") return true;
+    if (includeCarryForward && isCarry) return true;
     DateTime d = DateTime(dt.year, dt.month, dt.day);
     DateTime start = DateTime(fromDate.year, fromDate.month, fromDate.day);
     DateTime end = DateTime(toDate.year, toDate.month, toDate.day);
@@ -118,13 +129,15 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
 
       var chs = isSale
           ? webPh.saleChallans.where((c) =>
+              c.isDeleted != 1 &&
               c.partyName.trim().toUpperCase() == pName.trim().toUpperCase() &&
               c.status == "Pending" &&
-              _isInDateRange(c.date)).toList()
+              _isChallanEligible(c.date, c.effectiveOriginalFy, webPh.financialYear)).toList()
           : webPh.purchaseChallans.where((c) =>
+              c.isDeleted != 1 &&
               c.distributorName.trim().toUpperCase() == pName.trim().toUpperCase() &&
               c.status == "Pending" &&
-              _isInDateRange(c.date)).toList();
+              _isChallanEligible(c.date, c.effectiveOriginalFy, webPh.financialYear)).toList();
 
       if (chs.isEmpty) continue;
 
@@ -144,6 +157,10 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       }
 
       double total = combinedItems.fold(0.0, (s, i) => s + (i.total as double));
+      final int cfCount = chs.where((c) {
+        final String ofy = isSale ? (c as SaleChallan).effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
+        return _isCarryForwardChallan(ofy, webPh.financialYear);
+      }).length;
 
       temp.add({
         'party': pObj,
@@ -153,6 +170,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         'total': total,
         'status': 'DRAFT',
         'isSelected': true,
+        'cfCount': cfCount,
         'challanIds': chs.map((c) => isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toList(),
       });
     }
@@ -356,15 +374,6 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         );
 
         webPh.addSaleAndSync(newSale);
-        for (var cId in b['challanIds']) {
-          int idx = webPh.saleChallans.indexWhere((c) => c.id == cId || c.billNo == cId);
-          if (idx != -1) {
-            webPh.saleChallans[idx].status = "Billed";
-            webPh.saleChallans[idx].version += 1;
-            webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
-            SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
-          }
-        }
 
         for (var item in newSale.items) {
           String resolvedKey = item.medicineID;
@@ -418,15 +427,6 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         );
 
         webPh.addPurchaseAndSync(newPurchase);
-        for (var cId in b['challanIds']) {
-          int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId || c.internalNo == cId || c.billNo == cId);
-          if (idx != -1) {
-            webPh.purchaseChallans[idx].status = "Billed";
-            webPh.purchaseChallans[idx].version += 1;
-            webPh.purchaseChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
-            PurchaseChallanSyncModule.onPurchaseChallanSaved(webPh.purchaseChallans[idx], webPh.activeStoreToken);
-          }
-        }
 
         for (var item in newPurchase.items) {
           String resolvedKey = item.medicineID;
@@ -870,6 +870,34 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
               ),
             ),
           ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() {
+                selectionMode = "ALL_PENDING";
+                includeCarryForward = true;
+                funnelStep = "ROUTE";
+              }),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(25),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFA855F7), width: 1.5),
+                ),
+                child: const Column(
+                  children: [
+                    Icon(Icons.history_rounded, color: Color(0xFFA855F7), size: 36),
+                    SizedBox(height: 12),
+                    Text("ALL PENDING & CARRY-FWD", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                    SizedBox(height: 6),
+                    Text("Include previous FY carry-forward pending challans", style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -938,7 +966,9 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(8)),
           child: Text(
-            "STEP 2: FILTER BY DELIVERY ROUTE (${DateFormat('dd/MM/yy').format(fromDate)} to ${DateFormat('dd/MM/yy').format(toDate)})",
+            selectionMode == "ALL_PENDING"
+                ? "STEP 2: FILTER BY DELIVERY ROUTE (ALL PENDING + CARRY-FORWARD)"
+                : "STEP 2: FILTER BY DELIVERY ROUTE (${DateFormat('dd/MM/yy').format(fromDate)} to ${DateFormat('dd/MM/yy').format(toDate)})",
             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
           ),
         ),
@@ -978,13 +1008,15 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
     final list = webPh.parties.where((p) {
       bool hasPending = isSale
           ? webPh.saleChallans.any((c) =>
+              c.isDeleted != 1 &&
               c.partyName.trim().toUpperCase() == p.name.trim().toUpperCase() &&
               c.status == "Pending" &&
-              _isInDateRange(c.date))
+              _isChallanEligible(c.date, c.effectiveOriginalFy, webPh.financialYear))
           : webPh.purchaseChallans.any((c) =>
+              c.isDeleted != 1 &&
               c.distributorName.trim().toUpperCase() == p.name.trim().toUpperCase() &&
               c.status == "Pending" &&
-              _isInDateRange(c.date));
+              _isChallanEligible(c.date, c.effectiveOriginalFy, webPh.financialYear));
       bool matchesRoute = selectedRoute == null || p.route == selectedRoute;
       bool matchesSearch = partySearch.isEmpty || p.name.toLowerCase().contains(partySearch.toLowerCase());
       return hasPending && matchesRoute && matchesSearch;
@@ -1027,7 +1059,32 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+        if (selectionMode != "ALL_PENDING")
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: includeCarryForward,
+                  activeColor: const Color(0xFFA855F7),
+                  onChanged: (v) => setState(() => includeCarryForward = v ?? true),
+                ),
+                const Expanded(
+                  child: Text(
+                    "Include Prior-FY Carry-Forward Pending Challans",
+                    style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (list.isEmpty)
           const Center(
             child: Padding(
@@ -1043,9 +1100,14 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
             itemBuilder: (c, i) {
               final p = list[i];
               bool isChecked = selectedPartyNames.contains(p.name);
-              int pendCount = isSale
-                  ? webPh.saleChallans.where((ch) => ch.partyName.trim().toUpperCase() == p.name.trim().toUpperCase() && ch.status == "Pending" && _isInDateRange(ch.date)).length
-                  : webPh.purchaseChallans.where((ch) => ch.distributorName.trim().toUpperCase() == p.name.trim().toUpperCase() && ch.status == "Pending" && _isInDateRange(ch.date)).length;
+              final partyPend = isSale
+                  ? webPh.saleChallans.where((ch) => ch.isDeleted != 1 && ch.partyName.trim().toUpperCase() == p.name.trim().toUpperCase() && ch.status == "Pending" && _isChallanEligible(ch.date, ch.effectiveOriginalFy, webPh.financialYear)).toList()
+                  : webPh.purchaseChallans.where((ch) => ch.isDeleted != 1 && ch.distributorName.trim().toUpperCase() == p.name.trim().toUpperCase() && ch.status == "Pending" && _isChallanEligible(ch.date, ch.effectiveOriginalFy, webPh.financialYear)).toList();
+              int pendCount = partyPend.length;
+              int cfCount = partyPend.where((ch) {
+                final String ofy = isSale ? (ch as SaleChallan).effectiveOriginalFy : (ch as PurchaseChallan).effectiveOriginalFy;
+                return _isCarryForwardChallan(ofy, webPh.financialYear);
+              }).length;
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 6),
@@ -1066,6 +1128,14 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
                         decoration: BoxDecoration(color: color.withAlpha(40), borderRadius: BorderRadius.circular(4)),
                         child: Text("$pendCount Challans", style: TextStyle(color: color, fontSize: 8.5, fontWeight: FontWeight.bold)),
                       ),
+                      if (cfCount > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(color: const Color(0x33A855F7), borderRadius: BorderRadius.circular(4), border: Border.all(color: const Color(0xFFA855F7), width: 0.5)),
+                          child: Text("$cfCount CF", style: const TextStyle(color: Color(0xFFA855F7), fontSize: 8.5, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                     ],
                   ),
                   subtitle: Text("${p.city} • Route: ${p.route.isEmpty ? 'General' : p.route}", style: const TextStyle(color: Colors.white54, fontSize: 10.5)),
@@ -1225,6 +1295,21 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
                             style: TextStyle(color: isSaved ? Colors.greenAccent : Colors.orangeAccent, fontSize: 8.5, fontWeight: FontWeight.bold),
                           ),
                         ),
+                        if ((b['cfCount'] ?? 0) > 0) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0x33A855F7),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFFA855F7), width: 0.5),
+                            ),
+                            child: Text(
+                              "${b['cfCount']} CARRY-FWD",
+                              style: const TextStyle(color: Color(0xFFA855F7), fontSize: 8, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     subtitle: Text(
