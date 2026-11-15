@@ -285,7 +285,21 @@ class MultiFyCloudVault {
 
         if (candId.isNotEmpty && exId.isNotEmpty) {
           if (candId == exId) return i;
-          // 🛡️ PRIMARY ID RULE: Distinct non-empty IDs are strictly distinct records. Never match!
+          // For Challans across different FYs: never match distinct IDs!
+          final candFy = (candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString().trim();
+          final exFy = (existing['originalFy'] ?? existing['original_fy'] ?? existing['fy'] ?? '').toString().trim();
+          if (candFy.isNotEmpty && exFy.isNotEmpty && candFy != exFy) {
+            continue;
+          }
+          // In purc.json: exact duplicate identity of same (partyId, billNo, internalNo) collapses
+          if (candInt.isNotEmpty &&
+              candInt == exInt &&
+              candParty.isNotEmpty &&
+              candParty == exParty &&
+              candBill.isNotEmpty &&
+              candBill == exBill) {
+            return i;
+          }
           continue;
         }
 

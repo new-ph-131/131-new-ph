@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pharoah_erp/gateway/company_registry_model.dart';
 import 'package:pharoah_erp/models.dart';
 import 'package:pharoah_erp/logic/pharoah_numbering_engine.dart';
 import 'package:pharoah_erp/web_live_sync/web_pharoah_numbering_engine.dart';
@@ -14,13 +13,70 @@ import 'package:pharoah_erp/sync_core/models/sync_envelope.dart';
 import 'package:pharoah_erp/sync_core/modules/sale_challan_sync_module.dart';
 import 'package:pharoah_erp/sync_core/modules/purchase_challan_sync_module.dart';
 import 'package:pharoah_erp/web_live_sync/sync_protocol/delta_merge_engine.dart';
-import 'package:pharoah_erp/pharoah_manager.dart';
-import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
-import 'package:pharoah_erp/sync_core/orchestrator/master_sync_orchestrator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory mockDocsDir;
+
+  SaleChallan makeSaleChallan({
+    required String id,
+    required String billNo,
+    String partyId = 'P1',
+    String partyName = 'Party A',
+    DateTime? date,
+    String status = 'Pending',
+    String originalFy = '',
+    int version = 1,
+    int updatedAt = 1000,
+    int isDeleted = 0,
+  }) {
+    return SaleChallan(
+      id: id,
+      billNo: billNo,
+      partyId: partyId,
+      partyName: partyName,
+      partyGstin: '',
+      partyState: 'Rajasthan',
+      date: date ?? DateTime(2025, 5, 10),
+      items: [],
+      totalAmount: 100.0,
+      status: status,
+      originalFy: originalFy,
+      version: version,
+      updatedAt: updatedAt,
+      isDeleted: isDeleted,
+    );
+  }
+
+  PurchaseChallan makePurchaseChallan({
+    required String id,
+    required String internalNo,
+    required String billNo,
+    String partyId = 'SUP-1',
+    String distributorName = 'Supplier Z',
+    DateTime? date,
+    String status = 'Pending',
+    String originalFy = '',
+    int version = 1,
+    int updatedAt = 1000,
+    int isDeleted = 0,
+  }) {
+    return PurchaseChallan(
+      id: id,
+      internalNo: internalNo,
+      billNo: billNo,
+      partyId: partyId,
+      distributorName: distributorName,
+      date: date ?? DateTime(2025, 6, 15),
+      items: [],
+      totalAmount: 200.0,
+      status: status,
+      originalFy: originalFy,
+      version: version,
+      updatedAt: updatedAt,
+      isDeleted: isDeleted,
+    );
+  }
 
   setUpAll(() async {
     mockDocsDir = await Directory.systemTemp.createTemp('pharoah_challan_test_');
@@ -38,20 +94,18 @@ void main() {
   });
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'active_fy_COMP-1': '2026-2027',
+    });
   });
 
   group('Group 1: Challan Identity, originalFy Persistence & Backward Compatibility', () {
     test('T1: SaleChallan persists originalFy across toMap, fromMap and fromEnvelope', () {
-      final c1 = SaleChallan(
+      final c1 = makeSaleChallan(
         id: 'sc-101',
         billNo: 'Y-1',
-        partyName: 'Party A',
         date: DateTime(2025, 5, 10),
-        items: [],
-        status: 'Pending',
         originalFy: '2025-2026',
-        version: 1,
       );
 
       expect(c1.effectiveOriginalFy, equals('2025-2026'));
@@ -71,24 +125,21 @@ void main() {
         action: 'UPDATE',
         version: 2,
         updatedAt: 1000,
+        isDeleted: 0,
       );
-      final c3 = SaleChallan.fromEnvelope(env);
+      final c3 = SaleChallan.fromEnvelope(env.toMap());
       expect(c3.id, equals('sc-101'));
       expect(c3.originalFy, equals('2025-2026'));
       expect(c3.effectiveOriginalFy, equals('2025-2026'));
     });
 
     test('T2: PurchaseChallan persists originalFy across toMap, fromMap and fromEnvelope', () {
-      final pc1 = PurchaseChallan(
+      final pc1 = makePurchaseChallan(
         id: 'pc-201',
-        billNo: 'INW-1',
-        supplierChallanNo: 'SUPP-99',
-        partyName: 'Supplier Z',
+        internalNo: 'INW-1',
+        billNo: 'SUPP-99',
         date: DateTime(2025, 6, 15),
-        items: [],
-        status: 'Pending',
         originalFy: '2025-2026',
-        version: 1,
       );
 
       expect(pc1.effectiveOriginalFy, equals('2025-2026'));
@@ -108,8 +159,9 @@ void main() {
         action: 'UPDATE',
         version: 3,
         updatedAt: 2000,
+        isDeleted: 0,
       );
-      final pc3 = PurchaseChallan.fromEnvelope(env);
+      final pc3 = PurchaseChallan.fromEnvelope(env.toMap());
       expect(pc3.id, equals('pc-201'));
       expect(pc3.originalFy, equals('2025-2026'));
     });
@@ -118,32 +170,30 @@ void main() {
       final legacyMap = {
         'id': 'legacy-sc-1',
         'billNo': 'Y-5',
+        'partyId': 'P1',
         'partyName': 'Old Party',
+        'partyGstin': '',
+        'partyState': 'Rajasthan',
         'date': '2024-08-10T00:00:00.000',
         'status': 'Pending',
         'items': [],
+        'totalAmount': 50.0,
         'version': 1,
-        // no originalFy key
       };
 
       final legacy = SaleChallan.fromMap(legacyMap);
-      expect(legacy.originalFy, isNull);
+      expect(legacy.originalFy, equals(''));
       expect(legacy.effectiveOriginalFy, equals('2024-2025'));
     });
 
     test('T4: Date editing preserves originalFy', () {
-      final c = SaleChallan(
+      final c = makeSaleChallan(
         id: 'sc-102',
         billNo: 'Y-2',
-        partyName: 'Party B',
         date: DateTime(2025, 7, 1),
-        items: [],
-        status: 'Pending',
         originalFy: '2025-2026',
-        version: 1,
       );
 
-      // User modifies date to next month
       c.date = DateTime(2025, 8, 1);
       expect(c.originalFy, equals('2025-2026'));
       expect(c.effectiveOriginalFy, equals('2025-2026'));
@@ -151,82 +201,70 @@ void main() {
   });
 
   group('Group 2: FY Isolation in Numbering & Series Counters', () {
-    test('T5: PharoahNumberingEngine isolates series: carry-forward challan does not advance new FY counter', () {
-      final carryForwardChallan = SaleChallan(
+    test('T5: PharoahNumberingEngine isolates series: carry-forward challan does not advance new FY counter', () async {
+      final carryForwardChallan = makeSaleChallan(
         id: 'sc-old-1',
         billNo: 'Y-1',
-        partyName: 'Party Old',
         date: DateTime(2025, 5, 10),
-        items: [],
-        status: 'Pending',
         originalFy: '2025-2026',
-        version: 1,
       );
 
-      final nextNo = PharoahNumberingEngine.getNextAvailableNumber(
+      final nextNo = await PharoahNumberingEngine.getNextNumber(
         type: 'SALE_CHALLAN',
-        existingItems: [carryForwardChallan],
-        currentFY: '2026-2027',
+        companyID: 'COMP-1',
+        prefix: 'Y-',
+        startFrom: 1,
+        currentList: [carryForwardChallan],
       );
 
-      // Should start at 1 for 2026-2027, not skip to 2!
       expect(nextNo, equals('Y-1'));
     });
 
     test('T6: WebPharoahNumberingEngine isolates series: carry-forward challan does not advance new FY counter', () {
-      final carryForwardChallan = SaleChallan(
+      final carryForwardChallan = makeSaleChallan(
         id: 'sc-old-2',
         billNo: 'CH-1',
-        partyName: 'Party Old',
         date: DateTime(2025, 6, 1),
-        items: [],
-        status: 'Pending',
         originalFy: '2025-2026',
-        version: 1,
       );
 
-      final nextNo = WebPharoahNumberingEngine.getNextDocumentNumber(
-        type: 'SALE_CHALLAN',
-        records: [carryForwardChallan.toMap()],
+      final nextNo = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'CH-',
+        startFrom: 1,
+        currentList: [carryForwardChallan],
         targetFy: '2026-2027',
       );
 
-      // Should be CH-1 for 2026-2027
       expect(nextNo, equals('CH-1'));
     });
 
     test('T7: Same-FY challan advances the counter correctly', () {
-      final newFyChallan = SaleChallan(
+      final newFyChallan = makeSaleChallan(
         id: 'sc-new-1',
-        billNo: 'Y-1',
-        partyName: 'Party New',
+        billNo: 'CH-1',
         date: DateTime(2026, 4, 15),
-        items: [],
-        status: 'Pending',
         originalFy: '2026-2027',
-        version: 1,
       );
 
-      final nextNo = PharoahNumberingEngine.getNextAvailableNumber(
-        type: 'SALE_CHALLAN',
-        existingItems: [newFyChallan],
-        currentFY: '2026-2027',
+      final nextNo = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'CH-',
+        startFrom: 1,
+        currentList: [newFyChallan],
+        targetFy: '2026-2027',
       );
 
-      expect(nextNo, equals('Y-2'));
+      expect(nextNo, equals('CH-2'));
     });
   });
 
   group('Group 3: Primary ID Rule & LWW Monotonic Versioning', () {
-    test('T8: MultiFyCloudVault _findMatchingRecordIndex strictly checks ID: distinct non-empty IDs never match', () {
+    test('T8: MultiFyCloudVault matching rule: distinct non-empty IDs across FYs never match', () {
       final existingRecords = [
         {'id': 'UUID-AAA', 'billNo': 'Y-1', 'originalFy': '2025-2026'},
       ];
 
-      // Different ID, same billNo in different FY
       final candidate = {'id': 'UUID-BBB', 'billNo': 'Y-1', 'originalFy': '2026-2027'};
 
-      // Direct simulation of MultiFyCloudVault matching rule
       bool isMatch(Map<String, dynamic> local, Map<String, dynamic> incoming) {
         final locId = (local['id'] ?? '').toString().trim();
         final incId = (incoming['id'] ?? '').toString().trim();
@@ -258,12 +296,10 @@ void main() {
 
     test('T10: SaleChallanSyncModule rejects incoming with lower version (monotonic rejection)', () {
       final local = [
-        SaleChallan(
+        makeSaleChallan(
           id: 'sc-v2',
           billNo: 'Y-1',
-          partyName: 'P',
           date: DateTime(2026, 4, 1),
-          items: [],
           status: 'Billed',
           version: 2,
           updatedAt: 200,
@@ -276,16 +312,22 @@ void main() {
         billData: {
           'id': 'sc-v2',
           'billNo': 'Y-1',
+          'partyId': 'P1',
           'partyName': 'P',
+          'partyGstin': '',
+          'partyState': 'Rajasthan',
           'date': DateTime(2026, 4, 1).toIso8601String(),
           'status': 'Pending',
           'items': [],
+          'totalAmount': 100.0,
           'version': 1,
-          'updatedAt': 300, // Higher timestamp but lower version
+          'updatedAt': 300,
+          'isDeleted': 0,
         },
         action: 'UPDATE',
         version: 1,
         updatedAt: 300,
+        isDeleted: 0,
       );
 
       final mutated = SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(local, staleEnv);
@@ -296,13 +338,11 @@ void main() {
 
     test('T11: PurchaseChallanSyncModule LWW clock tie-breaker when versions are equal', () {
       final local = [
-        PurchaseChallan(
+        makePurchaseChallan(
           id: 'pc-tie',
-          billNo: 'INW-1',
-          supplierChallanNo: 'S-1',
-          partyName: 'P',
+          internalNo: 'INW-1',
+          billNo: 'S-1',
           date: DateTime(2026, 4, 1),
-          items: [],
           status: 'Pending',
           version: 1,
           updatedAt: 100,
@@ -314,18 +354,22 @@ void main() {
         documentType: 'PURCHASE_CHALLAN',
         billData: {
           'id': 'pc-tie',
-          'billNo': 'INW-1',
-          'supplierChallanNo': 'S-1',
-          'partyName': 'P',
+          'internalNo': 'INW-1',
+          'billNo': 'S-1',
+          'partyId': 'SUP-1',
+          'distributorName': 'P',
           'date': DateTime(2026, 4, 1).toIso8601String(),
           'status': 'Billed',
           'items': [],
+          'totalAmount': 200.0,
           'version': 1,
           'updatedAt': 200,
+          'isDeleted': 0,
         },
         action: 'UPDATE',
         version: 1,
         updatedAt: 200,
+        isDeleted: 0,
       );
 
       final mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(local, newerEnv);
@@ -338,15 +382,12 @@ void main() {
   group('Group 4: Cross-FY Status Propagation & Orchestrator Envelopes', () {
     test('T12: D1SalesLedgerService.billLinkedChallansFromSaveEvents updates linked challan status', () {
       final challans = [
-        SaleChallan(
+        makeSaleChallan(
           id: 'sc-linked-1',
           billNo: 'Y-10',
-          partyName: 'Customer 1',
           date: DateTime(2025, 5, 1),
-          items: [],
           status: 'Pending',
           originalFy: '2025-2026',
-          version: 1,
         )
       ];
 
@@ -376,32 +417,27 @@ void main() {
 
     test('T13: Supplier Challan duplicate check is isolated by targetFy', () {
       final existingChallans = [
-        PurchaseChallan(
+        makePurchaseChallan(
           id: 'pc-fy25',
-          billNo: 'INW-1',
-          supplierChallanNo: 'SUPP-100',
-          partyName: 'Supplier A',
+          internalNo: 'INW-1',
+          billNo: 'SUPP-100',
           date: DateTime(2025, 6, 1),
-          items: [],
-          status: 'Pending',
           originalFy: '2025-2026',
         )
       ];
 
-      // Same supplier challan in different FY (2026-2027) should NOT be flagged as duplicate
       final dupInOtherFy = PurchaseChallan.findDuplicateSupplierChallan(
         existingChallans,
-        supplierChallanNo: 'SUPP-100',
-        supplierName: 'Supplier A',
+        billNo: 'SUPP-100',
+        partyId: 'SUP-1',
         targetFy: '2026-2027',
       );
       expect(dupInOtherFy, isNull);
 
-      // Same supplier challan in same FY (2025-2026) SHOULD be flagged
       final dupInSameFy = PurchaseChallan.findDuplicateSupplierChallan(
         existingChallans,
-        supplierChallanNo: 'SUPP-100',
-        supplierName: 'Supplier A',
+        billNo: 'SUPP-100',
+        partyId: 'SUP-1',
         targetFy: '2025-2026',
       );
       expect(dupInSameFy, isNotNull);
