@@ -134,6 +134,7 @@ class DeltaMergeEngine {
     ) {
       if (cloudList == null) return false;
       bool changed = false;
+      final String activeFy = ph.currentFY.trim();
 
       // 1. Process Cloud Records with Anti-Zombie Shield
       for (var rawMap in cloudList) {

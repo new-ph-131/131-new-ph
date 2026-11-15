@@ -676,7 +676,7 @@ class SaleChallan {
     if (clean.isNotEmpty && clean.contains("-")) {
       return clean;
     }
-    return AppDateLogic.getFYForDate(date);
+    return '${date.month >= 4 ? date.year : date.year - 1}-${date.month >= 4 ? date.year + 1 : date.year}';
   }
 
   Map<String, dynamic> toMap() => {
@@ -749,7 +749,7 @@ class PurchaseChallan {
     if (clean.isNotEmpty && clean.contains("-")) {
       return clean;
     }
-    return AppDateLogic.getFYForDate(date);
+    return '${date.month >= 4 ? date.year : date.year - 1}-${date.month >= 4 ? date.year + 1 : date.year}';
   }
 
   Map<String, dynamic> toMap() => {
