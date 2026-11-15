@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pharoah_erp/fy_transfer_engine.dart';
+import 'package:pharoah_erp/gateway/company_registry_model.dart';
 import 'package:pharoah_erp/logic/pharoah_numbering_engine.dart';
 import 'package:pharoah_erp/models.dart';
 import 'package:pharoah_erp/sync_core/d1_sales_ledger_service.dart';
