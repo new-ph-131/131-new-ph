@@ -254,7 +254,7 @@ class MultiFyCloudVault {
     if (fileName == 'purc.json' || fileName == 'p_challan.json') {
       final String pId = (m['partyId'] ?? '').toString().trim().toUpperCase();
       final String bNo = (m['billNo'] ?? '').toString().trim();
-      if (id.isEmpty && pId.isNotEmpty && bNo.isNotEmpty) {
+      if ((fileName != 'p_challan.json' || id.isEmpty) && pId.isNotEmpty && bNo.isNotEmpty) {
         final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', effCheckFy, true);
         if (checkKeyTombstone(comp2, preserveCase: true)) return true;
         if (sec.isNotEmpty) {

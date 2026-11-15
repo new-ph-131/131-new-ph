@@ -365,6 +365,9 @@ class D1SalesLedgerService {
     if (isSaleChallanIdDeleted(cleanId, fy)) {
       return true;
     }
+    if (cleanId.isNotEmpty) {
+      return false;
+    }
     final cleanSec = scopeSecondaryKey(billNo, fy);
     if (cleanSec.isEmpty || !_permanentDeletedKeys.contains(cleanSec)) {
       return false;

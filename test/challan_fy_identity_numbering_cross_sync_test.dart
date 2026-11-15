@@ -894,7 +894,7 @@ void main() {
         for (int i = 1; i <= 10; i++)
           TombstoneEngine.recordTombstoneWithTimestamp(
             cid,
-            id: 'SC-BURST-$i',
+            id: 'SC-UUID-BURST-$i',
             secondaryKey: 'SCH-$i',
             timestamp: 50000 + i,
             fy: fy,
@@ -902,7 +902,7 @@ void main() {
         for (int i = 1; i <= 10; i++)
           TombstoneEngine.recordTombstoneWithTimestamp(
             cid,
-            id: 'PC-BURST-$i',
+            id: 'PC-UUID-BURST-$i',
             secondaryKey: 'PCH-$i',
             timestamp: 60000 + i,
             fy: fy,
@@ -912,10 +912,10 @@ void main() {
       final regAfterDelete = await TombstoneEngine.getTombstoneRegistry(cid);
       final tombsAfterDelete = await TombstoneEngine.getLocalTombstones(cid);
       for (int i = 1; i <= 10; i++) {
-        expect(regAfterDelete.containsKey('SC-BURST-$i'), isTrue, reason: 'Missing SC-BURST-$i in registry');
-        expect(regAfterDelete.containsKey('PC-BURST-$i'), isTrue, reason: 'Missing PC-BURST-$i in registry');
-        expect(tombsAfterDelete.contains('SC-BURST-$i'), isTrue, reason: 'Missing SC-BURST-$i in tombstones');
-        expect(tombsAfterDelete.contains('PC-BURST-$i'), isTrue, reason: 'Missing PC-BURST-$i in tombstones');
+        expect(regAfterDelete.containsKey('SC-UUID-BURST-$i'), isTrue, reason: 'Missing SC-UUID-BURST-$i in registry');
+        expect(regAfterDelete.containsKey('PC-UUID-BURST-$i'), isTrue, reason: 'Missing PC-UUID-BURST-$i in registry');
+        expect(tombsAfterDelete.contains('SC-UUID-BURST-$i'), isTrue, reason: 'Missing SC-UUID-BURST-$i in tombstones');
+        expect(tombsAfterDelete.contains('PC-UUID-BURST-$i'), isTrue, reason: 'Missing PC-UUID-BURST-$i in tombstones');
       }
 
       // Now fire 10 concurrent unmarks for re-created SCH-1..10 & PCH-1..10
@@ -923,7 +923,7 @@ void main() {
         for (int i = 1; i <= 10; i++)
           TombstoneEngine.unmarkTombstoneWithTimestamp(
             cid,
-            id: 'SC-RECREATED-$i',
+            id: 'SC-UUID-RECREATED-$i',
             secondaryKey: 'SCH-$i',
             timestamp: 70000 + i,
             fy: fy,
@@ -931,7 +931,7 @@ void main() {
         for (int i = 1; i <= 10; i++)
           TombstoneEngine.unmarkTombstoneWithTimestamp(
             cid,
-            id: 'PC-RECREATED-$i',
+            id: 'PC-UUID-RECREATED-$i',
             secondaryKey: 'PCH-$i',
             timestamp: 80000 + i,
             fy: fy,
@@ -940,8 +940,8 @@ void main() {
 
       final unmarkReg = await TombstoneEngine.getUnmarkedRegistry(cid);
       for (int i = 1; i <= 10; i++) {
-        expect(unmarkReg.containsKey('SC-RECREATED-$i'), isTrue);
-        expect(unmarkReg.containsKey('PC-RECREATED-$i'), isTrue);
+        expect(unmarkReg.containsKey('SC-UUID-RECREATED-$i'), isTrue);
+        expect(unmarkReg.containsKey('PC-UUID-RECREATED-$i'), isTrue);
       }
     });
 
