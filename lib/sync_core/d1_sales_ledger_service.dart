@@ -88,6 +88,21 @@ class D1SalesLedgerService {
   /// 🛡️ MASTER KNOWN VERSIONS: Google Drive can NEVER downgrade a known higher version
   static final Map<String, int> _knownBillVersions = {};
 
+  /// 🛡️ Serial Async Mutex for Gravestone SharedPreferences writes
+  static Future<void> _gravestonePrefsLock = Future<void>.value();
+
+  static Future<T> _runGravestoneLocked<T>(Future<T> Function() action) {
+    final prev = _gravestonePrefsLock;
+    final completer = Future<T>(() async {
+      try {
+        await prev;
+      } catch (_) {}
+      return await action();
+    });
+    _gravestonePrefsLock = completer.then((_) {}, onError: (_) {});
+    return completer;
+  }
+
   /// Checks if a key is a human-readable bill/series number or composite key (which repeats across FYs)
   /// Checks if a key is a human-readable bill/series number or composite key (which repeats across FYs)
   static bool isUnscopedSeriesKey(String key) {
@@ -221,13 +236,14 @@ class D1SalesLedgerService {
     recordKey(cleanSec);
     recordKey(cleanTer);
     try {
-      SharedPreferences.getInstance().then((prefs) {
+      _runGravestoneLocked(() async {
+        final prefs = await SharedPreferences.getInstance();
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
         final set = existing.where((k) => !isUnscopedSeriesKey(k)).toSet();
-        if (idKey.isNotEmpty) set.add(idKey);
-        if (cleanSec.isNotEmpty) set.add(cleanSec);
-        if (cleanTer.isNotEmpty) set.add(cleanTer);
-        prefs.setStringList("d1_permanent_gravestones", set.toList());
+        if (idKey.isNotEmpty && _permanentDeletedKeys.contains(idKey)) set.add(idKey);
+        if (cleanSec.isNotEmpty && _permanentDeletedKeys.contains(cleanSec)) set.add(cleanSec);
+        if (cleanTer.isNotEmpty && _permanentDeletedKeys.contains(cleanTer)) set.add(cleanTer);
+        await prefs.setStringList("d1_permanent_gravestones", set.toList());
         final rawTs = prefs.getString("d1_permanent_gravestone_ts");
         final Map<String, int> tsMap = {};
         if (rawTs != null && rawTs.isNotEmpty) {
@@ -240,10 +256,16 @@ class D1SalesLedgerService {
             });
           } catch (_) {}
         }
-        if (idKey.isNotEmpty) tsMap[idKey] = _permanentDeletedTimestamps[idKey] ?? delTs;
-        if (cleanSec.isNotEmpty) tsMap[cleanSec] = _permanentDeletedTimestamps[cleanSec] ?? delTs;
-        if (cleanTer.isNotEmpty) tsMap[cleanTer] = _permanentDeletedTimestamps[cleanTer] ?? delTs;
-        prefs.setString("d1_permanent_gravestone_ts", jsonEncode(tsMap));
+        if (idKey.isNotEmpty && _permanentDeletedKeys.contains(idKey)) {
+          tsMap[idKey] = _permanentDeletedTimestamps[idKey] ?? delTs;
+        }
+        if (cleanSec.isNotEmpty && _permanentDeletedKeys.contains(cleanSec)) {
+          tsMap[cleanSec] = _permanentDeletedTimestamps[cleanSec] ?? delTs;
+        }
+        if (cleanTer.isNotEmpty && _permanentDeletedKeys.contains(cleanTer)) {
+          tsMap[cleanTer] = _permanentDeletedTimestamps[cleanTer] ?? delTs;
+        }
+        await prefs.setString("d1_permanent_gravestone_ts", jsonEncode(tsMap));
       });
     } catch (_) {}
   }
@@ -278,7 +300,8 @@ class D1SalesLedgerService {
     removeEverywhere(scopedTer, exactOnly: keepTerCase);
 
     try {
-      SharedPreferences.getInstance().then((prefs) {
+      _runGravestoneLocked(() async {
+        final prefs = await SharedPreferences.getInstance();
         final existing = prefs.getStringList("d1_permanent_gravestones") ?? [];
         final set = existing.where((k) => !isUnscopedSeriesKey(k)).toSet();
         final toRemove = <String>{
@@ -291,7 +314,7 @@ class D1SalesLedgerService {
           scopedTer,
         }..removeWhere((e) => e.isEmpty);
         set.removeAll(toRemove);
-        prefs.setStringList("d1_permanent_gravestones", set.toList());
+        await prefs.setStringList("d1_permanent_gravestones", set.toList());
         final rawTs = prefs.getString("d1_permanent_gravestone_ts");
         if (rawTs != null && rawTs.isNotEmpty) {
           try {
@@ -302,11 +325,84 @@ class D1SalesLedgerService {
                 tsMap[ks] = int.tryParse(v.toString()) ?? 0;
               }
             });
-            prefs.setString("d1_permanent_gravestone_ts", jsonEncode(tsMap));
+            await prefs.setString("d1_permanent_gravestone_ts", jsonEncode(tsMap));
           } catch (_) {}
         }
       });
     } catch (_) {}
+  }
+
+  // =========================================================================
+  // 🛡️ SALE CHALLAN UUID-FIRST GRAVESTONES & VERSION SHIELD
+  // =========================================================================
+  /// Checks ONLY whether the immutable SaleChallan UUID [id] itself was permanently deleted.
+  /// Never matches a reused series number (e.g. SC-1) so a re-created SaleChallan with a new UUID
+  /// is never poisoned by an earlier deleted SaleChallan that had the same challan number.
+  static bool isSaleChallanIdDeleted(String id, [String? fy]) {
+    final cleanId = id.trim();
+    if (cleanId.isEmpty) return false;
+    final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    return _permanentDeletedKeys.contains(cleanId) ||
+        _permanentDeletedKeys.contains(cleanId.toUpperCase()) ||
+        (scopedId.isNotEmpty &&
+            (_permanentDeletedKeys.contains(scopedId) ||
+             _permanentDeletedKeys.contains(scopedId.toUpperCase())));
+  }
+
+  static int getSaleChallanSecondaryDeleteTimestamp(String billNo, [String? fy]) {
+    final cleanSec = scopeSecondaryKey(billNo, fy);
+    if (cleanSec.isEmpty || !_permanentDeletedKeys.contains(cleanSec)) return 0;
+    return _permanentDeletedTimestamps[cleanSec] ?? 0;
+  }
+
+  static bool isSaleChallanDeleted(
+    String id,
+    String billNo, [
+    String? fy,
+    int? recordUpdatedAt,
+  ]) {
+    final cleanId = id.trim();
+    if (isSaleChallanIdDeleted(cleanId, fy)) {
+      return true;
+    }
+    final cleanSec = scopeSecondaryKey(billNo, fy);
+    if (cleanSec.isEmpty || !_permanentDeletedKeys.contains(cleanSec)) {
+      return false;
+    }
+    if (cleanId.isNotEmpty && recordUpdatedAt != null && recordUpdatedAt > 0) {
+      final int secTs = _permanentDeletedTimestamps[cleanSec] ?? 0;
+      if (secTs > 0 && recordUpdatedAt > secTs) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static int getSaleChallanIdKnownVersion(String id, [String? fy]) {
+    final cleanId = id.trim();
+    if (cleanId.isEmpty) return 0;
+    final scopedId = isUnscopedSeriesKey(cleanId) ? scopeSecondaryKey(cleanId, fy) : cleanId;
+    final v1 = _knownBillVersions[cleanId] ?? 0;
+    final v2 = scopedId.isNotEmpty ? (_knownBillVersions[scopedId] ?? 0) : 0;
+    return v1 > v2 ? v1 : v2;
+  }
+
+  static void markSaleChallanPermanentlyDeleted(String id, String billNo, [String? fy, int? deletedAtMs]) {
+    final cleanId = id.trim();
+    final cleanBill = billNo.trim().toUpperCase();
+    markPermanentlyDeleted(cleanId, cleanBill, "", fy, false, deletedAtMs);
+    if (cleanId.isNotEmpty) {
+      markPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy, false, deletedAtMs);
+    }
+  }
+
+  static void unmarkSaleChallanPermanentlyDeleted(String id, String billNo, [String? fy]) {
+    final cleanId = id.trim();
+    final cleanBill = billNo.trim().toUpperCase();
+    unmarkPermanentlyDeleted(cleanId, cleanBill, "", fy, false);
+    if (cleanId.isNotEmpty) {
+      unmarkPermanentlyDeleted(cleanId.toUpperCase(), "", "", fy, false);
+    }
   }
 
   // =========================================================================
@@ -1569,6 +1665,786 @@ class D1SalesLedgerService {
     return mutated;
   }
 
+
+  /// =========================================================================
+  /// CHALLAN EDGE LEDGER (SALE CHALLAN & PURCHASE CHALLAN - D1 SEQ + OCC)
+  /// =========================================================================
+
+  /// Called when a SaleChallan is created or modified from either App or Web
+  static Future<bool> onSaleChallanSaved(
+    SaleChallan challan,
+    String storeToken, {
+    bool isUpdate = false,
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    final String rawFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (challan.effectiveOriginalFy.isNotEmpty
+            ? challan.effectiveOriginalFy
+            : (activeFinancialYear.isNotEmpty ? activeFinancialYear.trim() : inferFyFromDate(challan.date)));
+    final String effFy = normalizeFyString(rawFy);
+    unmarkSaleChallanPermanentlyDeleted(challan.id, challan.billNo, effFy);
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+
+    try {
+      final chMap = challan.toMap();
+      chMap["doc_type"] = "SALE_CHALLAN";
+      chMap["fy"] = effFy;
+      if ((chMap["originalFy"] ?? "").toString().trim().isEmpty && effFy.isNotEmpty) {
+        chMap["originalFy"] = effFy;
+        chMap["original_fy"] = effFy;
+      }
+      final String cleanBNo = challan.billNo.trim().toUpperCase();
+      final String scopedBNo = cleanBNo.isNotEmpty ? scopeSecondaryKey(cleanBNo, effFy) : "";
+
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": isUpdate ? "UPDATE_SALE_CHALLAN" : "INSERT_SALE_CHALLAN",
+        "entityType": "SALE_CHALLAN",
+        "entityId": challan.id,
+        "fy": effFy,
+        "unmarkedIds": [
+          challan.id,
+          if (scopedBNo.isNotEmpty) scopedBNo,
+          if (cleanBNo.isNotEmpty) cleanBNo,
+        ],
+        "sale_event": {
+          "id": challan.id,
+          "bill_no": challan.billNo,
+          "version": challan.version,
+          "action": isUpdate ? "UPDATE" : "INSERT",
+          "status": challan.status,
+          "client_source": clientSource,
+          "payload": chMap,
+        },
+      };
+
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data["status"] == "SUCCESS") {
+          recordKnownVersion(challan.id, challan.billNo, challan.version, effFy);
+          final int? newSeq = data["seq"];
+          if (newSeq != null && newSeq > 0) {
+            await _updateHighestLocalSeq(storeToken, newSeq);
+          }
+          return true;
+        }
+      } else if (res.statusCode == 410) {
+        markSaleChallanPermanentlyDeleted(challan.id, challan.billNo, effFy);
+        return false;
+      } else if (res.statusCode == 409) {
+        try {
+          final data = jsonDecode(res.body);
+          final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
+          if (data["status"] == "DELETED" || serverVer >= 99999) {
+            markSaleChallanPermanentlyDeleted(challan.id, challan.billNo, effFy);
+            return false;
+          }
+          if (serverVer > 0) {
+            recordKnownVersion(challan.id, challan.billNo, serverVer, effFy);
+            challan.version = serverVer + 1;
+            return await onSaleChallanSaved(
+              challan,
+              storeToken,
+              isUpdate: true,
+              clientSource: clientSource,
+              fy: effFy,
+            );
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onSaleChallanSaved Network Error: $e");
+    }
+    return false;
+  }
+
+  /// Called when a SaleChallan is permanently deleted from either App or Web
+  static Future<bool> onSaleChallanDeleted(
+    dynamic challanOrId,
+    String storeToken, {
+    String billNo = "",
+    String clientSource = "APP_MOBILE",
+    String? fy,
+    int? deletedAtMs,
+  }) async {
+    final String cId = challanOrId is SaleChallan ? challanOrId.id.trim() : challanOrId.toString().trim();
+    final String cBill = challanOrId is SaleChallan
+        ? challanOrId.billNo.trim()
+        : billNo.trim();
+    final String rawFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (challanOrId is SaleChallan && challanOrId.effectiveOriginalFy.isNotEmpty
+            ? challanOrId.effectiveOriginalFy
+            : activeFinancialYear.trim());
+    final String effFy = normalizeFyString(rawFy);
+    final int delTs = (deletedAtMs != null && deletedAtMs > 0)
+        ? deletedAtMs
+        : (challanOrId is SaleChallan && challanOrId.updatedAt > 0
+            ? challanOrId.updatedAt
+            : DateTime.now().millisecondsSinceEpoch);
+
+    markSaleChallanPermanentlyDeleted(cId, cBill, effFy, delTs);
+    if (cId.isNotEmpty) {
+      recordKnownVersion(cId, "", 999999, effFy);
+    }
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+
+    try {
+      final String cleanBNo = cBill.toUpperCase();
+      final String scopedBNo = cleanBNo.isNotEmpty ? scopeSecondaryKey(cleanBNo, effFy) : "";
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "DELETE_SALE_CHALLAN",
+        "entityType": "SALE_CHALLAN",
+        "entityId": cId,
+        "fy": effFy,
+        "deletedIds": [
+          if (cId.isNotEmpty) cId,
+          if (scopedBNo.isNotEmpty) scopedBNo,
+        ],
+        "sale_event": {
+          "id": cId,
+          "bill_no": cleanBNo,
+          "version": 999999,
+          "action": "DELETE",
+          "status": "Deleted",
+          "client_source": clientSource,
+          "payload": {
+            "doc_type": "SALE_CHALLAN",
+            "id": cId,
+            "billNo": cleanBNo,
+            "fy": effFy,
+            "originalFy": effFy,
+            "original_fy": effFy,
+            "is_deleted": 1,
+            "isDeleted": 1,
+            "status": "Deleted",
+            "updatedAt": delTs,
+          },
+        },
+      };
+
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 6));
+
+      if (res.statusCode == 200) {
+        try {
+          final data = jsonDecode(res.body);
+          if (data["seq"] != null) {
+            await _updateHighestLocalSeq(storeToken, data["seq"]);
+          }
+        } catch (_) {}
+        return true;
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onSaleChallanDeleted Network Error: $e");
+    }
+    return false;
+  }
+
+  /// Merges incoming D1 sale_events for SaleChallan into local SaleChallans list
+  static bool applyEventsToLocalSaleChallans(
+    List<SaleChallan> localChallans,
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
+    if (events.isEmpty) return false;
+    final String effFy = normalizeFyString(
+      (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+          ? targetFyOverride.trim()
+          : activeFinancialYear.trim(),
+    );
+    final bool isStrictFyVaultSlice = targetFyOverride != null && targetFyOverride.trim().isNotEmpty;
+    bool mutated = false;
+
+    for (final ev in events) {
+      final String billId = (ev["bill_id"] ?? "").toString().trim();
+      final String billNo = (ev["bill_no"] ?? "").toString().trim();
+      final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
+      final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
+      final dynamic rawData = ev["sale_data"];
+
+      final String docType = rawData is Map ? (rawData["doc_type"] ?? "").toString().trim().toUpperCase() : "";
+      final bool isSaleChallanDoc = docType == "SALE_CHALLAN" ||
+          docType == "CHALLAN" ||
+          action.contains("SALE_CHALLAN");
+
+      final bool payloadIsDeleted = rawData is Map &&
+          ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+              rawData["status"] == "Deleted");
+      final bool isDeleteEvt = action == "DELETE" || action.startsWith("DELETE_") || payloadIsDeleted;
+
+      if (!isSaleChallanDoc) {
+        // On generic DELETE without explicit doc_type, only process if billId matches an existing local SaleChallan
+        if (!(isDeleteEvt && docType.isEmpty && billId.isNotEmpty && localChallans.any((c) => c.id.trim() == billId))) {
+          continue;
+        }
+      }
+
+      final String evFy = normalizeFyString(
+        (rawData is Map ? (rawData["originalFy"] ?? rawData["original_fy"] ?? rawData["fy"]) : null)?.toString() ??
+            (ev["fy"] ?? "").toString(),
+      );
+      DateTime? evDate;
+      if (rawData is Map && rawData["date"] != null) {
+        evDate = DateTime.tryParse(rawData["date"].toString());
+      }
+      final String resolvedEvFy = evFy.isNotEmpty
+          ? evFy
+          : (evDate != null ? inferFyFromDate(evDate) : effFy);
+
+      if (isDeleteEvt) {
+        final String cleanBNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim().toUpperCase();
+        final int delTs = int.tryParse(
+              (rawData is Map ? (rawData["updatedAt"] ?? rawData["updated_at"]) : null)?.toString() ??
+                  ev["created_at"]?.toString() ??
+                  "0",
+            ) ??
+            0;
+        final String scopeFy = resolvedEvFy.isNotEmpty ? resolvedEvFy : effFy;
+        final bool hasActiveNewChallan = localChallans.any((c) =>
+            c.id.trim() != billId &&
+            cleanBNo.isNotEmpty &&
+            c.billNo.trim().toUpperCase() == cleanBNo &&
+            c.isDeleted != 1 &&
+            (scopeFy.isEmpty || c.effectiveOriginalFy == scopeFy));
+
+        if (billId.isNotEmpty) {
+          markPermanentlyDeleted(billId, "", "", scopeFy, false, delTs > 0 ? delTs : null);
+          recordKnownVersion(billId, "", version > 99999 ? version : 999999, scopeFy);
+        }
+        if (!hasActiveNewChallan && cleanBNo.isNotEmpty) {
+          markSaleChallanPermanentlyDeleted(billId, cleanBNo, scopeFy, delTs > 0 ? delTs : null);
+        }
+
+        final int beforeLen = localChallans.length;
+        localChallans.removeWhere((c) {
+          if (c.status.trim().toUpperCase() == "BILLED") return false;
+          if (billId.isNotEmpty && c.id.trim() == billId) return true;
+          if (!hasActiveNewChallan && cleanBNo.isNotEmpty && c.id.trim().isEmpty && c.billNo.trim().toUpperCase() == cleanBNo) {
+            return scopeFy.isEmpty || c.effectiveOriginalFy == scopeFy;
+          }
+          return false;
+        });
+        if (localChallans.length != beforeLen) mutated = true;
+      } else if (rawData is Map<String, dynamic>) {
+        final incoming = SaleChallan.fromMap(rawData);
+        if (billId.isNotEmpty) incoming.id = billId;
+        incoming.version = version;
+        if (incoming.originalFy.isEmpty && resolvedEvFy.isNotEmpty) {
+          incoming.originalFy = resolvedEvFy;
+        }
+        final String challanFy = incoming.effectiveOriginalFy.isNotEmpty ? incoming.effectiveOriginalFy : effFy;
+
+        // FY Isolation with Cross-FY Pending Challan support on active memory list
+        if (effFy.isNotEmpty && challanFy.isNotEmpty && challanFy != effFy) {
+          final bool alreadyInLocal = incoming.id.trim().isNotEmpty && localChallans.any((c) => c.id.trim() == incoming.id.trim());
+          final bool isCrossFyPendingAllowed = !isStrictFyVaultSlice &&
+              (incoming.status.trim().toUpperCase() == "PENDING" || alreadyInLocal);
+          if (!isCrossFyPendingAllowed) {
+            continue;
+          }
+        }
+
+        if (incoming.id.trim().isNotEmpty) {
+          if (isSaleChallanIdDeleted(incoming.id, challanFy)) {
+            continue;
+          }
+          final int knownIdVer = getSaleChallanIdKnownVersion(incoming.id, challanFy);
+          if (knownIdVer >= 99999 || version < knownIdVer) {
+            continue;
+          }
+        } else {
+          if (isSaleChallanDeleted(incoming.id, incoming.billNo, challanFy, incoming.updatedAt)) {
+            continue;
+          }
+        }
+
+        unmarkSaleChallanPermanentlyDeleted(incoming.id, incoming.billNo, challanFy);
+        recordKnownVersion(incoming.id, incoming.billNo, version, challanFy);
+
+        final int existingIdx = localChallans.indexWhere((c) {
+          if (incoming.id.trim().isNotEmpty && c.id.trim().isNotEmpty) {
+            return c.id.trim() == incoming.id.trim();
+          }
+          if (incoming.id.trim().isEmpty && c.id.trim().isEmpty && incoming.billNo.trim().isNotEmpty) {
+            return c.billNo.trim().toUpperCase() == incoming.billNo.trim().toUpperCase() &&
+                c.effectiveOriginalFy == incoming.effectiveOriginalFy;
+          }
+          return false;
+        });
+
+        if (existingIdx != -1) {
+          final local = localChallans[existingIdx];
+          // Hard-lock Billed protection against stale Pending event
+          if (local.status.trim().toUpperCase() == "BILLED" &&
+              incoming.status.trim().toUpperCase() == "PENDING" &&
+              incoming.updatedAt <= local.updatedAt) {
+            continue;
+          }
+          if (version > local.version ||
+              (version == local.version && incoming.updatedAt >= local.updatedAt)) {
+            localChallans[existingIdx] = incoming;
+            mutated = true;
+          }
+        } else {
+          localChallans.insert(0, incoming);
+          mutated = true;
+        }
+      }
+    }
+
+    return mutated;
+  }
+
+  /// Called when a PurchaseChallan is created or modified from either App or Web
+  static Future<bool> onPurchaseChallanSaved(
+    PurchaseChallan challan,
+    String storeToken, {
+    bool isUpdate = false,
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    final String rawFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (challan.effectiveOriginalFy.isNotEmpty
+            ? challan.effectiveOriginalFy
+            : (activeFinancialYear.isNotEmpty ? activeFinancialYear.trim() : inferFyFromDate(challan.date)));
+    final String effFy = normalizeFyString(rawFy);
+    unmarkPurchasePermanentlyDeleted(
+      challan.id,
+      challan.partyId,
+      challan.billNo,
+      challan.internalNo,
+      effFy,
+    );
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+
+    try {
+      final chMap = challan.toMap();
+      chMap["doc_type"] = "PURCHASE_CHALLAN";
+      chMap["fy"] = effFy;
+      if ((chMap["originalFy"] ?? "").toString().trim().isEmpty && effFy.isNotEmpty) {
+        chMap["originalFy"] = effFy;
+        chMap["original_fy"] = effFy;
+      }
+      final String cleanParty = challan.partyId.trim().toUpperCase();
+      final String cleanBill = challan.billNo.trim();
+      final String cleanInt = challan.internalNo.trim().toUpperCase();
+      final String scopedInt = cleanInt.isNotEmpty ? scopeSecondaryKey(cleanInt, effFy) : "";
+      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
+          ? scopeSecondaryKey("${cleanParty}_$cleanBill", effFy, true)
+          : "";
+      final String compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+          ? scopeSecondaryKey("${cleanParty}_${cleanBill}_$cleanInt", effFy, true)
+          : "";
+      final String refNo = cleanInt.isNotEmpty ? cleanInt : cleanBill;
+
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": isUpdate ? "UPDATE_PURCHASE_CHALLAN" : "INSERT_PURCHASE_CHALLAN",
+        "entityType": "PURCHASE_CHALLAN",
+        "entityId": challan.id,
+        "fy": effFy,
+        "unmarkedIds": [
+          challan.id,
+          if (scopedInt.isNotEmpty) scopedInt,
+          if (compKey2.isNotEmpty) compKey2,
+          if (compKey3.isNotEmpty) compKey3,
+        ],
+        "sale_event": {
+          "id": challan.id,
+          "bill_no": refNo,
+          "version": challan.version,
+          "action": isUpdate ? "UPDATE" : "INSERT",
+          "status": challan.status,
+          "client_source": clientSource,
+          "payload": chMap,
+        },
+      };
+
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data["status"] == "SUCCESS") {
+          recordPurchaseKnownVersion(
+            challan.id,
+            challan.partyId,
+            challan.billNo,
+            challan.version,
+            challan.internalNo,
+            effFy,
+          );
+          final int? newSeq = data["seq"];
+          if (newSeq != null && newSeq > 0) {
+            await _updateHighestLocalSeq(storeToken, newSeq);
+          }
+          return true;
+        }
+      } else if (res.statusCode == 410) {
+        markPurchasePermanentlyDeleted(
+          challan.id,
+          challan.partyId,
+          challan.billNo,
+          challan.internalNo,
+          effFy,
+        );
+        return false;
+      } else if (res.statusCode == 409) {
+        try {
+          final data = jsonDecode(res.body);
+          final int serverVer = int.tryParse(data["current_version"]?.toString() ?? "0") ?? 0;
+          if (data["status"] == "DELETED" || serverVer >= 99999) {
+            markPurchasePermanentlyDeleted(
+              challan.id,
+              challan.partyId,
+              challan.billNo,
+              challan.internalNo,
+              effFy,
+            );
+            return false;
+          }
+          if (serverVer > 0) {
+            recordPurchaseKnownVersion(
+              challan.id,
+              challan.partyId,
+              challan.billNo,
+              serverVer,
+              challan.internalNo,
+              effFy,
+            );
+            challan.version = serverVer + 1;
+            return await onPurchaseChallanSaved(
+              challan,
+              storeToken,
+              isUpdate: true,
+              clientSource: clientSource,
+              fy: effFy,
+            );
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onPurchaseChallanSaved Network Error: $e");
+    }
+    return false;
+  }
+
+  /// Called when a PurchaseChallan is permanently deleted from either App or Web
+  static Future<bool> onPurchaseChallanDeleted(
+    dynamic challanOrId,
+    String storeToken, {
+    String partyId = "",
+    String billNo = "",
+    String internalNo = "",
+    String clientSource = "APP_MOBILE",
+    String? fy,
+    int? deletedAtMs,
+  }) async {
+    final String cId = challanOrId is PurchaseChallan ? challanOrId.id.trim() : challanOrId.toString().trim();
+    final String cParty = challanOrId is PurchaseChallan ? challanOrId.partyId.trim() : partyId.trim();
+    final String cBill = challanOrId is PurchaseChallan ? challanOrId.billNo.trim() : billNo.trim();
+    final String cInt = challanOrId is PurchaseChallan ? challanOrId.internalNo.trim() : internalNo.trim();
+    final String rawFy = (fy != null && fy.trim().isNotEmpty)
+        ? fy.trim()
+        : (challanOrId is PurchaseChallan && challanOrId.effectiveOriginalFy.isNotEmpty
+            ? challanOrId.effectiveOriginalFy
+            : activeFinancialYear.trim());
+    final String effFy = normalizeFyString(rawFy);
+    final int delTs = (deletedAtMs != null && deletedAtMs > 0)
+        ? deletedAtMs
+        : (challanOrId is PurchaseChallan && challanOrId.updatedAt > 0
+            ? challanOrId.updatedAt
+            : DateTime.now().millisecondsSinceEpoch);
+
+    markPurchasePermanentlyDeleted(cId, cParty, cBill, cInt, effFy, delTs);
+    if (cId.isNotEmpty) {
+      recordKnownVersion(cId, "", 999999, effFy);
+    }
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+
+    try {
+      final String cleanParty = cParty.toUpperCase();
+      final String cleanBill = cBill;
+      final String cleanInt = cInt.toUpperCase();
+      final String scopedInt = cleanInt.isNotEmpty ? scopeSecondaryKey(cleanInt, effFy) : "";
+      final String compKey2 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty)
+          ? scopeSecondaryKey("${cleanParty}_$cleanBill", effFy, true)
+          : "";
+      final String compKey3 = (cleanParty.isNotEmpty && cleanBill.isNotEmpty && cleanInt.isNotEmpty)
+          ? scopeSecondaryKey("${cleanParty}_${cleanBill}_$cleanInt", effFy, true)
+          : "";
+
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "source": clientSource,
+        "action": "DELETE_PURCHASE_CHALLAN",
+        "entityType": "PURCHASE_CHALLAN",
+        "entityId": cId,
+        "fy": effFy,
+        "deletedIds": [
+          if (cId.isNotEmpty) cId,
+          if (scopedInt.isNotEmpty) scopedInt,
+          if (compKey2.isNotEmpty) compKey2,
+          if (compKey3.isNotEmpty) compKey3,
+        ],
+        "sale_event": {
+          "id": cId,
+          "bill_no": cleanInt.isNotEmpty ? cleanInt : cleanBill,
+          "version": 999999,
+          "action": "DELETE",
+          "status": "Deleted",
+          "client_source": clientSource,
+          "payload": {
+            "doc_type": "PURCHASE_CHALLAN",
+            "id": cId,
+            "partyId": cParty,
+            "billNo": cBill,
+            "internalNo": cInt,
+            "fy": effFy,
+            "originalFy": effFy,
+            "original_fy": effFy,
+            "is_deleted": 1,
+            "isDeleted": 1,
+            "status": "Deleted",
+            "updatedAt": delTs,
+          },
+        },
+      };
+
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 6));
+
+      if (res.statusCode == 200) {
+        try {
+          final data = jsonDecode(res.body);
+          if (data["seq"] != null) {
+            await _updateHighestLocalSeq(storeToken, data["seq"]);
+          }
+        } catch (_) {}
+        return true;
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onPurchaseChallanDeleted Network Error: $e");
+    }
+    return false;
+  }
+
+  /// Merges incoming D1 sale_events for PurchaseChallan into local PurchaseChallans list
+  static bool applyEventsToLocalPurchaseChallans(
+    List<PurchaseChallan> localChallans,
+    List<Map<String, dynamic>> events, [
+    String? targetFyOverride,
+  ]) {
+    if (events.isEmpty) return false;
+    final String effFy = normalizeFyString(
+      (targetFyOverride != null && targetFyOverride.trim().isNotEmpty)
+          ? targetFyOverride.trim()
+          : activeFinancialYear.trim(),
+    );
+    final bool isStrictFyVaultSlice = targetFyOverride != null && targetFyOverride.trim().isNotEmpty;
+    bool mutated = false;
+
+    for (final ev in events) {
+      final String billId = (ev["bill_id"] ?? "").toString().trim();
+      final String billNo = (ev["bill_no"] ?? "").toString().trim();
+      final String action = (ev["action"] ?? "INSERT").toString().toUpperCase();
+      final int version = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
+      final dynamic rawData = ev["sale_data"];
+
+      final String docType = rawData is Map ? (rawData["doc_type"] ?? "").toString().trim().toUpperCase() : "";
+      final bool isPurchaseChallanDoc = docType == "PURCHASE_CHALLAN" ||
+          action.contains("PURCHASE_CHALLAN");
+
+      final bool payloadIsDeleted = rawData is Map &&
+          ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+              rawData["status"] == "Deleted");
+      final bool isDeleteEvt = action == "DELETE" || action.startsWith("DELETE_") || payloadIsDeleted;
+
+      if (!isPurchaseChallanDoc) {
+        if (!(isDeleteEvt && docType.isEmpty && billId.isNotEmpty && localChallans.any((c) => c.id.trim() == billId))) {
+          continue;
+        }
+      }
+
+      final String evFy = normalizeFyString(
+        (rawData is Map ? (rawData["originalFy"] ?? rawData["original_fy"] ?? rawData["fy"]) : null)?.toString() ??
+            (ev["fy"] ?? "").toString(),
+      );
+      DateTime? evDate;
+      if (rawData is Map && rawData["date"] != null) {
+        evDate = DateTime.tryParse(rawData["date"].toString());
+      }
+      final String resolvedEvFy = evFy.isNotEmpty
+          ? evFy
+          : (evDate != null ? inferFyFromDate(evDate) : effFy);
+
+      if (isDeleteEvt) {
+        final String partyId = (rawData is Map ? (rawData["partyId"] ?? "") : "").toString().trim().toUpperCase();
+        final String pBillNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
+        final String intNo = (rawData is Map ? (rawData["internalNo"] ?? "") : "").toString().trim().toUpperCase();
+        final int delTs = int.tryParse(
+              (rawData is Map ? (rawData["updatedAt"] ?? rawData["updated_at"]) : null)?.toString() ??
+                  ev["created_at"]?.toString() ??
+                  "0",
+            ) ??
+            0;
+        final String scopeFy = resolvedEvFy.isNotEmpty ? resolvedEvFy : effFy;
+        final bool hasActiveNewChallan = localChallans.any((c) =>
+            c.id.trim() != billId &&
+            c.isDeleted != 1 &&
+            (scopeFy.isEmpty || c.effectiveOriginalFy == scopeFy) &&
+            ((intNo.isNotEmpty && c.internalNo.trim().toUpperCase() == intNo) ||
+                (partyId.isNotEmpty && pBillNo.isNotEmpty &&
+                    c.partyId.trim().toUpperCase() == partyId &&
+                    c.billNo.trim() == pBillNo)));
+
+        if (billId.isNotEmpty) {
+          markPermanentlyDeleted(billId, "", "", scopeFy, false, delTs > 0 ? delTs : null);
+          if (hasActiveNewChallan) {
+            recordKnownVersion(billId, "", version > 99999 ? version : 999999, scopeFy);
+          } else {
+            recordPurchaseKnownVersion(billId, partyId, pBillNo, version > 99999 ? version : 999999, intNo, scopeFy);
+          }
+        }
+        if (!hasActiveNewChallan && (intNo.isNotEmpty || partyId.isNotEmpty)) {
+          markPurchasePermanentlyDeleted(billId, partyId, pBillNo, intNo, scopeFy, delTs > 0 ? delTs : null);
+        }
+
+        final int beforeLen = localChallans.length;
+        localChallans.removeWhere((c) {
+          if (c.status.trim().toUpperCase() == "BILLED") return false;
+          if (billId.isNotEmpty && c.id.trim() == billId) return true;
+          if (!hasActiveNewChallan && c.id.trim().isEmpty && (scopeFy.isEmpty || c.effectiveOriginalFy == scopeFy)) {
+            if (intNo.isNotEmpty && c.internalNo.trim().toUpperCase() == intNo) return true;
+            if (partyId.isNotEmpty && pBillNo.isNotEmpty &&
+                c.partyId.trim().toUpperCase() == partyId &&
+                c.billNo.trim() == pBillNo) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (localChallans.length != beforeLen) mutated = true;
+      } else if (rawData is Map<String, dynamic>) {
+        final incoming = PurchaseChallan.fromMap(rawData);
+        if (billId.isNotEmpty) incoming.id = billId;
+        incoming.version = version;
+        if (incoming.originalFy.isEmpty && resolvedEvFy.isNotEmpty) {
+          incoming.originalFy = resolvedEvFy;
+        }
+        final String challanFy = incoming.effectiveOriginalFy.isNotEmpty ? incoming.effectiveOriginalFy : effFy;
+
+        if (effFy.isNotEmpty && challanFy.isNotEmpty && challanFy != effFy) {
+          final bool alreadyInLocal = incoming.id.trim().isNotEmpty && localChallans.any((c) => c.id.trim() == incoming.id.trim());
+          final bool isCrossFyPendingAllowed = !isStrictFyVaultSlice &&
+              (incoming.status.trim().toUpperCase() == "PENDING" || alreadyInLocal);
+          if (!isCrossFyPendingAllowed) {
+            continue;
+          }
+        }
+
+        if (incoming.id.trim().isNotEmpty) {
+          if (isPurchaseIdDeleted(incoming.id, challanFy)) {
+            continue;
+          }
+          final int knownIdVer = getPurchaseIdKnownVersion(incoming.id, challanFy);
+          if (knownIdVer >= 99999 || version < knownIdVer) {
+            continue;
+          }
+        } else {
+          if (isPurchaseDeleted(
+            incoming.id,
+            incoming.partyId,
+            incoming.billNo,
+            incoming.internalNo,
+            challanFy,
+            incoming.updatedAt,
+          )) {
+            continue;
+          }
+        }
+
+        unmarkPurchasePermanentlyDeleted(
+          incoming.id,
+          incoming.partyId,
+          incoming.billNo,
+          incoming.internalNo,
+          challanFy,
+        );
+        recordPurchaseKnownVersion(
+          incoming.id,
+          incoming.partyId,
+          incoming.billNo,
+          version,
+          incoming.internalNo,
+          challanFy,
+        );
+
+        final String cleanInt = incoming.internalNo.trim().toUpperCase();
+        final String cleanBill = incoming.billNo.trim();
+        final String cleanParty = incoming.partyId.trim().toUpperCase();
+        final int existingIdx = localChallans.indexWhere((c) {
+          if (incoming.id.trim().isNotEmpty && c.id.trim().isNotEmpty) {
+            return c.id.trim() == incoming.id.trim();
+          }
+          if (incoming.id.trim().isEmpty || c.id.trim().isEmpty) {
+            if (cleanInt.isNotEmpty &&
+                c.internalNo.trim().toUpperCase() == cleanInt &&
+                c.effectiveOriginalFy == incoming.effectiveOriginalFy) {
+              if (cleanBill.isNotEmpty && cleanParty.isNotEmpty &&
+                  c.billNo.trim().isNotEmpty && c.partyId.trim().isNotEmpty) {
+                return c.billNo.trim() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty;
+              }
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (existingIdx != -1) {
+          final local = localChallans[existingIdx];
+          if (local.status.trim().toUpperCase() == "BILLED" &&
+              incoming.status.trim().toUpperCase() == "PENDING" &&
+              incoming.updatedAt <= local.updatedAt) {
+            continue;
+          }
+          if (version > local.version ||
+              (version == local.version && incoming.updatedAt >= local.updatedAt)) {
+            localChallans[existingIdx] = incoming;
+            mutated = true;
+          }
+        } else {
+          localChallans.insert(0, incoming);
+          mutated = true;
+        }
+      }
+    }
+
+    return mutated;
+  }
 
   static Future<bool> onSaleReturnSaved(
     SaleReturn ret,

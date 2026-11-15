@@ -6,6 +6,22 @@ import '../../../pharoah_manager.dart';
 import '../../sync_core/d1_sales_ledger_service.dart';
 
 class TombstoneEngine {
+  /// 🛡️ Serial Async Mutex: Prevents concurrent SharedPreferences read-modify-write races
+  /// during rapid 10x delete/unmark bursts so 0 tombstones are ever lost or overwritten.
+  static Future<void> _prefsLock = Future<void>.value();
+
+  static Future<T> _runLocked<T>(Future<T> Function() action) {
+    final prev = _prefsLock;
+    final completer = Future<T>(() async {
+      try {
+        await prev;
+      } catch (_) {}
+      return await action();
+    });
+    _prefsLock = completer.then((_) {}, onError: (_) {});
+    return completer;
+  }
+
   static String _normalizeKeyForStorage(String key, [String? fy, bool preserveCase = false]) {
     final clean = key.trim();
     if (clean.isEmpty) return "";
@@ -63,21 +79,23 @@ class TombstoneEngine {
     String? secondaryKey,
     int? timestamp,
     String? fy,
-  }) async {
-    final registry = await getTombstoneRegistry(companyId);
-    final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
-    final cleanId = _normalizeKeyForStorage(id, fy, id.contains('_'));
-    if (cleanId.isNotEmpty) {
-      registry[cleanId] = ts;
-    }
-    if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
-      final cleanSec = D1SalesLedgerService.scopeSecondaryKey(secondaryKey, fy, secondaryKey.contains('_'));
-      if (cleanSec.isNotEmpty) {
-        registry[cleanSec] = ts;
+  }) {
+    return _runLocked(() async {
+      final registry = await getTombstoneRegistry(companyId);
+      final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+      final cleanId = _normalizeKeyForStorage(id, fy, id.contains('_'));
+      if (cleanId.isNotEmpty) {
+        registry[cleanId] = ts;
       }
-    }
-    await saveTombstoneRegistry(companyId, registry);
-    await recordTombstone(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
+      if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
+        final cleanSec = D1SalesLedgerService.scopeSecondaryKey(secondaryKey, fy, secondaryKey.contains('_'));
+        if (cleanSec.isNotEmpty) {
+          registry[cleanSec] = ts;
+        }
+      }
+      await saveTombstoneRegistry(companyId, registry);
+      await _recordTombstoneUnlocked(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
+    });
   }
 
   /// Returns timestamped unmark map so stale unmarks never block newer cloud deletions.
@@ -110,35 +128,37 @@ class TombstoneEngine {
     String? secondaryKey,
     String? fy,
     int? timestamp,
-  }) async {
-    final int unmarkTs = timestamp ?? DateTime.now().millisecondsSinceEpoch;
-    final registry = await getTombstoneRegistry(companyId);
-    final unmarkReg = await getUnmarkedRegistry(companyId);
-    final cleanId = id.trim();
-    final bool keepIdCase = cleanId.contains('_');
-    final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, fy, keepIdCase);
-    if (cleanId.isNotEmpty) {
-      registry.remove(cleanId);
-      if (!keepIdCase) registry.remove(cleanId.toUpperCase());
-      registry.remove(scopedId);
-      unmarkReg[cleanId] = unmarkTs;
-      if (!keepIdCase) unmarkReg[cleanId.toUpperCase()] = unmarkTs;
-      if (scopedId.isNotEmpty) unmarkReg[scopedId] = unmarkTs;
-    }
-    if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
-      final rawSec = secondaryKey.trim();
-      final bool keepSecCase = rawSec.contains('_');
-      final scopedSec = D1SalesLedgerService.scopeSecondaryKey(rawSec, fy, keepSecCase);
-      registry.remove(rawSec);
-      if (!keepSecCase) registry.remove(rawSec.toUpperCase());
-      registry.remove(scopedSec);
-      unmarkReg[rawSec] = unmarkTs;
-      if (!keepSecCase) unmarkReg[rawSec.toUpperCase()] = unmarkTs;
-      if (scopedSec.isNotEmpty) unmarkReg[scopedSec] = unmarkTs;
-    }
-    await saveTombstoneRegistry(companyId, registry);
-    await saveUnmarkedRegistry(companyId, unmarkReg);
-    await unmarkTombstone(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
+  }) {
+    return _runLocked(() async {
+      final int unmarkTs = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+      final registry = await getTombstoneRegistry(companyId);
+      final unmarkReg = await getUnmarkedRegistry(companyId);
+      final cleanId = id.trim();
+      final bool keepIdCase = cleanId.contains('_');
+      final scopedId = D1SalesLedgerService.scopeSecondaryKey(cleanId, fy, keepIdCase);
+      if (cleanId.isNotEmpty) {
+        registry.remove(cleanId);
+        if (!keepIdCase) registry.remove(cleanId.toUpperCase());
+        registry.remove(scopedId);
+        unmarkReg[cleanId] = unmarkTs;
+        if (!keepIdCase) unmarkReg[cleanId.toUpperCase()] = unmarkTs;
+        if (scopedId.isNotEmpty) unmarkReg[scopedId] = unmarkTs;
+      }
+      if (secondaryKey != null && secondaryKey.trim().isNotEmpty) {
+        final rawSec = secondaryKey.trim();
+        final bool keepSecCase = rawSec.contains('_');
+        final scopedSec = D1SalesLedgerService.scopeSecondaryKey(rawSec, fy, keepSecCase);
+        registry.remove(rawSec);
+        if (!keepSecCase) registry.remove(rawSec.toUpperCase());
+        registry.remove(scopedSec);
+        unmarkReg[rawSec] = unmarkTs;
+        if (!keepSecCase) unmarkReg[rawSec.toUpperCase()] = unmarkTs;
+        if (scopedSec.isNotEmpty) unmarkReg[scopedSec] = unmarkTs;
+      }
+      await saveTombstoneRegistry(companyId, registry);
+      await saveUnmarkedRegistry(companyId, unmarkReg);
+      await _unmarkTombstoneUnlocked(companyId, id: cleanId, secondaryKey: secondaryKey, fy: fy);
+    });
   }
 
   // --- Set-based APIs ---
@@ -170,7 +190,7 @@ class TombstoneEngine {
     await prefs.setStringList('unmarked_tombstones_$companyId', keys.toList());
   }
 
-  static Future<void> unmarkTombstone(
+  static Future<void> _unmarkTombstoneUnlocked(
     String companyId, {
     required String id,
     String? secondaryKey,
@@ -204,7 +224,16 @@ class TombstoneEngine {
     await saveUnmarkedKeys(companyId, unmarked);
   }
 
-  static Future<Set<String>> recordTombstone(
+  static Future<void> unmarkTombstone(
+    String companyId, {
+    required String id,
+    String? secondaryKey,
+    String? fy,
+  }) {
+    return _runLocked(() => _unmarkTombstoneUnlocked(companyId, id: id, secondaryKey: secondaryKey, fy: fy));
+  }
+
+  static Future<Set<String>> _recordTombstoneUnlocked(
     String companyId, {
     required String id,
     String? secondaryKey,
@@ -233,67 +262,82 @@ class TombstoneEngine {
     return tombstones;
   }
 
+  static Future<Set<String>> recordTombstone(
+    String companyId, {
+    required String id,
+    String? secondaryKey,
+    String? fy,
+  }) {
+    return _runLocked(() => _recordTombstoneUnlocked(companyId, id: id, secondaryKey: secondaryKey, fy: fy));
+  }
+
   static Future<Set<String>> recordBatchTombstones(
     String companyId,
     Iterable<String> keys, {
     int? timestamp,
     String? fy,
-  }) async {
-    final registry = await getTombstoneRegistry(companyId);
-    final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
-    final tombstones = await getLocalTombstones(companyId);
-    final unmarked = await getUnmarkedKeys(companyId);
-    final unmarkReg = await getUnmarkedRegistry(companyId);
-    for (var k in keys) {
-      final rawK = k.trim();
-      if (rawK.isEmpty) continue;
-      final bool keepCase = rawK.contains('_');
-      final cleanK = _normalizeKeyForStorage(rawK, fy, keepCase);
-      if (cleanK.isNotEmpty) {
-        registry[cleanK] = ts;
-        if (!keepCase) registry[cleanK.toUpperCase()] = ts;
-        tombstones.add(cleanK);
-        if (!keepCase) tombstones.add(cleanK.toUpperCase());
-        unmarked.remove(cleanK);
-        unmarkReg.remove(cleanK);
-        if (!keepCase) {
-          unmarked.remove(cleanK.toUpperCase());
-          unmarkReg.remove(cleanK.toUpperCase());
-        }
-        unmarked.remove(rawK);
-        unmarkReg.remove(rawK);
-        if (!keepCase) {
-          unmarked.remove(rawK.toUpperCase());
-          unmarkReg.remove(rawK.toUpperCase());
+  }) {
+    final keyList = keys.toList();
+    return _runLocked(() async {
+      final registry = await getTombstoneRegistry(companyId);
+      final int ts = timestamp ?? DateTime.now().millisecondsSinceEpoch;
+      final tombstones = await getLocalTombstones(companyId);
+      final unmarked = await getUnmarkedKeys(companyId);
+      final unmarkReg = await getUnmarkedRegistry(companyId);
+      for (var k in keyList) {
+        final rawK = k.trim();
+        if (rawK.isEmpty) continue;
+        final bool keepCase = rawK.contains('_');
+        final cleanK = _normalizeKeyForStorage(rawK, fy, keepCase);
+        if (cleanK.isNotEmpty) {
+          registry[cleanK] = ts;
+          if (!keepCase) registry[cleanK.toUpperCase()] = ts;
+          tombstones.add(cleanK);
+          if (!keepCase) tombstones.add(cleanK.toUpperCase());
+          unmarked.remove(cleanK);
+          unmarkReg.remove(cleanK);
+          if (!keepCase) {
+            unmarked.remove(cleanK.toUpperCase());
+            unmarkReg.remove(cleanK.toUpperCase());
+          }
+          unmarked.remove(rawK);
+          unmarkReg.remove(rawK);
+          if (!keepCase) {
+            unmarked.remove(rawK.toUpperCase());
+            unmarkReg.remove(rawK.toUpperCase());
+          }
         }
       }
-    }
-    await saveTombstoneRegistry(companyId, registry);
-    await saveLocalTombstones(companyId, tombstones);
-    await saveUnmarkedKeys(companyId, unmarked);
-    await saveUnmarkedRegistry(companyId, unmarkReg);
-    return tombstones;
+      await saveTombstoneRegistry(companyId, registry);
+      await saveLocalTombstones(companyId, tombstones);
+      await saveUnmarkedKeys(companyId, unmarked);
+      await saveUnmarkedRegistry(companyId, unmarkReg);
+      return tombstones;
+    });
   }
 
   /// Removes unmarked status when an authoritative newer cloud deletion is observed.
-  static Future<void> clearUnmarkedForDeletedKeys(String companyId, Iterable<String> keys) async {
-    final unmarked = await getUnmarkedKeys(companyId);
-    final unmarkReg = await getUnmarkedRegistry(companyId);
-    bool changed = false;
-    for (final k in keys) {
-      final ck = k.trim();
-      if (ck.isEmpty) continue;
-      if (unmarked.remove(ck)) changed = true;
-      if (unmarkReg.remove(ck) != null) changed = true;
-      if (!ck.contains('_')) {
-        if (unmarked.remove(ck.toUpperCase())) changed = true;
-        if (unmarkReg.remove(ck.toUpperCase()) != null) changed = true;
+  static Future<void> clearUnmarkedForDeletedKeys(String companyId, Iterable<String> keys) {
+    final keyList = keys.toList();
+    return _runLocked(() async {
+      final unmarked = await getUnmarkedKeys(companyId);
+      final unmarkReg = await getUnmarkedRegistry(companyId);
+      bool changed = false;
+      for (final k in keyList) {
+        final ck = k.trim();
+        if (ck.isEmpty) continue;
+        if (unmarked.remove(ck)) changed = true;
+        if (unmarkReg.remove(ck) != null) changed = true;
+        if (!ck.contains('_')) {
+          if (unmarked.remove(ck.toUpperCase())) changed = true;
+          if (unmarkReg.remove(ck.toUpperCase()) != null) changed = true;
+        }
       }
-    }
-    if (changed) {
-      await saveUnmarkedKeys(companyId, unmarked);
-      await saveUnmarkedRegistry(companyId, unmarkReg);
-    }
+      if (changed) {
+        await saveUnmarkedKeys(companyId, unmarked);
+        await saveUnmarkedRegistry(companyId, unmarkReg);
+      }
+    });
   }
 
     /// 🛡️ SELF-HEALING DISINFECTION (#PH-REV-807):
@@ -301,8 +345,9 @@ class TombstoneEngine {
   /// that lack a financial year prefix ("FY::"), ensuring past back-year deletions stop killing bills in new FYs!
   static Future<void> purgeNakedSeriesTombstones(String companyId) async {
     if (companyId.isEmpty) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
+    await _runLocked(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
       final key = "tombstones_$companyId";
       final list = prefs.getStringList(key) ?? [];
       final sanitized = list.where((k) {
@@ -333,7 +378,8 @@ class TombstoneEngine {
           await prefs.setString(regKey, jsonEncode(cleanReg));
         }
       }
-    } catch (_) {}
+      } catch (_) {}
+    });
   }
 
   static Future<Set<String>> sanitizeCloudTombstones(
@@ -415,24 +461,26 @@ class TombstoneEngine {
     });
 
     ph.saleChallans.removeWhere((e) {
-      final bNo = D1SalesLedgerService.scopeSecondaryKey(e.billNo, fy);
+      if (e.status == "Billed") return false;
+      final String cFy = e.effectiveOriginalFy.isNotEmpty ? e.effectiveOriginalFy : fy;
+      final bNo = D1SalesLedgerService.scopeSecondaryKey(e.billNo, cFy);
       final int? idDelTime = registry[e.id] ?? registry[e.id.toUpperCase()];
       if (idDelTime != null) {
-        final int uAt = e.toMap()['updatedAt'] ?? 0;
-        return uAt == 0 || idDelTime >= uAt;
+        return e.updatedAt == 0 || idDelTime >= e.updatedAt;
       }
       final delTime = bNo.isNotEmpty ? registry[bNo] : null;
-      final int uAt = e.toMap()['updatedAt'] ?? 0;
-      return delTime != null && uAt > 0 && delTime >= uAt;
+      return delTime != null && e.updatedAt > 0 && delTime >= e.updatedAt;
     });
 
     ph.purchaseChallans.removeWhere((e) {
-      final iNo = D1SalesLedgerService.scopeSecondaryKey(e.internalNo, fy);
+      if (e.status == "Billed") return false;
+      final String cFy = e.effectiveOriginalFy.isNotEmpty ? e.effectiveOriginalFy : fy;
+      final iNo = D1SalesLedgerService.scopeSecondaryKey(e.internalNo, cFy);
       final pId = e.partyId.trim().toUpperCase();
       final bNo = e.billNo.trim();
-      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? D1SalesLedgerService.scopeSecondaryKey("${pId}_$bNo", fy, true) : "";
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? D1SalesLedgerService.scopeSecondaryKey("${pId}_$bNo", cFy, true) : "";
       final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && e.internalNo.trim().isNotEmpty)
-          ? D1SalesLedgerService.scopeSecondaryKey("${pId}_${bNo}_${e.internalNo.trim().toUpperCase()}", fy, true)
+          ? D1SalesLedgerService.scopeSecondaryKey("${pId}_${bNo}_${e.internalNo.trim().toUpperCase()}", cFy, true)
           : "";
       final int? idDelTime = registry[e.id] ?? registry[e.id.toUpperCase()];
       if (idDelTime != null) {
@@ -564,25 +612,40 @@ class TombstoneEngine {
     });
 
     ph.saleChallans.removeWhere((e) {
-      final bNo = D1SalesLedgerService.scopeSecondaryKey(e.billNo, fy);
-      final isTomb = allTombstones.contains(e.id) || (bNo.isNotEmpty && (allTombstones.contains(bNo) || upperTombstones.contains(bNo)));
+      if (e.status == "Billed") return false;
+      final String cFy = e.effectiveOriginalFy.isNotEmpty ? e.effectiveOriginalFy : fy;
+      final bNo = D1SalesLedgerService.scopeSecondaryKey(e.billNo, cFy);
+      if (allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase())) {
+        if (registry != null) {
+          final idDelTime = registry[e.id] ?? registry[e.id.toUpperCase()];
+          if (idDelTime != null && e.updatedAt > 0) return idDelTime >= e.updatedAt;
+        }
+        return true;
+      }
+      final isTomb = bNo.isNotEmpty && (allTombstones.contains(bNo) || upperTombstones.contains(bNo));
       if (!isTomb) return false;
       if (registry != null) {
-        final delTime = registry[e.id] ?? (bNo.isNotEmpty ? registry[bNo] : null);
-        if (delTime != null) return delTime >= (e.toMap()['updatedAt'] ?? 0);
+        final delTime = bNo.isNotEmpty ? registry[bNo] : null;
+        if (delTime != null) return e.updatedAt > 0 && delTime >= e.updatedAt;
       }
-      return allTombstones.contains(e.id);
+      return false;
     });
 
     ph.purchaseChallans.removeWhere((e) {
-      final iNo = D1SalesLedgerService.scopeSecondaryKey(e.internalNo, fy);
+      if (e.status == "Billed") return false;
+      final String cFy = e.effectiveOriginalFy.isNotEmpty ? e.effectiveOriginalFy : fy;
+      final iNo = D1SalesLedgerService.scopeSecondaryKey(e.internalNo, cFy);
       final pId = e.partyId.trim().toUpperCase();
       final bNo = e.billNo.trim();
-      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? D1SalesLedgerService.scopeSecondaryKey("${pId}_$bNo", fy, true) : "";
+      final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? D1SalesLedgerService.scopeSecondaryKey("${pId}_$bNo", cFy, true) : "";
       final compKey3 = (pId.isNotEmpty && bNo.isNotEmpty && e.internalNo.trim().isNotEmpty)
-          ? D1SalesLedgerService.scopeSecondaryKey("${pId}_${bNo}_${e.internalNo.trim().toUpperCase()}", fy, true)
+          ? D1SalesLedgerService.scopeSecondaryKey("${pId}_${bNo}_${e.internalNo.trim().toUpperCase()}", cFy, true)
           : "";
       if (allTombstones.contains(e.id) || upperTombstones.contains(e.id.toUpperCase())) {
+        if (registry != null) {
+          final idDelTime = registry[e.id] ?? registry[e.id.toUpperCase()];
+          if (idDelTime != null && e.updatedAt > 0) return idDelTime >= e.updatedAt;
+        }
         return true;
       }
       final isTomb = (iNo.isNotEmpty && (allTombstones.contains(iNo) || upperTombstones.contains(iNo))) ||
