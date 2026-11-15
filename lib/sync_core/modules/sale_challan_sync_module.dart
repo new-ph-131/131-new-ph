@@ -20,6 +20,7 @@ class SaleChallanSyncModule {
       currentVersion: challan.version,
       isDelete: false,
       rawPayload: challan.toMap(),
+      exactVersion: true,
     );
   }
 
@@ -37,6 +38,7 @@ class SaleChallanSyncModule {
       currentVersion: challan.version,
       isDelete: true,
       rawPayload: challan.toMap(),
+      exactVersion: true,
     );
   }
 

@@ -8,6 +8,7 @@ import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
 import '../../realtime_signaling/engines/fast_pull_engine.dart';
 import '../../realtime_signaling/transport/cloud_signal_channel.dart';
 import '../../realtime_signaling/models/sync_signal_event.dart';
+import '../../realtime_signaling/coordinators/app_realtime_coordinator.dart';
 
 /// AppAutoSyncDaemon: Background daemon for the native App (iPad/Mobile/Desktop).
 /// Provides non-dropping queue execution for high-speed deletions, Cloudflare Edge
@@ -94,27 +95,9 @@ class AppAutoSyncDaemon {
   void startHeartbeat(PharoahManager ph) async {
     _heartbeatTimer?.cancel();
 
-    if (ph.activeCompany != null && ph.currentFY.isNotEmpty) {
-      final storeToken = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
-      if (storeToken.isNotEmpty) {
-        // Connect to Cloudflare Edge Signal Bus
-        CloudSignalChannel.instance.listenToSignals(
-          storeToken: storeToken,
-          mySource: 'app',
-          interval: const Duration(milliseconds: 4000),
-          onSignal: (event) async {
-            debugPrint("🔔 [AppAutoSyncDaemon] Remote Web Mutation Received: ${event.action}");
-            if (event.deletedIds.isNotEmpty) {
-              final sanitizedDeleted = await TombstoneEngine.sanitizeCloudTombstones(ph.activeCompany!.id, event.deletedIds);
-              if (sanitizedDeleted.isNotEmpty) {
-                TombstoneEngine.purgeDeletedRecords(ph, sanitizedDeleted);
-                ph.notifyListeners();
-              }
-            }
-            await FastPullEngine.pullAndMerge(ph);
-          },
-        );
-      }
+    if (ph.activeCompany != null) {
+      // Delegate real-time signal listening to AppRealtimeCoordinator so onBatchReceived & onTombstonesReceived are never stripped
+      await AppRealtimeCoordinator.instance.start(ph);
     }
 
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
@@ -135,7 +118,6 @@ class AppAutoSyncDaemon {
   void stop() {
     _debounceTimer?.cancel();
     _heartbeatTimer?.cancel();
-    CloudSignalChannel.instance.stopListening();
     _isSyncing = false;
     _hasPendingPush = false;
     _pendingDeletedIds.clear();

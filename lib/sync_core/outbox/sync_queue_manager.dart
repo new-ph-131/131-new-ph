@@ -39,11 +39,16 @@ class SyncQueueManager {
     required bool isDelete,
     required Map<String, dynamic> rawPayload,
     Duration debounceDuration = const Duration(milliseconds: 400),
+    bool exactVersion = false,
   }) {
     if (syncId.trim().isEmpty) return;
 
     _sequenceCounter += 1;
+    final int resolvedVersion = exactVersion
+        ? (currentVersion < 1 ? 1 : currentVersion)
+        : (currentVersion + 1);
     final String actionType = isDelete ? "DELETE" : (currentVersion <= 1 ? "INSERT" : "UPDATE");
+    final int payloadUpd = int.tryParse((rawPayload["updatedAt"] ?? rawPayload["updated_at"] ?? "0").toString()) ?? 0;
 
     final envelope = SyncEnvelope(
       seq: _sequenceCounter,
@@ -52,8 +57,8 @@ class SyncQueueManager {
       documentType: docType.trim().toUpperCase(),
       action: actionType,
       deviceId: _deviceId,
-      version: currentVersion + 1,
-      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      version: resolvedVersion,
+      updatedAt: (exactVersion && payloadUpd > 0) ? payloadUpd : DateTime.now().millisecondsSinceEpoch,
       isDeleted: isDelete ? 1 : 0,
       billData: rawPayload,
     );

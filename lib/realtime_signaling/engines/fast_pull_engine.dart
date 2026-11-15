@@ -165,6 +165,8 @@ class FastPullEngine {
             );
             final bool d1ScBilled = d1ChBill.saleChallansMutated;
             final bool d1PcBilled = d1ChBill.purchaseChallansMutated;
+            final bool d1ScDirectMutated = D1SalesLedgerService.applyEventsToLocalSaleChallans(ph.saleChallans, edgeEvents, targetFyAtStart);
+            final bool d1PcDirectMutated = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(ph.purchaseChallans, edgeEvents, targetFyAtStart);
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, targetFyAtStart);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, targetFyAtStart);
             bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents, targetFyAtStart);
@@ -327,7 +329,7 @@ class FastPullEngine {
                 newUnmarkKeys.add(D1SalesLedgerService.scopeSecondaryKey(ch.internalNo, targetFyAtStart));
               }
             }
-            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated || d1ScReverted || d1PcReverted || d1ScBilled || d1PcBilled) {
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated || d1ScReverted || d1PcReverted || d1ScBilled || d1PcBilled || d1ScDirectMutated || d1PcDirectMutated) {
               d1AnyMutated = true;
               if (d1SalesMutated || d1PurcMutated || d1SrMutated || d1PrMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
@@ -349,7 +351,7 @@ class FastPullEngine {
                   jsonEncode(ph.purchases.map((e) => e.toMap()).toList()),
                 );
               }
-              if (d1ScReverted || d1ScBilled) {
+              if (d1ScReverted || d1ScBilled || d1ScDirectMutated) {
                 await File('$workingDir/s_challan.json').writeAsString(
                   jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()),
                 );
@@ -372,7 +374,7 @@ class FastPullEngine {
                   );
                 }
               }
-              if (d1PcReverted || d1PcBilled) {
+              if (d1PcReverted || d1PcBilled || d1PcDirectMutated) {
                 await File('$workingDir/p_challan.json').writeAsString(
                   jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()),
                 );
@@ -551,9 +553,16 @@ class FastPullEngine {
               final int isDel = int.tryParse(item["is_deleted"]?.toString() ?? item["isDeleted"]?.toString() ?? (item["status"] == "Deleted" ? "1" : "0")) ?? 0;
               if (isDel == 1) continue;
               final int itemUpdatedAt = int.tryParse(item["updated_at"]?.toString() ?? item["updatedAt"]?.toString() ?? "0") ?? 0;
+              final bool isChallanFile = fileName == "s_challan.json" || fileName == "p_challan.json";
+              if (isChallanFile && (item["status"] ?? "").toString().trim() == "Billed") {
+                filtered.add(item);
+                continue;
+              }
               final keys = keyExtractor(item);
+              final bool hasPrimaryUuid = keys.isNotEmpty && keys[0].trim().isNotEmpty;
               bool isBlocked = false;
               for (int ki = 0; ki < keys.length; ki++) {
+                if (isChallanFile && hasPrimaryUuid && ki > 0) continue;
                 final k = keys[ki].trim();
                 final clean = k.toUpperCase();
                 if (clean.isEmpty) continue;
@@ -606,11 +615,38 @@ class FastPullEngine {
                 final billNo = (item["billNo"] ?? "").toString();
                 final intNo = (item["internalNo"] ?? "").toString();
                 final int itemUpd = int.tryParse((item["updatedAt"] ?? item["updated_at"] ?? "0").toString()) ?? 0;
-                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, targetFyAtStart, itemUpd)) continue;
+                final String cFy = docType == "PURCHASE_CHALLAN"
+                    ? ((item["originalFy"] ?? item["original_fy"] ?? item["fy"] ?? targetFyAtStart).toString().trim())
+                    : targetFyAtStart;
+                final String effFy = cFy.isNotEmpty ? cFy : targetFyAtStart;
+                if (docType == "PURCHASE_CHALLAN" && (item["status"] ?? "").toString().trim() == "Billed") {
+                  filtered.add(item);
+                  continue;
+                }
+                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, effFy, itemUpd)) continue;
                 final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
                 final int knownV = pId.trim().isNotEmpty
-                    ? D1SalesLedgerService.getPurchaseIdKnownVersion(pId, targetFyAtStart)
-                    : D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo, targetFyAtStart);
+                    ? D1SalesLedgerService.getPurchaseIdKnownVersion(pId, effFy)
+                    : D1SalesLedgerService.getPurchaseKnownVersion(pId, partyId, billNo, intNo, effFy);
+                if (knownV > itemVer) continue;
+                filtered.add(item);
+                continue;
+              }
+              if (docType == "CHALLAN" || docType == "SALE_CHALLAN") {
+                final scId = (item["id"] ?? "").toString().trim();
+                final scBill = (item["billNo"] ?? "").toString().trim();
+                final int itemUpd = int.tryParse((item["updatedAt"] ?? item["updated_at"] ?? "0").toString()) ?? 0;
+                final String cFy = (item["originalFy"] ?? item["original_fy"] ?? item["fy"] ?? targetFyAtStart).toString().trim();
+                final String effFy = cFy.isNotEmpty ? cFy : targetFyAtStart;
+                if ((item["status"] ?? "").toString().trim() == "Billed") {
+                  filtered.add(item);
+                  continue;
+                }
+                if (D1SalesLedgerService.isSaleChallanDeleted(scId, scBill, effFy, itemUpd)) continue;
+                final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
+                final int knownV = scId.isNotEmpty
+                    ? D1SalesLedgerService.getSaleChallanIdKnownVersion(scId, effFy)
+                    : 0;
                 if (knownV > itemVer) continue;
                 filtered.add(item);
                 continue;

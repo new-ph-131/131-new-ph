@@ -228,23 +228,41 @@ class MultiFyCloudVault {
       if (checkKeyTombstone(id)) return true;
     }
 
-    final String scopedSec = D1SalesLedgerService.scopeSecondaryKey(sec, fy);
-    if (scopedSec.isNotEmpty && checkKeyTombstone(scopedSec)) {
+    final String recOfy = (fileName == 's_challan.json' || fileName == 'p_challan.json')
+        ? ((m['originalFy'] ?? m['original_fy'] ?? m['fy'] ?? fy).toString().trim())
+        : fy;
+    final String effCheckFy = recOfy.isNotEmpty ? recOfy : fy;
+
+    if (fileName == 's_challan.json') {
+      if ((m['status'] ?? '').toString().trim() == 'Billed') return false;
+      if (id.isEmpty && sec.isNotEmpty) {
+        final String scopedSec = D1SalesLedgerService.scopeSecondaryKey(sec, effCheckFy);
+        if (scopedSec.isNotEmpty && checkKeyTombstone(scopedSec)) return true;
+      }
+      return D1SalesLedgerService.isSaleChallanDeleted(id, sec, effCheckFy, recUpd);
+    }
+
+    if (fileName == 'p_challan.json' && (m['status'] ?? '').toString().trim() == 'Billed') {
+      return false;
+    }
+
+    final String scopedSec = D1SalesLedgerService.scopeSecondaryKey(sec, effCheckFy);
+    if (scopedSec.isNotEmpty && (fileName != 'p_challan.json' || id.isEmpty) && checkKeyTombstone(scopedSec)) {
       return true;
     }
 
     if (fileName == 'purc.json' || fileName == 'p_challan.json') {
       final String pId = (m['partyId'] ?? '').toString().trim().toUpperCase();
       final String bNo = (m['billNo'] ?? '').toString().trim();
-      if (pId.isNotEmpty && bNo.isNotEmpty) {
-        final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', fy, true);
+      if (id.isEmpty && pId.isNotEmpty && bNo.isNotEmpty) {
+        final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', effCheckFy, true);
         if (checkKeyTombstone(comp2, preserveCase: true)) return true;
         if (sec.isNotEmpty) {
-          final String comp3 = D1SalesLedgerService.scopeSecondaryKey('${pId}_${bNo}_$sec', fy, true);
+          final String comp3 = D1SalesLedgerService.scopeSecondaryKey('${pId}_${bNo}_$sec', effCheckFy, true);
           if (checkKeyTombstone(comp3, preserveCase: true)) return true;
         }
       }
-      return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, fy, recUpd);
+      return D1SalesLedgerService.isPurchaseDeleted(id, pId, bNo, sec, effCheckFy, recUpd);
     }
     if (id.isNotEmpty || sec.isNotEmpty) {
       return D1SalesLedgerService.isBillDeleted(id, sec, "", fy);
@@ -868,8 +886,16 @@ class MultiFyCloudVault {
           onSaleChallanReverted: (ch) => revertedSaleChallans.add(ch),
           onPurchaseChallanReverted: (ch) => revertedPurChallans.add(ch),
         );
-        final bool scChanged = revRes.saleChallansMutated;
-        final bool pcChanged = revRes.purchaseChallansMutated;
+        final billRes = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
+          events: fyEvents,
+          targetFy: targetFy,
+          saleChallans: fySChallans,
+          purchaseChallans: fyPChallans,
+        );
+        final bool scDirect = D1SalesLedgerService.applyEventsToLocalSaleChallans(fySChallans, fyEvents, targetFy);
+        final bool pcDirect = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(fyPChallans, fyEvents, targetFy);
+        final bool scChanged = revRes.saleChallansMutated || billRes.saleChallansMutated || scDirect;
+        final bool pcChanged = revRes.purchaseChallansMutated || billRes.purchaseChallansMutated || pcDirect;
 
         for (final ch in revertedSaleChallans) {
           await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.billNo, fy: targetFy);
@@ -1133,6 +1159,10 @@ class MultiFyCloudVault {
     filesPayload['registered_fyears.json'] = jsonEncode(sortedFys);
     filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
     filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
+    final unmarkedReg = await TombstoneEngine.getUnmarkedTombstoneRegistry(comp.id);
+    if (unmarkedReg.isNotEmpty) {
+      filesPayload['unmarked_tombstones.json'] = jsonEncode(unmarkedReg);
+    }
 
     return (primaryFy: primaryFy, filesPayload: filesPayload);
   }

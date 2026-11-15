@@ -35,7 +35,7 @@ class WebRealtimeCoordinator {
       mySource: 'web',
       interval: const Duration(milliseconds: 2000),
       onTombstonesReceived: (edgeTombstones) {
-        webManager.purgeDeletedIds(edgeTombstones);
+        webManager.purgeDeletedIds(edgeTombstones, fromCumulativePoll: true);
       },
       onBatchReceived: (batchOps) {
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phWeb: webManager);
@@ -55,6 +55,7 @@ class WebRealtimeCoordinator {
             D1SalesLedgerService.unmarkPermanentlyDeleted(cleanU, "", "", targetFy, cleanU.contains('_'));
             if (!cleanU.contains('_')) {
               D1SalesLedgerService.unmarkPermanentlyDeleted(cleanU.toUpperCase(), "", "", targetFy);
+              D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(cleanU, cleanU, targetFy);
             }
           }
         }

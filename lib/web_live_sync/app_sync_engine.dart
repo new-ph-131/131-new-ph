@@ -172,6 +172,8 @@ class AppSyncEngine {
                     onSaleChallanReverted: (ch) => d1HasChanges = true,
                     onPurchaseChallanReverted: (ch) => d1HasChanges = true,
                   );
+                  bool d1ScDirect = D1SalesLedgerService.applyEventsToLocalSaleChallans(ph.saleChallans, edgeEvents, effectiveFy);
+                  bool d1PcDirect = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(ph.purchaseChallans, edgeEvents, effectiveFy);
                   bool d1Sales = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, effectiveFy);
                   bool d1Purc = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, effectiveFy);
                   bool d1SRet = D1SalesLedgerService.applyEventsToLocalSaleReturns(ph.saleReturns, edgeEvents, effectiveFy);
@@ -188,7 +190,7 @@ class AppSyncEngine {
                     edgeEvents: edgeEvents,
                     onSeriesMutated: (updated) => ph.numberingSeries = updated,
                   );
-                  if (d1Sales || d1Purc || d1SRet || d1PRet || d1Vouc || d1Gst || d1Cfg || d1Series) d1HasChanges = true;
+                  if (d1Sales || d1Purc || d1SRet || d1PRet || d1Vouc || d1Gst || d1Cfg || d1Series || d1ScDirect || d1PcDirect) d1HasChanges = true;
                 }
                 await MultiFyCloudVault.applyCrossFyEdgeEventsToLocalDisk(
                   ph: ph,

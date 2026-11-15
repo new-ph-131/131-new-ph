@@ -42,6 +42,24 @@ class AppRealtimeCoordinator {
       storeToken: token,
       mySource: 'app',
       interval: const Duration(milliseconds: 2000),
+      onTombstonesReceived: (edgeTombstones) async {
+        if (ph.activeCompany == null || ph.currentFY.isEmpty || edgeTombstones.isEmpty) return;
+        final cid = ph.activeCompany!.id;
+        final reg = await TombstoneEngine.getTombstoneRegistry(cid);
+        final sanitized = await TombstoneEngine.sanitizeCloudTombstones(
+          cid,
+          edgeTombstones,
+          cloudRegistry: reg,
+        );
+        if (sanitized.isNotEmpty) {
+          final beforeLen = ph.sales.length + ph.purchases.length + ph.saleChallans.length + ph.purchaseChallans.length;
+          TombstoneEngine.purgeDeletedRecords(ph, sanitized, reg);
+          if (ph.sales.length + ph.purchases.length + ph.saleChallans.length + ph.purchaseChallans.length != beforeLen) {
+            ph.save();
+            ph.notifyListeners();
+          }
+        }
+      },
       onBatchReceived: (batchOps) async {
         if (ph.currentFY.isEmpty) return false;
         MasterSyncOrchestrator.dispatchBatchOperations(operations: batchOps, phApp: ph);
@@ -99,6 +117,7 @@ class AppRealtimeCoordinator {
           for (final u in event.unmarkedIds) {
             D1SalesLedgerService.unmarkPermanentlyDeleted(u, "", "", targetFy);
             D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase(), "", "", targetFy);
+            D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(u, u, targetFy);
             await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u, fy: targetFy);
           }
         }

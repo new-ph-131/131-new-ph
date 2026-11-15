@@ -162,35 +162,58 @@ class PharoahWebManager with ChangeNotifier {
 
   /// Atomically purges deleted IDs across all transaction collections in memory
   /// Evaluates ID ONLY and checks deleteTimestamp >= recordTimestamp. Series keys are strictly FY-scoped.
-  void purgeDeletedIds(List<String> ids) {
+  void purgeDeletedIds(List<String> ids, {bool fromCumulativePoll = false}) {
     if (ids.isEmpty) return;
     final nowTs = DateTime.now().millisecondsSinceEpoch;
-    final set = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+    final rawSet = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+    final Set<String> set = {};
+    for (final rawId in rawSet) {
+      if (fromCumulativePoll) {
+        final bool isUnmarked = unmarkedRecordIds.contains(rawId) ||
+            (!rawId.contains('_') && unmarkedRecordIds.contains(rawId.toUpperCase()));
+        if (isUnmarked) continue;
+      }
+      set.add(rawId);
+    }
+    if (set.isEmpty) return;
     final upperSet = set.map((e) => e.toUpperCase()).toSet();
-    unmarkedRecordIds.removeAll(set);
-    unmarkedRecordIds.removeAll(upperSet);
+    if (!fromCumulativePoll) {
+      unmarkedRecordIds.removeAll(set);
+      unmarkedRecordIds.removeAll(upperSet);
+    }
     for (var id in set) {
       final bool keepCase = id.contains('_');
       if (D1SalesLedgerService.isUnscopedSeriesKey(id)) {
         final scoped = D1SalesLedgerService.scopeSecondaryKey(id, financialYear, keepCase);
         if (scoped.isNotEmpty) {
-          localTombstoneRegistry[scoped] = nowTs;
+          if (fromCumulativePoll && (unmarkedRecordIds.contains(scoped) || (!keepCase && unmarkedRecordIds.contains(scoped.toUpperCase())))) {
+            continue;
+          }
+          if (!fromCumulativePoll || !localTombstoneRegistry.containsKey(scoped)) {
+            localTombstoneRegistry[scoped] = nowTs;
+          }
           deletedRecordIds.add(scoped);
-          unmarkedRecordIds.remove(scoped);
+          if (!fromCumulativePoll) unmarkedRecordIds.remove(scoped);
           if (!keepCase) {
-            localTombstoneRegistry[scoped.toUpperCase()] = nowTs;
+            if (!fromCumulativePoll || !localTombstoneRegistry.containsKey(scoped.toUpperCase())) {
+              localTombstoneRegistry[scoped.toUpperCase()] = nowTs;
+            }
             deletedRecordIds.add(scoped.toUpperCase());
-            unmarkedRecordIds.remove(scoped.toUpperCase());
+            if (!fromCumulativePoll) unmarkedRecordIds.remove(scoped.toUpperCase());
           }
         }
       } else {
-        localTombstoneRegistry[id] = nowTs;
+        if (!fromCumulativePoll || !localTombstoneRegistry.containsKey(id)) {
+          localTombstoneRegistry[id] = nowTs;
+        }
         deletedRecordIds.add(id);
-        unmarkedRecordIds.remove(id);
+        if (!fromCumulativePoll) unmarkedRecordIds.remove(id);
         if (!keepCase) {
-          localTombstoneRegistry[id.toUpperCase()] = nowTs;
+          if (!fromCumulativePoll || !localTombstoneRegistry.containsKey(id.toUpperCase())) {
+            localTombstoneRegistry[id.toUpperCase()] = nowTs;
+          }
           deletedRecordIds.add(id.toUpperCase());
-          unmarkedRecordIds.remove(id.toUpperCase());
+          if (!fromCumulativePoll) unmarkedRecordIds.remove(id.toUpperCase());
         }
       }
     }
@@ -200,8 +223,10 @@ class PharoahWebManager with ChangeNotifier {
       final bNo = s.billNo.trim().toUpperCase();
       final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
       final bool idMatch = set.contains(s.id) || upperSet.contains(s.id.toUpperCase());
+      if (idMatch) return true;
+      if (s.id.trim().isNotEmpty && unmarkedRecordIds.contains(s.id.trim())) return false;
       final bool scopedMatch = scopedBNo.isNotEmpty && (set.contains(scopedBNo) || upperSet.contains(scopedBNo));
-      return idMatch || scopedMatch;
+      return scopedMatch;
     });
 
     purchases.removeWhere((p) {
@@ -228,29 +253,39 @@ class PharoahWebManager with ChangeNotifier {
     });
 
     saleChallans.removeWhere((c) {
+      if (c.status == "Billed") return false;
+      final cleanId = c.id.trim();
       final bNo = c.billNo.trim().toUpperCase();
-      final bool idMatches = set.contains(c.id) || upperSet.contains(c.id.toUpperCase());
-      final bool numMatches = bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo));
+      final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
+      final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, cFy) : "";
+      final bool idMatches = cleanId.isNotEmpty && (set.contains(cleanId) || upperSet.contains(cleanId.toUpperCase()));
       if (idMatches) return true;
-      if (numMatches && c.status != "Pending" && c.status != "Active" && c.status != "Billed") return true;
+      if (cleanId.isNotEmpty) return false;
+      final bool numMatches = (scopedBNo.isNotEmpty && (set.contains(scopedBNo) || upperSet.contains(scopedBNo))) ||
+          (bNo.isNotEmpty && (set.contains(bNo) || upperSet.contains(bNo)));
+      if (numMatches && c.status != "Pending" && c.status != "Active") return true;
       return false;
     });
 
     purchaseChallans.removeWhere((c) {
+      if (c.status == "Billed") return false;
+      final cleanId = c.id.trim();
       final iNo = c.internalNo.trim().toUpperCase();
       final bNo = c.billNo.trim();
       final party = c.partyId.trim().toUpperCase();
+      final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
       final comp2 = (party.isNotEmpty && bNo.isNotEmpty) ? "${party}_$bNo" : "";
       final comp3 = PurchaseChallanSyncModule.makeCompositeKey(party, bNo, iNo);
-      final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
-      final scopedComp2 = comp2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp2, financialYear, true) : "";
-      final scopedComp3 = comp3.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp3, financialYear, true) : "";
-      final bool idMatches = set.contains(c.id) || upperSet.contains(c.id.toUpperCase());
+      final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, cFy) : "";
+      final scopedComp2 = comp2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp2, cFy, true) : "";
+      final scopedComp3 = comp3.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp3, cFy, true) : "";
+      final bool idMatches = cleanId.isNotEmpty && (set.contains(cleanId) || upperSet.contains(cleanId.toUpperCase()));
+      if (idMatches) return true;
+      if (cleanId.isNotEmpty) return false;
       final bool compMatches = (scopedINo.isNotEmpty && (set.contains(scopedINo) || upperSet.contains(scopedINo))) ||
           (scopedComp2.isNotEmpty && set.contains(scopedComp2)) ||
           (scopedComp3.isNotEmpty && set.contains(scopedComp3));
-      if (idMatches) return true;
-      if (compMatches && c.status != "Pending" && c.status != "Active" && c.status != "Billed") return true;
+      if (compMatches && c.status != "Pending" && c.status != "Active") return true;
       return false;
     });
 
@@ -480,6 +515,11 @@ class PharoahWebManager with ChangeNotifier {
                           );
                         }
                         final String sec = (m['billNo'] ?? m['voucherNo'] ?? '').toString().trim();
+                        if (fname == 's_challan.json') {
+                          if ((m['status'] ?? '').toString().trim() == 'Billed') return false;
+                          final String effFy = (m['originalFy'] ?? m['original_fy'] ?? m['fy'] ?? cleanFy).toString().trim();
+                          return D1SalesLedgerService.isSaleChallanDeleted(id, sec, effFy.isNotEmpty ? effFy : cleanFy, itemUpd);
+                        }
                         return D1SalesLedgerService.isBillDeleted(id, sec, "", cleanFy);
                       }
                       final Map<String, dynamic> mergedMap = {};
@@ -1560,15 +1600,17 @@ class PharoahWebManager with ChangeNotifier {
       final targetFiles = fyVault[targetFy];
       if (prevFiles == null || targetFiles == null) continue;
       bool isScBlocked(SaleChallan sc) {
+        if (sc.status == "Billed") return false;
+        final String scFy = sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : targetFy;
         if (sc.id.trim().isNotEmpty &&
             (deletedRecordIds.contains(sc.id.trim()) || deletedRecordIds.contains(sc.id.trim().toUpperCase()))) {
           final ts = localTombstoneRegistry[sc.id.trim()] ?? localTombstoneRegistry[sc.id.trim().toUpperCase()] ?? 0;
           if (ts == 0 || ts >= sc.updatedAt) return true;
         }
-        if (D1SalesLedgerService.isBillDeleted(sc.id, sc.billNo, "", targetFy)) return true;
+        if (D1SalesLedgerService.isSaleChallanDeleted(sc.id, sc.billNo, scFy, sc.updatedAt)) return true;
         final cleanB = sc.billNo.trim().toUpperCase();
-        if (cleanB.isNotEmpty) {
-          final scopedB = D1SalesLedgerService.scopeSecondaryKey(cleanB, targetFy);
+        if (sc.id.trim().isEmpty && cleanB.isNotEmpty) {
+          final scopedB = D1SalesLedgerService.scopeSecondaryKey(cleanB, scFy);
           final ts = localTombstoneRegistry[scopedB] ?? localTombstoneRegistry[cleanB] ?? 0;
           if (ts > 0 && ts >= sc.updatedAt) return true;
         }
@@ -1715,13 +1757,12 @@ class PharoahWebManager with ChangeNotifier {
                 (deletedRecordIds.contains(cleanId) || deletedRecordIds.contains(cleanId.toUpperCase()))) {
               continue;
             }
-            if (vc.status != "Pending" && vc.status != "Active" && vc.status != "Billed") {
-              if (D1SalesLedgerService.isBillDeleted(cleanId, vc.billNo, "", financialYear)) continue;
-            } else {
-              if (D1SalesLedgerService.isBillDeleted(cleanId, "", "", financialYear)) continue;
+            final String vcFy = vc.effectiveOriginalFy.isNotEmpty ? vc.effectiveOriginalFy : financialYear;
+            if (vc.status != "Billed") {
+              if (D1SalesLedgerService.isSaleChallanDeleted(cleanId, vc.billNo, vcFy, vc.updatedAt)) continue;
             }
-            final scopedBNo = cleanBNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanBNo, financialYear) : "";
-            final int secDelTs = cleanBNo.isNotEmpty
+            final scopedBNo = cleanBNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanBNo, vcFy) : "";
+            final int secDelTs = (cleanId.isEmpty && cleanBNo.isNotEmpty)
                 ? ((localTombstoneRegistry[scopedBNo] ?? 0) > (localTombstoneRegistry[cleanBNo] ?? 0)
                     ? (localTombstoneRegistry[scopedBNo] ?? 0)
                     : (localTombstoneRegistry[cleanBNo] ?? 0))
@@ -1914,9 +1955,9 @@ class PharoahWebManager with ChangeNotifier {
         }
         final String bNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
         if (isDelete) {
-          D1SalesLedgerService.markPermanentlyDeleted(envelope.syncId, bNo, "", cleanFy);
+          D1SalesLedgerService.markSaleChallanPermanentlyDeleted(envelope.syncId, bNo, cleanFy, envelope.updatedAt > 0 ? envelope.updatedAt : null);
         } else {
-          D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, "", cleanFy);
+          D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(envelope.syncId, bNo, cleanFy);
           unmarkDeletedId(envelope.syncId, referenceNo: bNo, fy: cleanFy);
         }
         if (SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(vSc, envelope)) {
@@ -2017,8 +2058,32 @@ class PharoahWebManager with ChangeNotifier {
             if (c3.isNotEmpty) unmarkDeletedId(c3, preserveCase: true, fy: expectedFy);
           },
         );
-        final bool scRevMut = d1ChRev.saleChallansMutated;
-        final bool pcRevMut = d1ChRev.purchaseChallansMutated;
+        final bool scDirectMut = D1SalesLedgerService.applyEventsToLocalSaleChallans(saleChallans, edgeEvents, expectedFy);
+        final bool pcDirectMut = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(purchaseChallans, edgeEvents, expectedFy);
+        final bool scRevMut = d1ChRev.saleChallansMutated || scDirectMut;
+        final bool pcRevMut = d1ChRev.purchaseChallansMutated || pcDirectMut;
+        if (scDirectMut) {
+          for (final sc in saleChallans) {
+            final String scFy = sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : expectedFy;
+            if (sc.isDeleted != 1 && sc.id.trim().isNotEmpty && !D1SalesLedgerService.isSaleChallanIdDeleted(sc.id, scFy)) {
+              unmarkDeletedId(sc.id, referenceNo: sc.billNo.isNotEmpty ? sc.billNo : null, fy: scFy);
+            }
+          }
+        }
+        if (pcDirectMut) {
+          for (final pc in purchaseChallans) {
+            final String pcFy = pc.effectiveOriginalFy.isNotEmpty ? pc.effectiveOriginalFy : expectedFy;
+            if (pc.isDeleted != 1 && pc.id.trim().isNotEmpty && !D1SalesLedgerService.isPurchaseIdDeleted(pc.id, pcFy)) {
+              final c2 = (pc.partyId.trim().isNotEmpty && pc.billNo.trim().isNotEmpty)
+                  ? "${pc.partyId.trim().toUpperCase()}_${pc.billNo.trim()}"
+                  : "";
+              final c3 = PurchaseChallanSyncModule.makeCompositeKey(pc.partyId, pc.billNo, pc.internalNo);
+              unmarkDeletedId(pc.id, referenceNo: pc.internalNo.isNotEmpty ? pc.internalNo : null, fy: pcFy);
+              if (c2.isNotEmpty) unmarkDeletedId(c2, preserveCase: true, fy: pcFy);
+              if (c3.isNotEmpty) unmarkDeletedId(c3, preserveCase: true, fy: pcFy);
+            }
+          }
+        }
         final bool sMut = D1SalesLedgerService.applyEventsToLocalSales(sales, edgeEvents, expectedFy);
         final bool pMut = D1SalesLedgerService.applyEventsToLocalPurchases(purchases, edgeEvents, expectedFy);
         final bool srMut = D1SalesLedgerService.applyEventsToLocalSaleReturns(saleReturns, edgeEvents, expectedFy);
@@ -2171,8 +2236,10 @@ class PharoahWebManager with ChangeNotifier {
           saleChallans: vaultSCh,
           purchaseChallans: vaultPCh,
         );
-        final bool scChanged = vaultRev.saleChallansMutated || vaultBill.saleChallansMutated;
-        final bool pcChanged = vaultRev.purchaseChallansMutated || vaultBill.purchaseChallansMutated;
+        final bool scDirect = D1SalesLedgerService.applyEventsToLocalSaleChallans(vaultSCh, fyEvents, eventFy);
+        final bool pcDirect = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(vaultPCh, fyEvents, eventFy);
+        final bool scChanged = vaultRev.saleChallansMutated || vaultBill.saleChallansMutated || scDirect;
+        final bool pcChanged = vaultRev.purchaseChallansMutated || vaultBill.purchaseChallansMutated || pcDirect;
         final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(vaultSales, fyEvents, eventFy);
         final bool pChanged = D1SalesLedgerService.applyEventsToLocalPurchases(vaultPurc, fyEvents, eventFy);
         final bool srChanged = D1SalesLedgerService.applyEventsToLocalSaleReturns(vaultSRet, fyEvents, eventFy);

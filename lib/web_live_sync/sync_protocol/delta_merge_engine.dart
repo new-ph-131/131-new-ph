@@ -152,6 +152,13 @@ class DeltaMergeEngine {
 
         // 🛡️ Multi-Key Anti-Zombie Check: ID + FY-Scoped Secondary Keys (InternalNo, BillNo, CompositeKey)
         final String activeFy = ph.currentFY.trim();
+        final bool isSaleChallanDoc = T == SaleChallan;
+        final bool isPurcChallanDoc = T == PurchaseChallan;
+        final bool isChallanDoc = isSaleChallanDoc || isPurcChallanDoc;
+        final String rawItemFy = (cloudMap["originalFy"] ?? cloudMap["original_fy"] ?? cloudMap["fy"] ?? "").toString().trim();
+        final String effDocFy = (isChallanDoc && rawItemFy.isNotEmpty) ? rawItemFy : activeFy;
+        final bool isBilledChallan = isChallanDoc && (cloudMap["status"] ?? "").toString().trim() == "Billed";
+
         final bool isCompositeDoc = getCloudCompositeKey != null;
         String bNoKey = isCompositeDoc ? billNo : billNo.toUpperCase();
         String intNoKey = internalNo.toUpperCase();
@@ -159,25 +166,31 @@ class DeltaMergeEngine {
         String compKey2 = (partyIdKey.isNotEmpty && bNoKey.isNotEmpty) ? "${partyIdKey}_$bNoKey" : "";
         final compositeKey = getCloudCompositeKey?.call(cloudMap).trim() ?? "";
 
-        final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNoKey, activeFy, isCompositeDoc);
-        final String scopedIntNo = D1SalesLedgerService.scopeSecondaryKey(intNoKey, activeFy);
-        final String scopedComp2 = D1SalesLedgerService.scopeSecondaryKey(compKey2, activeFy, true);
-        final String scopedComp3 = D1SalesLedgerService.scopeSecondaryKey(compositeKey, activeFy, true);
+        final String scopedBNo = D1SalesLedgerService.scopeSecondaryKey(bNoKey, effDocFy, isCompositeDoc);
+        final String scopedIntNo = D1SalesLedgerService.scopeSecondaryKey(intNoKey, effDocFy);
+        final String scopedComp2 = D1SalesLedgerService.scopeSecondaryKey(compKey2, effDocFy, true);
+        final String scopedComp3 = D1SalesLedgerService.scopeSecondaryKey(compositeKey, effDocFy, true);
 
-        // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Scoped by activeFy so series numbers never collide across FYs)
-        if (getCloudCompositeKey != null) {
-          if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo, activeFy, cloudTimestamp)) {
-            continue;
-          }
-        } else {
-          if (D1SalesLedgerService.isBillDeleted(id, billNo, internalNo, activeFy)) {
-            continue;
+        // 🛡️ 1. PERMANENT D1 GRAVESTONE CHECK (Scoped by effDocFy so series numbers never collide across FYs)
+        if (!isBilledChallan) {
+          if (isSaleChallanDoc) {
+            if (D1SalesLedgerService.isSaleChallanDeleted(id, billNo, effDocFy, cloudTimestamp)) {
+              continue;
+            }
+          } else if (getCloudCompositeKey != null) {
+            if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo, effDocFy, cloudTimestamp)) {
+              continue;
+            }
+          } else {
+            if (D1SalesLedgerService.isBillDeleted(id, billNo, internalNo, effDocFy)) {
+              continue;
+            }
           }
         }
 
         // 🛡️ 2. STRICT TOMBSTONE REGISTRY CHECK (Immutable ID vs FY-Scoped Chronological Series/Composite Keys)
         final int idDelTs = tombstoneRegistry[id] ?? tombstoneRegistry[id.toUpperCase()] ?? 0;
-        if (idDelTs > 0 && (cloudTimestamp == 0 || idDelTs >= cloudTimestamp)) {
+        if (!isBilledChallan && idDelTs > 0 && (cloudTimestamp == 0 || idDelTs >= cloudTimestamp)) {
           // Exact UUID was deleted at or after this record timestamp — never resurrect it
           continue;
         }
@@ -189,12 +202,15 @@ class DeltaMergeEngine {
             (scopedComp3Upper.isNotEmpty ? tombstoneRegistry[scopedComp3Upper] : null) ??
             (scopedComp2Upper.isNotEmpty ? tombstoneRegistry[scopedComp2Upper] : null) ??
             (getCloudCompositeKey == null && scopedBNo.isNotEmpty ? tombstoneRegistry[scopedBNo] : null) ?? 0;
-        if (secDelTs > 0 && (cloudTimestamp == 0 || secDelTs >= cloudTimestamp)) {
+        if (!isChallanDoc && secDelTs > 0 && (cloudTimestamp == 0 || secDelTs >= cloudTimestamp)) {
           // Secondary key in this FY was deleted at or after this record timestamp — block stale snapshot record
           continue;
         }
-        if (getCloudCompositeKey != null && secDelTs > 0 && cloudTimestamp > secDelTs && cloudIsDeleted == 0) {
-          D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy);
+        if (isSaleChallanDoc && cloudIsDeleted == 0) {
+          D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(id, billNo, effDocFy);
+          if (scopedBNo.isNotEmpty) tombstoneRegistry.remove(scopedBNo);
+        } else if (getCloudCompositeKey != null && (isPurcChallanDoc || (secDelTs > 0 && cloudTimestamp > secDelTs)) && cloudIsDeleted == 0) {
+          D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, effDocFy);
           for (final rk in [scopedIntNo, scopedComp2, scopedComp3, scopedComp2Upper, scopedComp3Upper]) {
             if (rk.isNotEmpty) tombstoneRegistry.remove(rk);
           }
@@ -233,10 +249,12 @@ class DeltaMergeEngine {
           if (scopedIntNo.isNotEmpty) tombstoneRegistry[scopedIntNo] = delTs;
           if (scopedComp2.isNotEmpty) tombstoneRegistry[scopedComp2] = delTs;
           if (scopedComp3.isNotEmpty) tombstoneRegistry[scopedComp3] = delTs;
-          if (getCloudCompositeKey != null) {
-            D1SalesLedgerService.markPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, activeFy, delTs);
+          if (isSaleChallanDoc) {
+            D1SalesLedgerService.markSaleChallanPermanentlyDeleted(id, billNo, effDocFy, delTs);
+          } else if (getCloudCompositeKey != null) {
+            D1SalesLedgerService.markPurchasePermanentlyDeleted(id, partyIdKey, billNo, internalNo, effDocFy, delTs);
           } else {
-            D1SalesLedgerService.markPermanentlyDeleted(id, billNo, internalNo, activeFy, false, delTs);
+            D1SalesLedgerService.markPermanentlyDeleted(id, billNo, internalNo, effDocFy, false, delTs);
           }
           continue;
         }
