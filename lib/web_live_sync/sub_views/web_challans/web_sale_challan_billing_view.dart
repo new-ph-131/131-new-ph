@@ -157,7 +157,6 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
     );
 
     webPh.addSaleChallanAndSync(newChallan);
-    await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 
     if (andPrint) {

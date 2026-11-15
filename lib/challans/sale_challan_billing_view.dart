@@ -380,7 +380,7 @@ void _handleSave(PharoahManager ph) async {
       isLocal: isLocal,
     );
     // 🆕 TWO-WAY SYNC TRIGGER: In-place update preserving existingId and incrementing version
-    ph.finalizeSaleChallan(
+    final SaleChallan? finalized = await ph.finalizeSaleChallan(
       billNo: widget.challanNo,
       date: widget.challanDate,
       party: widget.party,
@@ -391,8 +391,14 @@ void _handleSave(PharoahManager ph) async {
       existingId: widget.existingRecord?.id,
     );
 
-    // Dynamic fetch of newly created challan record
-    final createdChallan = ph.saleChallans.last;
+    if (finalized == null && ph.saleChallans.isEmpty) {
+      return;
+    }
+    final SaleChallan createdChallan = finalized ??
+        ph.saleChallans.firstWhere(
+          (c) => (widget.existingRecord?.id != null && c.id == widget.existingRecord!.id) || c.billNo == widget.challanNo,
+          orElse: () => ph.saleChallans.last,
+        );
 
     if (ph.config.showCustomerSignChallan == true) {
       if (mounted) {

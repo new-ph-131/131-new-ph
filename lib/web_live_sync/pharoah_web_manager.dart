@@ -1036,26 +1036,42 @@ class PharoahWebManager with ChangeNotifier {
       for (var c in allParsedSCh) {
         if (c.isDeleted == 1) continue;
         final String cleanBNo = c.billNo.trim().toUpperCase();
+        final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
+        if (D1SalesLedgerService.isSaleChallanDeleted(c.id, c.billNo, cFy, c.updatedAt)) {
+          continue;
+        }
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) {
           continue; // Blocked by immutable ID tombstone
         }
-        final scopedSCBNo = cleanBNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanBNo, financialYear) : "";
+        final scopedSCBNo = cleanBNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanBNo, cFy) : "";
+        final scopedCurrBNo = cleanBNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanBNo, financialYear) : "";
         int secDelTs = 0;
         if (cleanBNo.isNotEmpty) {
           final t1 = scopedSCBNo.isNotEmpty ? (localTombstoneRegistry[scopedSCBNo] ?? localTombstoneRegistry[scopedSCBNo.toUpperCase()] ?? 0) : 0;
-          final t2 = localTombstoneRegistry[cleanBNo] ?? localTombstoneRegistry[cleanBNo.toUpperCase()] ?? 0;
+          final t2 = scopedCurrBNo.isNotEmpty ? (localTombstoneRegistry[scopedCurrBNo] ?? localTombstoneRegistry[scopedCurrBNo.toUpperCase()] ?? 0) : 0;
           secDelTs = t1 > t2 ? t1 : t2;
         }
-        if (secDelTs > 0 && secDelTs >= c.updatedAt) {
+        if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt) {
           continue; // Blocked by newer or same age series tombstone
+        }
+        if (scopedSCBNo.isNotEmpty) {
+          deletedRecordIds.remove(scopedSCBNo);
+          deletedRecordIds.remove(scopedSCBNo.toUpperCase());
+        }
+        if (scopedCurrBNo.isNotEmpty) {
+          deletedRecordIds.remove(scopedCurrBNo);
+          deletedRecordIds.remove(scopedCurrBNo.toUpperCase());
         }
         if (cleanBNo.isNotEmpty) {
           deletedRecordIds.remove(cleanBNo);
           deletedRecordIds.remove(cleanBNo.toUpperCase());
         }
-        int idx = saleChallans.indexWhere((lc) => 
+        int idx = saleChallans.indexWhere((lc) =>
           (c.id.isNotEmpty && lc.id == c.id) ||
-          (cleanBNo.isNotEmpty && lc.billNo.trim().toUpperCase() == cleanBNo)
+          ((c.id.isEmpty || lc.id.isEmpty || lc.id == c.id) &&
+           cleanBNo.isNotEmpty &&
+           lc.billNo.trim().toUpperCase() == cleanBNo &&
+           lc.effectiveOriginalFy == c.effectiveOriginalFy)
         );
         if (idx != -1) {
           if (saleChallans[idx].version > c.version) continue;
@@ -1077,20 +1093,19 @@ class PharoahWebManager with ChangeNotifier {
       }
       saleChallans = masterSChMap.values.where((c) {
         final bNo = c.billNo.trim().toUpperCase();
+        final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
         if (c.status != "Pending" && c.status != "Active" && c.status != "Billed") {
-          if (D1SalesLedgerService.isBillDeleted(c.id, c.billNo, "", financialYear)) return false;
+          if (D1SalesLedgerService.isSaleChallanDeleted(c.id, c.billNo, cFy, c.updatedAt)) return false;
         } else {
-          if (D1SalesLedgerService.isBillDeleted(c.id, "", "", financialYear)) return false;
+          if (D1SalesLedgerService.isSaleChallanIdDeleted(c.id, cFy)) return false;
         }
-        final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
+        final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, cFy) : "";
         int secDelTs = 0;
         if (bNo.isNotEmpty) {
-          final t1 = scopedBNo.isNotEmpty ? (localTombstoneRegistry[scopedBNo] ?? localTombstoneRegistry[scopedBNo.toUpperCase()] ?? 0) : 0;
-          final t2 = localTombstoneRegistry[bNo] ?? localTombstoneRegistry[bNo.toUpperCase()] ?? 0;
-          secDelTs = t1 > t2 ? t1 : t2;
+          secDelTs = scopedBNo.isNotEmpty ? (localTombstoneRegistry[scopedBNo] ?? localTombstoneRegistry[scopedBNo.toUpperCase()] ?? 0) : 0;
         }
-        if (secDelTs > 0 && secDelTs >= c.updatedAt && c.status != "Pending" && c.status != "Active") return false;
+        if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt && c.status != "Pending" && c.status != "Active" && c.status != "Billed") return false;
         return true;
       }).toList();
     }
@@ -2322,6 +2337,7 @@ class PharoahWebManager with ChangeNotifier {
         'registered_fyears.json': jsonEncode(availableFinancialYears),
         'tombstones.json': jsonEncode(deletedRecordIds.toList()),
         'tombstone_registry.json': jsonEncode(localTombstoneRegistry),
+        'unmarked_tombstones.json': jsonEncode(unmarkedRecordIds.toList()),
       };
 
       final payload = {
@@ -3153,6 +3169,15 @@ class PharoahWebManager with ChangeNotifier {
       saleChallans.insert(0, challan);
     }
     SaleChallanSyncModule.onSaleChallanSaved(challan, activeStoreToken);
+    trackPendingD1Write(
+      D1SalesLedgerService.onSaleChallanSaved(
+        challan,
+        activeStoreToken,
+        isUpdate: isUpdate,
+        clientSource: "WEB_PORTAL",
+        fy: challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear,
+      ),
+    );
 
     for (var item in challan.items) {
       String resolvedKey = item.medicineID;
@@ -3258,6 +3283,15 @@ class PharoahWebManager with ChangeNotifier {
       purchaseChallans.insert(0, challan);
     }
     PurchaseChallanSyncModule.onPurchaseChallanSaved(challan, activeStoreToken);
+    trackPendingD1Write(
+      D1SalesLedgerService.onPurchaseChallanSaved(
+        challan,
+        activeStoreToken,
+        isUpdate: isUpdate,
+        clientSource: "WEB_PORTAL",
+        fy: challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear,
+      ),
+    );
 
     for (var item in challan.items) {
       String resolvedKey = item.medicineID;
@@ -3331,13 +3365,18 @@ class PharoahWebManager with ChangeNotifier {
 
     final String cId = (targetC?.id ?? challanId).trim();
     final String bNo = targetC != null ? targetC.billNo.trim().toUpperCase() : "";
-    final String cOfy = targetC != null ? targetC.effectiveOriginalFy : financialYear;
+    final String cOfy = targetC != null && targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
     if (targetC != null) {
       SaleChallanSyncModule.onSaleChallanDeleted(targetC, activeStoreToken);
     }
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
-    final List<String> delKeys = [cId.isNotEmpty ? cId : challanId, if (scopedBNo.isNotEmpty) scopedBNo];
+    final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, cOfy) : "";
+    final scopedCurrBNo = (bNo.isNotEmpty && cOfy != financialYear) ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
+    final List<String> delKeys = [
+      cId.isNotEmpty ? cId : challanId,
+      if (scopedBNo.isNotEmpty) scopedBNo,
+      if (scopedCurrBNo.isNotEmpty) scopedCurrBNo,
+    ];
     for (var k in delKeys) {
       localTombstoneRegistry[k] = delTime;
       localTombstoneRegistry[k.toUpperCase()] = delTime;
@@ -3346,7 +3385,17 @@ class PharoahWebManager with ChangeNotifier {
       unmarkedRecordIds.remove(k);
       unmarkedRecordIds.remove(k.toUpperCase());
     }
-    D1SalesLedgerService.markPermanentlyDeleted(cId.isNotEmpty ? cId : challanId, bNo, "", financialYear);
+    D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : challanId, bNo, cOfy, delTime);
+    trackPendingD1Write(
+      D1SalesLedgerService.onSaleChallanDeleted(
+        targetC ?? (cId.isNotEmpty ? cId : challanId),
+        activeStoreToken,
+        billNo: bNo,
+        clientSource: "WEB_PORTAL",
+        fy: cOfy,
+        deletedAtMs: delTime,
+      ),
+    );
     _saveLocalTombstones();
     if (cId.isNotEmpty) {
       saleChallans.removeWhere((item) => item.id.trim() == cId);
@@ -3394,17 +3443,29 @@ class PharoahWebManager with ChangeNotifier {
     final String iNo = targetC != null ? targetC.internalNo.trim().toUpperCase() : "";
     final String bNo = targetC != null ? targetC.billNo.trim() : "";
     final String pId = targetC != null ? targetC.partyId.trim().toUpperCase() : "";
-    final String cOfy = targetC != null ? targetC.effectiveOriginalFy : financialYear;
+    final String cOfy = targetC != null && targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
     final String compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
     final String compKey = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
     if (targetC != null) {
       PurchaseChallanSyncModule.onPurchaseChallanDeleted(targetC, activeStoreToken);
     }
-    D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : challanId, pId, bNo, iNo, financialYear);
     final int delTime = DateTime.now().millisecondsSinceEpoch;
-    final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
-    final scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, financialYear, true) : "";
-    final scopedComp = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, financialYear, true) : "";
+    D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : challanId, pId, bNo, iNo, cOfy, delTime);
+    trackPendingD1Write(
+      D1SalesLedgerService.onPurchaseChallanDeleted(
+        targetC ?? (cId.isNotEmpty ? cId : challanId),
+        activeStoreToken,
+        partyId: pId,
+        billNo: bNo,
+        internalNo: iNo,
+        clientSource: "WEB_PORTAL",
+        fy: cOfy,
+        deletedAtMs: delTime,
+      ),
+    );
+    final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, cOfy) : "";
+    final scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, cOfy, true) : "";
+    final scopedComp = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, cOfy, true) : "";
     final List<String> delKeys = [
       cId.isNotEmpty ? cId : challanId,
       if (scopedINo.isNotEmpty) scopedINo,

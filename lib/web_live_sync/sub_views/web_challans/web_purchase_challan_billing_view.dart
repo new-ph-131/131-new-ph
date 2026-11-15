@@ -665,7 +665,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       }
       return;
     }
-    await webPh.pushUpdatedDataToCloud();
     setState(() => isSaving = false);
 
     if (andPrint) {

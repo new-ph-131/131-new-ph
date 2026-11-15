@@ -1525,7 +1525,7 @@ Future<bool> finalizePurchase({
     return mutated;
   }
 
-  Future<void> finalizeSaleChallan({
+  Future<SaleChallan?> finalizeSaleChallan({
     required String billNo, 
     required DateTime date, 
     required Party party, 
@@ -1544,7 +1544,7 @@ Future<bool> finalizePurchase({
         : saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.effectiveOriginalFy == currentFY));
     final SaleChallan? existingCh = existingIdx != -1 ? saleChallans[existingIdx] : null;
     if (existingCh != null && existingCh.status == "Billed") {
-      return;
+      return existingCh;
     }
     if (existingCh != null) {
       currentVer = existingCh.version + 1;
@@ -1553,9 +1553,10 @@ Future<bool> finalizePurchase({
     final String targetOfy = normalizeFyString(existingCh != null
         ? (existingCh.effectiveOriginalFy.isNotEmpty ? existingCh.effectiveOriginalFy : normCurrFy)
         : normCurrFy);
+    final String effFy = targetOfy.isNotEmpty ? targetOfy : normCurrFy;
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo);
-      D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo, fy: effFy);
+      D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(cId, billNo, effFy);
     }
     if (isEditMode) {
       saleChallans.removeWhere((c) => c.id == cId);
@@ -1582,6 +1583,16 @@ Future<bool> finalizePurchase({
       final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
       if (t.isNotEmpty) {
         SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
+        await Future.wait([
+          D1SalesLedgerService.onSaleChallanSaved(
+            newChallan,
+            t,
+            isUpdate: existingCh != null,
+            clientSource: "APP_MOBILE",
+            fy: effFy,
+          ),
+          SyncQueueManager.flushOutboxAsJSONBatch(),
+        ]);
       }
     } 
     
@@ -1624,6 +1635,7 @@ Future<bool> finalizePurchase({
       unmarkedIds: [cId, if (billNo.isNotEmpty) billNo],
       fy: currentFY,
     );
+    return newChallan;
   }
 
   Future<bool> finalizePurchaseChallan({
@@ -1699,6 +1711,16 @@ Future<bool> finalizePurchase({
       final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
       if (t.isNotEmpty) {
         PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
+        await Future.wait([
+          D1SalesLedgerService.onPurchaseChallanSaved(
+            newPChallan,
+            t,
+            isUpdate: existingCh != null,
+            clientSource: "APP_MOBILE",
+            fy: targetOfy.isNotEmpty ? targetOfy : normCurrFy,
+          ),
+          SyncQueueManager.flushOutboxAsJSONBatch(),
+        ]);
       }
     } 
     
@@ -3486,14 +3508,21 @@ void registerBatchActivity({
       final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, delFy) : "";
       final List<String> delKeys = [if (cId.isNotEmpty) cId else id, if (scopedBNo.isNotEmpty) scopedBNo];
       final int delTs = DateTime.now().millisecondsSinceEpoch;
-      D1SalesLedgerService.markPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, "", delFy);
+      final String effDelFy = cOfy.isNotEmpty ? cOfy : delFy;
+      D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, effDelFy, delTs);
+      if (delFy != effDelFy) {
+        D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, delFy, delTs);
+      }
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
         Future<void>(() async {
-          await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: effDelFy);
+          if (delFy != effDelFy) {
+            await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
+          }
           await propagateChallanDeletionAcrossDiskFolders(
             challanId: cId.isNotEmpty ? cId : id,
-            sourceFy: delFy,
+            sourceFy: effDelFy,
             isPurchase: false,
             extraTombstoneKeys: [if (bNo.isNotEmpty) bNo],
             customDeletedAt: delTs,
@@ -3501,14 +3530,24 @@ void registerBatchActivity({
           final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             SaleChallanSyncModule.onSaleChallanDeleted(c, t);
-            await SyncQueueManager.flushOutboxAsJSONBatch();
+            await Future.wait([
+              D1SalesLedgerService.onSaleChallanDeleted(
+                c,
+                t,
+                billNo: bNo,
+                clientSource: "APP_MOBILE",
+                fy: effDelFy,
+                deletedAtMs: delTs,
+              ),
+              SyncQueueManager.flushOutboxAsJSONBatch(),
+            ]);
           }
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
             action: 'DELETE_SALE_CHALLAN',
             entityId: cId.isNotEmpty ? cId : id,
             deletedIds: delKeys,
-            fy: delFy,
+            fy: effDelFy,
           );
         });
       }
@@ -3558,15 +3597,22 @@ void registerBatchActivity({
         if (compKey3.isNotEmpty) compKey3,
       ];
       final int delTs = DateTime.now().millisecondsSinceEpoch;
-      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, delFy);
+      final String effDelFy = cOfy.isNotEmpty ? cOfy : delFy;
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, effDelFy, delTs);
+      if (delFy != effDelFy) {
+        D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, delFy, delTs);
+      }
 
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
         Future<void>(() async {
-          await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
+          await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: effDelFy);
+          if (delFy != effDelFy) {
+            await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
+          }
           await propagateChallanDeletionAcrossDiskFolders(
             challanId: cId.isNotEmpty ? cId : id,
-            sourceFy: delFy,
+            sourceFy: effDelFy,
             isPurchase: true,
             extraTombstoneKeys: [
               if (iNo.isNotEmpty) iNo,
@@ -3578,14 +3624,26 @@ void registerBatchActivity({
           final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
-            await SyncQueueManager.flushOutboxAsJSONBatch();
+            await Future.wait([
+              D1SalesLedgerService.onPurchaseChallanDeleted(
+                c,
+                t,
+                partyId: pId,
+                billNo: bNo,
+                internalNo: iNo,
+                clientSource: "APP_MOBILE",
+                fy: effDelFy,
+                deletedAtMs: delTs,
+              ),
+              SyncQueueManager.flushOutboxAsJSONBatch(),
+            ]);
           }
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
             action: 'DELETE_PURCHASE_CHALLAN',
             entityId: cId.isNotEmpty ? cId : id,
             deletedIds: delKeys,
-            fy: delFy,
+            fy: effDelFy,
           );
         });
       }
