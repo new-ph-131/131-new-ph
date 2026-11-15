@@ -234,12 +234,7 @@ class _ChallanToBillConverterState extends State<ChallanToBillConverter> {
       currentList: ph.sales,
     );
 
-    // Update challan status to Billed
-    for (var id in selectedChallanIds) {
-      int idx = ph.saleChallans.indexWhere((c) => c.id == id);
-      if (idx != -1) ph.saleChallans[idx].status = "Billed";
-    }
-
+    // 🛡️ Note: finalizeSale handles status="Billed", version increment, outbox enqueue and cross-FY sync!
     ph.finalizeSale(
       billNo: nextBillNo, 
       date: billDate, 

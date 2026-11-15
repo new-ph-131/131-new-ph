@@ -81,14 +81,24 @@ class MasterSyncOrchestrator {
           if (!isChallanDoc) {
             return vaultChanged;
           }
-          // For deleted Challan from back FY, also fall through if present in active targetFy so orphan carried copy is removed
-          if (!isDelEnv && status != 'Pending') {
+          // For Challan from back FY: fall through if carried forward in active targetFy memory
+          final bool existsInActiveWeb = isChallanDoc && (
+            (docType == 'PURCHASE_CHALLAN'
+              ? phWeb.purchaseChallans.any((c) => c.id == envelope.syncId || (c.effectiveOriginalFy == eventFy && c.billNo.trim().toUpperCase() == (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase()))
+              : phWeb.saleChallans.any((c) => c.id == envelope.syncId || (c.effectiveOriginalFy == eventFy && c.billNo.trim().toUpperCase() == (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase())))
+          );
+          if (!existsInActiveWeb && !isDelEnv && status != 'Pending') {
             return vaultChanged;
           }
         } else {
           final bool isPendingChallan = isChallanDoc && status == 'Pending';
           final bool isDeletedChallan = isChallanDoc && isDelEnv;
-          if (!isPendingChallan && !isDeletedChallan) {
+          final bool existsInActiveApp = phApp != null && isChallanDoc && (
+            (docType == 'PURCHASE_CHALLAN'
+              ? phApp.purchaseChallans.any((c) => c.id == envelope.syncId || (c.effectiveOriginalFy == eventFy && c.billNo.trim().toUpperCase() == (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase()))
+              : phApp.saleChallans.any((c) => c.id == envelope.syncId || (c.effectiveOriginalFy == eventFy && c.billNo.trim().toUpperCase() == (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase())))
+          );
+          if (!isPendingChallan && !isDeletedChallan && !existsInActiveApp) {
             return false;
           }
         }
@@ -143,6 +153,48 @@ class MasterSyncOrchestrator {
             D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, sBNo, "", targetFy);
             if (phApp.activeCompany != null) {
               TombstoneEngine.unmarkTombstoneWithTimestamp(phApp.activeCompany!.id, id: envelope.syncId, secondaryKey: sBNo);
+            }
+            final Set<String> targetCids = {};
+            final rawLinks = sBill['linkedChallanIds'];
+            if (rawLinks is List) {
+              for (var l in rawLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            final rawItems = sBill['items'];
+            if (rawItems is List) {
+              for (var it in rawItems) {
+                if (it is Map) {
+                  final scId = (it['sourceChallanId'] ?? '').toString().trim().toUpperCase();
+                  final scNo = (it['sourceChallanNo'] ?? '').toString().trim().toUpperCase();
+                  if (scId.isNotEmpty) targetCids.add(scId);
+                  if (scNo.isNotEmpty) targetCids.add(scNo);
+                }
+              }
+            }
+            if (targetCids.isNotEmpty) {
+              bool cMutated = false;
+              for (var c in phApp.saleChallans) {
+                if (targetCids.contains(c.id.trim().toUpperCase()) || targetCids.contains(c.billNo.trim().toUpperCase())) {
+                  if (c.status != 'Billed') {
+                    c.status = 'Billed';
+                    c.version = envelope.version > c.version ? envelope.version : c.version + 1;
+                    c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                    phApp.propagateChallanStatusAcrossDiskFolders(
+                      challanId: c.id,
+                      newStatus: 'Billed',
+                      isPurchase: false,
+                      customVersion: c.version,
+                      customUpdatedAt: c.updatedAt,
+                    );
+                    cMutated = true;
+                  }
+                }
+              }
+              if (cMutated) {
+                phApp.save();
+                phApp.notifyListeners();
+              }
             }
           }
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phApp.sales, envelope);
@@ -251,6 +303,48 @@ class MasterSyncOrchestrator {
               if (comp2Upper.isNotEmpty && comp2Upper != comp2) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp2Upper, fy: targetFy, timestamp: uTs);
               if (comp3Upper.isNotEmpty && comp3Upper != comp3) TombstoneEngine.unmarkTombstoneWithTimestamp(cid, id: comp3Upper, fy: targetFy, timestamp: uTs);
             }
+            final Set<String> targetPurCids = {};
+            final rawPurLinks = billData['linkedChallanIds'];
+            if (rawPurLinks is List) {
+              for (var l in rawPurLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetPurCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            final rawItems = billData['items'];
+            if (rawItems is List) {
+              for (var it in rawItems) {
+                if (it is Map) {
+                  final scId = (it['sourceChallanId'] ?? '').toString().trim().toUpperCase();
+                  final scNo = (it['sourceChallanNo'] ?? '').toString().trim().toUpperCase();
+                  if (scId.isNotEmpty) targetPurCids.add(scId);
+                  if (scNo.isNotEmpty) targetPurCids.add(scNo);
+                }
+              }
+            }
+            if (targetPurCids.isNotEmpty) {
+              bool cMutated = false;
+              for (var c in phApp.purchaseChallans) {
+                if (targetPurCids.contains(c.id.trim().toUpperCase()) || targetPurCids.contains(c.billNo.trim().toUpperCase())) {
+                  if (c.status != 'Billed') {
+                    c.status = 'Billed';
+                    c.version = envelope.version > c.version ? envelope.version : c.version + 1;
+                    c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                    phApp.propagateChallanStatusAcrossDiskFolders(
+                      challanId: c.id,
+                      newStatus: 'Billed',
+                      isPurchase: true,
+                      customVersion: c.version,
+                      customUpdatedAt: c.updatedAt,
+                    );
+                    cMutated = true;
+                  }
+                }
+              }
+              if (cMutated) {
+                phApp.save();
+                phApp.notifyListeners();
+              }
+            }
           }
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phApp.purchases, envelope, fy: targetFy);
           break;
@@ -269,6 +363,15 @@ class MasterSyncOrchestrator {
             }
           }
           mutated = SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(phApp.saleChallans, envelope);
+          if (mutated && (envelope.billData['status'] ?? '').toString() == 'Billed') {
+            phApp.propagateChallanStatusAcrossDiskFolders(
+              challanId: envelope.syncId,
+              newStatus: 'Billed',
+              isPurchase: false,
+              customVersion: envelope.version,
+              customUpdatedAt: envelope.updatedAt,
+            );
+          }
           break;
         case 'PURCHASE_CHALLAN':
           final pBill = envelope.billData;
@@ -306,6 +409,15 @@ class MasterSyncOrchestrator {
             }
           }
           mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phApp.purchaseChallans, envelope);
+          if (mutated && (envelope.billData['status'] ?? '').toString() == 'Billed') {
+            phApp.propagateChallanStatusAcrossDiskFolders(
+              challanId: envelope.syncId,
+              newStatus: 'Billed',
+              isPurchase: true,
+              customVersion: envelope.version,
+              customUpdatedAt: envelope.updatedAt,
+            );
+          }
           break;
         case 'SALE_RETURN':
         case 'CREDIT_NOTE':
@@ -631,6 +743,47 @@ class MasterSyncOrchestrator {
           } else {
             D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, sBNo, "", targetFy);
             phWeb.unmarkDeletedId(envelope.syncId, referenceNo: sBNo);
+            final Set<String> targetCids = {};
+            final rawLinks = sBill['linkedChallanIds'];
+            if (rawLinks is List) {
+              for (var l in rawLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            final rawItems = sBill['items'];
+            if (rawItems is List) {
+              for (var it in rawItems) {
+                if (it is Map) {
+                  final scId = (it['sourceChallanId'] ?? '').toString().trim().toUpperCase();
+                  final scNo = (it['sourceChallanNo'] ?? '').toString().trim().toUpperCase();
+                  if (scId.isNotEmpty) targetCids.add(scId);
+                  if (scNo.isNotEmpty) targetCids.add(scNo);
+                }
+              }
+            }
+            if (targetCids.isNotEmpty) {
+              bool cMutated = false;
+              for (var c in phWeb.saleChallans) {
+                if (targetCids.contains(c.id.trim().toUpperCase()) || targetCids.contains(c.billNo.trim().toUpperCase())) {
+                  if (c.status != 'Billed') {
+                    c.status = 'Billed';
+                    c.version = envelope.version > c.version ? envelope.version : c.version + 1;
+                    c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                    phWeb.propagateChallanStatusAcrossVault(
+                      challanId: c.id,
+                      newStatus: 'Billed',
+                      isPurchase: false,
+                      customVersion: c.version,
+                      customUpdatedAt: c.updatedAt,
+                    );
+                    cMutated = true;
+                  }
+                }
+              }
+              if (cMutated) {
+                phWeb.notifyListeners();
+              }
+            }
           }
           mutated = SalesSyncModule.mergeIncomingSaleEnvelope(phWeb.sales, envelope);
           break;
@@ -713,6 +866,47 @@ class MasterSyncOrchestrator {
             if (comp3.isNotEmpty) phWeb.unmarkDeletedId(comp3, preserveCase: true, fy: targetFy);
             if (comp2Upper.isNotEmpty && comp2Upper != comp2) phWeb.unmarkDeletedId(comp2Upper, preserveCase: true, fy: targetFy);
             if (comp3Upper.isNotEmpty && comp3Upper != comp3) phWeb.unmarkDeletedId(comp3Upper, preserveCase: true, fy: targetFy);
+            final Set<String> targetPurCids = {};
+            final rawPurLinks = billData['linkedChallanIds'];
+            if (rawPurLinks is List) {
+              for (var l in rawPurLinks) {
+                if (l != null && l.toString().trim().isNotEmpty) targetPurCids.add(l.toString().trim().toUpperCase());
+              }
+            }
+            final rawItems = billData['items'];
+            if (rawItems is List) {
+              for (var it in rawItems) {
+                if (it is Map) {
+                  final scId = (it['sourceChallanId'] ?? '').toString().trim().toUpperCase();
+                  final scNo = (it['sourceChallanNo'] ?? '').toString().trim().toUpperCase();
+                  if (scId.isNotEmpty) targetPurCids.add(scId);
+                  if (scNo.isNotEmpty) targetPurCids.add(scNo);
+                }
+              }
+            }
+            if (targetPurCids.isNotEmpty) {
+              bool cMutated = false;
+              for (var c in phWeb.purchaseChallans) {
+                if (targetPurCids.contains(c.id.trim().toUpperCase()) || targetPurCids.contains(c.billNo.trim().toUpperCase())) {
+                  if (c.status != 'Billed') {
+                    c.status = 'Billed';
+                    c.version = envelope.version > c.version ? envelope.version : c.version + 1;
+                    c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
+                    phWeb.propagateChallanStatusAcrossVault(
+                      challanId: c.id,
+                      newStatus: 'Billed',
+                      isPurchase: true,
+                      customVersion: c.version,
+                      customUpdatedAt: c.updatedAt,
+                    );
+                    cMutated = true;
+                  }
+                }
+              }
+              if (cMutated) {
+                phWeb.notifyListeners();
+              }
+            }
           }
           mutated = PurchaseSyncModule.mergeIncomingPurchaseEnvelope(phWeb.purchases, envelope, fy: targetFy);
           break;
@@ -728,6 +922,15 @@ class MasterSyncOrchestrator {
             D1SalesLedgerService.unmarkPermanentlyDeleted(envelope.syncId, bNo, "", targetFy);
           }
           mutated = SaleChallanSyncModule.mergeIncomingSaleChallanEnvelope(phWeb.saleChallans, envelope);
+          if (mutated && (envelope.billData['status'] ?? '').toString() == 'Billed') {
+            phWeb.propagateChallanStatusAcrossVault(
+              challanId: envelope.syncId,
+              newStatus: 'Billed',
+              isPurchase: false,
+              customVersion: envelope.version,
+              customUpdatedAt: envelope.updatedAt,
+            );
+          }
           break;
         case 'PURCHASE_CHALLAN':
           final pBill = envelope.billData;
@@ -753,6 +956,15 @@ class MasterSyncOrchestrator {
             if (comp3.isNotEmpty) phWeb.unmarkDeletedId(comp3, preserveCase: true, fy: targetFy);
           }
           mutated = PurchaseChallanSyncModule.mergeIncomingPurchaseChallanEnvelope(phWeb.purchaseChallans, envelope);
+          if (mutated && (envelope.billData['status'] ?? '').toString() == 'Billed') {
+            phWeb.propagateChallanStatusAcrossVault(
+              challanId: envelope.syncId,
+              newStatus: 'Billed',
+              isPurchase: true,
+              customVersion: envelope.version,
+              customUpdatedAt: envelope.updatedAt,
+            );
+          }
           break;
         case 'SALE_RETURN':
         case 'CREDIT_NOTE':

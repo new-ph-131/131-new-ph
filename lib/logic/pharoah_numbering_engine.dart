@@ -25,6 +25,19 @@ class PharoahNumberingEngine {
 
     // STEP A: SCAN CURRENT MEMORY FOR THE PREFIX
     for (var item in currentList) {
+      // 🛡️ STRICT FY ISOLATION FOR CHALLAN NUMBERING:
+      // Carry-forward pending challans from prior financial years must NEVER advance or consume
+      // the new financial year's sequential numbers (e.g. Y-1 from 2025-26 must not force 2026-27 to start at Y-2).
+      if (item is SaleChallan) {
+        if (currentFY.isNotEmpty && currentFY != "default_fy" && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != currentFY) {
+          continue;
+        }
+      } else if (item is PurchaseChallan) {
+        if (currentFY.isNotEmpty && currentFY != "default_fy" && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != currentFY) {
+          continue;
+        }
+      }
+
       String idToParse = "";
       
       try {

@@ -54,11 +54,11 @@ class SaleChallanSyncModule {
 
   /// Apply mutation with Monotonic Versioning and LWW Clock Auditing
   static bool applySaleChallanMutation(List<SaleChallan> currentChallans, SaleChallan incoming) {
-    final idx = currentChallans.indexWhere((c) => c.id == incoming.id);
+    final idx = currentChallans.indexWhere((c) => c.id.trim().isNotEmpty && incoming.id.trim().isNotEmpty && c.id.trim() == incoming.id.trim());
     if (incoming.isDeleted == 1) {
       if (idx != -1) {
         final local = currentChallans[idx];
-        if (incoming.updatedAt >= local.updatedAt || incoming.version > local.version) {
+        if (incoming.version > local.version || (incoming.version == local.version && incoming.updatedAt >= local.updatedAt)) {
           currentChallans.removeAt(idx);
           debugPrint("🗑️ [SaleChallanSyncModule] Evicted deleted sale challan: ${incoming.billNo}");
           return true;
@@ -68,18 +68,19 @@ class SaleChallanSyncModule {
     }
     if (idx > -1) {
       final local = currentChallans[idx];
-      if (incoming.version <= local.version && incoming.updatedAt < local.updatedAt) {
-        return false;
-      }
+      // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing
+      if (incoming.version < local.version) return false;
+      if (incoming.version == local.version && incoming.updatedAt < local.updatedAt) return false;
       currentChallans[idx] = incoming;
       return true;
     } else {
-      int billNoIdx = incoming.billNo.isNotEmpty
-          ? currentChallans.indexWhere((c) => c.billNo.trim() == incoming.billNo.trim())
+      // 🛡️ PRIMARY ID RULE: Never match/overwrite if incoming has a non-empty ID that did not match
+      int billNoIdx = (incoming.id.trim().isEmpty && incoming.billNo.isNotEmpty)
+          ? currentChallans.indexWhere((c) => c.id.trim().isEmpty && c.billNo.trim() == incoming.billNo.trim() && c.effectiveOriginalFy == incoming.effectiveOriginalFy)
           : -1;
       if (billNoIdx != -1) {
         final existing = currentChallans[billNoIdx];
-        if (incoming.updatedAt >= existing.updatedAt) {
+        if (incoming.version > existing.version || (incoming.version == existing.version && incoming.updatedAt >= existing.updatedAt)) {
           currentChallans[billNoIdx] = incoming;
           return true;
         }

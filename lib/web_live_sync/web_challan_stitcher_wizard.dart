@@ -216,16 +216,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         sourceTag: "WEB-PORTAL STITCHED",
       );
 
+      // 🛡️ addSaleAndSync already marks linked challans Billed, increments version, and enqueues outbox mutation!
       webPh.addSaleAndSync(newSale);
-      for (var cId in b['challanIds']) {
-        int idx = webPh.saleChallans.indexWhere((c) => c.id == cId || c.billNo == cId);
-        if (idx != -1) {
-          webPh.saleChallans[idx].status = "Billed";
-          webPh.saleChallans[idx].version += 1;
-          webPh.saleChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
-          SaleChallanSyncModule.onSaleChallanSaved(webPh.saleChallans[idx], webPh.activeStoreToken);
-        }
-      }
 
       for (var item in newSale.items) {
         String resolvedKey = item.medicineID;
@@ -264,16 +256,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         sourceTag: "WEB-PORTAL STITCHED",
       );
 
+      // 🛡️ addPurchaseAndSync already marks linked challans Billed, increments version, and enqueues outbox mutation!
       webPh.addPurchaseAndSync(newPurchase);
-      for (var cId in b['challanIds']) {
-        int idx = webPh.purchaseChallans.indexWhere((c) => c.id == cId || c.internalNo == cId || c.billNo == cId);
-        if (idx != -1) {
-          webPh.purchaseChallans[idx].status = "Billed";
-          webPh.purchaseChallans[idx].version += 1;
-          webPh.purchaseChallans[idx].updatedAt = DateTime.now().millisecondsSinceEpoch;
-          PurchaseChallanSyncModule.onPurchaseChallanSaved(webPh.purchaseChallans[idx], webPh.activeStoreToken);
-        }
-      }
 
       for (var item in newPurchase.items) {
         String resolvedKey = item.medicineID;

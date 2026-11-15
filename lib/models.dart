@@ -360,6 +360,8 @@ class Medicine {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
+    'originalFy': effectiveOriginalFy,
+    'original_fy': effectiveOriginalFy,
   };
 
   factory Medicine.fromMap(Map<String, dynamic> map) => Medicine(
@@ -404,6 +406,8 @@ class Party {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
+    'originalFy': effectiveOriginalFy,
+    'original_fy': effectiveOriginalFy,
   };
 
   factory Party.fromMap(Map<String, dynamic> map) => Party(
@@ -558,6 +562,7 @@ class Sale {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
+    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
   );
 
   String get syncId => id;
@@ -573,6 +578,8 @@ class Sale {
         s.updatedAt = int.tryParse(map['updated_at']?.toString() ?? s.updatedAt.toString()) ?? s.updatedAt;
         s.version = int.tryParse(map['version']?.toString() ?? s.version.toString()) ?? s.version;
         s.isDeleted = int.tryParse(map['is_deleted']?.toString() ?? s.isDeleted.toString()) ?? s.isDeleted;
+        final rawOfy = (d['originalFy'] ?? d['original_fy'] ?? map['originalFy'] ?? map['original_fy'] ?? '').toString().trim();
+        if (rawOfy.isNotEmpty) s.originalFy = rawOfy;
         return s;
       }
     }
@@ -636,6 +643,7 @@ class Purchase {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
+    originalFy: (map['originalFy'] ?? map['original_fy'] ?? '').toString().trim(),
   );
 
   String get syncId => id;
@@ -659,7 +667,7 @@ class Purchase {
 }
 
 class SaleChallan { 
-  String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks; DateTime date; List<BillItem> items; double totalAmount; List<ChallanSignature> sigHistory; bool isSigned;
+  String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks, originalFy; DateTime date; List<BillItem> items; double totalAmount; List<ChallanSignature> sigHistory; bool isSigned;
   int updatedAt, version, isDeleted;
 
   SaleChallan({
@@ -668,7 +676,16 @@ class SaleChallan {
     required this.items, required this.totalAmount, this.status = "Pending",
     this.salesmanName = "", this.remarks = "", this.sigHistory = const [], this.isSigned = false,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
+    this.originalFy = "",
   });
+
+  String get effectiveOriginalFy {
+    final clean = originalFy.trim();
+    if (clean.isNotEmpty && clean.contains("-")) {
+      return clean;
+    }
+    return AppDateLogic.getFYForDate(date);
+  }
 
   Map<String, dynamic> toMap() => {
     'id': id, 'billNo': billNo, 'partyId': partyId, 'date': date.toIso8601String(),
@@ -719,7 +736,7 @@ class SaleChallan {
 }
 
 class PurchaseChallan { 
-  String id, internalNo, billNo, partyId, distributorName, status, remarks; DateTime date; List<PurchaseItem> items; double totalAmount;
+  String id, internalNo, billNo, partyId, distributorName, status, remarks, originalFy; DateTime date; List<PurchaseItem> items; double totalAmount;
   int updatedAt, version, isDeleted;
 
   PurchaseChallan({
@@ -727,7 +744,16 @@ class PurchaseChallan {
     required this.date, required this.distributorName, required this.items, required this.totalAmount,
     this.status = "Pending", this.remarks = "",
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
+    this.originalFy = "",
   });
+
+  String get effectiveOriginalFy {
+    final clean = originalFy.trim();
+    if (clean.isNotEmpty && clean.contains("-")) {
+      return clean;
+    }
+    return AppDateLogic.getFYForDate(date);
+  }
 
   Map<String, dynamic> toMap() => {
     'id': id, 'internalNo': internalNo, 'billNo': billNo, 'partyId': partyId,
@@ -1058,17 +1084,22 @@ PurchaseChallan? findDuplicateSupplierChallan({
   String? partyName,
   String? excludeId,
   String? excludeInternalNo,
+  String? targetFy,
 }) {
   final String cleanParty = partyId.trim().toUpperCase();
   final String cleanPartyName = (partyName ?? '').trim().toUpperCase();
   final String cleanBill = billNo.trim();
   final String cleanExId = (excludeId ?? '').trim();
   final String cleanExInt = (excludeInternalNo ?? '').trim().toUpperCase();
+  final String cleanTargetFy = (targetFy ?? '').trim();
   if ((cleanParty.isEmpty && cleanPartyName.isEmpty) || cleanBill.isEmpty) return null;
   for (final c in challans) {
     if (c.isDeleted == 1) continue;
     if (cleanExId.isNotEmpty && c.id.trim() == cleanExId) continue;
     if (cleanExInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanExInt) continue;
+    if (cleanTargetFy.isNotEmpty && c.effectiveOriginalFy.isNotEmpty && c.effectiveOriginalFy != cleanTargetFy) {
+      continue; // 🛡️ FY-Isolated: Carry-forward challan from another FY does not block active FY supplier billNo
+    }
     final String cParty = c.partyId.trim().toUpperCase();
     final bool sameParty = (cleanParty.isNotEmpty && cParty.isNotEmpty)
         ? cParty == cleanParty

@@ -285,19 +285,17 @@ class MultiFyCloudVault {
 
         if (candId.isNotEmpty && exId.isNotEmpty) {
           if (candId == exId) return i;
-          // Distinct non-empty IDs: ONLY match if exact duplicate identity of same (partyId, billNo, internalNo)
-          if (candInt.isNotEmpty &&
-              candInt == exInt &&
-              candParty.isNotEmpty &&
-              candParty == exParty &&
-              candBill.isNotEmpty &&
-              candBill == exBill) {
-            return i;
-          }
+          // 🛡️ PRIMARY ID RULE: Distinct non-empty IDs are strictly distinct records. Never match!
           continue;
         }
 
-        // Legacy fallback when at least one side has an empty ID
+        // Legacy fallback when at least one side has an empty ID:
+        final candFy = (candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString().trim();
+        final exFy = (existing['originalFy'] ?? existing['original_fy'] ?? existing['fy'] ?? '').toString().trim();
+        if (candFy.isNotEmpty && exFy.isNotEmpty && candFy != exFy) {
+          continue; // Distinct financial years: never match legacy fallback!
+        }
+
         if (candInt.isNotEmpty && exInt.isNotEmpty) {
           if (candInt == exInt) {
             if (candParty.isNotEmpty && candBill.isNotEmpty && exParty.isNotEmpty && exBill.isNotEmpty) {
@@ -316,7 +314,35 @@ class MultiFyCloudVault {
       return null;
     }
 
-    return (k.isNotEmpty ? keyToIdx[k] : null) ?? (sec.isNotEmpty ? secKeyToIdx[sec] : null);
+    // 🛡️ PRIMARY ID RULE FOR NON-PURCHASE/SALE CHALLAN DOCS:
+    final candId = (candidate['id'] ?? '').toString().trim();
+    if (candId.isNotEmpty) {
+      if (keyToIdx.containsKey(candId)) {
+        final idx = keyToIdx[candId]!;
+        if (idx >= 0 && idx < mergedList.length && mergedList[idx]['_remove'] != true) {
+          return idx;
+        }
+      }
+      // Non-empty candidate ID did not match exact ID: NEVER fall back to secondary key!
+      return null;
+    }
+
+    // Legacy fallback only when candidate has empty ID:
+    if (sec.isNotEmpty && secKeyToIdx.containsKey(sec)) {
+      final idx = secKeyToIdx[sec]!;
+      if (idx >= 0 && idx < mergedList.length && mergedList[idx]['_remove'] != true) {
+        final exId = (mergedList[idx]['id'] ?? '').toString().trim();
+        if (exId.isEmpty) {
+          if (fileName == 's_challan.json') {
+            final candFy = (candidate['originalFy'] ?? candidate['original_fy'] ?? candidate['fy'] ?? '').toString().trim();
+            final exFy = (mergedList[idx]['originalFy'] ?? mergedList[idx]['original_fy'] ?? mergedList[idx]['fy'] ?? '').toString().trim();
+            if (candFy.isNotEmpty && exFy.isNotEmpty && candFy != exFy) return null;
+          }
+          return idx;
+        }
+      }
+    }
+    return null;
   }
 
   /// Record-level LWW merge between existing local JSON list and incoming cloud JSON list for an FY.

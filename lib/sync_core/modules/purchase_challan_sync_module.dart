@@ -72,16 +72,16 @@ class PurchaseChallanSyncModule {
       if (incoming.id.trim().isNotEmpty && c.id.trim().isNotEmpty) {
         return c.id.trim() == incoming.id.trim();
       }
-      if (cleanInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanInt) {
-        if (cleanBill.isNotEmpty && cleanParty.isNotEmpty &&
-            c.billNo.trim().isNotEmpty && c.partyId.trim().isNotEmpty) {
-          return c.billNo.trim() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty;
+      // 🛡️ PRIMARY ID RULE: Legacy fallback only if at least one ID is empty:
+      if (incoming.id.trim().isEmpty || c.id.trim().isEmpty) {
+        if (cleanInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanInt &&
+            c.effectiveOriginalFy == incoming.effectiveOriginalFy) {
+          if (cleanBill.isNotEmpty && cleanParty.isNotEmpty &&
+              c.billNo.trim().isNotEmpty && c.partyId.trim().isNotEmpty) {
+            return c.billNo.trim() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty;
+          }
+          return true;
         }
-        return incoming.id.trim().isEmpty && c.id.trim().isEmpty;
-      }
-      if (cleanBill.isNotEmpty && cleanParty.isNotEmpty &&
-          c.billNo.trim() == cleanBill && c.partyId.trim().toUpperCase() == cleanParty) {
-        return true;
       }
       return false;
     });
@@ -89,7 +89,7 @@ class PurchaseChallanSyncModule {
     if (incoming.isDeleted == 1) {
       if (idx != -1) {
         final local = currentList[idx];
-        if (incoming.updatedAt >= local.updatedAt || incoming.version > local.version) {
+        if (incoming.version > local.version || (incoming.version == local.version && incoming.updatedAt >= local.updatedAt)) {
           currentList.removeAt(idx);
           debugPrint("🗑️ [PurchaseChallanSyncModule] Evicted deleted purchase challan: ${incoming.internalNo}");
           return true;
@@ -100,7 +100,9 @@ class PurchaseChallanSyncModule {
 
     if (idx != -1) {
       final local = currentList[idx];
-      if (incoming.version <= local.version && incoming.updatedAt < local.updatedAt) return false;
+      // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing
+      if (incoming.version < local.version) return false;
+      if (incoming.version == local.version && incoming.updatedAt < local.updatedAt) return false;
       currentList[idx] = incoming;
       return true;
     } else {

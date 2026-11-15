@@ -1122,6 +1122,126 @@ class D1SalesLedgerService {
     return mutated;
   }
 
+  /// Extracts `linkedChallanIds` + item `sourceChallanId` from any D1 `sale_events`
+  /// INSERT/UPDATE event and safely marks matching SaleChallans / PurchaseChallans
+  /// as `"Billed"` within `targetFy`.
+  /// Idempotent & LWW-safe: will NOT mark billed if the event is older than the challan's updatedAt.
+  static ({bool saleChallansMutated, bool purchaseChallansMutated}) billLinkedChallansFromSaveEvents({
+    required List<Map<String, dynamic>> events,
+    required String targetFy,
+    List<SaleChallan>? saleChallans,
+    List<PurchaseChallan>? purchaseChallans,
+    void Function(SaleChallan)? onSaleChallanBilled,
+    void Function(PurchaseChallan)? onPurchaseChallanBilled,
+  }) {
+    if (events.isEmpty || targetFy.trim().isEmpty) {
+      return (saleChallansMutated: false, purchaseChallansMutated: false);
+    }
+    final String effFy = targetFy.trim();
+    bool scMutated = false;
+    bool pcMutated = false;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+
+    for (final ev in events) {
+      final String action = (ev["action"] ?? "").toString().toUpperCase();
+      final dynamic rawData = ev["sale_data"];
+      final bool payloadDel = rawData is Map &&
+          ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+              rawData["status"] == "Deleted");
+      if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
+        continue;
+      }
+
+      if (rawData is Map &&
+          (rawData["doc_type"] == "SALE_CHALLAN" ||
+           rawData["doc_type"] == "PURCHASE_CHALLAN" ||
+           rawData["doc_type"] == "CHALLAN" ||
+           rawData["doc_type"] == "VOUCHER" ||
+           rawData["doc_type"] == "SALE_RETURN" ||
+           rawData["doc_type"] == "CREDIT_NOTE" ||
+           rawData["doc_type"] == "PURCHASE_RETURN" ||
+           rawData["doc_type"] == "DEBIT_NOTE" ||
+           rawData["doc_type"] == "GST_DIARY_SESSION" ||
+           rawData["doc_type"] == "GST_SESSION")) {
+        continue;
+      }
+
+      final String evFy = (ev["fy"] ?? (rawData is Map ? rawData["fy"] : "") ?? "").toString().trim();
+      DateTime? evDate;
+      if (rawData is Map && rawData["date"] != null) {
+        evDate = DateTime.tryParse(rawData["date"].toString());
+      }
+      if (evFy.isNotEmpty && evFy != effFy) continue;
+      if (evDate != null && !doesEventBelongToActiveFY(rawData, evDate, effFy)) continue;
+
+      final bool isPurchaseEvent = action.contains("PURCHASE") ||
+          (rawData is Map &&
+              (rawData["doc_type"] == "PURCHASE" ||
+               rawData.containsKey("distributorName") ||
+               rawData.containsKey("internalNo")));
+
+      final int evTs = int.tryParse(
+            (rawData is Map ? (rawData["updatedAt"] ?? rawData["updated_at"]) : null)?.toString() ??
+                ev["created_at"]?.toString() ??
+                "0",
+          ) ??
+          0;
+      final int evVer = int.tryParse(ev["version"]?.toString() ?? "1") ?? 1;
+
+      final Set<String> targetCids = {};
+      if (rawData is Map) {
+        if (rawData["linkedChallanIds"] is List) {
+          for (final l in (rawData["linkedChallanIds"] as List)) {
+            if (l != null && l.toString().trim().isNotEmpty) {
+              targetCids.add(l.toString().trim().toUpperCase());
+            }
+          }
+        }
+        if (rawData["items"] is List) {
+          for (final item in (rawData["items"] as List)) {
+            if (item is Map) {
+              final scId = (item["sourceChallanId"] ?? "").toString().trim().toUpperCase();
+              final scNo = (item["sourceChallanNo"] ?? "").toString().trim().toUpperCase();
+              if (scId.isNotEmpty) targetCids.add(scId);
+              if (scNo.isNotEmpty && !targetCids.contains(scId)) targetCids.add(scNo);
+            }
+          }
+        }
+      }
+
+      if (targetCids.isEmpty) continue;
+
+      if (isPurchaseEvent && purchaseChallans != null) {
+        for (final ch in purchaseChallans) {
+          if (ch.isDeleted == 1) continue;
+          final bool match = targetCids.contains(ch.id.trim().toUpperCase()) ||
+              (ch.internalNo.trim().isNotEmpty && targetCids.contains(ch.internalNo.trim().toUpperCase()));
+          if (match && ch.status != "Billed" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
+            ch.status = "Billed";
+            ch.version = (ch.version < evVer ? evVer : ch.version) + 1;
+            ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
+            onPurchaseChallanBilled?.call(ch);
+            pcMutated = true;
+          }
+        }
+      } else if (!isPurchaseEvent && saleChallans != null) {
+        for (final ch in saleChallans) {
+          if (ch.isDeleted == 1) continue;
+          final bool match = targetCids.contains(ch.id.trim().toUpperCase()) ||
+              (ch.billNo.trim().isNotEmpty && targetCids.contains(ch.billNo.trim().toUpperCase()));
+          if (match && ch.status != "Billed" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
+            ch.status = "Billed";
+            ch.version = (ch.version < evVer ? evVer : ch.version) + 1;
+            ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
+            onSaleChallanBilled?.call(ch);
+            scMutated = true;
+          }
+        }
+      }
+    }
+    return (saleChallansMutated: scMutated, purchaseChallansMutated: pcMutated);
+  }
+
   /// Extracts `linkedChallanIds` + item `sourceChallanId`/`sourceChallanNo` from any D1 `sale_events`
   /// DELETE event (paired with local bills before deletion) and safely reverts matching SaleChallans /
   /// PurchaseChallans back to `"Pending"` within `targetFy`.

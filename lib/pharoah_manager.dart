@@ -730,6 +730,13 @@ Future<void> finalizeSale({
             if (activeToken.isNotEmpty) {
               SaleChallanSyncModule.onSaleChallanSaved(c, activeToken);
             }
+            propagateChallanStatusAcrossDiskFolders(
+              challanId: c.id,
+              newStatus: "Billed",
+              isPurchase: false,
+              customVersion: c.version,
+              customUpdatedAt: c.updatedAt,
+            );
           }
         }
       }
@@ -901,6 +908,13 @@ Future<bool> finalizePurchase({
             if (activeToken.isNotEmpty) {
               PurchaseChallanSyncModule.onPurchaseChallanSaved(c, activeToken);
             }
+            propagateChallanStatusAcrossDiskFolders(
+              challanId: c.id,
+              newStatus: "Billed",
+              isPurchase: true,
+              customVersion: c.version,
+              customUpdatedAt: c.updatedAt,
+            );
           }
         }
       }
@@ -1133,6 +1147,53 @@ Future<bool> finalizePurchase({
   }
 
 // --- CHALLANS & RETURNS ---
+  /// 🛡️ CROSS-FY CHALLAN STATUS PROPAGATOR (App Local Files):
+  /// When a Carry-Forward challan is Billed or reverted to Pending in the active FY,
+  /// this helper updates the existing copy with the same immutable UUID in the original FY
+  /// (and any intermediate FYs) on disk without creating any new records or resurrecting deleted ones.
+  Future<void> propagateChallanStatusAcrossDiskFolders({
+    required String challanId,
+    required String newStatus,
+    required bool isPurchase,
+    int? customVersion,
+    int? customUpdatedAt,
+  }) async {
+    if (activeCompany == null || challanId.trim().isEmpty) return;
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final basePath = '${root.path}/Pharoah_Data/${activeCompany!.id}/${activeCompany!.businessType}';
+      final fileName = isPurchase ? 'p_challan.json' : 's_challan.json';
+      final nowMs = customUpdatedAt ?? DateTime.now().millisecondsSinceEpoch;
+      final cleanTargetId = challanId.trim();
+
+      for (final fy in activeCompany!.fYears) {
+        if (fy == currentFY) continue;
+        final file = File('$basePath/$fy/$fileName');
+        if (!file.existsSync()) continue;
+        final raw = jsonDecode(file.readAsStringSync());
+        if (raw is! List) continue;
+        bool modified = false;
+        final updatedList = raw.map((item) {
+          if (item is Map && (item['id'] ?? '').toString().trim() == cleanTargetId) {
+            if ((item['isDeleted'] ?? 0) != 1) {
+              item['status'] = newStatus;
+              item['version'] = customVersion ?? ((item['version'] ?? 1) + 1);
+              item['updatedAt'] = nowMs;
+              modified = true;
+            }
+          }
+          return item;
+        }).toList();
+        if (modified) {
+          await file.writeAsString(jsonEncode(updatedList));
+          debugPrint("✅ [App Cross-FY] Propagated challan $cleanTargetId status=$newStatus in $fy");
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠ [propagateChallanStatusAcrossDiskFolders] Error: $e");
+    }
+  }
+
   Future<void> finalizeSaleChallan({
     required String billNo, 
     required DateTime date, 
@@ -1146,7 +1207,10 @@ Future<bool> finalizePurchase({
     final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final cleanBNo = billNo.trim().toUpperCase();
-    final int existingIdx = saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo));
+    final bool isEditMode = existingId != null && existingId.isNotEmpty;
+    final int existingIdx = isEditMode
+        ? saleChallans.indexWhere((c) => c.id == cId)
+        : saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.effectiveOriginalFy == currentFY));
     if (existingIdx != -1) {
       currentVer = saleChallans[existingIdx].version + 1;
     }
@@ -1154,7 +1218,14 @@ Future<bool> finalizePurchase({
       await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo);
       D1SalesLedgerService.unmarkPermanentlyDeleted(cId, billNo);
     }
-    saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo));
+    if (isEditMode) {
+      saleChallans.removeWhere((c) => c.id == cId);
+    } else {
+      saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.effectiveOriginalFy == currentFY));
+    }
+    final String targetOfy = (existingIdx != -1)
+        ? saleChallans[existingIdx].effectiveOriginalFy
+        : currentFY;
     final newChallan = SaleChallan(
       id: cId, 
       billNo: billNo, 
@@ -1168,6 +1239,7 @@ Future<bool> finalizePurchase({
       remarks: remarks,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       version: currentVer,
+      originalFy: targetOfy,
     );
     saleChallans.add(newChallan);
     if (activeCompany != null) {
@@ -1224,7 +1296,10 @@ Future<bool> finalizePurchase({
     final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final cleanINo = internalNo.trim().toUpperCase();
-    final int existingIdx = purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
+    final bool isEditMode = existingId != null && existingId.isNotEmpty;
+    final int existingIdx = isEditMode
+        ? purchaseChallans.indexWhere((c) => c.id == cId)
+        : purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && c.effectiveOriginalFy == currentFY));
     final PurchaseChallan? dupChallan = findDuplicateSupplierChallan(
       challans: purchaseChallans,
       partyId: partyId,
@@ -1232,6 +1307,7 @@ Future<bool> finalizePurchase({
       billNo: billNo,
       excludeId: existingIdx != -1 ? purchaseChallans[existingIdx].id : cId,
       excludeInternalNo: existingIdx != -1 ? purchaseChallans[existingIdx].internalNo : internalNo,
+      targetFy: currentFY,
     );
     if (dupChallan != null) return false;
     if (existingIdx != -1) {
@@ -1247,7 +1323,14 @@ Future<bool> finalizePurchase({
       if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: currentFY);
       D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, currentFY);
     }
-    purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo));
+    if (isEditMode) {
+      purchaseChallans.removeWhere((c) => c.id == cId);
+    } else {
+      purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && c.effectiveOriginalFy == currentFY));
+    }
+    final String targetOfy = (existingIdx != -1)
+        ? purchaseChallans[existingIdx].effectiveOriginalFy
+        : currentFY;
     final newPChallan = PurchaseChallan(
       id: cId, 
       internalNo: internalNo, 
@@ -1260,6 +1343,7 @@ Future<bool> finalizePurchase({
       remarks: remarks,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       version: currentVer,
+      originalFy: targetOfy,
     );
     purchaseChallans.add(newPChallan);
     if (activeCompany != null) {
@@ -2813,6 +2897,13 @@ void registerBatchActivity({
               revertedChallanBillNos.add(c.billNo);
             }
             D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, "", delFy);
+            propagateChallanStatusAcrossDiskFolders(
+              challanId: c.id,
+              newStatus: "Pending",
+              isPurchase: false,
+              customVersion: c.version,
+              customUpdatedAt: revTs,
+            );
           }
         }
       }
@@ -2924,6 +3015,13 @@ void registerBatchActivity({
             if (c.billNo.isNotEmpty) revertedPChallanNos.add(c.billNo);
             D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, c.internalNo, delFy);
             D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, delFy);
+            propagateChallanStatusAcrossDiskFolders(
+              challanId: c.id,
+              newStatus: "Pending",
+              isPurchase: true,
+              customVersion: c.version,
+              customUpdatedAt: revTs,
+            );
           }
         }
       }

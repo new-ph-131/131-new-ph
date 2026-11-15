@@ -199,13 +199,24 @@ class DeltaMergeEngine {
           }
         }
 
-        // Match in active local list
+        // 🛡️ PRIMARY ID RULE: Exact UUID match when both IDs exist; legacy fallback only when one ID is empty
         int idx = localList.indexWhere((e) {
-          if (getId(e) == id) return true;
+          final String localId = getId(e).trim();
+          if (id.isNotEmpty && localId.isNotEmpty) {
+            return id == localId;
+          }
           final localBNo = isCompositeDoc ? getBillNo(e).trim() : getBillNo(e).trim().toUpperCase();
           if (compositeKey.isNotEmpty && localBNo == compositeKey) return true;
           if (intNoKey.isNotEmpty && (localBNo == intNoKey || localBNo == "INT:$intNoKey" || localBNo.endsWith("_$intNoKey"))) return true;
-          if (!isCompositeDoc && bNoKey.isNotEmpty && localBNo == bNoKey) return true;
+          if (!isCompositeDoc && bNoKey.isNotEmpty && localBNo == bNoKey) {
+            if (e is SaleChallan) {
+              final cloudFy = (cloudMap["originalFy"] ?? cloudMap["original_fy"] ?? "").toString().trim();
+              if (cloudFy.isNotEmpty && e.effectiveOriginalFy.isNotEmpty && cloudFy != e.effectiveOriginalFy) {
+                return false;
+              }
+            }
+            return true;
+          }
           return false;
         });
 
@@ -235,10 +246,9 @@ class DeltaMergeEngine {
           int localTimestamp = (localMap["updated_at"] ?? localMap["updatedAt"] ?? 0).toInt();
           int localVer = (localMap["version"] ?? 1).toInt();
 
-          // 🛡️ Last-Write-Wins (LWW) Clock Auditing
+          // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing
           if (cloudVersion > localVer ||
               (cloudVersion == localVer && cloudTimestamp >= localTimestamp) ||
-              (getId(localItem) != id && cloudTimestamp > localTimestamp) ||
               localTimestamp == 0) {
             localList[idx] = fromMap(cloudMap);
             changed = true;
@@ -256,7 +266,15 @@ class DeltaMergeEngine {
       for (var item in localList) {
         String bNo = getCloudCompositeKey != null ? getBillNo(item).trim() : getBillNo(item).trim().toUpperCase();
         String itemId = getId(item).trim();
-        String dedupKey = bNo.isNotEmpty ? bNo : (itemId.isNotEmpty ? "ID:$itemId" : "");
+        String dedupKey = "";
+        if (itemId.isNotEmpty) {
+          dedupKey = "ID:$itemId";
+        } else if (bNo.isNotEmpty) {
+          final String fyScope = (item is SaleChallan)
+              ? item.effectiveOriginalFy
+              : ((item is PurchaseChallan) ? item.effectiveOriginalFy : activeFy);
+          dedupKey = "$fyScope::$bNo";
+        }
 
         if (dedupKey.isNotEmpty) {
           if (!uniqueByBillNo.containsKey(dedupKey)) {

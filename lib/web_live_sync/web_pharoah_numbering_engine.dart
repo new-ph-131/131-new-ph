@@ -13,9 +13,11 @@ class WebPharoahNumberingEngine {
     required String prefix,
     required int startFrom,
     required List<dynamic> currentList,
+    String? targetFy,
   }) {
     List<int> existingNumbers = [];
     final String cleanPrefix = prefix.trim().toUpperCase();
+    final String cleanTargetFy = (targetFy ?? '').trim();
 
     for (var item in currentList) {
       String idToParse = "";
@@ -25,8 +27,16 @@ class WebPharoahNumberingEngine {
         } else if (item is Purchase) {
           idToParse = item.internalNo;
         } else if (item is SaleChallan) {
+          // 🛡️ STRICT FY ISOLATION: Do not count carry-forward challans from prior financial years
+          if (cleanTargetFy.isNotEmpty && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != cleanTargetFy) {
+            continue;
+          }
           idToParse = item.billNo;
         } else if (item is PurchaseChallan) {
+          // 🛡️ STRICT FY ISOLATION: Do not count carry-forward purchase challans from prior financial years
+          if (cleanTargetFy.isNotEmpty && item.effectiveOriginalFy.isNotEmpty && item.effectiveOriginalFy != cleanTargetFy) {
+            continue;
+          }
           idToParse = item.internalNo;
         } else if (item is SaleReturn) {
           idToParse = item.billNo;
@@ -37,6 +47,10 @@ class WebPharoahNumberingEngine {
         } else if (item is Medicine) {
           idToParse = item.systemId;
         } else if (item is Map<String, dynamic>) {
+          final String mapFy = (item['originalFy'] ?? item['original_fy'] ?? item['fy'] ?? '').toString().trim();
+          if (cleanTargetFy.isNotEmpty && mapFy.isNotEmpty && mapFy != cleanTargetFy) {
+            continue;
+          }
           idToParse = (item['billNo'] ??
                   item['internalNo'] ??
                   item['voucherNo'] ??

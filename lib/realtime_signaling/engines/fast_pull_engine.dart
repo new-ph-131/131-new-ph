@@ -153,6 +153,14 @@ class FastPullEngine {
             );
             final bool d1ScReverted = d1ChRev.saleChallansMutated;
             final bool d1PcReverted = d1ChRev.purchaseChallansMutated;
+            final d1ChBill = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
+              events: edgeEvents,
+              targetFy: targetFyAtStart,
+              saleChallans: ph.saleChallans,
+              purchaseChallans: ph.purchaseChallans,
+            );
+            final bool d1ScBilled = d1ChBill.saleChallansMutated;
+            final bool d1PcBilled = d1ChBill.purchaseChallansMutated;
             bool d1SalesMutated = D1SalesLedgerService.applyEventsToLocalSales(ph.sales, edgeEvents, targetFyAtStart);
             bool d1PurcMutated = D1SalesLedgerService.applyEventsToLocalPurchases(ph.purchases, edgeEvents, targetFyAtStart);
             bool d1VoucMutated = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents, targetFyAtStart);
@@ -315,7 +323,7 @@ class FastPullEngine {
                 newUnmarkKeys.add(D1SalesLedgerService.scopeSecondaryKey(ch.internalNo, targetFyAtStart));
               }
             }
-            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated || d1ScReverted || d1PcReverted) {
+            if (d1SalesMutated || d1PurcMutated || d1VoucMutated || d1SrMutated || d1PrMutated || d1GstMutated || d1CfgMutated || d1SeriesMutated || d1ScReverted || d1PcReverted || d1ScBilled || d1PcBilled) {
               d1AnyMutated = true;
               if (d1SalesMutated || d1PurcMutated || d1SrMutated || d1PrMutated) {
                 InventoryLogicCenter.rebuildAllInventory(
@@ -337,12 +345,12 @@ class FastPullEngine {
                   jsonEncode(ph.purchases.map((e) => e.toMap()).toList()),
                 );
               }
-              if (d1ScReverted) {
+              if (d1ScReverted || d1ScBilled) {
                 await File('$workingDir/s_challan.json').writeAsString(
                   jsonEncode(ph.saleChallans.map((e) => e.toMap()).toList()),
                 );
               }
-              if (d1PcReverted) {
+              if (d1PcReverted || d1PcBilled) {
                 await File('$workingDir/p_challan.json').writeAsString(
                   jsonEncode(ph.purchaseChallans.map((e) => e.toMap()).toList()),
                 );
