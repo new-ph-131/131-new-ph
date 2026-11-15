@@ -118,10 +118,12 @@ class D1SalesLedgerService {
     if (k.startsWith("PARTY-") && !k.contains("_")) return false;
     if (k.startsWith("MED_") || (k.startsWith("PH-") && RegExp(r"^PH-\d{4,}$").hasMatch(k))) return false;
 
-    // Timestamps (e.g. 1712345678901) or ISO dates or standard UUIDs (including prefixed UUIDs like PUR-UUID-101)
+    // Timestamps (e.g. 1712345678901) or ISO dates or standard UUIDs (including prefixed UUIDs like PUR-UUID-101, SCH-WEB-<ms>, PCH-WEB-<ms>)
     if (RegExp(r"^\d{10,}$").hasMatch(k) || RegExp(r"^\d{4}-\d{2}-\d{2}").hasMatch(k) ||
         RegExp(r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$").hasMatch(k) ||
-        k.contains("-UUID-") || (k.contains("-") && k.length >= 24)) {
+        k.contains("-UUID-") ||
+        RegExp(r"-WEB-\d{10,}").hasMatch(k) ||
+        (k.contains("-") && k.length >= 24)) {
       return false;
     }
 
@@ -503,6 +505,28 @@ class D1SalesLedgerService {
       }
     }
     return true;
+  }
+
+  /// Strict UUID-first gravestone check for PurchaseChallans (mirrors [isSaleChallanDeleted]).
+  /// When [id] is non-empty, ONLY checks the immutable UUID (via [isPurchaseIdDeleted]),
+  /// so a carry-forward or new-FY PurchaseChallan sharing `WPCH-1` / `PCH-1` or supplier `billNo`
+  /// is never poisoned by a secondary tombstone from another UUID.
+  static bool isPurchaseChallanDeleted(
+    String id,
+    String partyId,
+    String billNo, [
+    String internalNo = "",
+    String? fy,
+    int? recordUpdatedAt,
+  ]) {
+    final cleanId = id.trim();
+    if (isPurchaseIdDeleted(cleanId, fy)) {
+      return true;
+    }
+    if (cleanId.isNotEmpty) {
+      return false;
+    }
+    return isPurchaseDeleted(id, partyId, billNo, internalNo, fy, recordUpdatedAt);
   }
 
   static int getPurchaseIdKnownVersion(String id, [String? fy]) {

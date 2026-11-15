@@ -998,5 +998,240 @@ void main() {
       expect(webPh.saleChallans.length, equals(2));
       expect(webPh.unmarkedRecordIds.contains('2026-27::WSCH-1'), isTrue);
     });
+
+    test('T18: App loadAllData, silent reload & pending cascade preserve both Old-FY CF WSCH-1 and New-FY WSCH-1 despite 2026-27::WSCH-1 secondary tombstone', () async {
+      const compId = 'COMP_CH_T18_WSCH';
+      const bizType = 'WHOLESALE';
+      const oldFy = '2025-26';
+      const newFy = '2026-27';
+
+      expect(D1SalesLedgerService.isUnscopedSeriesKey('SCH-WEB-1712345678901'), isFalse);
+      expect(D1SalesLedgerService.isUnscopedSeriesKey('PCH-WEB-1712345678901'), isFalse);
+
+      final oldDir = Directory('${mockDocsDir.path}/Pharoah_Data/$compId/$bizType/$oldFy');
+      final newDir = Directory('${mockDocsDir.path}/Pharoah_Data/$compId/$bizType/$newFy');
+      await oldDir.create(recursive: true);
+      await newDir.create(recursive: true);
+
+      final scOldPending = makeSaleChallan(
+        id: 'SCH-WEB-1710000000001',
+        billNo: 'WSCH-1',
+        date: DateTime(2026, 2, 15),
+        status: 'Pending',
+        originalFy: oldFy,
+        version: 1,
+        updatedAt: 10000,
+      );
+      final scNewPending = makeSaleChallan(
+        id: 'SCH-WEB-1710000000002',
+        billNo: 'WSCH-1',
+        date: DateTime(2026, 5, 10),
+        status: 'Pending',
+        originalFy: newFy,
+        version: 1,
+        updatedAt: 20000,
+      );
+
+      // Poison secondary key 2026-27::WSCH-1 & 2025-26::WSCH-1 (simulating an earlier deleted copy on D1/Drive)
+      D1SalesLedgerService.markSaleChallanPermanentlyDeleted('SCH-WEB-1710000000999', 'WSCH-1', newFy, 999999);
+      await TombstoneEngine.recordBatchTombstones(
+        compId,
+        ['SCH-WEB-1710000000999', '2026-27::WSCH-1'],
+        timestamp: 999999,
+        fy: newFy,
+      );
+
+      await File('${oldDir.path}/s_challan.json').writeAsString(jsonEncode([scOldPending.toMap()]));
+      await File('${newDir.path}/s_challan.json').writeAsString(jsonEncode([scOldPending.toMap(), scNewPending.toMap()]));
+
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'T18 ERP',
+        businessType: bizType,
+        createdAt: DateTime(2025, 4, 1),
+        password: 'pw',
+        fYears: [oldFy, newFy],
+      );
+      ph.currentFY = newFy;
+      D1SalesLedgerService.activeFinancialYear = newFy;
+
+      // 1) loadAllData must keep BOTH distinct-UUID WSCH-1 challans (Old CF + New FY)
+      await ph.loadAllData();
+      expect(ph.saleChallans.length, equals(2));
+      expect(ph.saleChallans.map((c) => c.id).toSet(), equals({'SCH-WEB-1710000000001', 'SCH-WEB-1710000000002'}));
+
+      // 2) syncPendingChallansFromPreviousYears must NOT evict SCH-WEB-1710000000001 due to 2026-27::WSCH-1
+      await ph.syncPendingChallansFromPreviousYears(reloadActiveIfMutated: false);
+      final newDiskAfterCascade = (jsonDecode(await File('${newDir.path}/s_challan.json').readAsString()) as List);
+      expect(newDiskAfterCascade.length, equals(2));
+
+      // 3) Silent maintenance reload must also keep both
+      ph.loadDataForMaintenanceSilently();
+      expect(ph.saleChallans.length, equals(2));
+    });
+
+    test('T19: Reverse App->Web & App<->App: App-created Old-FY SCH-1 CF + New-FY SCH-1 survive on both App & Web', () async {
+      const compId = 'COMP_CH_T19_REV';
+      const bizType = 'WHOLESALE';
+      const oldFy = '2025-26';
+      const newFy = '2026-27';
+
+      final oldDir = Directory('${mockDocsDir.path}/Pharoah_Data/$compId/$bizType/$oldFy');
+      final newDir = Directory('${mockDocsDir.path}/Pharoah_Data/$compId/$bizType/$newFy');
+      await oldDir.create(recursive: true);
+      await newDir.create(recursive: true);
+
+      final appOldSc = makeSaleChallan(
+        id: '2026-02-10 10:15:00.123456',
+        billNo: 'SCH-1',
+        date: DateTime(2026, 2, 10),
+        status: 'Pending',
+        originalFy: oldFy,
+        version: 1,
+        updatedAt: 10000,
+      );
+      final appNewSc = makeSaleChallan(
+        id: '2026-05-10 11:20:00.654321',
+        billNo: 'SCH-1',
+        date: DateTime(2026, 5, 10),
+        status: 'Pending',
+        originalFy: newFy,
+        version: 1,
+        updatedAt: 20000,
+      );
+
+      D1SalesLedgerService.markSaleChallanPermanentlyDeleted('2026-05-01 09:00:00.000999', 'SCH-1', newFy, 999999);
+      await File('${oldDir.path}/s_challan.json').writeAsString(jsonEncode([appOldSc.toMap()]));
+      await File('${newDir.path}/s_challan.json').writeAsString(jsonEncode([appNewSc.toMap()]));
+
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'T19 ERP',
+        businessType: bizType,
+        createdAt: DateTime(2025, 4, 1),
+        password: 'pw',
+        fYears: [oldFy, newFy],
+      );
+      ph.currentFY = newFy;
+      D1SalesLedgerService.activeFinancialYear = newFy;
+
+      await ph.syncPendingChallansFromPreviousYears(reloadActiveIfMutated: true);
+      await ph.loadAllData();
+      expect(ph.saleChallans.length, equals(2));
+      expect(
+        ph.saleChallans.map((c) => c.id).toSet(),
+        equals({'2026-02-10 10:15:00.123456', '2026-05-10 11:20:00.654321'}),
+      );
+
+      final webPh = PharoahWebManager();
+      webPh.availableFinancialYears = [oldFy, newFy];
+      webPh.financialYear = newFy;
+      webPh.debugParseDownloadedFiles({
+        's_challan.json': jsonEncode([appOldSc.toMap(), appNewSc.toMap()]),
+      });
+      expect(webPh.saleChallans.length, equals(2));
+    });
+
+    test('T20: PurchaseChallan WPCH-1 / PCH-1 with shared supplier billNo across FYs survives App & Web load, parse & cascade despite secondary tombstone', () async {
+      const compId = 'COMP_CH_T20_PUR';
+      const bizType = 'WHOLESALE';
+      const oldFy = '2025-26';
+      const newFy = '2026-27';
+
+      final oldDir = Directory('${mockDocsDir.path}/Pharoah_Data/$compId/$bizType/$oldFy');
+      final newDir = Directory('${mockDocsDir.path}/Pharoah_Data/$compId/$bizType/$newFy');
+      await oldDir.create(recursive: true);
+      await newDir.create(recursive: true);
+
+      final pcOldPending = makePurchaseChallan(
+        id: 'PCH-WEB-1710000000001',
+        internalNo: 'WPCH-1',
+        billNo: 'SUP-INV-100',
+        partyId: 'SUP-1',
+        date: DateTime(2026, 2, 15),
+        status: 'Pending',
+        originalFy: oldFy,
+        version: 1,
+        updatedAt: 10000,
+      );
+      final pcNewPending = makePurchaseChallan(
+        id: 'PCH-WEB-1710000000002',
+        internalNo: 'WPCH-1',
+        billNo: 'SUP-INV-100',
+        partyId: 'SUP-1',
+        date: DateTime(2026, 5, 10),
+        status: 'Pending',
+        originalFy: newFy,
+        version: 1,
+        updatedAt: 20000,
+      );
+
+      // Simulate an earlier deleted PurchaseChallan in 2026-27 or 2025-26 at a newer timestamp
+      D1SalesLedgerService.markPurchasePermanentlyDeleted(
+        'PCH-WEB-1710000000999',
+        'SUP-1',
+        'SUP-INV-100',
+        'WPCH-1',
+        newFy,
+        999999,
+      );
+      expect(
+        D1SalesLedgerService.isPurchaseChallanDeleted('PCH-WEB-1710000000999', 'SUP-1', 'SUP-INV-100', 'WPCH-1', newFy, 10000),
+        isTrue,
+      );
+      expect(
+        D1SalesLedgerService.isPurchaseChallanDeleted('PCH-WEB-1710000000002', 'SUP-1', 'SUP-INV-100', 'WPCH-1', newFy, 20000),
+        isFalse,
+      );
+
+      await TombstoneEngine.recordBatchTombstones(
+        compId,
+        ['PCH-WEB-1710000000999', '2026-27::WPCH-1', '2026-27::SUP-1_SUP-INV-100_WPCH-1'],
+        timestamp: 999999,
+        fy: newFy,
+      );
+
+      await File('${oldDir.path}/p_challan.json').writeAsString(jsonEncode([pcOldPending.toMap()]));
+      await File('${newDir.path}/p_challan.json').writeAsString(jsonEncode([pcNewPending.toMap()]));
+
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'T20 ERP',
+        businessType: bizType,
+        createdAt: DateTime(2025, 4, 1),
+        password: 'pw',
+        fYears: [oldFy, newFy],
+      );
+      ph.currentFY = newFy;
+      D1SalesLedgerService.activeFinancialYear = newFy;
+
+      await ph.syncPendingChallansFromPreviousYears(reloadActiveIfMutated: true);
+      await ph.loadAllData();
+      expect(ph.purchaseChallans.length, equals(2));
+      expect(
+        ph.purchaseChallans.map((c) => c.id).toSet(),
+        equals({'PCH-WEB-1710000000001', 'PCH-WEB-1710000000002'}),
+      );
+
+      final webPh = PharoahWebManager();
+      webPh.availableFinancialYears = [oldFy, newFy];
+      webPh.financialYear = newFy;
+      webPh.localTombstoneRegistry['2026-27::WPCH-1'] = 999999;
+      webPh.localTombstoneRegistry['2025-26::WPCH-1'] = 999999;
+      webPh.fyVault[oldFy] = {'p_challan.json': jsonEncode([pcOldPending.toMap()])};
+      webPh.fyVault[newFy] = {'p_challan.json': jsonEncode([pcNewPending.toMap()])};
+      webPh.debugCascadeVaultFrom(oldFy);
+      webPh.debugParseDownloadedFiles({
+        'p_challan.json': jsonEncode([pcOldPending.toMap(), pcNewPending.toMap()]),
+      });
+      expect(webPh.purchaseChallans.length, equals(2));
+      expect(
+        webPh.purchaseChallans.map((c) => c.id).toSet(),
+        equals({'PCH-WEB-1710000000001', 'PCH-WEB-1710000000002'}),
+      );
+    });
   });
 }

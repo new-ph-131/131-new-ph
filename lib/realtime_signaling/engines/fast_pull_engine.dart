@@ -248,8 +248,15 @@ class FastPullEngine {
                   }
                 }
               } else {
+                final String rawEvOfy = (rawPayload is Map)
+                    ? (rawPayload["originalFy"] ?? rawPayload["original_fy"] ?? "").toString().trim()
+                    : "";
+                final String effEvtFy = rawEvOfy.isNotEmpty ? rawEvOfy : targetFyAtStart;
                 // Skip unmarking if already marked deleted in D1/tombstones (e.g. from later deleted copy)
-                final bool blockedByTomb = (bId.isNotEmpty && (localTombstones.contains(bId) || D1SalesLedgerService.isBillDeleted(bId, "", "", targetFyAtStart)));
+                final bool blockedByTomb = (bId.isNotEmpty &&
+                    (localTombstones.contains(bId) ||
+                     localTombstones.contains(bId.toUpperCase()) ||
+                     D1SalesLedgerService.isBillDeleted(bId, "", "", effEvtFy)));
                 if (blockedByTomb) continue;
                 if (bId.isNotEmpty) {
                   newUnmarkKeys.add(bId);
@@ -619,11 +626,15 @@ class FastPullEngine {
                     ? ((item["originalFy"] ?? item["original_fy"] ?? item["fy"] ?? targetFyAtStart).toString().trim())
                     : targetFyAtStart;
                 final String effFy = cFy.isNotEmpty ? cFy : targetFyAtStart;
-                if (docType == "PURCHASE_CHALLAN" && (item["status"] ?? "").toString().trim() == "Billed") {
-                  filtered.add(item);
-                  continue;
+                if (docType == "PURCHASE_CHALLAN") {
+                  if ((item["status"] ?? "").toString().trim() == "Billed") {
+                    filtered.add(item);
+                    continue;
+                  }
+                  if (D1SalesLedgerService.isPurchaseChallanDeleted(pId, partyId, billNo, intNo, effFy, itemUpd)) continue;
+                } else {
+                  if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, effFy, itemUpd)) continue;
                 }
-                if (D1SalesLedgerService.isPurchaseDeleted(pId, partyId, billNo, intNo, effFy, itemUpd)) continue;
                 final int itemVer = int.tryParse(item["version"]?.toString() ?? "1") ?? 1;
                 final int knownV = pId.trim().isNotEmpty
                     ? D1SalesLedgerService.getPurchaseIdKnownVersion(pId, effFy)

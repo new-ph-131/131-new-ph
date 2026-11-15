@@ -626,12 +626,22 @@ class PharoahManager with ChangeNotifier {
       vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
           .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, "", currentFY))
           .toList();
-      saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e))
-          .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(c.id, c.billNo, "", currentFY))
-          .toList();
-      purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e))
-          .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo, currentFY, c.updatedAt))
-          .toList();
+      saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e)).where((c) {
+        if (c.isDeleted == 1) return false;
+        final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+        if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+          return !D1SalesLedgerService.isSaleChallanIdDeleted(c.id, cFy);
+        }
+        return !D1SalesLedgerService.isSaleChallanDeleted(c.id, c.billNo, cFy, c.updatedAt);
+      }).toList();
+      purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e)).where((c) {
+        if (c.isDeleted == 1) return false;
+        final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+        if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+          return !D1SalesLedgerService.isPurchaseIdDeleted(c.id, cFy);
+        }
+        return !D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt);
+      }).toList();
       saleReturns = loadList<SaleReturn>('s_return.json', (e) => SaleReturn.fromMap(e))
           .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, "", currentFY))
           .toList();
@@ -1539,9 +1549,10 @@ Future<bool> finalizePurchase({
     int currentVer = 1;
     final cleanBNo = billNo.trim().toUpperCase();
     final bool isEditMode = existingId != null && existingId.isNotEmpty;
+    final String normCurrFy = normalizeFyString(currentFY);
     final int existingIdx = isEditMode
         ? saleChallans.indexWhere((c) => c.id == cId)
-        : saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && c.effectiveOriginalFy == currentFY));
+        : saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
     final SaleChallan? existingCh = existingIdx != -1 ? saleChallans[existingIdx] : null;
     if (existingCh != null && existingCh.status == "Billed") {
       return existingCh;
@@ -1549,7 +1560,6 @@ Future<bool> finalizePurchase({
     if (existingCh != null) {
       currentVer = existingCh.version + 1;
     }
-    final String normCurrFy = normalizeFyString(currentFY);
     final String targetOfy = normalizeFyString(existingCh != null
         ? (existingCh.effectiveOriginalFy.isNotEmpty ? existingCh.effectiveOriginalFy : normCurrFy)
         : normCurrFy);
@@ -1677,15 +1687,16 @@ Future<bool> finalizePurchase({
     if (existingCh != null) {
       currentVer = existingCh.version + 1;
     }
+    final String effFy = targetOfy.isNotEmpty ? targetOfy : normCurrFy;
     final cleanBNo = billNo.trim();
     final cleanPId = partyId.trim().toUpperCase();
     final compKey2 = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
     final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo, fy: currentFY);
-      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: currentFY);
-      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: currentFY);
-      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, currentFY);
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo, fy: effFy);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: effFy);
+      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: effFy);
+      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, effFy);
     }
     if (isEditMode) {
       purchaseChallans.removeWhere((c) => c.id == cId);
@@ -4317,11 +4328,25 @@ void registerBatchActivity({
     vouchers = (load('vouc.json') as List?)?.map((e) => Voucher.fromMap(e)).where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo)).toList() ?? [];
     saleChallans = (load('s_challan.json') as List?)
         ?.map((e) => SaleChallan.fromMap(e))
-        .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(c.id, c.billNo, "", currentFY))
+        .where((c) {
+          if (c.isDeleted == 1) return false;
+          final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+          if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+            return !D1SalesLedgerService.isSaleChallanIdDeleted(c.id, cFy);
+          }
+          return !D1SalesLedgerService.isSaleChallanDeleted(c.id, c.billNo, cFy, c.updatedAt);
+        })
         .toList() ?? [];
     purchaseChallans = (load('p_challan.json') as List?)
         ?.map((e) => PurchaseChallan.fromMap(e))
-        .where((c) => c.isDeleted != 1 && !D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo, currentFY, c.updatedAt))
+        .where((c) {
+          if (c.isDeleted == 1) return false;
+          final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+          if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+            return !D1SalesLedgerService.isPurchaseIdDeleted(c.id, cFy);
+          }
+          return !D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt);
+        })
         .toList() ?? [];
     saleReturns = (load('s_return.json') as List?)
         ?.map((e) => SaleReturn.fromMap(e))
@@ -4366,6 +4391,8 @@ void registerBatchActivity({
         return true;
       }
 
+      final Set<String> cascadeTombstones = await TombstoneEngine.getLocalTombstones(activeCompany!.id);
+      final Map<String, int> cascadeTombReg = await TombstoneEngine.getTombstoneRegistry(activeCompany!.id);
       final int totalSteps = (years.length - 1) - startIndex;
       int completedSteps = 0;
 
@@ -4398,11 +4425,55 @@ void registerBatchActivity({
           if (ft.existsSync()) targetFiles[fName] = await ft.readAsString();
         }
 
+        bool isScCascadeBlocked(SaleChallan sc) {
+          if (sc.status == "Billed") return false;
+          final String scFy = sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : targetFY;
+          final String cleanId = sc.id.trim();
+          if (cleanId.isNotEmpty &&
+              (cascadeTombstones.contains(cleanId) || cascadeTombstones.contains(cleanId.toUpperCase()))) {
+            final ts = cascadeTombReg[cleanId] ?? cascadeTombReg[cleanId.toUpperCase()] ?? 0;
+            if (ts == 0 || ts >= sc.updatedAt) return true;
+          }
+          if (D1SalesLedgerService.isSaleChallanDeleted(sc.id, sc.billNo, scFy, sc.updatedAt)) {
+            return true;
+          }
+          final cleanB = sc.billNo.trim().toUpperCase();
+          if (cleanId.isEmpty && cleanB.isNotEmpty) {
+            final scopedB = D1SalesLedgerService.scopeSecondaryKey(cleanB, scFy);
+            final ts = cascadeTombReg[scopedB] ?? cascadeTombReg[cleanB] ?? 0;
+            if (ts > 0 && ts >= sc.updatedAt) return true;
+          }
+          return false;
+        }
+
+        bool isPcCascadeBlocked(PurchaseChallan pc) {
+          if (pc.status == "Billed") return false;
+          final String pcFy = pc.effectiveOriginalFy.isNotEmpty ? pc.effectiveOriginalFy : targetFY;
+          final String cleanId = pc.id.trim();
+          if (cleanId.isNotEmpty &&
+              (cascadeTombstones.contains(cleanId) || cascadeTombstones.contains(cleanId.toUpperCase()))) {
+            final ts = cascadeTombReg[cleanId] ?? cascadeTombReg[cleanId.toUpperCase()] ?? 0;
+            if (ts == 0 || ts >= pc.updatedAt) return true;
+          }
+          if (D1SalesLedgerService.isPurchaseChallanDeleted(pc.id, pc.partyId, pc.billNo, pc.internalNo, pcFy, pc.updatedAt)) {
+            return true;
+          }
+          final cleanI = pc.internalNo.trim().toUpperCase();
+          if (cleanId.isEmpty && cleanI.isNotEmpty) {
+            final scopedI = D1SalesLedgerService.scopeSecondaryKey(cleanI, pcFy);
+            final ts = cascadeTombReg[scopedI] ?? 0;
+            if (ts > 0 && ts >= pc.updatedAt) return true;
+          }
+          return false;
+        }
+
         final cascaded = FYTransferEngine.cascadeSingleYearStep(
           prevFiles: prevFiles,
           targetFiles: targetFiles,
           prevFY: prevFY,
           targetFY: targetFY,
+          isSaleChallanDeletedInTarget: isScCascadeBlocked,
+          isPurchaseChallanDeletedInTarget: isPcCascadeBlocked,
         );
 
         for (final entry in cascaded.healedPrevFiles.entries) {
@@ -4483,14 +4554,20 @@ void registerBatchActivity({
         }
 
         bool isScBlocked(SaleChallan sc) {
-          if (D1SalesLedgerService.isBillDeleted(sc.id, sc.billNo, "", nextFY)) return true;
-          if (sc.id.trim().isNotEmpty && tombstones.contains(sc.id.trim())) {
-            final ts = tombReg[sc.id.trim()] ?? 0;
+          if (sc.status == "Billed") return false;
+          final String scFy = sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : nextFY;
+          final String cleanId = sc.id.trim();
+          if (cleanId.isNotEmpty &&
+              (tombstones.contains(cleanId) || tombstones.contains(cleanId.toUpperCase()))) {
+            final ts = tombReg[cleanId] ?? tombReg[cleanId.toUpperCase()] ?? 0;
             if (ts == 0 || ts >= sc.updatedAt) return true;
           }
+          if (D1SalesLedgerService.isSaleChallanDeleted(sc.id, sc.billNo, scFy, sc.updatedAt)) {
+            return true;
+          }
           final cleanB = sc.billNo.trim().toUpperCase();
-          if (cleanB.isNotEmpty) {
-            final scopedB = D1SalesLedgerService.scopeSecondaryKey(cleanB, nextFY);
+          if (cleanId.isEmpty && cleanB.isNotEmpty) {
+            final scopedB = D1SalesLedgerService.scopeSecondaryKey(cleanB, scFy);
             final ts = tombReg[scopedB] ?? tombReg[cleanB] ?? 0;
             if (ts > 0 && ts >= sc.updatedAt) return true;
           }
@@ -4498,16 +4575,20 @@ void registerBatchActivity({
         }
 
         bool isPcBlocked(PurchaseChallan pc) {
-          if (D1SalesLedgerService.isPurchaseDeleted(pc.id, pc.partyId, pc.billNo, pc.internalNo, nextFY, pc.updatedAt)) {
-            return true;
-          }
-          if (pc.id.trim().isNotEmpty && tombstones.contains(pc.id.trim())) {
-            final ts = tombReg[pc.id.trim()] ?? 0;
+          if (pc.status == "Billed") return false;
+          final String pcFy = pc.effectiveOriginalFy.isNotEmpty ? pc.effectiveOriginalFy : nextFY;
+          final String cleanId = pc.id.trim();
+          if (cleanId.isNotEmpty &&
+              (tombstones.contains(cleanId) || tombstones.contains(cleanId.toUpperCase()))) {
+            final ts = tombReg[cleanId] ?? tombReg[cleanId.toUpperCase()] ?? 0;
             if (ts == 0 || ts >= pc.updatedAt) return true;
           }
+          if (D1SalesLedgerService.isPurchaseChallanDeleted(pc.id, pc.partyId, pc.billNo, pc.internalNo, pcFy, pc.updatedAt)) {
+            return true;
+          }
           final cleanI = pc.internalNo.trim().toUpperCase();
-          if (cleanI.isNotEmpty) {
-            final scopedI = D1SalesLedgerService.scopeSecondaryKey(cleanI, nextFY);
+          if (cleanId.isEmpty && cleanI.isNotEmpty) {
+            final scopedI = D1SalesLedgerService.scopeSecondaryKey(cleanI, pcFy);
             final ts = tombReg[scopedI] ?? 0;
             if (ts > 0 && ts >= pc.updatedAt) return true;
           }

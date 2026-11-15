@@ -504,7 +504,19 @@ class PharoahWebManager with ChangeNotifier {
                         if (isDel == 1) return true;
                         final String id = (m['id'] ?? '').toString().trim();
                         final int itemUpd = int.tryParse((m['updatedAt'] ?? m['updated_at'] ?? '0').toString()) ?? 0;
-                        if (fname == 'purc.json' || fname == 'p_challan.json') {
+                        if (fname == 'p_challan.json') {
+                          if ((m['status'] ?? '').toString().trim() == 'Billed') return false;
+                          final String effFy = (m['originalFy'] ?? m['original_fy'] ?? m['fy'] ?? cleanFy).toString().trim();
+                          return D1SalesLedgerService.isPurchaseChallanDeleted(
+                            id,
+                            (m['partyId'] ?? '').toString(),
+                            (m['billNo'] ?? '').toString(),
+                            (m['internalNo'] ?? '').toString(),
+                            effFy.isNotEmpty ? effFy : cleanFy,
+                            itemUpd,
+                          );
+                        }
+                        if (fname == 'purc.json') {
                           return D1SalesLedgerService.isPurchaseDeleted(
                             id,
                             (m['partyId'] ?? '').toString(),
@@ -694,6 +706,9 @@ class PharoahWebManager with ChangeNotifier {
     rebuildInventory();
     _snapshotActiveFyToVault();
   }
+
+  void debugParseDownloadedFiles(Map<String, dynamic> files) => _parseDownloadedFiles(files);
+  void debugCascadeVaultFrom(String startYear) => _cascadeWebFyVaultFrom(startYear);
 
   void _parseDownloadedFiles(Map<String, dynamic> files) {
     dynamic decodeJson(String fileName) {
@@ -1160,32 +1175,35 @@ class PharoahWebManager with ChangeNotifier {
         final String cleanINo = c.internalNo.trim().toUpperCase();
         final String cleanBNo = c.billNo.trim();
         final String cleanPId = c.partyId.trim().toUpperCase();
+        final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
         final String rawCompKey = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
         final String compKey = PurchaseChallanSyncModule.makeCompositeKey(c.partyId, c.billNo, c.internalNo);
-        if (D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo, financialYear, c.updatedAt)) {
+        if (D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt)) {
           continue;
         }
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) {
           continue; // Blocked by immutable ID tombstone
         }
-        final scopedINo = cleanINo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanINo, financialYear) : "";
-        final scopedRawCompKey = rawCompKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(rawCompKey, financialYear, true) : "";
-        final scopedCompKey = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, financialYear, true) : "";
+        final scopedINo = cleanINo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(cleanINo, cFy) : "";
+        final scopedRawCompKey = rawCompKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(rawCompKey, cFy, true) : "";
+        final scopedCompKey = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, cFy, true) : "";
         int secDelTs = 0;
-        if (scopedINo.isNotEmpty) {
-          final t = localTombstoneRegistry[scopedINo] ?? localTombstoneRegistry[scopedINo.toUpperCase()] ?? 0;
-          if (t > secDelTs) secDelTs = t;
-        }
-        if (scopedRawCompKey.isNotEmpty) {
-          final t = localTombstoneRegistry[scopedRawCompKey] ?? 0;
-          if (t > secDelTs) secDelTs = t;
-        }
-        if (scopedCompKey.isNotEmpty) {
-          final t = localTombstoneRegistry[scopedCompKey] ?? 0;
-          if (t > secDelTs) secDelTs = t;
+        if (c.id.trim().isEmpty) {
+          if (scopedINo.isNotEmpty) {
+            final t = localTombstoneRegistry[scopedINo] ?? localTombstoneRegistry[scopedINo.toUpperCase()] ?? 0;
+            if (t > secDelTs) secDelTs = t;
+          }
+          if (scopedRawCompKey.isNotEmpty) {
+            final t = localTombstoneRegistry[scopedRawCompKey] ?? 0;
+            if (t > secDelTs) secDelTs = t;
+          }
+          if (scopedCompKey.isNotEmpty) {
+            final t = localTombstoneRegistry[scopedCompKey] ?? 0;
+            if (t > secDelTs) secDelTs = t;
+          }
         }
         if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt) {
-          continue; // Blocked by newer or same age series tombstone
+          continue; // Blocked by newer or same age series tombstone (legacy empty-ID only)
         }
         if (scopedINo.isNotEmpty) {
           deletedRecordIds.remove(scopedINo);
@@ -1201,6 +1219,7 @@ class PharoahWebManager with ChangeNotifier {
         int idx = purchaseChallans.indexWhere((lc) =>
           (c.id.isNotEmpty && lc.id == c.id) ||
           ((c.id.isEmpty || lc.id.isEmpty || lc.id == c.id) &&
+           lc.effectiveOriginalFy == c.effectiveOriginalFy &&
            ((cleanINo.isNotEmpty && lc.internalNo.trim().toUpperCase() == cleanINo) ||
             (cleanPId.isNotEmpty && cleanBNo.isNotEmpty &&
              lc.partyId.trim().toUpperCase() == cleanPId && lc.billNo.trim() == cleanBNo)))
@@ -1233,31 +1252,34 @@ class PharoahWebManager with ChangeNotifier {
         final iNo = c.internalNo.trim().toUpperCase();
         final bNo = c.billNo.trim();
         final pId = c.partyId.trim().toUpperCase();
+        final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
         final comp2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
         final comp = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
         if (c.status != "Pending" && c.status != "Active" && c.status != "Billed") {
-          if (D1SalesLedgerService.isPurchaseDeleted(c.id, c.partyId, c.billNo, c.internalNo, financialYear, c.updatedAt)) return false;
+          if (D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt)) return false;
         } else {
-          if (D1SalesLedgerService.isPurchaseIdDeleted(c.id, financialYear) || D1SalesLedgerService.isBillDeleted(c.id, "", "", financialYear)) return false;
+          if (D1SalesLedgerService.isPurchaseIdDeleted(c.id, cFy)) return false;
         }
-        final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, financialYear) : "";
-        final scopedComp2 = comp2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp2, financialYear, true) : "";
-        final scopedComp = comp.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp, financialYear, true) : "";
+        final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, cFy) : "";
+        final scopedComp2 = comp2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp2, cFy, true) : "";
+        final scopedComp = comp.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(comp, cFy, true) : "";
         int secDelTs = 0;
-        if (scopedINo.isNotEmpty) {
-          final t = localTombstoneRegistry[scopedINo] ?? localTombstoneRegistry[scopedINo.toUpperCase()] ?? 0;
-          if (t > secDelTs) secDelTs = t;
+        if (c.id.trim().isEmpty) {
+          if (scopedINo.isNotEmpty) {
+            final t = localTombstoneRegistry[scopedINo] ?? localTombstoneRegistry[scopedINo.toUpperCase()] ?? 0;
+            if (t > secDelTs) secDelTs = t;
+          }
+          if (scopedComp2.isNotEmpty) {
+            final t = localTombstoneRegistry[scopedComp2] ?? 0;
+            if (t > secDelTs) secDelTs = t;
+          }
+          if (scopedComp.isNotEmpty) {
+            final t = localTombstoneRegistry[scopedComp] ?? 0;
+            if (t > secDelTs) secDelTs = t;
+          }
         }
-        if (scopedComp2.isNotEmpty) {
-          final t = localTombstoneRegistry[scopedComp2] ?? 0;
-          if (t > secDelTs) secDelTs = t;
-        }
-        if (scopedComp.isNotEmpty) {
-          final t = localTombstoneRegistry[scopedComp] ?? 0;
-          if (t > secDelTs) secDelTs = t;
-        }
-        if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt && c.status != "Pending" && c.status != "Active") return false;
+        if (secDelTs > 0 && c.updatedAt > 0 && secDelTs >= c.updatedAt && c.status != "Pending" && c.status != "Active" && c.status != "Billed") return false;
         return true;
       }).toList();
     }
@@ -1618,17 +1640,19 @@ class PharoahWebManager with ChangeNotifier {
       }
 
       bool isPcBlocked(PurchaseChallan pc) {
+        if (pc.status == "Billed") return false;
+        final String pcFy = pc.effectiveOriginalFy.isNotEmpty ? pc.effectiveOriginalFy : targetFy;
         if (pc.id.trim().isNotEmpty &&
             (deletedRecordIds.contains(pc.id.trim()) || deletedRecordIds.contains(pc.id.trim().toUpperCase()))) {
           final ts = localTombstoneRegistry[pc.id.trim()] ?? localTombstoneRegistry[pc.id.trim().toUpperCase()] ?? 0;
           if (ts == 0 || ts >= pc.updatedAt) return true;
         }
-        if (D1SalesLedgerService.isPurchaseDeleted(pc.id, pc.partyId, pc.billNo, pc.internalNo, targetFy, pc.updatedAt)) {
+        if (D1SalesLedgerService.isPurchaseChallanDeleted(pc.id, pc.partyId, pc.billNo, pc.internalNo, pcFy, pc.updatedAt)) {
           return true;
         }
         final cleanI = pc.internalNo.trim().toUpperCase();
-        if (cleanI.isNotEmpty) {
-          final scopedI = D1SalesLedgerService.scopeSecondaryKey(cleanI, targetFy);
+        if (pc.id.trim().isEmpty && cleanI.isNotEmpty) {
+          final scopedI = D1SalesLedgerService.scopeSecondaryKey(cleanI, pcFy);
           final ts = localTombstoneRegistry[scopedI] ?? 0;
           if (ts > 0 && ts >= pc.updatedAt) return true;
         }

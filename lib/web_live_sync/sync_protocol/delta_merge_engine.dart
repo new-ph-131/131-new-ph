@@ -177,6 +177,10 @@ class DeltaMergeEngine {
             if (D1SalesLedgerService.isSaleChallanDeleted(id, billNo, effDocFy, cloudTimestamp)) {
               continue;
             }
+          } else if (isPurcChallanDoc) {
+            if (D1SalesLedgerService.isPurchaseChallanDeleted(id, partyIdKey, billNo, internalNo, effDocFy, cloudTimestamp)) {
+              continue;
+            }
           } else if (getCloudCompositeKey != null) {
             if (D1SalesLedgerService.isPurchaseDeleted(id, partyIdKey, billNo, internalNo, effDocFy, cloudTimestamp)) {
               continue;

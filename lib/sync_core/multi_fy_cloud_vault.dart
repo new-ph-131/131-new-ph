@@ -251,10 +251,24 @@ class MultiFyCloudVault {
       return true;
     }
 
-    if (fileName == 'purc.json' || fileName == 'p_challan.json') {
+    if (fileName == 'p_challan.json') {
       final String pId = (m['partyId'] ?? '').toString().trim().toUpperCase();
       final String bNo = (m['billNo'] ?? '').toString().trim();
-      if ((fileName != 'p_challan.json' || id.isEmpty) && pId.isNotEmpty && bNo.isNotEmpty) {
+      if (id.isEmpty && pId.isNotEmpty && bNo.isNotEmpty) {
+        final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', effCheckFy, true);
+        if (checkKeyTombstone(comp2, preserveCase: true)) return true;
+        if (sec.isNotEmpty) {
+          final String comp3 = D1SalesLedgerService.scopeSecondaryKey('${pId}_${bNo}_$sec', effCheckFy, true);
+          if (checkKeyTombstone(comp3, preserveCase: true)) return true;
+        }
+      }
+      return D1SalesLedgerService.isPurchaseChallanDeleted(id, pId, bNo, sec, effCheckFy, recUpd);
+    }
+
+    if (fileName == 'purc.json') {
+      final String pId = (m['partyId'] ?? '').toString().trim().toUpperCase();
+      final String bNo = (m['billNo'] ?? '').toString().trim();
+      if (pId.isNotEmpty && bNo.isNotEmpty) {
         final String comp2 = D1SalesLedgerService.scopeSecondaryKey('${pId}_$bNo', effCheckFy, true);
         if (checkKeyTombstone(comp2, preserveCase: true)) return true;
         if (sec.isNotEmpty) {
