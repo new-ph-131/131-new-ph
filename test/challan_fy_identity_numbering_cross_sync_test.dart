@@ -1067,7 +1067,7 @@ void main() {
       expect(newDiskAfterCascade.length, equals(2));
 
       // 3) Silent maintenance reload must also keep both
-      ph.loadDataForMaintenanceSilently();
+      await ph.loadDataForMaintenanceSilently(newFy);
       expect(ph.saleChallans.length, equals(2));
     });
 
@@ -1224,8 +1224,10 @@ void main() {
       webPh.fyVault[oldFy] = {'p_challan.json': jsonEncode([pcOldPending.toMap()])};
       webPh.fyVault[newFy] = {'p_challan.json': jsonEncode([pcNewPending.toMap()])};
       webPh.debugCascadeVaultFrom(oldFy);
+      final List cascadedWebPCh = jsonDecode(webPh.fyVault[newFy]!['p_challan.json']!) as List;
+      expect(cascadedWebPCh.length, equals(2));
       webPh.debugParseDownloadedFiles({
-        'p_challan.json': jsonEncode([pcOldPending.toMap(), pcNewPending.toMap()]),
+        'p_challan.json': webPh.fyVault[newFy]!['p_challan.json']!,
       });
       expect(webPh.purchaseChallans.length, equals(2));
       expect(
