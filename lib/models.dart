@@ -713,9 +713,9 @@ class SaleChallan {
     required this.items, required this.totalAmount, this.status = "Pending",
     this.salesmanName = "", this.remarks = "", this.sigHistory = const [], this.isSigned = false,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
-    this.originalFy = "",
+    String originalFy = "",
     this.hasValidDate = true,
-  });
+  }) : originalFy = normalizeFyString(originalFy);
 
   String get effectiveOriginalFy {
     final clean = normalizeFyString(originalFy);
@@ -813,9 +813,9 @@ class PurchaseChallan {
     required this.date, required this.distributorName, required this.items, required this.totalAmount,
     this.status = "Pending", this.remarks = "",
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
-    this.originalFy = "",
+    String originalFy = "",
     this.hasValidDate = true,
-  });
+  }) : originalFy = normalizeFyString(originalFy);
 
   String get effectiveOriginalFy {
     final clean = normalizeFyString(originalFy);

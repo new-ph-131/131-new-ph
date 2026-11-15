@@ -107,10 +107,16 @@ class PurchaseChallanSyncModule {
       if (incoming.version == local.version) {
         if (incoming.updatedAt < local.updatedAt) return false;
         if (incoming.updatedAt == local.updatedAt) {
-          final String localCanon = _canonicalDigest(local);
-          final String incomingCanon = _canonicalDigest(incoming);
-          if (localCanon == incomingCanon) return false;
-          if (incomingCanon.compareTo(localCanon) <= 0) return false;
+          final bool localBilled = local.status.trim().toUpperCase() == "BILLED";
+          final bool incomingBilled = incoming.status.trim().toUpperCase() == "BILLED";
+          if (localBilled != incomingBilled) {
+            if (!incomingBilled) return false;
+          } else {
+            final String localCanon = _canonicalDigest(local);
+            final String incomingCanon = _canonicalDigest(incoming);
+            if (localCanon == incomingCanon) return false;
+            if (incomingCanon.compareTo(localCanon) <= 0) return false;
+          }
         }
       }
       currentList[idx] = incoming;
