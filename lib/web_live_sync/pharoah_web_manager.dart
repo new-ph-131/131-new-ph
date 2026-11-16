@@ -3336,7 +3336,7 @@ class PharoahWebManager with ChangeNotifier {
         prefix: scPrefix,
         number: challan.billNo,
         fy: challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear,
-        env: "WEB",
+        env: WebPharoahNumberingEngine.isWebChallanRecord(challan) ? "WEB" : "APP",
         config: appConfig,
         companyID: activeStoreToken,
       );
@@ -3467,7 +3467,7 @@ class PharoahWebManager with ChangeNotifier {
         prefix: pcPrefix,
         number: challan.internalNo,
         fy: challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear,
-        env: "WEB",
+        env: WebPharoahNumberingEngine.isWebChallanRecord(challan) ? "WEB" : "APP",
         config: appConfig,
         companyID: activeStoreToken,
       );
@@ -3746,15 +3746,37 @@ class PharoahWebManager with ChangeNotifier {
     final String cId = (targetC?.id ?? challanId).trim();
     final String bNo = targetC != null ? targetC.billNo.trim().toUpperCase() : "";
     final String cOfy = targetC != null && targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
+    final String delEnv = (targetC != null && !WebPharoahNumberingEngine.isWebChallanRecord(targetC)) ? "APP" : "WEB";
+    if (targetC != null && bNo.isNotEmpty) {
+      String scDelPrefix = "";
+      for (int i = 0; i < bNo.length; i++) {
+        if (RegExp(r'^[0-9]').hasMatch(bNo.substring(i))) {
+          scDelPrefix = bNo.substring(0, i);
+          break;
+        }
+      }
+      if (scDelPrefix.isNotEmpty) {
+        WebPharoahNumberingEngine.recordChallanHwm(
+          prefix: scDelPrefix,
+          number: bNo,
+          fy: cOfy,
+          env: delEnv,
+          config: appConfig,
+          companyID: activeStoreToken,
+        );
+      }
+    }
     if (targetC != null) {
       SaleChallanSyncModule.onSaleChallanDeleted(targetC, activeStoreToken);
     }
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, cOfy) : "";
+    final envBNo = bNo.isNotEmpty ? "${normalizeFyString(cOfy)}::$delEnv::$bNo" : "";
     final scopedCurrBNo = (bNo.isNotEmpty && cOfy != financialYear) ? D1SalesLedgerService.scopeSecondaryKey(bNo, financialYear) : "";
     final List<String> delKeys = [
       cId.isNotEmpty ? cId : challanId,
       if (scopedBNo.isNotEmpty) scopedBNo,
+      if (envBNo.isNotEmpty) envBNo,
       if (scopedCurrBNo.isNotEmpty) scopedCurrBNo,
     ];
     for (var k in delKeys) {
@@ -3847,12 +3869,34 @@ class PharoahWebManager with ChangeNotifier {
         deletedAtMs: delTime,
       ),
     );
+    final String delEnv = (targetC != null && !WebPharoahNumberingEngine.isWebChallanRecord(targetC)) ? "APP" : "WEB";
+    if (targetC != null && iNo.isNotEmpty) {
+      String pcDelPrefix = "";
+      for (int i = 0; i < iNo.length; i++) {
+        if (RegExp(r'^[0-9]').hasMatch(iNo.substring(i))) {
+          pcDelPrefix = iNo.substring(0, i);
+          break;
+        }
+      }
+      if (pcDelPrefix.isNotEmpty) {
+        WebPharoahNumberingEngine.recordChallanHwm(
+          prefix: pcDelPrefix,
+          number: iNo,
+          fy: cOfy,
+          env: delEnv,
+          config: appConfig,
+          companyID: activeStoreToken,
+        );
+      }
+    }
     final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, cOfy) : "";
+    final envINo = iNo.isNotEmpty ? "${normalizeFyString(cOfy)}::$delEnv::$iNo" : "";
     final scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, cOfy, true) : "";
     final scopedComp = compKey.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey, cOfy, true) : "";
     final List<String> delKeys = [
       cId.isNotEmpty ? cId : challanId,
       if (scopedINo.isNotEmpty) scopedINo,
+      if (envINo.isNotEmpty) envINo,
       if (scopedComp2.isNotEmpty) scopedComp2,
       if (scopedComp.isNotEmpty) scopedComp,
     ];

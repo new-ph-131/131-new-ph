@@ -603,8 +603,18 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
   // 💾 SAVE INWARD & PERMANENTLY UPDATE MEDICINE MASTER L.P.R. (LATEST RATE)
   // ===========================================================================
   void _savePurchaseChallan(PharoahWebManager webPh, {bool andPrint = false}) async {
+    if (isSaving) return;
     if (items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Challan cannot be empty! Please add products."), backgroundColor: Colors.orange));
+      return;
+    }
+    if (widget.existingRecord?.status == "Billed" || widget.existingRecord?.status == "Cancelled") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("🔒 Locked: This challan is already ${widget.existingRecord?.status} and cannot be modified!"),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -665,8 +675,6 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
       }
       return;
     }
-    setState(() => isSaving = false);
-
     if (andPrint) {
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
       await WebPdfRouterService.printPurchaseChallan(challan: newChallan, party: widget.supplier, shop: shopProfile);
@@ -677,6 +685,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
         SnackBar(content: Text("✅ Inward Challan ${widget.internalNo} Saved & Master L.P.R. Updated!"), backgroundColor: Colors.green),
       );
       Navigator.pop(context, true);
+    } else {
+      isSaving = false;
     }
   }
 
@@ -697,7 +707,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
           IconButton(
             icon: const Icon(Icons.print_rounded),
             tooltip: "Print Inward PDF",
-            onPressed: items.isEmpty
+            onPressed: (items.isEmpty || isSaving)
                 ? null
                 : () async {
                     final tempChallan = PurchaseChallan(
@@ -720,8 +730,8 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
           ),
           if (!widget.isReadOnly)
             TextButton(
-              onPressed: items.isEmpty ? null : () => _savePurchaseChallan(webPh, andPrint: false),
-              child: const Text("FINISH", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              onPressed: (items.isEmpty || isSaving) ? null : () => _savePurchaseChallan(webPh, andPrint: false),
+              child: Text(isSaving ? "SAVING..." : "FINISH", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
         ],
       ),

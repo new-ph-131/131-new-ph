@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'dart:io'; 
 import '../pharoah_manager.dart';
 import '../models.dart';
+import '../logic/pharoah_numbering_engine.dart';
 import '../pharoah_date_controller.dart';
 import '../app_date_logic.dart';
 import 'sale_challan_view.dart';
@@ -23,6 +24,7 @@ class SaleChallanRegister extends StatefulWidget {
 class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   String searchQuery = "";
   String fyFilter = "ALL"; // ALL | CURRENT | CARRY
+  String statusFilter = "ACTIVE"; // ACTIVE | CANCELLED
   DateTime fromDate = DateTime.now();
   DateTime toDate = DateTime.now();
   bool _isInit = false;
@@ -54,18 +56,25 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
     final fOnly = dOnly(fromDate);
     final tOnly = dOnly(toDate);
 
-    final list = ph.saleChallans.reversed.where((ch) {
+    final list = ph.saleChallans.where((ch) {
       if (ch.isDeleted == 1) return false;
+      final bool isCancelled = ch.status == "Cancelled";
+      if (statusFilter == "ACTIVE" && isCancelled) return false;
+      if (statusFilter == "CANCELLED" && !isCancelled) return false;
       bool matchesSearch = ch.partyName.toLowerCase().contains(searchQuery.toLowerCase()) ||
                            ch.billNo.toLowerCase().contains(searchQuery.toLowerCase());
       final cOnly = dOnly(ch.date);
-      bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) || ch.status == "Pending";
+      bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) || ch.status == "Pending" || statusFilter == "CANCELLED";
       bool isCarry = _isCarryForward(ch, ph.currentFY);
       bool matchesFy = fyFilter == "ALL" ||
           (fyFilter == "CURRENT" && !isCarry) ||
           (fyFilter == "CARRY" && isCarry);
       return matchesSearch && matchesDate && matchesFy;
-    }).toList();
+    }).toList()
+      ..sort((a, b) {
+        final c = b.date.compareTo(a.date);
+        return c != 0 ? c : b.updatedAt.compareTo(a.updatedAt);
+      });
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
@@ -147,6 +156,14 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
               _fyTabChip("CARRY-FORWARD", "CARRY"),
             ],
           ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _statusTabChip("ACTIVE CHALLANS", "ACTIVE"),
+              const SizedBox(width: 8),
+              _statusTabChip("CANCELLED / AUDIT", "CANCELLED"),
+            ],
+          ),
         ],
       ),
     );
@@ -179,6 +196,33 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
     );
   }
 
+  Widget _statusTabChip(String label, String key) {
+    final bool selected = statusFilter == key;
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => statusFilter = key),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: selected ? Colors.white : Colors.white24),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? (key == "CANCELLED" ? Colors.red.shade900 : const Color(0xFF1A237E)) : Colors.white70,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _dateChip(String label, VoidCallback onTap) {
     return Expanded(
       child: InkWell(
@@ -201,7 +245,8 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
 
   Widget _buildChallanCard(SaleChallan ch, PharoahManager ph) {
     bool isPending = ch.status == "Pending";
-    bool isWeb = ch.id.startsWith("SCH-WEB") || ch.salesmanName == "WEB-PORTAL";
+    bool isCancelled = ch.status == "Cancelled";
+    bool isWeb = PharoahNumberingEngine.isWebChallanRecord(ch);
     bool isCarry = _isCarryForward(ch, ph.currentFY);
     final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
     final String cfLabel = (!ch.hasValidDate && ch.effectiveOriginalFy.isEmpty)
@@ -249,21 +294,19 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                     Row(
                       children: [
                         Text("${ch.billNo} • ${DateFormat('dd/MM/yyyy').format(ch.date)}", style: const TextStyle(color: Colors.grey, fontSize: 11)),
-                        if (isWeb) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.blue.shade300, width: 0.5),
-                            ),
-                            child: Text(
-                              "WEB PORTAL",
-                              style: TextStyle(color: Colors.blue.shade900, fontSize: 7.5, fontWeight: FontWeight.w900),
-                            ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: isWeb ? Colors.blue.shade50 : Colors.indigo.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: isWeb ? Colors.blue.shade300 : Colors.indigo.shade300, width: 0.5),
                           ),
-                        ],
+                          child: Text(
+                            isWeb ? "WEB PORTAL" : "APP",
+                            style: TextStyle(color: isWeb ? Colors.blue.shade900 : Colors.indigo.shade900, fontSize: 7.5, fontWeight: FontWeight.w900),
+                          ),
+                        ),
                       ],
                     ),
                     if (isCarry || fwd.billedFy != null || fwd.shiftedFy != null)
@@ -289,7 +332,7 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (ph.config.isMailActive)
+                  if (ph.config.isMailActive && !isCancelled)
                     IconButton(
                       icon: Icon(
                         ph.config.isAuditMode ? Icons.forward_to_inbox_rounded : Icons.alternate_email, 
@@ -350,11 +393,14 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   }
 
   Widget _statusBadge(String status, bool isPending) {
+    final bool isCancelled = status.trim().toLowerCase() == "cancelled";
+    final Color bg = isCancelled ? Colors.red.shade50 : (isPending ? Colors.orange.shade50 : Colors.green.shade50);
+    final Color fg = isCancelled ? Colors.red.shade900 : (isPending ? Colors.orange.shade900 : Colors.green.shade900);
     return Container(
       margin: const EdgeInsets.only(top: 5),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: isPending ? Colors.orange.shade50 : Colors.green.shade50, borderRadius: BorderRadius.circular(5)),
-      child: Text(status.toUpperCase(), style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: isPending ? Colors.orange.shade900 : Colors.green.shade900)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      child: Text(status.toUpperCase(), style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: fg)),
     );
   }
 
@@ -365,7 +411,10 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
       isTampered = ch.totalAmount.toStringAsFixed(2) != ch.sigHistory.last.signedAmount.toStringAsFixed(2);
     }
     final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
+    final bool isCancelled = ch.status == "Cancelled";
     final bool isBilledLocked = ch.status == "Billed" || fwd.billedFy != null;
+    final bool isLocked = isBilledLocked || isCancelled;
+    final bool canDelete = !isLocked && ph.canDeleteSaleChallan(ch.id);
 
     showModalBottomSheet(
       context: context,
@@ -376,7 +425,7 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(ch.partyName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            if (isTampered) const Text("⚠️ DETAILS CHANGED AFTER SIGNING", style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.bold)),
+            if (isTampered && !isCancelled) const Text("⚠️ DETAILS CHANGED AFTER SIGNING", style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.bold)),
             const Divider(),
             
             if (hasSign)
@@ -385,7 +434,7 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                 _showSignaturePreview(ch);
               }),
 
-            if (isTampered && !isBilledLocked)
+            if (isTampered && !isLocked)
               _menuTile(Icons.draw_rounded, "Re-Verify (Re-Sign)", Colors.orange, () {
                 Navigator.pop(c);
                 _reSignChallan(ch, ph);
@@ -396,49 +445,79 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
               Navigator.push(context, MaterialPageRoute(builder: (c) => SaleChallanView(existingRecord: ch, isReadOnly: true)));
             }),
 
-            _menuTile(Icons.edit, "Modify Challan", isBilledLocked ? Colors.grey : Colors.orange, () {
-              if (isBilledLocked) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("🔒 Locked: Bill already generated. Delete linked Bill first.")));
-                return;
-              }
-              Navigator.pop(c);
-              Navigator.push(context, MaterialPageRoute(builder: (c) => SaleChallanView(existingRecord: ch)));
-            }),
-
-            _menuTile(Icons.print, "Print / Share PDF", Colors.teal, () async {
-              Navigator.pop(c); 
-              if (ph.activeCompany == null) return;
-              Party targetParty;
-              try {
-                targetParty = ph.parties.firstWhere((p) => p.name == ch.partyName);
-              } catch (e) {
-                targetParty = Party(id: 'temp', name: ch.partyName, gst: ch.partyGstin, state: ch.partyState);
-              }
-              await PdfRouterService.printChallan(
-                challan: ch, 
-                party: targetParty, 
-                ph: ph, 
-                isSaleChallan: true
-              );
-            }),
+            _menuTile(
+              isLocked ? Icons.lock_outline : Icons.edit,
+              isCancelled ? "Modify Locked (Cancelled)" : (isBilledLocked ? "Modify Locked (Billed)" : "Modify Challan"),
+              isLocked ? Colors.grey : Colors.orange,
+              () {
+                if (isLocked) {
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(isCancelled ? "🔒 Locked: Cancelled challan cannot be modified." : "🔒 Locked: Bill already generated. Delete linked Bill first."),
+                  ));
+                  return;
+                }
+                Navigator.pop(c);
+                Navigator.push(context, MaterialPageRoute(builder: (c) => SaleChallanView(existingRecord: ch)));
+              },
+            ),
 
             _menuTile(
-              isBilledLocked ? Icons.lock_outline : Icons.delete_forever,
-              isBilledLocked ? "Delete Locked (Billed)" : "Delete Challan",
-              isBilledLocked ? Colors.grey : Colors.red,
-              () {
-                if (isBilledLocked) {
+              isCancelled ? Icons.lock_outline : Icons.print,
+              isCancelled ? "Print Locked (Cancelled)" : "Print / Share PDF",
+              isCancelled ? Colors.grey : Colors.teal,
+              () async {
+                if (isCancelled) {
                   Navigator.pop(c);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                    const SnackBar(content: Text("🔒 Locked: Cancelled challan cannot be printed.")),
+                  );
+                  return;
+                }
+                Navigator.pop(c); 
+                if (ph.activeCompany == null) return;
+                Party targetParty;
+                try {
+                  targetParty = ph.parties.firstWhere((p) => p.name == ch.partyName);
+                } catch (e) {
+                  targetParty = Party(id: 'temp', name: ch.partyName, gst: ch.partyGstin, state: ch.partyState);
+                }
+                await PdfRouterService.printChallan(
+                  challan: ch, 
+                  party: targetParty, 
+                  ph: ph, 
+                  isSaleChallan: true
+                );
+              },
+            ),
+
+            _menuTile(
+              isLocked ? Icons.lock_outline : (canDelete ? Icons.delete_forever : Icons.cancel_outlined),
+              isBilledLocked
+                  ? "Delete Locked (Billed)"
+                  : (isCancelled
+                      ? "Already Cancelled (Audit Trail)"
+                      : (canDelete ? "Delete Draft (Last)" : "Cancel Challan")),
+              isLocked ? Colors.grey : (canDelete ? Colors.red : Colors.deepOrange),
+              () {
+                if (isLocked) {
+                  Navigator.pop(c);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isCancelled
+                          ? "🔒 Already Cancelled for audit compliance."
+                          : "🔒 Locked: Bill already generated. Delete linked Bill first."),
                       backgroundColor: Colors.orange,
                     ),
                   );
                   return;
                 }
                 Navigator.pop(c);
-                _confirmDelete(ch, ph);
+                if (canDelete) {
+                  _confirmDelete(ch, ph);
+                } else {
+                  _confirmCancel(ch, ph);
+                }
               },
             ),
           ],
@@ -502,19 +581,58 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("NO")),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              final bool ok = ph.deleteSaleChallan(ch.id);
-              Navigator.pop(c);
+            onPressed: () async {
+              final bool ok = await ph.deleteSaleChallanAsync(ch.id);
+              if (c.mounted) Navigator.pop(c);
               if (!ok && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
+                    content: Text("🔒 Delete blocked: Not the last eligible draft (use Cancel instead)."),
                     backgroundColor: Colors.orange,
                   ),
                 );
               }
             },
             child: const Text("YES, DELETE", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmCancel(SaleChallan ch, PharoahManager ph) {
+    final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
+    if (ch.status == "Billed" || fwd.billedFy != null || ch.status == "Cancelled") {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("🔒 Cannot cancel Billed or already Cancelled challan."),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text("Cancel Challan?"),
+        content: Text("Challan ${ch.billNo} will be marked Cancelled for audit trail. Its number will not be reused."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text("NO")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
+            onPressed: () async {
+              final bool ok = await ph.cancelSaleChallan(ch.id);
+              if (c.mounted) Navigator.pop(c);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? "🚫 Sale Challan ${ch.billNo} Cancelled (audit preserved)." : "🔒 Could not cancel challan."),
+                    backgroundColor: ok ? Colors.deepOrange : Colors.orange,
+                  ),
+                );
+              }
+            },
+            child: const Text("YES, CANCEL CHALLAN", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

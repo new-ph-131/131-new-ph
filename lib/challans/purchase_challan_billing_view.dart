@@ -341,10 +341,10 @@ class _PurchaseChallanBillingViewState extends State<PurchaseChallanBillingView>
 
   void _handleSave(PharoahManager ph) {
     if (_isSaving) return;
-    if (widget.existingRecord != null && widget.existingRecord!.status == "Billed") {
+    if (widget.existingRecord != null && (widget.existingRecord!.status == "Billed" || widget.existingRecord!.status == "Cancelled")) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Ye Challan already Billed ho chuka hai, modify nahi ho sakta!"),
+        SnackBar(
+          content: Text("Ye Challan already ${widget.existingRecord!.status} ho chuka hai, modify nahi ho sakta!"),
           backgroundColor: Colors.red,
         ),
       );

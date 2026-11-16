@@ -182,13 +182,15 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
       );
     }
 
-    final totalChallans = webPh.purchaseChallans.length;
+    final activePurchaseChallans =
+        webPh.purchaseChallans.where((c) => c.isDeleted != 1 && c.status != "Cancelled").toList();
+    final totalChallans = activePurchaseChallans.length;
     final pendingChallans =
-        webPh.purchaseChallans.where((c) => c.status == "Pending").toList();
+        activePurchaseChallans.where((c) => c.status == "Pending").toList();
     final double totalPendingAmt =
         pendingChallans.fold(0.0, (s, c) => s + c.totalAmount);
     final double totalInwardAmt =
-        webPh.purchaseChallans.fold(0.0, (s, c) => s + c.totalAmount);
+        activePurchaseChallans.fold(0.0, (s, c) => s + c.totalAmount);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -1586,6 +1588,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                 itemBuilder: (context, idx) {
                   final ch = supplierChallans[idx];
                   final bool isPending = ch.status == "Pending";
+                  final bool isCancelled = ch.status == "Cancelled";
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding:
@@ -1622,17 +1625,19 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                                     vertical: 1.5,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: isPending
-                                        ? Colors.amber.withOpacity(0.15)
-                                        : Colors.teal.withOpacity(0.15),
+                                    color: isCancelled
+                                        ? Colors.red.withOpacity(0.15)
+                                        : (isPending
+                                            ? Colors.amber.withOpacity(0.15)
+                                            : Colors.teal.withOpacity(0.15)),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text(
-                                    isPending ? "PENDING" : "VERIFIED",
+                                    isCancelled ? "CANCELLED" : (isPending ? "PENDING" : "VERIFIED"),
                                     style: TextStyle(
-                                      color: isPending
-                                          ? Colors.amberAccent
-                                          : Colors.tealAccent,
+                                      color: isCancelled
+                                          ? Colors.redAccent
+                                          : (isPending ? Colors.amberAccent : Colors.tealAccent),
                                       fontSize: 8.5,
                                       fontWeight: FontWeight.w900,
                                     ),
@@ -1734,6 +1739,7 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
               itemBuilder: (context, idx) {
                 final ch = displayList[idx];
                 final bool isPending = ch.status == "Pending";
+                final bool isCancelled = ch.status == "Cancelled";
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -1803,17 +1809,19 @@ class _WebPurchaseChallanViewState extends State<WebPurchaseChallanView> {
                               vertical: 1.5,
                             ),
                             decoration: BoxDecoration(
-                              color: isPending
-                                  ? Colors.amber.withOpacity(0.15)
-                                  : Colors.teal.withOpacity(0.15),
+                              color: isCancelled
+                                  ? Colors.red.withOpacity(0.15)
+                                  : (isPending
+                                      ? Colors.amber.withOpacity(0.15)
+                                      : Colors.teal.withOpacity(0.15)),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              isPending ? "Pending" : "Verified",
+                              isCancelled ? "Cancelled" : (isPending ? "Pending" : "Verified"),
                               style: TextStyle(
-                                color: isPending
-                                    ? Colors.amberAccent
-                                    : Colors.tealAccent,
+                                color: isCancelled
+                                    ? Colors.redAccent
+                                    : (isPending ? Colors.amberAccent : Colors.tealAccent),
                                 fontSize: 8,
                                 fontWeight: FontWeight.bold,
                               ),
