@@ -46,6 +46,7 @@ class AppConfig {
   bool userEnableGstDiary;
   int version;
   int updatedAt;
+  Map<String, int> challanHwm;
 
   AppConfig({
     this.salePrefix = "INV-",
@@ -93,7 +94,8 @@ class AppConfig {
     this.userEnableGstDiary = true,
     this.version = 1,
     this.updatedAt = 0,
-  });
+    Map<String, int>? challanHwm,
+  }) : challanHwm = challanHwm != null ? Map<String, int>.from(challanHwm) : <String, int>{};
 
   Map<String, dynamic> toMap() {
     return {
@@ -139,6 +141,7 @@ class AppConfig {
       'userEnableGstDiary': userEnableGstDiary,
       'version': version,
       'updatedAt': updatedAt,
+      'challanHwm': Map<String, int>.from(challanHwm),
     };
   }
 
@@ -192,6 +195,34 @@ class AppConfig {
           : (map['userEnableGstDiary'] ?? true),
       version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
       updatedAt: int.tryParse(map['updatedAt']?.toString() ?? '0') ?? 0,
+      challanHwm: parseHwmMap(map['challanHwm'] ?? map['challan_hwm']),
     );
+  }
+
+  /// Parses raw JSON map or object into strongly-typed Map<String, int>
+  static Map<String, int> parseHwmMap(dynamic raw) {
+    final Map<String, int> result = {};
+    if (raw is Map) {
+      raw.forEach((k, v) {
+        final key = k.toString().trim();
+        final val = int.tryParse(v?.toString() ?? '');
+        if (key.isNotEmpty && val != null) {
+          result[key] = val;
+        }
+      });
+    }
+    return result;
+  }
+
+  /// Monotonically merges two HWM maps (Math.max per scope key)
+  static Map<String, int> mergeHwmMaps(Map<String, int> a, Map<String, int> b) {
+    final Map<String, int> merged = Map<String, int>.from(a);
+    b.forEach((k, v) {
+      final existing = merged[k] ?? 0;
+      if (v > existing) {
+        merged[k] = v;
+      }
+    });
+    return merged;
   }
 }

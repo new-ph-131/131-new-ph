@@ -10,6 +10,13 @@ import '../outbox/sync_queue_manager.dart';
 class SaleChallanSyncModule {
   static const String docTypeSaleChallan = "SALE_CHALLAN";
 
+  static int statusRank(String s) {
+    final u = s.trim().toUpperCase();
+    if (u == "BILLED") return 3;
+    if (u == "CANCELLED") return 2;
+    return 1;
+  }
+
   /// Enqueue an Outbox mutation when a Sale Challan is created or modified
   static void onSaleChallanSaved(SaleChallan challan, String storeToken) {
     if (storeToken.trim().isEmpty) return;
@@ -24,11 +31,29 @@ class SaleChallanSyncModule {
     );
   }
 
-  /// Enqueue a deletion tombstone when a Sale Challan is deleted
+  /// Enqueue a mutation when a Sale Challan is Cancelled (Middle-Challan Cancel)
+  static void onSaleChallanCancelled(SaleChallan challan, String storeToken) {
+    if (storeToken.trim().isEmpty) return;
+    challan.isDeleted = 0;
+    challan.status = "Cancelled";
+    challan.version += 1;
+    challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    SyncQueueManager.enqueueMutation(
+      syncId: challan.id,
+      storeToken: storeToken,
+      docType: docTypeSaleChallan,
+      currentVersion: challan.version,
+      isDelete: false,
+      rawPayload: challan.toMap(),
+      exactVersion: true,
+    );
+  }
+
+  /// Enqueue a deletion tombstone when a Sale Challan is hard deleted (Last-Draft Delete)
   static void onSaleChallanDeleted(SaleChallan challan, String storeToken) {
     if (storeToken.trim().isEmpty) return;
     challan.isDeleted = 1;
-    challan.status = "Cancelled";
+    challan.status = "Deleted";
     challan.version += 1;
     challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
     SyncQueueManager.enqueueMutation(
@@ -47,17 +72,20 @@ class SaleChallanSyncModule {
     if (envelope.documentType != docTypeSaleChallan && envelope.documentType != "CHALLAN") return false;
     final targetId = envelope.syncId.trim();
     if (targetId.isEmpty) return false;
+
     final incomingChallan = SaleChallan.fromMap(envelope.billData);
     incomingChallan.id = targetId;
     incomingChallan.version = envelope.version;
     incomingChallan.updatedAt = envelope.updatedAt;
     incomingChallan.isDeleted = envelope.isDeleted;
+
     return applySaleChallanMutation(currentChallans, incomingChallan);
   }
 
-  /// Apply mutation with Monotonic Versioning and LWW Clock Auditing
+  /// Apply mutation with Monotonic Versioning, Status Rank and LWW Clock Auditing
   static bool applySaleChallanMutation(List<SaleChallan> currentChallans, SaleChallan incoming) {
     final idx = currentChallans.indexWhere((c) => c.id.trim().isNotEmpty && incoming.id.trim().isNotEmpty && c.id.trim() == incoming.id.trim());
+
     if (incoming.isDeleted == 1) {
       if (idx != -1) {
         final local = currentChallans[idx];
@@ -70,6 +98,7 @@ class SaleChallanSyncModule {
       }
       return false;
     }
+
     if (idx > -1) {
       final local = currentChallans[idx];
       // 🛡️ Strict Monotonic Versioning + LWW Clock Auditing (#F-06 Deterministic Equal-Ver/Equal-Ts)
@@ -77,10 +106,10 @@ class SaleChallanSyncModule {
       if (incoming.version == local.version) {
         if (incoming.updatedAt < local.updatedAt) return false;
         if (incoming.updatedAt == local.updatedAt) {
-          final bool localBilled = local.status.trim().toUpperCase() == "BILLED";
-          final bool incomingBilled = incoming.status.trim().toUpperCase() == "BILLED";
-          if (localBilled != incomingBilled) {
-            if (!incomingBilled) return false;
+          final int localRank = statusRank(local.status);
+          final int incomingRank = statusRank(incoming.status);
+          if (localRank != incomingRank) {
+            if (incomingRank < localRank) return false;
           } else {
             final String localCanon = _canonicalDigest(local);
             final String incomingCanon = _canonicalDigest(incoming);
@@ -89,6 +118,14 @@ class SaleChallanSyncModule {
           }
         }
       }
+
+      // Never silently demote Billed to Pending unless version is higher
+      if (local.status.trim().toUpperCase() == "BILLED" &&
+          incoming.status.trim().toUpperCase() != "BILLED" &&
+          incoming.version <= local.version) {
+        return false;
+      }
+
       currentChallans[idx] = incoming;
       return true;
     } else {

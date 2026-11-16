@@ -115,10 +115,18 @@ class SettingsSyncModule {
             incoming.saleReturnPrefix != currentConfig.saleReturnPrefix ||
             incoming.purReturnPrefix != currentConfig.purReturnPrefix;
 
+        final mergedHwm = AppConfig.mergeHwmMaps(currentConfig.challanHwm, incoming.challanHwm);
+        final bool hwmChanged = mergedHwm.length != currentConfig.challanHwm.length ||
+            mergedHwm.entries.any((e) => (currentConfig.challanHwm[e.key] ?? 0) != e.value);
+        if (hwmChanged) {
+          currentConfig.challanHwm = mergedHwm;
+        }
         if (incoming.version > bestVer ||
             incoming.updatedAt > bestTs ||
-            (bestTs == 0 && fieldDiff)) {
+            (bestTs == 0 && fieldDiff) ||
+            hwmChanged) {
           updated = incoming;
+          updated.challanHwm = mergedHwm;
           bestVer = incoming.version;
           bestTs = incoming.updatedAt;
         }

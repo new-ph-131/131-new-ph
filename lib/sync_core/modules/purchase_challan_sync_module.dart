@@ -10,6 +10,13 @@ import '../outbox/sync_queue_manager.dart';
 class PurchaseChallanSyncModule {
   static const String docTypePurchaseChallan = "PURCHASE_CHALLAN";
 
+  static int statusRank(String s) {
+    final u = s.trim().toUpperCase();
+    if (u == "BILLED") return 3;
+    if (u == "CANCELLED") return 2;
+    return 1;
+  }
+
   /// Generate composite key: partyId_billNo_internalNo to prevent collisions across suppliers
   static String makeCompositeKey(String partyId, String billNo, String internalNo) {
     final p = partyId.trim().toUpperCase();
@@ -34,11 +41,29 @@ class PurchaseChallanSyncModule {
     );
   }
 
+  /// Enqueue a mutation when a Purchase Challan is Cancelled (Middle-Challan Cancel)
+  static void onPurchaseChallanCancelled(PurchaseChallan challan, String storeToken) {
+    if (storeToken.trim().isEmpty) return;
+    challan.isDeleted = 0;
+    challan.status = "Cancelled";
+    challan.version += 1;
+    challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    SyncQueueManager.enqueueMutation(
+      syncId: challan.id,
+      storeToken: storeToken,
+      docType: docTypePurchaseChallan,
+      currentVersion: challan.version,
+      isDelete: false,
+      rawPayload: challan.toMap(),
+      exactVersion: true,
+    );
+  }
+
   /// Enqueue a deletion tombstone when a Purchase Challan is deleted
   static void onPurchaseChallanDeleted(PurchaseChallan challan, String storeToken) {
     if (storeToken.trim().isEmpty) return;
     challan.isDeleted = 1;
-    challan.status = "Cancelled";
+    challan.status = "Deleted";
     challan.version += 1;
     challan.updatedAt = DateTime.now().millisecondsSinceEpoch;
     SyncQueueManager.enqueueMutation(
@@ -57,15 +82,17 @@ class PurchaseChallanSyncModule {
     if (envelope.documentType != docTypePurchaseChallan) return false;
     final targetId = envelope.syncId.trim();
     if (targetId.isEmpty) return false;
+
     final incoming = PurchaseChallan.fromMap(envelope.billData);
     incoming.id = targetId;
     incoming.version = envelope.version;
     incoming.updatedAt = envelope.updatedAt;
     incoming.isDeleted = envelope.isDeleted;
+
     return applyPurchaseChallanMutation(currentList, incoming);
   }
 
-  /// Apply mutation with Monotonic Versioning and LWW Clock Auditing
+  /// Apply mutation with Monotonic Versioning, Status Rank and LWW Clock Auditing
   static bool applyPurchaseChallanMutation(List<PurchaseChallan> currentList, PurchaseChallan incoming) {
     final cleanInt = incoming.internalNo.trim().toUpperCase();
     final cleanBill = incoming.billNo.trim();
@@ -109,10 +136,10 @@ class PurchaseChallanSyncModule {
       if (incoming.version == local.version) {
         if (incoming.updatedAt < local.updatedAt) return false;
         if (incoming.updatedAt == local.updatedAt) {
-          final bool localBilled = local.status.trim().toUpperCase() == "BILLED";
-          final bool incomingBilled = incoming.status.trim().toUpperCase() == "BILLED";
-          if (localBilled != incomingBilled) {
-            if (!incomingBilled) return false;
+          final int localRank = statusRank(local.status);
+          final int incomingRank = statusRank(incoming.status);
+          if (localRank != incomingRank) {
+            if (incomingRank < localRank) return false;
           } else {
             final String localCanon = _canonicalDigest(local);
             final String incomingCanon = _canonicalDigest(incoming);
@@ -121,6 +148,14 @@ class PurchaseChallanSyncModule {
           }
         }
       }
+
+      // Never silently demote Billed to Pending unless version is higher
+      if (local.status.trim().toUpperCase() == "BILLED" &&
+          incoming.status.trim().toUpperCase() != "BILLED" &&
+          incoming.version <= local.version) {
+        return false;
+      }
+
       currentList[idx] = incoming;
       return true;
     } else {

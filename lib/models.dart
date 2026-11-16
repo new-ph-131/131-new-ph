@@ -1210,6 +1210,7 @@ PurchaseChallan? findDuplicateSupplierChallan({
   if ((cleanParty.isEmpty && cleanPartyName.isEmpty) || cleanBill.isEmpty) return null;
   for (final c in challans) {
     if (c.isDeleted == 1) continue;
+    if (c.status.trim().toUpperCase() == "CANCELLED") continue;
     if (cleanExId.isNotEmpty && c.id.trim() == cleanExId) continue;
     if (cleanExInt.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanExInt) continue;
     final String cOfy = normalizeFyString(c.effectiveOriginalFy);

@@ -516,6 +516,7 @@ class PharoahManager with ChangeNotifier {
       return;
     }
     D1SalesLedgerService.activeFinancialYear = currentFY;
+    await D1SalesLedgerService.loadPersistedGravestones();
     SharedPreferences.getInstance().then((prefs) {
       final bool pausedByUser = prefs.getBool('is_cloud_sync_paused_by_user') ?? false;
       if (!pausedByUser) {
@@ -1567,11 +1568,7 @@ Future<bool> finalizePurchase({
     if (activeCompany != null) {
       D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(cId, billNo, effFy);
     }
-    if (isEditMode) {
-      saleChallans.removeWhere((c) => c.id == cId);
-    } else {
-      saleChallans.removeWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
-    }
+    saleChallans.removeWhere((c) => c.id == cId);
     final newChallan = SaleChallan(
       id: cId, 
       billNo: billNo, 
@@ -1588,6 +1585,17 @@ Future<bool> finalizePurchase({
       originalFy: targetOfy,
     );
     saleChallans.add(newChallan);
+    if (activeCompany != null) {
+      await PharoahNumberingEngine.recordChallanHwm(
+        companyID: activeCompany!.id,
+        type: "SALE_CHALLAN",
+        prefix: config.saleChallanPrefix,
+        number: billNo,
+        fy: effFy,
+        env: "APP",
+        config: config,
+      );
+    }
 
     // 🆕 STRICT TWO-WAY SYNC: Sale Challan items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
@@ -1697,11 +1705,7 @@ Future<bool> finalizePurchase({
     if (activeCompany != null) {
       D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, effFy);
     }
-    if (isEditMode) {
-      purchaseChallans.removeWhere((c) => c.id == cId);
-    } else {
-      purchaseChallans.removeWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
-    }
+    purchaseChallans.removeWhere((c) => c.id == cId);
     final newPChallan = PurchaseChallan(
       id: cId, 
       internalNo: internalNo, 
@@ -1717,6 +1721,17 @@ Future<bool> finalizePurchase({
       originalFy: targetOfy,
     );
     purchaseChallans.add(newPChallan);
+    if (activeCompany != null) {
+      await PharoahNumberingEngine.recordChallanHwm(
+        companyID: activeCompany!.id,
+        type: "PURCHASE_CHALLAN",
+        prefix: config.purPrefix,
+        number: internalNo,
+        fy: effFy,
+        env: "APP",
+        config: config,
+      );
+    }
 
     // 🆕 STRICT TWO-WAY SYNC: Purchase Challan items ko correct systemId ke sath Batch Master me register karein
     for (var item in items) {
@@ -3504,9 +3519,203 @@ void registerBatchActivity({
       notifyListeners();
     } catch (e) {}
   }
+
+  /// Checks whether a Sale Challan is eligible for permanent deletion (Last-Eligible-Draft Gate).
+  /// Middle challans must be cancelled instead of deleted to protect audit trail and monotonic numbering.
+  bool canDeleteSaleChallan(String id) {
+    SaleChallan? c;
+    try {
+      c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
+    } catch (_) {
+      return false;
+    }
+    if (c.status == "Billed" || c.status == "Cancelled") return false;
+    final fwd = getForwardChallanStatus(c.id, isPurchase: false);
+    if (fwd.billedFy != null) return false;
+
+    final String cFy = normalizeFyString(c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY);
+    final String cBill = c.billNo.trim().toUpperCase();
+
+    String prefix = "";
+    int? cNum;
+    for (int i = 0; i < cBill.length; i++) {
+      if (RegExp(r'^[0-9]').hasMatch(cBill.substring(i))) {
+        prefix = cBill.substring(0, i);
+        cNum = int.tryParse(cBill.substring(i));
+        break;
+      }
+    }
+    if (cNum == null) return true;
+
+    for (final other in saleChallans) {
+      if (other.id == c.id) continue;
+      if (other.isDeleted == 1) continue;
+      final String oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : currentFY);
+      if (oFy != cFy) continue;
+      final String oBill = other.billNo.trim().toUpperCase();
+      if (prefix.isNotEmpty && oBill.startsWith(prefix)) {
+        final int? oNum = int.tryParse(oBill.substring(prefix.length).trim());
+        if (oNum != null && oNum > cNum) {
+          return false; // Higher number exists: Middle challan cannot be deleted
+        }
+      }
+    }
+    return true;
+  }
+
+  /// Cancels a Sale Challan preserving its UUID, number and audit history (Middle-Challan Cancel)
+  Future<bool> cancelSaleChallan(String id) async {
+    try {
+      final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
+      if (c.status == "Billed") {
+        debugPrint("🔒 [cancelSaleChallan] Blocked cancel on Billed challan ${c.id}");
+        return false;
+      }
+      final fwd = getForwardChallanStatus(c.id, isPurchase: false);
+      if (fwd.billedFy != null) {
+        debugPrint("🔒 [cancelSaleChallan] Blocked cancel on challan ${c.id} already Billed in ${fwd.billedFy}");
+        return false;
+      }
+      if (c.status == "Cancelled") return true;
+
+      c.status = "Cancelled";
+      c.version += 1;
+      c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+      final cId = c.id.trim();
+      final String effFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+
+      if (activeCompany != null) {
+        final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+        if (t.isNotEmpty) {
+          SaleChallanSyncModule.onSaleChallanCancelled(c, t);
+          await Future.wait([
+            D1SalesLedgerService.onSaleChallanCancelled(
+              c,
+              t,
+              clientSource: "APP_MOBILE",
+              fy: effFy,
+            ),
+            SyncQueueManager.flushOutboxAsJSONBatch(),
+          ]);
+        }
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'CANCEL_SALE_CHALLAN',
+          entityId: cId,
+          fy: effFy,
+        );
+      }
+      await save();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint("❌ [cancelSaleChallan] Error: $e");
+      return false;
+    }
+  }
+
+  /// Checks whether a Purchase Challan is eligible for permanent deletion (Last-Eligible-Draft Gate).
+  bool canDeletePurchaseChallan(String id) {
+    PurchaseChallan? c;
+    try {
+      c = purchaseChallans.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
+    } catch (_) {
+      return false;
+    }
+    if (c.status == "Billed" || c.status == "Cancelled") return false;
+    final fwd = getForwardChallanStatus(c.id, isPurchase: true);
+    if (fwd.billedFy != null) return false;
+
+    final String cFy = normalizeFyString(c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY);
+    final String cInt = c.internalNo.trim().toUpperCase();
+
+    String prefix = "";
+    int? cNum;
+    for (int i = 0; i < cInt.length; i++) {
+      if (RegExp(r'^[0-9]').hasMatch(cInt.substring(i))) {
+        prefix = cInt.substring(0, i);
+        cNum = int.tryParse(cInt.substring(i));
+        break;
+      }
+    }
+    if (cNum == null) return true;
+
+    for (final other in purchaseChallans) {
+      if (other.id == c.id) continue;
+      if (other.isDeleted == 1) continue;
+      final String oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : currentFY);
+      if (oFy != cFy) continue;
+      final String oInt = other.internalNo.trim().toUpperCase();
+      if (prefix.isNotEmpty && oInt.startsWith(prefix)) {
+        final int? oNum = int.tryParse(oInt.substring(prefix.length).trim());
+        if (oNum != null && oNum > cNum) {
+          return false; // Higher number exists: Middle challan cannot be deleted
+        }
+      }
+    }
+    return true;
+  }
+
+  /// Cancels a Purchase Challan preserving its UUID, internalNo and audit history
+  Future<bool> cancelPurchaseChallan(String id) async {
+    try {
+      final c = purchaseChallans.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
+      if (c.status == "Billed") {
+        debugPrint("🔒 [cancelPurchaseChallan] Blocked cancel on Billed challan ${c.id}");
+        return false;
+      }
+      final fwd = getForwardChallanStatus(c.id, isPurchase: true);
+      if (fwd.billedFy != null) {
+        debugPrint("🔒 [cancelPurchaseChallan] Blocked cancel on challan ${c.id} already Billed in ${fwd.billedFy}");
+        return false;
+      }
+      if (c.status == "Cancelled") return true;
+
+      c.status = "Cancelled";
+      c.version += 1;
+      c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+
+      final cId = c.id.trim();
+      final String effFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+
+      if (activeCompany != null) {
+        final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+        if (t.isNotEmpty) {
+          PurchaseChallanSyncModule.onPurchaseChallanCancelled(c, t);
+          await Future.wait([
+            D1SalesLedgerService.onPurchaseChallanCancelled(
+              c,
+              t,
+              clientSource: "APP_MOBILE",
+              fy: effFy,
+            ),
+            SyncQueueManager.flushOutboxAsJSONBatch(),
+          ]);
+        }
+        AppRealtimeCoordinator.instance.notifyAppMutation(
+          this,
+          action: 'CANCEL_PURCHASE_CHALLAN',
+          entityId: cId,
+          fy: effFy,
+        );
+      }
+      await save();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint("❌ [cancelPurchaseChallan] Error: $e");
+      return false;
+    }
+  }
+
   bool deleteSaleChallan(String id) {
     try {
       final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
+      if (!canDeleteSaleChallan(c.id)) {
+        debugPrint("🔒 [deleteSaleChallan] Blocked delete (not last eligible draft) on ${c.id}");
+        return false;
+      }
       if (c.status == "Billed") {
         debugPrint("🔒 [deleteSaleChallan] Blocked delete on Billed challan ${c.id}");
         return false;
@@ -3588,6 +3797,10 @@ void registerBatchActivity({
   bool deletePurchaseChallan(String id) {
     try {
       final c = purchaseChallans.firstWhere((x) => x.id == id || x.internalNo == id || x.billNo == id);
+      if (!canDeletePurchaseChallan(c.id)) {
+        debugPrint("🔒 [deletePurchaseChallan] Blocked delete (not last eligible draft) on ${c.id}");
+        return false;
+      }
       if (c.status == "Billed") {
         debugPrint("🔒 [deletePurchaseChallan] Blocked delete on Billed challan ${c.id}");
         return false;
@@ -4305,6 +4518,7 @@ void registerBatchActivity({
   Future<void> loadDataForMaintenanceSilently(String year) async {
     currentFY = year.trim();
     D1SalesLedgerService.activeFinancialYear = currentFY;
+    await D1SalesLedgerService.loadPersistedGravestones();
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
     dynamic load(String n) {

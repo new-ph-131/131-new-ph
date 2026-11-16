@@ -1758,10 +1758,6 @@ class D1SalesLedgerService {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS") {
           recordKnownVersion(challan.id, challan.billNo, challan.version, effFy);
-          final int? newSeq = data["seq"];
-          if (newSeq != null && newSeq > 0) {
-            await _updateHighestLocalSeq(storeToken, newSeq);
-          }
           return true;
         }
       } else if (res.statusCode == 410) {
@@ -1790,6 +1786,66 @@ class D1SalesLedgerService {
       }
     } catch (e) {
       debugPrint("⚠ [D1SalesLedger] onSaleChallanSaved Network Error: $e");
+    }
+    return false;
+  }
+
+
+  /// Called when a SaleChallan is cancelled (Middle-Challan Cancel)
+  static Future<bool> onSaleChallanCancelled(
+    SaleChallan challan,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+    final String effFy = normalizeFyString(
+      (fy != null && fy.trim().isNotEmpty)
+          ? fy.trim()
+          : (challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : activeFinancialYear.trim()),
+    );
+    final String cleanBNo = challan.billNo.trim().toUpperCase();
+    final String scopedBNo = cleanBNo.isNotEmpty ? scopeSecondaryKey(cleanBNo, effFy) : "";
+    try {
+      final chMap = challan.toMap();
+      chMap["doc_type"] = "SALE_CHALLAN";
+      chMap["status"] = "Cancelled";
+      chMap["isDeleted"] = 0;
+      chMap["is_deleted"] = 0;
+      chMap["originalFy"] = effFy;
+      chMap["fy"] = effFy;
+
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "unmarkedIds": [
+          challan.id,
+          if (scopedBNo.isNotEmpty) scopedBNo,
+          if (cleanBNo.isNotEmpty) cleanBNo,
+        ],
+        "sale_event": {
+          "id": challan.id,
+          "bill_no": challan.billNo,
+          "version": challan.version,
+          "action": "CANCEL",
+          "status": "Cancelled",
+          "client_source": clientSource,
+          "payload": chMap,
+        },
+      };
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data["status"] == "SUCCESS") {
+          recordKnownVersion(challan.id, challan.billNo, challan.version, effFy);
+          return true;
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onSaleChallanCancelled Network Error: $e");
     }
     return false;
   }
@@ -1868,12 +1924,6 @@ class D1SalesLedgerService {
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
-        try {
-          final data = jsonDecode(res.body);
-          if (data["seq"] != null) {
-            await _updateHighestLocalSeq(storeToken, data["seq"]);
-          }
-        } catch (_) {}
         return true;
       }
     } catch (e) {
@@ -2016,10 +2066,9 @@ class D1SalesLedgerService {
 
         if (existingIdx != -1) {
           final local = localChallans[existingIdx];
-          // Hard-lock Billed protection against stale Pending event
-          if (local.status.trim().toUpperCase() == "BILLED" &&
-              incoming.status.trim().toUpperCase() == "PENDING" &&
-              incoming.updatedAt <= local.updatedAt) {
+          final int localRank = SaleChallanSyncModule.statusRank(local.status);
+          final int incRank = SaleChallanSyncModule.statusRank(incoming.status);
+          if (localRank > incRank && version <= local.version) {
             continue;
           }
           if (version > local.version ||
@@ -2121,10 +2170,6 @@ class D1SalesLedgerService {
             challan.internalNo,
             effFy,
           );
-          final int? newSeq = data["seq"];
-          if (newSeq != null && newSeq > 0) {
-            await _updateHighestLocalSeq(storeToken, newSeq);
-          }
           return true;
         }
       } else if (res.statusCode == 410) {
@@ -2172,6 +2217,82 @@ class D1SalesLedgerService {
       }
     } catch (e) {
       debugPrint("⚠ [D1SalesLedger] onPurchaseChallanSaved Network Error: $e");
+    }
+    return false;
+  }
+
+
+  /// Called when a PurchaseChallan is cancelled (Middle-Challan Cancel)
+  static Future<bool> onPurchaseChallanCancelled(
+    PurchaseChallan challan,
+    String storeToken, {
+    String clientSource = "APP_MOBILE",
+    String? fy,
+  }) async {
+    if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
+    final String effFy = normalizeFyString(
+      (fy != null && fy.trim().isNotEmpty)
+          ? fy.trim()
+          : (challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : activeFinancialYear.trim()),
+    );
+    final String cleanINo = challan.internalNo.trim().toUpperCase();
+    final String cleanBNo = challan.billNo.trim();
+    final String cleanPId = challan.partyId.trim().toUpperCase();
+    final String scopedINo = cleanINo.isNotEmpty ? scopeSecondaryKey(cleanINo, effFy) : "";
+    final String compKey2 = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
+    final String compKey3 = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
+    final String scopedComp2 = compKey2.isNotEmpty ? scopeSecondaryKey(compKey2, effFy, true) : "";
+    final String scopedComp3 = compKey3.isNotEmpty ? scopeSecondaryKey(compKey3, effFy, true) : "";
+
+    try {
+      final chMap = challan.toMap();
+      chMap["doc_type"] = "PURCHASE_CHALLAN";
+      chMap["status"] = "Cancelled";
+      chMap["isDeleted"] = 0;
+      chMap["is_deleted"] = 0;
+      chMap["originalFy"] = effFy;
+      chMap["fy"] = effFy;
+
+      final payload = {
+        "storeToken": storeToken.trim().toUpperCase(),
+        "unmarkedIds": [
+          challan.id,
+          if (scopedINo.isNotEmpty) scopedINo,
+          if (cleanINo.isNotEmpty) cleanINo,
+          if (scopedComp2.isNotEmpty) scopedComp2,
+          if (scopedComp3.isNotEmpty) scopedComp3,
+        ],
+        "sale_event": {
+          "id": challan.id,
+          "bill_no": challan.billNo,
+          "version": challan.version,
+          "action": "CANCEL",
+          "status": "Cancelled",
+          "client_source": clientSource,
+          "payload": chMap,
+        },
+      };
+      final res = await http.post(
+        Uri.parse(endpoint),
+        headers: _headers,
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data["status"] == "SUCCESS") {
+          recordPurchaseKnownVersion(
+            challan.id,
+            challan.partyId,
+            challan.billNo,
+            challan.version,
+            challan.internalNo,
+            effFy,
+          );
+          return true;
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠ [D1SalesLedger] onPurchaseChallanCancelled Network Error: $e");
     }
     return false;
   }
@@ -2265,12 +2386,6 @@ class D1SalesLedgerService {
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
-        try {
-          final data = jsonDecode(res.body);
-          if (data["seq"] != null) {
-            await _updateHighestLocalSeq(storeToken, data["seq"]);
-          }
-        } catch (_) {}
         return true;
       }
     } catch (e) {
@@ -2453,9 +2568,9 @@ class D1SalesLedgerService {
 
         if (existingIdx != -1) {
           final local = localChallans[existingIdx];
-          if (local.status.trim().toUpperCase() == "BILLED" &&
-              incoming.status.trim().toUpperCase() == "PENDING" &&
-              incoming.updatedAt <= local.updatedAt) {
+          final int localRank = PurchaseChallanSyncModule.statusRank(local.status);
+          final int incRank = PurchaseChallanSyncModule.statusRank(incoming.status);
+          if (localRank > incRank && version <= local.version) {
             continue;
           }
           if (version > local.version ||

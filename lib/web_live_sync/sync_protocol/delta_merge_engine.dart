@@ -282,6 +282,17 @@ class DeltaMergeEngine {
               shouldAccept = cldSig != locSig && cldSig.compareTo(locSig) > 0;
             }
           }
+          if (isSaleChallanDoc || getCloudCompositeKey != null) {
+            final String locStatus = (localMap["status"] ?? "").toString().trim().toUpperCase();
+            final String cldStatus = (cloudMap["status"] ?? "").toString().trim().toUpperCase();
+            final int locRank = (locStatus == "BILLED") ? 3 : ((locStatus == "CANCELLED") ? 2 : 1);
+            final int cldRank = (cldStatus == "BILLED") ? 3 : ((cldStatus == "CANCELLED") ? 2 : 1);
+            if (locRank > cldRank && cloudVersion <= localVer) {
+              shouldAccept = false;
+            } else if (cldRank > locRank && cloudVersion == localVer && cloudTimestamp >= localTimestamp) {
+              shouldAccept = true;
+            }
+          }
           if (shouldAccept) {
             localList[idx] = fromMap(cloudMap);
             changed = true;
@@ -473,12 +484,28 @@ class DeltaMergeEngine {
               incomingCfg.caMailID != localCfg.caMailID ||
               incomingCfg.caPhone != localCfg.caPhone ||
               incomingCfg.isAuditMode != localCfg.isAuditMode;
+          final mergedHwm = AppConfig.mergeHwmMaps(localCfg.challanHwm, incomingCfg.challanHwm);
+          WebPharoahNumberingEngine.absorbChallanHwmMap(mergedHwm);
           if (incomingCfg.updatedAt > localCfg.updatedAt ||
               incomingCfg.version > localCfg.version ||
               (localCfg.updatedAt == 0 && isDiff)) {
+            incomingCfg.challanHwm = mergedHwm;
             ph.config = incomingCfg;
             cConfig = true;
+          } else {
+            ph.config.challanHwm = mergedHwm;
           }
+        }
+      } catch (_) {}
+    }
+    final rawHwmJson = cloudFiles['challan_hwm.json'];
+    if (rawHwmJson != null) {
+      try {
+        final dynamic decHwm = rawHwmJson is String ? jsonDecode(rawHwmJson) : rawHwmJson;
+        final parsed = AppConfig.parseHwmMap(decHwm);
+        if (parsed.isNotEmpty) {
+          ph.config.challanHwm = AppConfig.mergeHwmMaps(ph.config.challanHwm, parsed);
+          WebPharoahNumberingEngine.absorbChallanHwmMap(ph.config.challanHwm);
         }
       } catch (_) {}
     }

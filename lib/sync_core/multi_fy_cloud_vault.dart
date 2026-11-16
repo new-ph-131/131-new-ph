@@ -39,6 +39,13 @@ class MultiFyCloudVault {
     'gst_sessions.json',
   ];
 
+  static int _challanStatusRank(String s) {
+    final u = s.trim().toUpperCase();
+    if (u == 'BILLED') return 3;
+    if (u == 'CANCELLED') return 2;
+    return 1;
+  }
+
   static const Set<String> _lwwRecordListFiles = {
     'sales.json',
     'purc.json',
@@ -481,7 +488,17 @@ class MultiFyCloudVault {
         final String locId = (locMap['id'] ?? '').toString().trim();
         final String candId = (candidate['id'] ?? '').toString().trim();
 
-        if (cldVer > locVer || (cldVer == locVer && cldUpd > locUpd)) {
+        bool candidateWins = cldVer > locVer || (cldVer == locVer && cldUpd > locUpd);
+        if (cldVer == locVer && (fileName == 's_challan.json' || fileName == 'p_challan.json')) {
+          final int locRank = _challanStatusRank((locMap['status'] ?? '').toString());
+          final int cldRank = _challanStatusRank((candidate['status'] ?? '').toString());
+          if (cldRank > locRank && cldUpd >= locUpd) {
+            candidateWins = true;
+          } else if (locRank > cldRank) {
+            candidateWins = false;
+          }
+        }
+        if (candidateWins) {
           if (fileName == "parts.json" && locMap["opBal"] != null && locUpd >= cldUpd) {
             candidate["opBal"] = locMap["opBal"];
           }
@@ -1125,6 +1142,23 @@ class MultiFyCloudVault {
           } catch (_) {
             mergedFyMap[fileName] = localContent ?? remoteContent ?? '[]';
           }
+        } else if (fileName == 'config.json' && (localContent != null || remoteContent != null)) {
+          try {
+            final locCfg = localContent != null ? jsonDecode(localContent) : {};
+            final remCfg = remoteContent != null ? jsonDecode(remoteContent) : {};
+            if (locCfg is Map && remCfg is Map) {
+              final locHwm = AppConfig.parseHwmMap(locCfg['challanHwm'] ?? locCfg['challan_hwm']);
+              final remHwm = AppConfig.parseHwmMap(remCfg['challanHwm'] ?? remCfg['challan_hwm']);
+              final mergedHwm = AppConfig.mergeHwmMaps(locHwm, remHwm);
+              final Map<String, dynamic> baseCfg = Map<String, dynamic>.from(localContent != null ? locCfg : remCfg);
+              baseCfg['challanHwm'] = mergedHwm;
+              mergedFyMap[fileName] = jsonEncode(baseCfg);
+            } else {
+              mergedFyMap[fileName] = localContent ?? remoteContent!;
+            }
+          } catch (_) {
+            mergedFyMap[fileName] = localContent ?? remoteContent!;
+          }
         } else if (fileName == 'bats.json' && localContent != null && remoteContent != null) {
           try {
             final dynamic locMapRaw = jsonDecode(localContent);
@@ -1173,6 +1207,9 @@ class MultiFyCloudVault {
     filesPayload['registered_fyears.json'] = jsonEncode(sortedFys);
     filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
     filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
+    if (ph.config.challanHwm.isNotEmpty) {
+      filesPayload['challan_hwm.json'] = jsonEncode(ph.config.challanHwm);
+    }
     final unmarkedReg = await TombstoneEngine.getUnmarkedRegistry(comp.id);
     if (unmarkedReg.isNotEmpty) {
       filesPayload['unmarked_tombstones.json'] = jsonEncode(unmarkedReg);
