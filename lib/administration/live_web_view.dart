@@ -1,4 +1,5 @@
 import '../event_sync_lab/ui/lab_sync_test_bench.dart';
+import 'web_qr_scanner_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -100,6 +101,31 @@ class _LiveWebViewState extends State<LiveWebView> {
     }
   }
 
+  Future<void> _openQrScanner(PharoahManager ph) async {
+    if (ph.activeCompany == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please login to a company first.")),
+      );
+      return;
+    }
+    final approved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (c) => const WebQrScannerView()),
+    );
+    if (approved == true && mounted) {
+      await _loadState();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("✅ Web Workstation Logged In via QR!"),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _openInBrowser(String url) async {
     final Uri uri = Uri.parse(url);
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -175,6 +201,8 @@ class _LiveWebViewState extends State<LiveWebView> {
                 children: [
                   _buildMasterSwitchCard(ph),
                   const SizedBox(height: 20),
+                  _buildQrLoginActionCard(ph),
+                  const SizedBox(height: 20),
                   _buildCredentialsCard(ph),
                   const SizedBox(height: 20),
                   if (isLiveWebActive) ...[
@@ -231,6 +259,74 @@ class _LiveWebViewState extends State<LiveWebView> {
             activeColor: Colors.cyanAccent,
             activeTrackColor: Colors.cyan.shade900,
             onChanged: (val) => _toggleLiveWeb(val, ph),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQrLoginActionCard(PharoahManager ph) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.cyanAccent.withOpacity(0.45), width: 1.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.cyanAccent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.qr_code_scanner_rounded, color: Colors.cyanAccent, size: 24),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "TELEGRAM-STYLE QR WEB LOGIN",
+                      style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      "Web screen par dikhne wala QR scan karke turant login karein.",
+                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.cyanAccent,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () => _openQrScanner(ph),
+              icon: const Icon(Icons.qr_code_2_rounded, size: 22),
+              label: const Text(
+                "SCAN WEB LOGIN QR",
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.6),
+              ),
+            ),
           ),
         ],
       ),
