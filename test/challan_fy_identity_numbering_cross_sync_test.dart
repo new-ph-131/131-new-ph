@@ -1765,7 +1765,8 @@ void main() {
     });
 
     testWidgets('Scenario 11: Web Sale & Purchase Challan FINISH rapid double-tap creates ONLY 1 challan (no twin WSCH-1+WSCH-2)', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1280, 800));
+      SharedPreferences.setMockInitialValues({});
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       final webPh = PharoahWebManager();
@@ -1783,21 +1784,52 @@ void main() {
         ),
       ];
       final customer = Party(id: 'C-DT', name: 'DoubleTap Customer', state: 'Rajasthan');
+      final supplier = Party(id: 'S-DT', name: 'DoubleTap Supplier', group: 'Sundry Creditors');
 
-      // 1. WebSaleChallanBillingView double-tap FINISH test
       await tester.pumpWidget(
         ChangeNotifierProvider<PharoahWebManager>.value(
           value: webPh,
           child: MaterialApp(
-            home: WebSaleChallanBillingView(
-              party: customer,
-              challanNo: 'WSCH-1',
-              challanDate: DateTime(2026, 7, 15),
+            home: Scaffold(
+              body: Builder(
+                builder: (ctx) => Column(
+                  children: [
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).push(
+                        MaterialPageRoute(
+                          builder: (_) => WebSaleChallanBillingView(
+                            party: customer,
+                            challanNo: 'WSCH-1',
+                            challanDate: DateTime(2026, 7, 15),
+                          ),
+                        ),
+                      ),
+                      child: const Text('OPEN_SALE_DT'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).push(
+                        MaterialPageRoute(
+                          builder: (_) => WebPurchaseChallanBillingView(
+                            supplier: supplier,
+                            internalNo: 'WPCH-1',
+                            supplierRefNo: 'SUP-DT-1',
+                            challanDate: DateTime(2026, 7, 15),
+                          ),
+                        ),
+                      ),
+                      child: const Text('OPEN_PUR_DT'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
       );
-      await tester.pump();
+
+      // 1. WebSaleChallanBillingView double-tap FINISH test
+      await tester.tap(find.text('OPEN_SALE_DT'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'PARA');
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('sc_med_MED-DT_0')));
@@ -1814,27 +1846,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(webPh.saleChallans.length, equals(1));
       expect(webPh.saleChallans.single.billNo, equals('WSCH-1'));
+      expect(find.text('OPEN_PUR_DT'), findsOneWidget);
 
       // 2. WebPurchaseChallanBillingView double-tap FINISH test
-      final supplier = Party(id: 'S-DT', name: 'DoubleTap Supplier', group: 'Sundry Creditors');
-      await tester.pumpWidget(
-        ChangeNotifierProvider<PharoahWebManager>.value(
-          value: webPh,
-          child: MaterialApp(
-            home: WebPurchaseChallanBillingView(
-              supplier: supplier,
-              internalNo: 'WPCH-1',
-              supplierRefNo: 'SUP-DT-1',
-              challanDate: DateTime(2026, 7, 15),
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
+      await tester.tap(find.text('OPEN_PUR_DT'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'PARA');
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('pc_med_MED-DT_0')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('CONFIRM & ADD TO INWARD'));
       await tester.tap(find.text('CONFIRM & ADD TO INWARD'));
       await tester.pumpAndSettle();
 
@@ -1845,6 +1866,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(webPh.purchaseChallans.length, equals(1));
       expect(webPh.purchaseChallans.single.internalNo, equals('WPCH-1'));
+      expect(find.text('OPEN_SALE_DT'), findsOneWidget);
     });
 
     test('Scenario 12: Migration bootstrap picks max(persisted, active/cancelled, tombstones) + 1 safely', () async {
