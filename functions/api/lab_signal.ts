@@ -1,7 +1,7 @@
 // FILE: functions/api/lab_signal.ts
 // Cloudflare Pages Function: High-Capacity D1 SQL Edge Signal & Tombstone Resolution Bus (<30ms)
-// Features: Atomic Row-Level Signal/Tombstone Tables, Sticky Delete Guards, 100k Writes/Day.
-// Revision: #PH-REV-811 (FIX-NOBATCH-MULTI-MRP-FY-AND-PURCHASE-DELETE-SYNC)
+// Features: Single-Row Store Sync Meta Gate, Indexed Trim, Zero Warm DDL, Sticky Delete Guards.
+// Revision: #PH-REV-814 (D1-ROWS-READ-QUOTA-FIX)
 
 interface SignalRecord {
   id: string;
@@ -10,6 +10,7 @@ interface SignalRecord {
   action: string;
   entityType?: string;
   entityId: string;
+  deviceId?: string;
   financialYear?: string;
   fy?: string;
   timestamp: number;
@@ -18,12 +19,6 @@ interface SignalRecord {
   unmarkedIds?: string[];
   delta?: any;
   payload?: any;
-}
-
-interface ChannelData {
-  latest: SignalRecord | null;
-  events: SignalRecord[];
-  tombstones: string[];
 }
 
 const CORS_HEADERS = {
@@ -38,6 +33,10 @@ const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
 };
 
+// Cold-start isolate flag so DDL runs once per worker lifecycle instead of on every GET poll
+let _schemaReady = false;
+let _schemaPromise: Promise<void> | null = null;
+
 function inferFyFromDateStr(dateStr: any): string {
   if (!dateStr || typeof dateStr !== "string") return "";
   const dt = new Date(dateStr.trim());
@@ -50,34 +49,104 @@ function inferFyFromDateStr(dateStr: any): string {
   return `${y - 1}-${String(y).slice(-2)}`;
 }
 
-async function ensureSignalTables(db: any) {
-  await db.batch([
-    db.prepare("CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"),
-    db.prepare(
-      "CREATE TABLE IF NOT EXISTS signal_tombstones (" +
-      "store_token TEXT NOT NULL, " +
-      "tomb_key TEXT NOT NULL, " +
-      "fy TEXT DEFAULT '', " +
-      "updated_at INTEGER NOT NULL, " +
-      "PRIMARY KEY (store_token, tomb_key))"
-    ),
-    db.prepare(
-      "CREATE TABLE IF NOT EXISTS signal_events (" +
-      "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
-      "store_token TEXT NOT NULL, " +
-      "event_id TEXT NOT NULL, " +
-      "source TEXT NOT NULL, " +
-      "action TEXT NOT NULL, " +
-      "entity_type TEXT DEFAULT '', " +
-      "entity_id TEXT DEFAULT '', " +
-      "fy TEXT DEFAULT '', " +
-      "timestamp INTEGER NOT NULL, " +
-      "deleted_ids TEXT DEFAULT '[]', " +
-      "unmarked_ids TEXT DEFAULT '[]', " +
-      "event_json TEXT NOT NULL)"
-    ),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_signal_events_ts ON signal_events (store_token, timestamp, seq)"),
-  ]).catch(() => {});
+async function ensureSignalTablesOnce(db: any): Promise<void> {
+  if (_schemaReady) return;
+  if (_schemaPromise) return _schemaPromise;
+  _schemaPromise = (async () => {
+    try {
+      await db.batch([
+        db.prepare("CREATE TABLE IF NOT EXISTS signals (storeToken TEXT PRIMARY KEY, data TEXT, timestamp INTEGER)"),
+        db.prepare(
+          "CREATE TABLE IF NOT EXISTS signal_tombstones (" +
+          "store_token TEXT NOT NULL, " +
+          "tomb_key TEXT NOT NULL, " +
+          "fy TEXT DEFAULT '', " +
+          "updated_at INTEGER NOT NULL, " +
+          "PRIMARY KEY (store_token, tomb_key))"
+        ),
+        db.prepare(
+          "CREATE INDEX IF NOT EXISTS idx_signal_tombstones_store_updated ON signal_tombstones (store_token, updated_at)"
+        ),
+        db.prepare(
+          "CREATE TABLE IF NOT EXISTS signal_events (" +
+          "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
+          "store_token TEXT NOT NULL, " +
+          "event_id TEXT NOT NULL, " +
+          "source TEXT NOT NULL, " +
+          "action TEXT NOT NULL, " +
+          "entity_type TEXT DEFAULT '', " +
+          "entity_id TEXT DEFAULT '', " +
+          "fy TEXT DEFAULT '', " +
+          "timestamp INTEGER NOT NULL, " +
+          "deleted_ids TEXT DEFAULT '[]', " +
+          "unmarked_ids TEXT DEFAULT '[]', " +
+          "event_json TEXT NOT NULL)"
+        ),
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_signal_events_ts ON signal_events (store_token, timestamp, seq)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_signal_events_seq ON signal_events (store_token, seq)"),
+        db.prepare(
+          "CREATE TABLE IF NOT EXISTS sale_events (" +
+          "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
+          "store_token TEXT NOT NULL, " +
+          "bill_id TEXT NOT NULL, " +
+          "bill_no TEXT NOT NULL, " +
+          "version INTEGER NOT NULL, " +
+          "action TEXT NOT NULL, " +
+          "status TEXT NOT NULL, " +
+          "client_source TEXT NOT NULL, " +
+          "payload TEXT NOT NULL, " +
+          "created_at INTEGER NOT NULL)"
+        ),
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_sale_events_seq ON sale_events (store_token, seq)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_sale_events_bill ON sale_events (store_token, bill_id)"),
+        db.prepare(
+          "CREATE TABLE IF NOT EXISTS erp_master_sync (" +
+          "sync_id TEXT PRIMARY KEY, " +
+          "store_token TEXT NOT NULL, " +
+          "document_type TEXT NOT NULL, " +
+          "version INTEGER NOT NULL, " +
+          "updated_at INTEGER NOT NULL, " +
+          "is_deleted INTEGER NOT NULL, " +
+          "bill_data TEXT NOT NULL)"
+        ),
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_doc_type_updated ON erp_master_sync (store_token, document_type, updated_at)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS idx_erp_master_sync_store_updated ON erp_master_sync (store_token, updated_at)"),
+        db.prepare(
+          "CREATE TABLE IF NOT EXISTS store_sync_meta (" +
+          "store_token TEXT PRIMARY KEY, " +
+          "last_signal_ts INTEGER NOT NULL DEFAULT 0, " +
+          "last_batch_ts INTEGER NOT NULL DEFAULT 0, " +
+          "last_tomb_ts INTEGER NOT NULL DEFAULT 0, " +
+          "latest_seq INTEGER NOT NULL DEFAULT 0)"
+        ),
+      ]);
+      _schemaReady = true;
+    } catch (_) {
+      // Allow retry on next request if transient error
+    } finally {
+      _schemaPromise = null;
+    }
+  })();
+  return _schemaPromise;
+}
+
+function buildMetaUpsertStmt(
+  db: any,
+  storeToken: string,
+  signalTs: number,
+  batchTs: number,
+  tombTs: number,
+  latestSeq: number
+) {
+  return db.prepare(
+    "INSERT INTO store_sync_meta (store_token, last_signal_ts, last_batch_ts, last_tomb_ts, latest_seq) " +
+    "VALUES (?, ?, ?, ?, ?) " +
+    "ON CONFLICT(store_token) DO UPDATE SET " +
+    "last_signal_ts = CASE WHEN excluded.last_signal_ts > store_sync_meta.last_signal_ts THEN excluded.last_signal_ts ELSE store_sync_meta.last_signal_ts END, " +
+    "last_batch_ts = CASE WHEN excluded.last_batch_ts > store_sync_meta.last_batch_ts THEN excluded.last_batch_ts ELSE store_sync_meta.last_batch_ts END, " +
+    "last_tomb_ts = CASE WHEN excluded.last_tomb_ts > store_sync_meta.last_tomb_ts THEN excluded.last_tomb_ts ELSE store_sync_meta.last_tomb_ts END, " +
+    "latest_seq = CASE WHEN excluded.latest_seq > store_sync_meta.latest_seq THEN excluded.latest_seq ELSE store_sync_meta.latest_seq END"
+  ).bind(storeToken, signalTs, batchTs, tombTs, latestSeq);
 }
 
 async function applyAtomicTombstonesAndEvent(
@@ -87,8 +156,10 @@ async function applyAtomicTombstonesAndEvent(
   deletedKeys: string[],
   unmarkedKeys: string[],
   fy: string,
-  eventTs: number
-) {
+  eventTs: number,
+  extraBatchTs = 0,
+  extraLatestSeq = 0
+): Promise<number> {
   const stmts: any[] = [];
   const delSet = new Set<string>();
   const unmSet = new Set<string>();
@@ -147,14 +218,27 @@ async function applyAtomicTombstonesAndEvent(
     )
   );
 
-  // Keep event buffer trimmed per store (keep last 300 atomic events)
-  stmts.push(
-    db.prepare(
-      "DELETE FROM signal_events WHERE store_token = ? AND seq NOT IN (SELECT seq FROM signal_events WHERE store_token = ? ORDER BY seq DESC LIMIT 300)"
-    ).bind(storeToken, storeToken)
-  );
+  // Update single-row sync meta atomically so idle GET polls only read 1 row
+  const tombMetaTs = delSet.size > 0 ? eventTs : 0;
+  stmts.push(buildMetaUpsertStmt(db, storeToken, sigRecord.timestamp, extraBatchTs, tombMetaTs, extraLatestSeq));
 
   await db.batch(stmts).catch(() => {});
+
+  // Occasional indexed trim (~2% of writes) replaces expensive per-POST NOT IN full-store scan
+  if (Math.random() < 0.02) {
+    try {
+      const cutoffRow: any = await db.prepare(
+        "SELECT seq FROM signal_events WHERE store_token = ? ORDER BY seq DESC LIMIT 1 OFFSET 300"
+      ).bind(storeToken).first().catch(() => null);
+      if (cutoffRow && cutoffRow.seq) {
+        await db.prepare(
+          "DELETE FROM signal_events WHERE store_token = ? AND seq <= ?"
+        ).bind(storeToken, cutoffRow.seq).run().catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  return delSet.size;
 }
 
 export async function onRequestOptions() {
@@ -181,32 +265,17 @@ export async function onRequestPost(context: any) {
     }
 
     const reqFy = (body.fy || body.financialYear || "").toString().trim();
+    const bodyDeviceId = (body.device_id || body.deviceId || "").toString().trim();
+
+    if (context.env && context.env.SIGNAL_DB) {
+      await ensureSignalTablesOnce(context.env.SIGNAL_DB);
+    }
 
     // 🚀 SECTION 2: MARG-STYLE DETERMINISTIC SALE/PURCHASE EVENT LEDGER (D1 AUTO-INCREMENT SEQ)
     if (body.sale_event && typeof body.sale_event === "object") {
       try {
         if (context.env && context.env.SIGNAL_DB) {
           const db = context.env.SIGNAL_DB;
-          await ensureSignalTables(db);
-          await db.prepare(
-            "CREATE TABLE IF NOT EXISTS sale_events (" +
-            "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
-            "store_token TEXT NOT NULL, " +
-            "bill_id TEXT NOT NULL, " +
-            "bill_no TEXT NOT NULL, " +
-            "version INTEGER NOT NULL, " +
-            "action TEXT NOT NULL, " +
-            "status TEXT NOT NULL, " +
-            "client_source TEXT NOT NULL, " +
-            "payload TEXT NOT NULL, " +
-            "created_at INTEGER NOT NULL)"
-          ).run().catch(() => {});
-          await db.prepare(
-            "CREATE INDEX IF NOT EXISTS idx_sale_events_seq ON sale_events (store_token, seq)"
-          ).run().catch(() => {});
-          await db.prepare(
-            "CREATE INDEX IF NOT EXISTS idx_sale_events_bill ON sale_events (store_token, bill_id)"
-          ).run().catch(() => {});
 
           const ev = body.sale_event;
           const billId = (ev.bill_id || ev.id || "").toString().trim();
@@ -279,7 +348,7 @@ export async function onRequestPost(context: any) {
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
           ).bind(storeToken, billId, billNo, incomingVer, evAction, evStatus, clientSource, payload, nowMs).run();
 
-          const newSeq = insertRes?.meta?.last_row_id || nowMs;
+          const newSeq = Number(insertRes?.meta?.last_row_id || 0);
 
           const delIds: string[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
           const unmIds: string[] = Array.isArray(body.unmarkedIds) ? body.unmarkedIds : [];
@@ -354,6 +423,7 @@ export async function onRequestPost(context: any) {
             action: body.action || evAction,
             entityType: resolvedEntityType,
             entityId: billId,
+            deviceId: bodyDeviceId || undefined,
             financialYear: evFy,
             fy: evFy,
             timestamp: nowMs,
@@ -363,40 +433,21 @@ export async function onRequestPost(context: any) {
             payload: ev.payload || {},
           };
 
-          await applyAtomicTombstonesAndEvent(db, storeToken, sigRecord, atomicDelKeys, atomicUnmKeys, evFy, nowMs);
-
-          // Backward-compatible signals blob best-effort sync
-          try {
-            const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
-            let chanData: ChannelData = row && row.data ? JSON.parse(row.data) : { latest: null, events: [], tombstones: [] };
-            if (!chanData.tombstones) chanData.tombstones = [];
-            if (!chanData.events) chanData.events = [];
-            const tSet = new Set(chanData.tombstones);
-            if (evAction === "DELETE") {
-              for (const dk of atomicDelKeys) {
-                tSet.add(dk);
-                if (!dk.includes("_")) tSet.add(dk.toUpperCase());
-              }
-            } else {
-              for (const uk of atomicUnmKeys) {
-                tSet.delete(uk);
-                if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
-              }
-            }
-            chanData.tombstones = Array.from(tSet);
-            chanData.latest = sigRecord;
-            chanData.events.push(sigRecord);
-            if (chanData.events.length > 200) {
-              chanData.events = chanData.events.slice(chanData.events.length - 200);
-            }
-            await db.prepare(
-              "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
-            ).bind(storeToken, JSON.stringify(chanData), nowMs).run();
-          } catch (_) {}
+          await applyAtomicTombstonesAndEvent(
+            db,
+            storeToken,
+            sigRecord,
+            atomicDelKeys,
+            atomicUnmKeys,
+            evFy,
+            nowMs,
+            0,
+            newSeq
+          );
 
           return new Response(JSON.stringify({
             status: "SUCCESS",
-            seq: newSeq,
+            seq: newSeq || nowMs,
             version: incomingVer,
             bill_id: billId,
             bill_no: billNo,
@@ -410,7 +461,6 @@ export async function onRequestPost(context: any) {
 
     const action = (body.action || "DELTA_MUTATION").toUpperCase();
     const isDeleteAction = action.includes("DELETE") || action.includes("REMOVE");
-    const isOutboxBatch = action === "JSON_BATCH_MUTATION" || (body.source || "").toUpperCase() === "OUTBOX_BATCH";
 
     const extractedBatchDeletedIds: string[] = [];
     const extractedBatchUnmarkedIds: string[] = [];
@@ -475,7 +525,8 @@ export async function onRequestPost(context: any) {
     const nowMs = Date.now();
     const rawTs = body.timestamp ? parseInt(body.timestamp, 10) : 0;
     const normalizedTs = rawTs > 100000000000000 ? Math.floor(rawTs / 1000) : rawTs;
-    const effectiveTs = Math.max(normalizedTs || 0, nowMs);
+    // Clamp absurd future client clocks (max +5s ahead of server) so meta timestamps stay sane
+    const effectiveTs = normalizedTs > 0 ? Math.min(Math.max(normalizedTs, nowMs), nowMs + 5000) : nowMs;
 
     const record: SignalRecord = {
       id: body.id || ("evt_" + nowMs + "_" + Math.random().toString(36).substring(2, 7)),
@@ -484,6 +535,7 @@ export async function onRequestPost(context: any) {
       action: body.action || "DELTA_MUTATION",
       entityType: body.entityType || "",
       entityId: (body.entityId || "").trim(),
+      deviceId: bodyDeviceId || undefined,
       financialYear: reqFy,
       fy: reqFy,
       timestamp: effectiveTs,
@@ -494,16 +546,11 @@ export async function onRequestPost(context: any) {
       payload: body.payload || {},
     };
 
-    let channelData: ChannelData = {
-      latest: null,
-      events: [],
-      tombstones: [],
-    };
+    let activeDeletesInPost = 0;
 
     if (context.env && context.env.SIGNAL_DB) {
       try {
         const db = context.env.SIGNAL_DB;
-        await ensureSignalTables(db);
 
         const isPurchaseSignal = (record.entityType || "").toUpperCase().includes("PURCHASE") ||
           action.includes("PURCHASE");
@@ -530,111 +577,61 @@ export async function onRequestPost(context: any) {
           }
         }
 
-        // Write atomically to relational signal_tombstones & signal_events first
-        await applyAtomicTombstonesAndEvent(
+        // SECTION 1: CLOUDFLARE D1 BATCH ENGINE FOR ERP_MASTER_SYNC
+        let maxBatchOpTs = 0;
+        const sqlStatements: any[] = [];
+        if (body.operations && Array.isArray(body.operations) && body.operations.length > 0) {
+          for (const op of body.operations) {
+            const sId = (op.sync_id || "").toString().trim();
+            if (!sId) continue;
+            const dType = (op.document_type || "SALE").toString().toUpperCase();
+            const ver = parseInt(op.version || 1, 10);
+            const uAt = Math.max(parseInt(op.updated_at || 0, 10), nowMs);
+            if (uAt > maxBatchOpTs) maxBatchOpTs = uAt;
+            const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
+            const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
+            const rawData = op.data !== undefined ? op.data : op.bill_data;
+            const bData = typeof rawData === "string" ? rawData : JSON.stringify(rawData || {});
+
+            const stmt = db.prepare(
+              "INSERT INTO erp_master_sync (sync_id, store_token, document_type, version, updated_at, is_deleted, bill_data) " +
+              "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) " +
+              "ON CONFLICT(sync_id) DO UPDATE SET " +
+              "bill_data = CASE " +
+                "WHEN ?6 = 1 THEN CASE WHEN (?5 >= updated_at OR ?4 >= version) THEN ?7 ELSE bill_data END " +
+                "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN ?7 ELSE bill_data END " +
+                "WHEN (?5 >= updated_at OR ?4 > version) THEN ?7 ELSE bill_data END, " +
+              "is_deleted = CASE " +
+                "WHEN ?6 = 1 THEN 1 " +
+                "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN 0 ELSE 1 END " +
+                "WHEN (?5 >= updated_at OR ?4 > version) THEN ?6 ELSE is_deleted END, " +
+              "version = CASE WHEN ?4 > version THEN ?4 ELSE version END, " +
+              "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END"
+            ).bind(sId, storeToken, dType, ver, uAt, isDel, bData);
+            sqlStatements.push(stmt);
+          }
+        }
+
+        // Write erp_master_sync first if present, then atomic tombstones + signal event + meta
+        if (sqlStatements.length > 0) {
+          try {
+            await db.batch(sqlStatements);
+          } catch (batchErr) {
+            console.error("D1 Master Sync Batch Exception:", batchErr);
+          }
+        }
+
+        activeDeletesInPost = await applyAtomicTombstonesAndEvent(
           db,
           storeToken,
           record,
           effectiveDeletes,
           effectiveUnmarks,
           reqFy,
-          effectiveTs
+          effectiveTs,
+          maxBatchOpTs,
+          0
         );
-
-        // Maintain signals compatibility blob as best-effort secondary store
-        const row: any = await db.prepare("SELECT data FROM signals WHERE storeToken = ?").bind(storeToken).first();
-        if (row && row.data) {
-          try {
-            channelData = JSON.parse(row.data);
-          } catch (_) {}
-        }
-
-        if (!isOutboxBatch || !channelData.latest) {
-          channelData.latest = record;
-        } else {
-          channelData.latest = {
-            ...channelData.latest,
-            timestamp: Math.max(channelData.latest.timestamp || 0, record.timestamp),
-            serverReceivedAt: nowMs,
-            deletedIds: Array.from(new Set([...(channelData.latest.deletedIds || []), ...mergedDeletedIds])),
-            unmarkedIds: Array.from(new Set([...(channelData.latest.unmarkedIds || []), ...mergedUnmarkedIds])),
-          };
-        }
-
-        if (!channelData.events) channelData.events = [];
-        channelData.events.push(record);
-        if (channelData.events.length > 200) {
-          channelData.events = channelData.events.slice(channelData.events.length - 200);
-        }
-
-        if (!channelData.tombstones) channelData.tombstones = [];
-        const tSet = new Set(channelData.tombstones);
-        for (const u of effectiveUnmarks) {
-          if (u && u.trim()) {
-            const uk = u.trim();
-            tSet.delete(uk);
-            if (!uk.includes("_")) tSet.delete(uk.toUpperCase());
-          }
-        }
-        for (const d of effectiveDeletes) {
-          if (d && d.trim()) {
-            const dk = d.trim();
-            tSet.add(dk);
-            if (!dk.includes("_")) tSet.add(dk.toUpperCase());
-          }
-        }
-        channelData.tombstones = Array.from(tSet);
-
-        await db.prepare(
-          "INSERT INTO signals (storeToken, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(storeToken) DO UPDATE SET data = excluded.data, timestamp = excluded.timestamp"
-        ).bind(storeToken, JSON.stringify(channelData), nowMs).run();
-
-        // SECTION 1: CLOUDFLARE D1 BATCH ENGINE FOR ERP_MASTER_SYNC
-        if (body.operations && Array.isArray(body.operations) && body.operations.length > 0) {
-          try {
-            await db.prepare(
-              "CREATE TABLE IF NOT EXISTS erp_master_sync (sync_id TEXT PRIMARY KEY, store_token TEXT NOT NULL, document_type TEXT NOT NULL, version INTEGER NOT NULL, updated_at INTEGER NOT NULL, is_deleted INTEGER NOT NULL, bill_data TEXT NOT NULL)"
-            ).run().catch(() => {});
-            await db.prepare(
-              "CREATE INDEX IF NOT EXISTS idx_doc_type_updated ON erp_master_sync (store_token, document_type, updated_at)"
-            ).run().catch(() => {});
-
-            const sqlStatements = [];
-            for (const op of body.operations) {
-              const sId = (op.sync_id || "").toString().trim();
-              if (!sId) continue;
-              const dType = (op.document_type || "SALE").toString().toUpperCase();
-              const ver = parseInt(op.version || 1, 10);
-              const uAt = Math.max(parseInt(op.updated_at || 0, 10), nowMs);
-              const isActionDelete = (op.action || "").toString().toUpperCase() === "DELETE";
-              const isDel = (op.is_deleted === 1 || isActionDelete) ? 1 : 0;
-              const rawData = op.data !== undefined ? op.data : op.bill_data;
-              const bData = typeof rawData === "string" ? rawData : JSON.stringify(rawData || {});
-
-              const stmt = db.prepare(
-                "INSERT INTO erp_master_sync (sync_id, store_token, document_type, version, updated_at, is_deleted, bill_data) " +
-                "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) " +
-                "ON CONFLICT(sync_id) DO UPDATE SET " +
-                "bill_data = CASE " +
-                  "WHEN ?6 = 1 THEN CASE WHEN (?5 >= updated_at OR ?4 >= version) THEN ?7 ELSE bill_data END " +
-                  "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN ?7 ELSE bill_data END " +
-                  "WHEN (?5 >= updated_at OR ?4 > version) THEN ?7 ELSE bill_data END, " +
-                "is_deleted = CASE " +
-                  "WHEN ?6 = 1 THEN 1 " +
-                  "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN 0 ELSE 1 END " +
-                  "WHEN (?5 >= updated_at OR ?4 > version) THEN ?6 ELSE is_deleted END, " +
-                "version = CASE WHEN ?4 > version THEN ?4 ELSE version END, " +
-                "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END"
-              ).bind(sId, storeToken, dType, ver, uAt, isDel, bData);
-              sqlStatements.push(stmt);
-            }
-            if (sqlStatements.length > 0) {
-              await db.batch(sqlStatements);
-            }
-          } catch (batchErr) {
-            console.error("D1 Master Sync Batch Exception:", batchErr);
-          }
-        }
       } catch (d1Err) {
         console.error("D1 Write Exception:", d1Err);
       }
@@ -643,7 +640,7 @@ export async function onRequestPost(context: any) {
     return new Response(JSON.stringify({
       status: "SUCCESS",
       event: record,
-      activeTombstonesCount: channelData.tombstones.length,
+      activeTombstonesCount: activeDeletesInPost,
     }), {
       status: 200,
       headers: NO_CACHE_HEADERS,
@@ -654,6 +651,21 @@ export async function onRequestPost(context: any) {
       headers: NO_CACHE_HEADERS,
     });
   }
+}
+
+async function backfillStoreSyncMeta(db: any, storeToken: string) {
+  const [sigMax, batchMax, tombMax, seqMax]: any[] = await Promise.all([
+    db.prepare("SELECT COALESCE(MAX(timestamp), 0) AS m FROM signal_events WHERE store_token = ?").bind(storeToken).first().catch(() => null),
+    db.prepare("SELECT COALESCE(MAX(updated_at), 0) AS m FROM erp_master_sync WHERE store_token = ?").bind(storeToken).first().catch(() => null),
+    db.prepare("SELECT COALESCE(MAX(updated_at), 0) AS m FROM signal_tombstones WHERE store_token = ?").bind(storeToken).first().catch(() => null),
+    db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM sale_events WHERE store_token = ?").bind(storeToken).first().catch(() => null),
+  ]);
+  const sTs = Number(sigMax?.m || 0);
+  const bTs = Number(batchMax?.m || 0);
+  const tTs = Number(tombMax?.m || 0);
+  const lSeq = Number(seqMax?.m || 0);
+  await buildMetaUpsertStmt(db, storeToken, sTs, bTs, tTs, lSeq).run().catch(() => {});
+  return { last_signal_ts: sTs, last_batch_ts: bTs, last_tomb_ts: tTs, latest_seq: lSeq };
 }
 
 export async function onRequestGet(context: any) {
@@ -671,23 +683,44 @@ export async function onRequestGet(context: any) {
       });
     }
 
+    if (!context.env || !context.env.SIGNAL_DB) {
+      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], events: [], tombstones: [], batch_operations: [], serverTime: Date.now() }), {
+        status: 200,
+        headers: NO_CACHE_HEADERS,
+      });
+    }
+
+    const db = context.env.SIGNAL_DB;
+    await ensureSignalTablesOnce(db);
+
+    // 1-row gate check before touching any heavy table
+    let metaRow: any = await db.prepare(
+      "SELECT last_signal_ts, last_batch_ts, last_tomb_ts, latest_seq FROM store_sync_meta WHERE store_token = ?"
+    ).bind(storeToken).first().catch(() => null);
+
+    if (!metaRow) {
+      metaRow = await backfillStoreSyncMeta(db, storeToken);
+    }
+
+    const metaSignalTs = Number(metaRow.last_signal_ts || 0);
+    const metaBatchTs = Number(metaRow.last_batch_ts || 0);
+    const metaTombTs = Number(metaRow.last_tomb_ts || 0);
+    const metaLatestSeq = Number(metaRow.latest_seq || 0);
+
     // 🚀 SECTION 2: MARG-STYLE DETERMINISTIC SALE EVENT DELTAS
-    if (sinceSeq >= 0 && context.env && context.env.SIGNAL_DB) {
+    if (sinceSeq >= 0) {
       try {
-        const db = context.env.SIGNAL_DB;
-        await db.prepare(
-          "CREATE TABLE IF NOT EXISTS sale_events (" +
-          "seq INTEGER PRIMARY KEY AUTOINCREMENT, " +
-          "store_token TEXT NOT NULL, " +
-          "bill_id TEXT NOT NULL, " +
-          "bill_no TEXT NOT NULL, " +
-          "version INTEGER NOT NULL, " +
-          "action TEXT NOT NULL, " +
-          "status TEXT NOT NULL, " +
-          "client_source TEXT NOT NULL, " +
-          "payload TEXT NOT NULL, " +
-          "created_at INTEGER NOT NULL)"
-        ).run().catch(() => {});
+        if (metaLatestSeq <= sinceSeq) {
+          return new Response(JSON.stringify({
+            status: "SUCCESS",
+            events: [],
+            max_seq: sinceSeq,
+            count: 0,
+          }), {
+            status: 200,
+            headers: NO_CACHE_HEADERS,
+          });
+        }
 
         const deltaRows: any = await db.prepare(
           "SELECT seq, bill_id, bill_no, version, action, status, client_source, payload, created_at FROM sale_events " +
@@ -723,101 +756,101 @@ export async function onRequestGet(context: any) {
       }
     }
 
-    let current: SignalRecord | null = null;
-    const mutationMap = new Map<string, SignalRecord>();
-    const tombSet = new Set<string>();
+    const needTombstones = metaTombTs > lastSeenTs;
+    const needSignals = metaSignalTs > lastSeenTs;
+    const needBatch = metaBatchTs > lastSeenTs;
 
-    // 1. PRIMARY ENGINE: CLOUDFLARE D1 (Atomic signal_tombstones + signal_events + signals blob)
-    if (context.env && context.env.SIGNAL_DB) {
-      try {
-        const db = context.env.SIGNAL_DB;
-        await ensureSignalTables(db);
-
-        const atomicTombRows: any = await db.prepare(
-          "SELECT tomb_key FROM signal_tombstones WHERE store_token = ?"
-        ).bind(storeToken).all().catch(() => null);
-        if (atomicTombRows && Array.isArray(atomicTombRows.results)) {
-          for (const r of atomicTombRows.results) {
-            if (r.tomb_key) tombSet.add(r.tomb_key.toString());
-          }
-        }
-
-        const atomicEvtRows: any = await db.prepare(
-          "SELECT event_json FROM signal_events WHERE store_token = ? AND timestamp > ? ORDER BY seq ASC LIMIT 200"
-        ).bind(storeToken, lastSeenTs).all().catch(() => null);
-        if (atomicEvtRows && Array.isArray(atomicEvtRows.results)) {
-          for (const r of atomicEvtRows.results) {
-            try {
-              const ev: SignalRecord = typeof r.event_json === "string" ? JSON.parse(r.event_json) : r.event_json;
-              if (ev && ev.id) {
-                mutationMap.set(ev.id, ev);
-                current = ev;
-              }
-            } catch (_) {}
-          }
-        }
-
-        const row: any = await db.prepare("SELECT data, timestamp FROM signals WHERE storeToken = ?").bind(storeToken).first();
-        if (row && row.data) {
-          const chanData: ChannelData = JSON.parse(row.data);
-          if (!current || (chanData.latest && chanData.latest.timestamp > current.timestamp)) {
-            current = chanData.latest;
-          }
-          if (Array.isArray(chanData.events)) {
-            for (const e of chanData.events) {
-              if (e && e.timestamp > lastSeenTs && e.id && !mutationMap.has(e.id)) {
-                mutationMap.set(e.id, e);
-              }
-            }
-          }
-          if (Array.isArray(chanData.tombstones)) {
-            for (const t of chanData.tombstones) {
-              if (t) tombSet.add(t);
-            }
-          }
-        }
-      } catch (d1Err) {
-        console.error("D1 Read Exception:", d1Err);
-      }
-    }
-
-    const mutations = Array.from(mutationMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    const tombstones = Array.from(tombSet);
-
-    // Query D1 Master Sync for Delta Batch Operations
-    let batchOperations: any[] = [];
-    if (context.env && context.env.SIGNAL_DB) {
-      try {
-        const db = context.env.SIGNAL_DB;
-        const deltaRows: any = await db.prepare(
-          "SELECT sync_id, document_type, version, updated_at, is_deleted, bill_data FROM erp_master_sync WHERE store_token = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 250"
-        ).bind(storeToken, lastSeenTs).all().catch(() => null);
-
-        if (deltaRows && Array.isArray(deltaRows.results) && deltaRows.results.length > 0) {
-          batchOperations = deltaRows.results.map((r: any) => ({
-            sync_id: r.sync_id,
-            document_type: r.document_type,
-            version: r.version,
-            updated_at: r.updated_at,
-            is_deleted: r.is_deleted,
-            action: r.is_deleted === 1 ? "DELETE" : "UPDATE",
-            data: typeof r.bill_data === "string" ? JSON.parse(r.bill_data) : (r.bill_data || {}),
-            bill_data: r.bill_data,
-          }));
-        }
-      } catch (err) {
-        console.error("D1 Delta Read Exception:", err);
-      }
-    }
-
-    if (!current && batchOperations.length === 0 && mutations.length === 0 && tombstones.length === 0) {
-      return new Response(JSON.stringify({ status: "SUCCESS", hasUpdate: false, event: null, mutations: [], events: [], tombstones: [], batch_operations: [] }), {
+    // Fast 1-row idle exit: nothing changed since lastSeenTs
+    if (!needTombstones && !needSignals && !needBatch) {
+      return new Response(JSON.stringify({
+        status: "SUCCESS",
+        hasUpdate: false,
+        event: null,
+        mutations: [],
+        events: [],
+        tombstones: [],
+        batch_operations: [],
+        serverTime: Date.now(),
+      }), {
         status: 200,
         headers: NO_CACHE_HEADERS,
       });
     }
 
-    const hasUpdate = (current && current.timestamp > lastSeenTs) || mutations.length > 0 || batchOperations.length > 0;
+    let current: SignalRecord | null = null;
+    const mutationMap = new Map<string, SignalRecord>();
+    const tombSet = new Set<string>();
+    let batchOperations: any[] = [];
+
+    const [atomicTombRows, atomicEvtRows, deltaRows] = await Promise.all([
+      needTombstones
+        ? db.prepare(
+            "SELECT tomb_key FROM signal_tombstones WHERE store_token = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 500"
+          ).bind(storeToken, lastSeenTs).all().catch(() => null)
+        : Promise.resolve(null),
+      needSignals
+        ? db.prepare(
+            "SELECT event_json FROM signal_events WHERE store_token = ? AND timestamp > ? ORDER BY timestamp ASC, seq ASC LIMIT 200"
+          ).bind(storeToken, lastSeenTs).all().catch(() => null)
+        : Promise.resolve(null),
+      needBatch
+        ? db.prepare(
+            "SELECT sync_id, document_type, version, updated_at, is_deleted, bill_data FROM erp_master_sync WHERE store_token = ? AND updated_at > ? ORDER BY updated_at ASC LIMIT 250"
+          ).bind(storeToken, lastSeenTs).all().catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    if (atomicTombRows && Array.isArray(atomicTombRows.results)) {
+      for (const r of atomicTombRows.results) {
+        if (r.tomb_key) tombSet.add(r.tomb_key.toString());
+      }
+    }
+
+    if (atomicEvtRows && Array.isArray(atomicEvtRows.results)) {
+      for (const r of atomicEvtRows.results) {
+        try {
+          const ev: SignalRecord = typeof r.event_json === "string" ? JSON.parse(r.event_json) : r.event_json;
+          if (ev && ev.id) {
+            mutationMap.set(ev.id, ev);
+            current = ev;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (deltaRows && Array.isArray(deltaRows.results) && deltaRows.results.length > 0) {
+      batchOperations = deltaRows.results.map((r: any) => ({
+        sync_id: r.sync_id,
+        document_type: r.document_type,
+        version: r.version,
+        updated_at: r.updated_at,
+        is_deleted: r.is_deleted,
+        action: r.is_deleted === 1 ? "DELETE" : "UPDATE",
+        data: typeof r.bill_data === "string" ? JSON.parse(r.bill_data) : (r.bill_data || {}),
+        bill_data: r.bill_data,
+      }));
+    }
+
+    const mutations = Array.from(mutationMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const tombstones = Array.from(tombSet);
+
+    if (!current && batchOperations.length === 0 && mutations.length === 0 && tombstones.length === 0) {
+      return new Response(JSON.stringify({
+        status: "SUCCESS",
+        hasUpdate: false,
+        event: null,
+        mutations: [],
+        events: [],
+        tombstones: [],
+        batch_operations: [],
+        serverTime: Date.now(),
+      }), {
+        status: 200,
+        headers: NO_CACHE_HEADERS,
+      });
+    }
+
+    const hasUpdate = (current !== null && current.timestamp > lastSeenTs) || mutations.length > 0 || batchOperations.length > 0;
 
     return new Response(JSON.stringify({
       status: "SUCCESS",

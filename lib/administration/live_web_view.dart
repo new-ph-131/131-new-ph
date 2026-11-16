@@ -63,7 +63,6 @@ class _LiveWebViewState extends State<LiveWebView> {
 
     if (value) {
       AppRealtimeCoordinator.instance.start(ph);
-      AppAutoSyncDaemon.instance.startHeartbeat(ph);
       _runManualSync(ph);
     } else {
       AppRealtimeCoordinator.instance.stop();

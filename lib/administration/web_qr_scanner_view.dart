@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../pharoah_manager.dart';
 import '../realtime_signaling/coordinators/app_realtime_coordinator.dart';
-import '../sync_bridge/engines/app_auto_sync_daemon.dart';
 import '../web_live_sync/app_sync_engine.dart';
 import '../web_live_sync/qr_login_service.dart';
 import '../web_live_sync/weblivetoken.dart';
@@ -156,7 +155,6 @@ class _WebQrScannerViewState extends State<WebQrScannerView> {
                 await prefs.setBool('is_live_web_active', true);
                 await prefs.setBool('is_cloud_sync_paused_by_user', false);
                 AppRealtimeCoordinator.instance.start(ph);
-                AppAutoSyncDaemon.instance.startHeartbeat(ph);
               }
 
               if (pausedByUser || lastSyncTime == "Never") {

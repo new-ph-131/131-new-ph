@@ -41,7 +41,7 @@ class AppRealtimeCoordinator {
     CloudSignalChannel.instance.listenToSignals(
       storeToken: token,
       mySource: 'app',
-      interval: const Duration(milliseconds: 2000),
+      interval: const Duration(milliseconds: 4000),
       onTombstonesReceived: (edgeTombstones) async {
         if (ph.activeCompany == null || ph.currentFY.isEmpty || edgeTombstones.isEmpty) return;
         final cid = ph.activeCompany!.id;
@@ -55,7 +55,7 @@ class AppRealtimeCoordinator {
           final beforeLen = ph.sales.length + ph.purchases.length + ph.saleChallans.length + ph.purchaseChallans.length;
           TombstoneEngine.purgeDeletedRecords(ph, sanitized, reg);
           if (ph.sales.length + ph.purchases.length + ph.saleChallans.length + ph.purchaseChallans.length != beforeLen) {
-            ph.save();
+            ph.save(triggerCloudSync: false);
             ph.notifyListeners();
           }
         }
@@ -151,7 +151,7 @@ class AppRealtimeCoordinator {
     );
 
     // 3. Fallback Safety Net (pulls every 12s if signal missed, including on Control Panel for FY discovery)
-    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
+    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 45), (_) async {
       if (ph.activeCompany != null) {
         await FastPullEngine.pullAndMerge(ph);
       }

@@ -40,6 +40,7 @@ class _LabSyncTestBenchState extends State<LabSyncTestBench> {
   void dispose() {
     _uiRefreshTimer?.cancel();
     LabSyncOrchestrator.instance.onLogUpdated = null;
+    LabSyncOrchestrator.instance.unbind();
     super.dispose();
   }
 

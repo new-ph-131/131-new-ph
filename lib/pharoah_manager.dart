@@ -497,13 +497,13 @@ class PharoahManager with ChangeNotifier {
   Future<void> _saveQueue = Future.value();
   Future<void> get pendingSaveFuture => _saveQueue;
 
-  Future<void> save() {
-    final next = _saveQueue.then((_) => _performSave());
+  Future<void> save({bool triggerCloudSync = true}) {
+    final next = _saveQueue.then((_) => _performSave(triggerCloudSync: triggerCloudSync));
     _saveQueue = next.catchError((_) {});
     return next;
   }
 
-  Future<void> _performSave() async {
+  Future<void> _performSave({bool triggerCloudSync = true}) async {
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
     Future _w(String n, List data) async => await File('$dir/$n').writeAsString(jsonEncode(data.map((e) => e.toMap()).toList()));
@@ -550,9 +550,11 @@ class PharoahManager with ChangeNotifier {
     }
 
     notifyListeners();
-    // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Single Unified Debounced Push via AppRealtimeCoordinator)
-    AppRealtimeCoordinator.instance.notifyAppMutation(this);
-    LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-787)");
+    if (triggerCloudSync) {
+      // ⚡ 1000-IQ ZERO-LAG SILENT AUTO-SYNC (Single Unified Debounced Push via AppRealtimeCoordinator)
+      AppRealtimeCoordinator.instance.notifyAppMutation(this);
+      LabSyncOrchestrator.instance.addLog("📤 [APP] Queued unified cloud sync push (#PH-REV-787)");
+    }
   }
 
   Future<void> loadAllData() async {

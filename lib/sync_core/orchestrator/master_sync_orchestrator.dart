@@ -213,7 +213,7 @@ class MasterSyncOrchestrator {
                 }
               }
               if (revMut) {
-                phApp.save();
+                phApp.save(triggerCloudSync: false);
                 phApp.notifyListeners();
                 if (targetFy.isNotEmpty) {
                   Future(() => phApp.cascadePendingChallansOnlyFromBackYear(targetFy));
@@ -265,7 +265,7 @@ class MasterSyncOrchestrator {
                 }
               }
               if (cMutated) {
-                phApp.save();
+                phApp.save(triggerCloudSync: false);
                 phApp.notifyListeners();
               }
             }
@@ -357,7 +357,7 @@ class MasterSyncOrchestrator {
                 }
               }
               if (revMut) {
-                phApp.save();
+                phApp.save(triggerCloudSync: false);
                 phApp.notifyListeners();
                 if (targetFy.isNotEmpty) {
                   Future(() => phApp.cascadePendingChallansOnlyFromBackYear(targetFy));
@@ -439,7 +439,7 @@ class MasterSyncOrchestrator {
                 }
               }
               if (cMutated) {
-                phApp.save();
+                phApp.save(triggerCloudSync: false);
                 phApp.notifyListeners();
               }
             }
@@ -528,7 +528,7 @@ class MasterSyncOrchestrator {
             );
           }
           if (mutated || scHwmAuditMut) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -641,7 +641,7 @@ class MasterSyncOrchestrator {
             );
           }
           if (mutated || pcHwmAuditMut) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -681,7 +681,7 @@ class MasterSyncOrchestrator {
         case 'PARTY_MASTER':
           mutated = PartySyncModule.mergeIncomingPartyEnvelope(phApp.parties, envelope);
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -690,7 +690,7 @@ class MasterSyncOrchestrator {
         case 'PRODUCT':
           mutated = MedicineSyncModule.mergeIncomingMedicineEnvelope(phApp.medicines, envelope);
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -717,7 +717,7 @@ class MasterSyncOrchestrator {
             mutated = VoucherSyncModule.mergeIncomingVoucherEnvelope(phApp.vouchers, envelope);
           }
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -812,7 +812,7 @@ class MasterSyncOrchestrator {
               saleReturns: phApp.saleReturns,
               purchaseReturns: phApp.purchaseReturns,
             );
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -847,7 +847,7 @@ class MasterSyncOrchestrator {
               companyScopes: [if ((phApp.activeCompany?.id ?? '').trim().isNotEmpty) phApp.activeCompany!.id.trim()],
             );
             mutated = true;
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -872,7 +872,7 @@ class MasterSyncOrchestrator {
             shortages: phApp.shortages,
           );
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -896,7 +896,7 @@ class MasterSyncOrchestrator {
             medicines: phApp.medicines,
           );
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -920,7 +920,7 @@ class MasterSyncOrchestrator {
             parties: phApp.parties,
           );
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -940,7 +940,7 @@ class MasterSyncOrchestrator {
           }
           mutated = GstDiarySyncModule.mergeIncomingSessionEnvelope(phApp.gstDiarySessions, envelope);
           if (mutated) {
-            phApp.save();
+            phApp.save(triggerCloudSync: false);
             phApp.notifyListeners();
           }
           break;
@@ -1644,7 +1644,7 @@ class MasterSyncOrchestrator {
           saleReturns: phApp.saleReturns,
           purchaseReturns: phApp.purchaseReturns,
         );
-        phApp.save();
+        phApp.save(triggerCloudSync: false);
         phApp.notifyListeners();
       }
       if (phWeb != null) {

@@ -33,7 +33,7 @@ class WebRealtimeCoordinator {
     CloudSignalChannel.instance.listenToSignals(
       storeToken: token,
       mySource: 'web',
-      interval: const Duration(milliseconds: 2000),
+      interval: const Duration(milliseconds: 4000),
       onTombstonesReceived: (edgeTombstones) {
         webManager.purgeDeletedIds(edgeTombstones, fromCumulativePoll: true);
       },
@@ -83,7 +83,7 @@ class WebRealtimeCoordinator {
     );
 
     // 2. Fallback Safety Net (refreshes silently every 12s if signal missed)
-    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 12), (_) async {
+    _safetyHeartbeatTimer = Timer.periodic(const Duration(seconds: 45), (_) async {
       if (webManager.isAuthenticated && webManager.activeStoreToken.isNotEmpty && !_isPushing) {
         await webManager.refreshStoreData(isSilent: true);
       }

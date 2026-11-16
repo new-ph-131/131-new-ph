@@ -7,6 +7,7 @@ class SyncSignalEvent {
   final String source; // 'app' | 'web'
   final String action; // 'BILL_CREATED' | 'VOUCHER_SAVED' | 'CHALLAN_SAVED' | 'RECORD_DELETED' | 'BULK_DELETE' | 'DATA_SYNC'
   final String entityId;
+  final String deviceId;
   final int timestamp;
   final String companyId;
   final List<String> deletedIds;
@@ -21,6 +22,7 @@ class SyncSignalEvent {
     required this.source,
     required this.action,
     this.entityId = '',
+    this.deviceId = '',
     int? timestamp,
     this.companyId = '',
     this.deletedIds = const [],
@@ -34,6 +36,7 @@ class SyncSignalEvent {
     'source': source,
     'action': action,
     'entityId': entityId,
+    if (deviceId.isNotEmpty) 'deviceId': deviceId,
     'timestamp': timestamp,
     'companyId': companyId,
     'deletedIds': deletedIds,
@@ -51,6 +54,7 @@ class SyncSignalEvent {
       source: (map['source'] ?? '').toString(),
       action: (map['action'] ?? 'DATA_SYNC').toString(),
       entityId: (map['entityId'] ?? '').toString(),
+      deviceId: (map['deviceId'] ?? map['device_id'] ?? '').toString(),
       timestamp: int.tryParse(map['timestamp']?.toString() ?? '') ?? DateTime.now().millisecondsSinceEpoch,
       companyId: (map['companyId'] ?? '').toString(),
       deletedIds: (map['deletedIds'] as List?)?.map((e) => e.toString()).toList() ?? [],

@@ -5,7 +5,6 @@ import '../../pharoah_manager.dart';
 import '../../web_live_sync/app_sync_engine.dart';
 import '../../web_live_sync/weblivetoken.dart';
 import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
-import '../../realtime_signaling/engines/fast_pull_engine.dart';
 import '../../realtime_signaling/transport/cloud_signal_channel.dart';
 import '../../realtime_signaling/models/sync_signal_event.dart';
 import '../../realtime_signaling/coordinators/app_realtime_coordinator.dart';
@@ -91,33 +90,22 @@ class AppAutoSyncDaemon {
     });
   }
 
-  /// Starts real-time listening & background heartbeat to pull & merge cloud changes
+  /// Starts real-time listening & background heartbeat via single authoritative AppRealtimeCoordinator
   void startHeartbeat(PharoahManager ph) async {
     _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
 
     if (ph.activeCompany != null) {
-      // Delegate real-time signal listening to AppRealtimeCoordinator so onBatchReceived & onTombstonesReceived are never stripped
+      // Delegate all signal listening & safety heartbeat to AppRealtimeCoordinator (avoids duplicate D1 polling)
       await AppRealtimeCoordinator.instance.start(ph);
     }
-
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
-      if (_isSyncing || ph.activeCompany == null || ph.currentFY.isEmpty) return;
-      _isSyncing = true;
-      try {
-        await FastPullEngine.pullAndMerge(ph);
-        debugPrint("💓 [AppAutoSyncDaemon] Periodic cloud pull heartbeat completed.");
-      } catch (e) {
-        debugPrint("⚠ [AppAutoSyncDaemon] Heartbeat error: $e");
-      } finally {
-        _isSyncing = false;
-      }
-    });
   }
 
   /// Cancels active background timers on logout/session clear
   void stop() {
     _debounceTimer?.cancel();
     _heartbeatTimer?.cancel();
+    AppRealtimeCoordinator.instance.stop();
     _isSyncing = false;
     _hasPendingPush = false;
     _pendingDeletedIds.clear();

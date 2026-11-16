@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../../sync_core/outbox/sync_queue_manager.dart';
 import '../models/sync_signal_event.dart';
 
 /// CloudSignalChannel: Low-latency event signaling bus between App & Web.
@@ -16,17 +17,24 @@ class CloudSignalChannel {
   int _lastKnownSignalTime = 0;
   int _lastKnownBatchTime = 0;
   bool _isChecking = false;
+  int _listenGeneration = 0;
+  int _emptyPollStreak = 0;
 
   /// Broadcasts a fast mutation signal to Cloudflare Edge Relay
   Future<bool> broadcastSignal(SyncSignalEvent event) async {
     try {
       if (event.storeToken.isEmpty) return false;
 
+      final String devId = event.deviceId.trim().isNotEmpty
+          ? event.deviceId.trim()
+          : SyncQueueManager.deviceId;
+
       final payload = {
         "storeToken": event.storeToken,
         "source": event.source.toUpperCase(),
         "action": event.action,
         "entityId": event.entityId,
+        "device_id": devId,
         "timestamp": event.timestamp,
         "deletedIds": event.deletedIds,
         "unmarkedIds": event.unmarkedIds,
@@ -34,6 +42,8 @@ class CloudSignalChannel {
         "fy": event.financialYear,
         "delta": event.delta,
       };
+
+      _emptyPollStreak = 0;
 
       final response = await http.post(
         Uri.parse(edgeSignalEndpoint),
@@ -56,8 +66,10 @@ class CloudSignalChannel {
     required List<Map<String, dynamic>> rawEvents,
     required String mySource,
     required int lastSeenTs,
+    String? myDeviceId,
   }) {
     final cleanSource = mySource.trim().toUpperCase();
+    final cleanMyDeviceId = (myDeviceId ?? '').trim();
     final Map<String, Map<String, dynamic>> dedupedById = {};
     final List<Map<String, dynamic>> noIdList = [];
     for (final raw in rawEvents) {
@@ -94,7 +106,10 @@ class CloudSignalChannel {
       if (evTs > lastSeenTs) {
         if (evTs > maxSigTs) maxSigTs = evTs;
         final src = ev.source.trim().toUpperCase();
-        if (src != cleanSource) {
+        final bool isSelfDevice = cleanMyDeviceId.isNotEmpty &&
+            ev.deviceId.trim().isNotEmpty &&
+            ev.deviceId.trim() == cleanMyDeviceId;
+        if (src != cleanSource && !isSelfDevice) {
           for (final u in ev.unmarkedIds) {
             final cu = u.trim();
             if (cu.isEmpty) continue;
@@ -123,6 +138,7 @@ class CloudSignalChannel {
         source: latestRemoteEvent.source,
         action: latestRemoteEvent.action,
         entityId: latestRemoteEvent.entityId,
+        deviceId: latestRemoteEvent.deviceId,
         timestamp: latestRemoteEvent.timestamp,
         companyId: latestRemoteEvent.companyId,
         deletedIds: aggregatedDeletedIds.toList(),
@@ -134,28 +150,47 @@ class CloudSignalChannel {
     );
   }
 
-  /// Starts listening for incoming events from the opposite client
+  Duration _computeAdaptiveDelay(Duration baseInterval) {
+    if (_emptyPollStreak >= 15) {
+      return baseInterval.inSeconds >= 15 ? baseInterval : const Duration(seconds: 15);
+    }
+    if (_emptyPollStreak >= 5) {
+      final doubled = Duration(milliseconds: baseInterval.inMilliseconds * 2);
+      return doubled.inSeconds >= 8 ? doubled : const Duration(seconds: 8);
+    }
+    return baseInterval;
+  }
+
+  /// Starts listening for incoming events from the opposite client with adaptive idle backoff
   void listenToSignals({
     required String storeToken,
     required String mySource, // 'app' or 'web'
     required Function(SyncSignalEvent) onSignal,
     dynamic Function(List<dynamic>)? onBatchReceived,
     Function(List<String>)? onTombstonesReceived,
-    Duration interval = const Duration(milliseconds: 3000),
+    Duration interval = const Duration(milliseconds: 4000),
   }) {
     stopListening();
     if (storeToken.isEmpty) return;
 
-    // Subtract 30s lookback window to prevent device clock skew between Mobile App & Web PC from skipping fresh events
+    final int gen = _listenGeneration;
+    final Duration baseInterval = interval.inMilliseconds < 4000
+        ? const Duration(milliseconds: 4000)
+        : interval;
+
+    // Subtract 30s lookback window initially to prevent device clock skew from skipping fresh events
     final int nowMs = DateTime.now().millisecondsSinceEpoch - 30000;
     _lastKnownSignalTime = nowMs;
     _lastKnownBatchTime = nowMs;
+    _emptyPollStreak = 0;
     final cleanToken = storeToken.trim().toUpperCase();
     final cleanSource = mySource.trim().toUpperCase();
 
-    _pollTimer = Timer.periodic(interval, (_) async {
+    Future<void> pollOnce() async {
+      if (gen != _listenGeneration) return;
       if (_isChecking) return;
       _isChecking = true;
+      bool sawActivity = false;
 
       try {
         final int queryTs = _lastKnownSignalTime < _lastKnownBatchTime
@@ -169,9 +204,14 @@ class CloudSignalChannel {
         );
 
         final response = await http.get(uri).timeout(const Duration(seconds: 4));
+        if (gen != _listenGeneration) return;
+
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           if (data['status'] == 'SUCCESS') {
+            int serverTimeMs = int.tryParse((data['serverTime'] ?? '0').toString()) ?? 0;
+            if (serverTimeMs > 100000000000000) serverTimeMs ~/= 1000;
+
             // 🛡️ Edge Gravestones Ingestion
             if (data['tombstones'] is List && (data['tombstones'] as List).isNotEmpty) {
               final edgeTombs = List<String>.from(
@@ -180,12 +220,14 @@ class CloudSignalChannel {
                     .where((e) => e.isNotEmpty),
               );
               if (edgeTombs.isNotEmpty) {
+                sawActivity = true;
                 onTombstonesReceived?.call(edgeTombs);
               }
             }
 
             // 🚀 Step 4: Atomic Batch Delta Processing (uses separate _lastKnownBatchTime cursor)
-            if (data['batch_operations'] is List && (data['batch_operations'] as List).isNotEmpty) {
+            final bool hasRawBatch = data['batch_operations'] is List && (data['batch_operations'] as List).isNotEmpty;
+            if (hasRawBatch) {
               final rawOps = List<dynamic>.from(data['batch_operations']);
               final freshOps = <dynamic>[];
               int maxBatchTs = _lastKnownBatchTime;
@@ -200,14 +242,22 @@ class CloudSignalChannel {
                 }
               }
               if (freshOps.isNotEmpty) {
+                sawActivity = true;
                 final cbResult = await onBatchReceived?.call(freshOps);
                 if (cbResult != false) {
                   _lastKnownBatchTime = maxBatchTs;
                 }
+              } else if (serverTimeMs > 0) {
+                final safeCursor = serverTimeMs - 3000;
+                if (safeCursor > _lastKnownBatchTime) _lastKnownBatchTime = safeCursor;
               }
+            } else if (serverTimeMs > 0) {
+              // Advance empty batch cursor cleanly with 3s safety overlap so queryTs never stays pinned in the past
+              final safeCursor = serverTimeMs - 3000;
+              if (safeCursor > _lastKnownBatchTime) _lastKnownBatchTime = safeCursor;
             }
 
-            // 🔔 Process all new Signal Events (mutations array + latest event) chronologically without OUTBOX_BATCH masking
+            // 🔔 Process all new Signal Events (mutations array + latest event) chronologically
             final List<Map<String, dynamic>> candidateEvents = [];
             if (data['mutations'] is List) {
               for (final m in (data['mutations'] as List)) {
@@ -224,10 +274,17 @@ class CloudSignalChannel {
               rawEvents: candidateEvents,
               mySource: cleanSource,
               lastSeenTs: _lastKnownSignalTime,
+              myDeviceId: SyncQueueManager.deviceId,
             );
             _lastKnownSignalTime = agg.maxTimestamp;
 
+            if (candidateEvents.isEmpty && serverTimeMs > 0) {
+              final safeCursor = serverTimeMs - 3000;
+              if (safeCursor > _lastKnownSignalTime) _lastKnownSignalTime = safeCursor;
+            }
+
             if (agg.mergedEvent != null) {
+              sawActivity = true;
               final mergedEvent = agg.mergedEvent!;
               debugPrint("⚡ [CloudSignalChannel] Remote Real Mutation Received from ${mergedEvent.source}: ${mergedEvent.action} (del:${mergedEvent.deletedIds.length}, unmark:${mergedEvent.unmarkedIds.length})");
               await onSignal(mergedEvent);
@@ -238,13 +295,26 @@ class CloudSignalChannel {
         // Silent catch for resilience
       } finally {
         _isChecking = false;
+        if (gen == _listenGeneration) {
+          if (sawActivity) {
+            _emptyPollStreak = 0;
+          } else {
+            _emptyPollStreak++;
+          }
+          _pollTimer?.cancel();
+          _pollTimer = Timer(_computeAdaptiveDelay(baseInterval), pollOnce);
+        }
       }
-    });
+    }
+
+    _pollTimer = Timer(baseInterval, pollOnce);
   }
 
   void stopListening() {
+    _listenGeneration++;
     _pollTimer?.cancel();
     _pollTimer = null;
     _isChecking = false;
+    _emptyPollStreak = 0;
   }
 }

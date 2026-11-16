@@ -17,18 +17,23 @@ const NO_CACHE_HEADERS: Record<string, string> = {
 
 const SESSION_TTL_MS = 120 * 1000;
 
+let _qrTableReady = false;
 async function ensureQrTable(db: any) {
-  await db.batch([
-    db.prepare(
-      "CREATE TABLE IF NOT EXISTS qr_login_sessions (" +
-      "sid TEXT PRIMARY KEY, " +
-      "status TEXT NOT NULL, " +
-      "sealed_payload TEXT DEFAULT '', " +
-      "created_at INTEGER NOT NULL, " +
-      "expires_at INTEGER NOT NULL)"
-    ),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_qr_login_exp ON qr_login_sessions (expires_at)"),
-  ]).catch(() => {});
+  if (_qrTableReady) return;
+  try {
+    await db.batch([
+      db.prepare(
+        "CREATE TABLE IF NOT EXISTS qr_login_sessions (" +
+        "sid TEXT PRIMARY KEY, " +
+        "status TEXT NOT NULL, " +
+        "sealed_payload TEXT DEFAULT '', " +
+        "created_at INTEGER NOT NULL, " +
+        "expires_at INTEGER NOT NULL)"
+      ),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_qr_login_exp ON qr_login_sessions (expires_at)"),
+    ]);
+    _qrTableReady = true;
+  } catch (_) {}
 }
 
 function isValidSid(sid: string): boolean {
