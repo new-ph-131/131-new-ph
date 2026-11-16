@@ -482,6 +482,7 @@ class MasterSyncOrchestrator {
             PharoahNumberingEngine.absorbChallanHwmState(
               hwm: phApp.config.challanHwm,
               meta: phApp.config.challanHwmMeta,
+              companyScopes: [if ((phApp.activeCompany?.id ?? '').trim().isNotEmpty) phApp.activeCompany!.id.trim()],
             );
           }
           if (mutated || scHwmAuditMut) {
@@ -594,6 +595,7 @@ class MasterSyncOrchestrator {
             PharoahNumberingEngine.absorbChallanHwmState(
               hwm: phApp.config.challanHwm,
               meta: phApp.config.challanHwmMeta,
+              companyScopes: [if ((phApp.activeCompany?.id ?? '').trim().isNotEmpty) phApp.activeCompany!.id.trim()],
             );
           }
           if (mutated || pcHwmAuditMut) {
@@ -799,6 +801,8 @@ class MasterSyncOrchestrator {
             PharoahNumberingEngine.absorbChallanHwmState(
               hwm: phApp.config.challanHwm,
               meta: phApp.config.challanHwmMeta,
+              recordFloor: appFloor,
+              companyScopes: [if ((phApp.activeCompany?.id ?? '').trim().isNotEmpty) phApp.activeCompany!.id.trim()],
             );
             mutated = true;
             phApp.save();
@@ -1200,6 +1204,7 @@ class MasterSyncOrchestrator {
             WebPharoahNumberingEngine.absorbChallanHwmState(
               hwm: phWeb.appConfig.challanHwm,
               meta: phWeb.appConfig.challanHwmMeta,
+              companyScopes: [phWeb.activeStoreToken, (phWeb.companyProfile['id'] ?? '').toString()],
             );
           }
           if (mutated || webScHwmAuditMut) {
@@ -1293,6 +1298,7 @@ class MasterSyncOrchestrator {
             WebPharoahNumberingEngine.absorbChallanHwmState(
               hwm: phWeb.appConfig.challanHwm,
               meta: phWeb.appConfig.challanHwmMeta,
+              companyScopes: [phWeb.activeStoreToken, (phWeb.companyProfile['id'] ?? '').toString()],
             );
           }
           if (mutated || webPcHwmAuditMut) {
@@ -1452,6 +1458,8 @@ class MasterSyncOrchestrator {
             WebPharoahNumberingEngine.absorbChallanHwmState(
               hwm: phWeb.appConfig.challanHwm,
               meta: phWeb.appConfig.challanHwmMeta,
+              recordFloor: webFloor,
+              companyScopes: [phWeb.activeStoreToken, (phWeb.companyProfile['id'] ?? '').toString()],
             );
             mutated = true;
             phWeb.notifyListeners();

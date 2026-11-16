@@ -10,11 +10,96 @@ import 'app_settings_model.dart';
 class PharoahNumberingEngine {
   static final Map<String, int> _cachedHwm = {};
   static final Map<String, ChallanHwmState> _cachedMeta = {};
+  static final Set<String> _activeCompanyScopes = {};
+
+  static void setActiveCompanyScopes(Iterable<String> scopes) {
+    _activeCompanyScopes
+      ..clear()
+      ..addAll(scopes.map((s) => s.trim().toUpperCase()).where((s) => s.isNotEmpty));
+  }
+
+  static void clearActiveCompanyScopes() {
+    _activeCompanyScopes.clear();
+  }
 
   @visibleForTesting
   static void debugResetHwmCache() {
     _cachedHwm.clear();
     _cachedMeta.clear();
+    _activeCompanyScopes.clear();
+  }
+
+  static Set<String> _resolveAllowedScopes(
+    String companyID, [
+    Iterable<String> extraScopes = const [],
+  ]) {
+    final Set<String> scopes = {};
+    final String cleanComp = companyID.trim().toUpperCase();
+    if (cleanComp.isNotEmpty) {
+      scopes.add(cleanComp);
+    }
+    for (final s in extraScopes) {
+      final c = s.trim().toUpperCase();
+      if (c.isNotEmpty) scopes.add(c);
+    }
+    if (cleanComp.isEmpty || _activeCompanyScopes.contains(cleanComp)) {
+      scopes.addAll(_activeCompanyScopes);
+    }
+    return scopes;
+  }
+
+  static String? _extractCompanyFromConfigKey(String key) {
+    final parts = key.split('::');
+    if (parts.length == 5) return parts[0].trim().toUpperCase();
+    return null;
+  }
+
+  static bool _matchesScopedSuffix(
+    String key, {
+    required String cfgSuffix,
+    required String prefSuffix,
+    required Set<String> allowedScopes,
+  }) {
+    if (cfgSuffix.isNotEmpty && key.endsWith(cfgSuffix)) {
+      final String comp = key.substring(0, key.length - cfgSuffix.length).trim().toUpperCase();
+      return allowedScopes.isEmpty ? comp.isEmpty : allowedScopes.contains(comp);
+    }
+    if (prefSuffix.isNotEmpty && key.endsWith(prefSuffix)) {
+      String? comp;
+      if (key.startsWith('challan_hwm_meta_')) {
+        comp = key.substring('challan_hwm_meta_'.length, key.length - prefSuffix.length);
+      } else if (key.startsWith('challan_hwm_')) {
+        comp = key.substring('challan_hwm_'.length, key.length - prefSuffix.length);
+      }
+      if (comp == null) return false;
+      final String clean = comp.trim().toUpperCase();
+      return allowedScopes.isEmpty ? clean.isEmpty : allowedScopes.contains(clean);
+    }
+    return false;
+  }
+
+  static bool _matchesScopedLegacyLastId(
+    String key, {
+    required String cleanPrefix,
+    required String cleanFy,
+    required Set<String> allowedScopes,
+  }) {
+    if (!key.startsWith('lastID_')) return false;
+    if (!(key.contains('_CHALLAN_') ||
+        key.contains('_SALE_CHALLAN_') ||
+        key.contains('_PURCHASE_CHALLAN_') ||
+        key.contains('_CHALLAN_PUR_'))) {
+      return false;
+    }
+    final String prefixToken = '_${cleanPrefix}_';
+    final String fySuffix = '_$cleanFy';
+    if (!key.contains(prefixToken) || !key.endsWith(fySuffix)) return false;
+    final int pIdx = key.indexOf(prefixToken);
+    final int compStart = pIdx + prefixToken.length;
+    final int compEnd = key.length - fySuffix.length;
+    if (compEnd < compStart) return false;
+    final String compSeg = key.substring(compStart, compEnd).trim().toUpperCase();
+    return allowedScopes.isEmpty ? compSeg.isEmpty : (compSeg.isEmpty || allowedScopes.contains(compSeg));
   }
 
   /// Checks whether a numbering type belongs to Challans
@@ -73,14 +158,34 @@ class PharoahNumberingEngine {
     required Map<String, int> hwm,
     Map<String, ChallanHwmState> meta = const {},
     Map<String, int> recordFloor = const {},
+    Iterable<String> companyScopes = const [],
   }) {
+    final Set<String> allowedScopes = {};
+    for (final s in companyScopes) {
+      final c = s.trim().toUpperCase();
+      if (c.isNotEmpty) allowedScopes.add(c);
+    }
+    for (final k in [...hwm.keys, ...meta.keys]) {
+      final c = _extractCompanyFromConfigKey(k);
+      if (c != null && c.isNotEmpty) allowedScopes.add(c);
+    }
+    if (allowedScopes.isEmpty || allowedScopes.any(_activeCompanyScopes.contains)) {
+      allowedScopes.addAll(_activeCompanyScopes);
+    }
+    final bool allowEmptyComp = allowedScopes.isEmpty;
+    bool scopeMatchesCfg(String k) {
+      final c = _extractCompanyFromConfigKey(k);
+      if (c == null) return false;
+      return c.isEmpty ? allowEmptyComp : allowedScopes.contains(c);
+    }
+
     final Map<String, int> curCfgHwm = {};
     final Map<String, ChallanHwmState> curCfgMeta = {};
     _cachedHwm.forEach((k, v) {
-      if (k.contains('::')) curCfgHwm[k] = v;
+      if (k.contains('::') && scopeMatchesCfg(k)) curCfgHwm[k] = v;
     });
     _cachedMeta.forEach((k, v) {
-      if (k.contains('::')) curCfgMeta[k] = v;
+      if (k.contains('::') && scopeMatchesCfg(k)) curCfgMeta[k] = v;
     });
 
     final resolved = AppConfig.mergeHwmMapsWithMeta(
@@ -117,13 +222,17 @@ class PharoahNumberingEngine {
         if (metaPrefKey != null) _cachedMeta[metaPrefKey] = st.copy();
       }
 
-      // Harmonize all memory cache entries matching this series suffix
+      // Harmonize memory cache entries belonging ONLY to the same company scopes
       final parts = cfgKey.split('::');
       if (parts.length == 5) {
         final cfgSuffix = '::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
         final prefSuffix = '_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
+        final keyComp = parts[0].trim().toUpperCase();
+        final Set<String> keyScopes = keyComp.isNotEmpty
+            ? {keyComp, if (allowedScopes.contains(keyComp)) ...allowedScopes}
+            : allowedScopes;
         for (final k in _cachedHwm.keys.toList()) {
-          if (k.endsWith(cfgSuffix) || k.endsWith(prefSuffix)) {
+          if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: keyScopes)) {
             if (val > 0) {
               _cachedHwm[k] = val;
             } else {
@@ -132,7 +241,7 @@ class PharoahNumberingEngine {
           }
         }
         for (final k in _cachedMeta.keys.toList()) {
-          if (k.endsWith(cfgSuffix) || k.endsWith(prefSuffix)) {
+          if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: keyScopes)) {
             if (st != null) {
               _cachedMeta[k] = st.copy();
             }
@@ -158,15 +267,21 @@ class PharoahNumberingEngine {
         if (st != null) {
           prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
           final prefSuffix = '_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
+          final keyComp = parts[0].trim().toUpperCase();
+          final Set<String> keyScopes = keyComp.isNotEmpty
+              ? {keyComp, if (allowedScopes.contains(keyComp)) ...allowedScopes}
+              : allowedScopes;
           for (final k in prefs.getKeys()) {
-            if (k.startsWith('challan_hwm_') && !k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
-              if (val > 0) {
-                prefs.setInt(k, val);
-              } else {
-                prefs.remove(k);
+            if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: keyScopes)) {
+              if (k.startsWith('challan_hwm_meta_')) {
+                prefs.setString(k, jsonEncode(st.toMap()));
+              } else if (k.startsWith('challan_hwm_')) {
+                if (val > 0) {
+                  prefs.setInt(k, val);
+                } else {
+                  prefs.remove(k);
+                }
               }
-            } else if (k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
-              prefs.setString(k, jsonEncode(st.toMap()));
             }
           }
           if (st.op == 'ROLLBACK' && (parts[3] == 'APP' || parts[3] == 'WEB')) {
@@ -178,16 +293,19 @@ class PharoahNumberingEngine {
                 prefs.remove(legKey);
               }
             }
-            // Sweep all legacy keys for this prefix & fy across any stored company token
+            // Sweep legacy keys ONLY within the same company scopes
             for (final k in prefs.getKeys()) {
-              if (k.startsWith('lastID_') && (k.contains('_CHALLAN_') || k.contains('_SALE_CHALLAN_') || k.contains('_PURCHASE_CHALLAN_') || k.contains('_CHALLAN_PUR_'))) {
-                if (k.contains('_${parts[4]}_') && k.endsWith('_${parts[1]}')) {
-                  if (val > 0) {
-                    final existingLeg = prefs.getInt(k) ?? 0;
-                    if (existingLeg > val) prefs.setInt(k, val);
-                  } else {
-                    prefs.remove(k);
-                  }
+              if (_matchesScopedLegacyLastId(
+                k,
+                cleanPrefix: parts[4],
+                cleanFy: parts[1],
+                allowedScopes: keyScopes,
+              )) {
+                if (val > 0) {
+                  final existingLeg = prefs.getInt(k) ?? 0;
+                  if (existingLeg > val) prefs.setInt(k, val);
+                } else {
+                  prefs.remove(k);
                 }
               }
             }
@@ -271,13 +389,14 @@ class PharoahNumberingEngine {
     if ((_cachedHwm[exactPrefKey] ?? 0) > best) best = _cachedHwm[exactPrefKey]!;
     if ((_cachedHwm[exactCfgKey] ?? 0) > best) best = _cachedHwm[exactCfgKey]!;
 
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
     final prefSuffix = '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
     final cfgSuffix = '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
 
-    // Check if winning causal meta for this series suffix indicates ROLLBACK
+    // Check if winning causal meta for this company-scoped series indicates ROLLBACK
     ChallanHwmState? winningMeta;
     for (final entry in _cachedMeta.entries) {
-      if (entry.key.endsWith(cfgSuffix) || entry.key.endsWith(prefSuffix)) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
         if (winningMeta == null ||
             entry.value.gen > winningMeta.gen ||
             (entry.value.seq > 0 && entry.value.seq > winningMeta.seq)) {
@@ -290,7 +409,7 @@ class PharoahNumberingEngine {
     }
 
     for (final entry in _cachedHwm.entries) {
-      if (entry.key.endsWith(prefSuffix) || entry.key.endsWith(cfgSuffix)) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
         if (entry.value > best) best = entry.value;
       }
     }
@@ -298,8 +417,8 @@ class PharoahNumberingEngine {
       if ((configHwm[exactCfgKey] ?? 0) > best) best = configHwm[exactCfgKey]!;
       final legacy4Part = '${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
       for (final entry in configHwm.entries) {
-        if (((cleanComp.isEmpty || entry.key.startsWith('${cleanComp}::')) && entry.key.endsWith(cfgSuffix)) ||
-            entry.key == legacy4Part) {
+        if (entry.key == legacy4Part ||
+            _matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: '', allowedScopes: allowedScopes)) {
           if (entry.value > best) best = entry.value;
         }
       }
@@ -349,13 +468,16 @@ class PharoahNumberingEngine {
         } catch (_) {}
       }
 
+      final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
       final cfgSuffix = '::${currentFY}::${normType}::${normEnv}::$cleanPrefix';
       final prefSuffix = '_${currentFY}_${normType}_${normEnv}_$cleanPrefix';
+      ChallanHwmState? winningMeta;
       for (final entry in _cachedMeta.entries) {
-        if (entry.key.endsWith(cfgSuffix) || entry.key.endsWith(prefSuffix)) {
-          final st = entry.value;
-          if (savedHwm == 0 || st.op == 'ROLLBACK' || st.gen > savedHwm) {
-            savedHwm = st.value;
+        if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+          if (winningMeta == null ||
+              entry.value.gen > winningMeta.gen ||
+              (entry.value.seq > 0 && entry.value.seq > winningMeta.seq)) {
+            winningMeta = entry.value;
           }
         }
       }
@@ -369,15 +491,13 @@ class PharoahNumberingEngine {
         configHwm: configHwm,
       );
 
-      // Check if winning meta is a ROLLBACK
       bool isRollbackActive = false;
-      for (final entry in _cachedMeta.entries) {
-        if (entry.key.endsWith(cfgSuffix) || entry.key.endsWith(prefSuffix)) {
-          if (entry.value.op == 'ROLLBACK') {
-            isRollbackActive = true;
-            savedHwm = entry.value.value;
-            break;
-          }
+      if (winningMeta != null) {
+        if (winningMeta.op == 'ROLLBACK') {
+          isRollbackActive = true;
+          savedHwm = winningMeta.value;
+        } else if (savedHwm == 0 || winningMeta.gen > savedHwm || winningMeta.value > savedHwm) {
+          savedHwm = winningMeta.value;
         }
       }
 
@@ -553,24 +673,35 @@ class PharoahNumberingEngine {
     final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
     final configKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
 
-    final int prevVal = max(
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
+    final rPrefSuffix = '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
+    final rCfgSuffix = '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
+
+    int prevVal = max(
       _cachedHwm[hwmKey] ?? 0,
       max(_cachedHwm[configKey] ?? 0, config?.challanHwm[configKey] ?? 0),
     );
-    final int prevGen = max(
+    int prevGen = max(
       prevVal,
       max(
         _cachedMeta[configKey]?.gen ?? 0,
         max(_cachedMeta[metaPrefKey]?.gen ?? 0, config?.challanHwmMeta[configKey]?.gen ?? 0),
       ),
     );
-    final int prevSeq = max(
+    int prevSeq = max(
       d1Seq,
       max(_cachedMeta[configKey]?.seq ?? 0, config?.challanHwmMeta[configKey]?.seq ?? 0),
     );
+    for (final entry in _cachedMeta.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: rCfgSuffix, prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
+        if (entry.value.gen > prevGen) prevGen = entry.value.gen;
+        if (entry.value.seq > prevSeq) prevSeq = entry.value.seq;
+      }
+    }
 
     final int effVal = issuedInt > prevVal ? issuedInt : prevVal;
     final bool needsMetaUpdate = issuedInt > prevVal || !_cachedMeta.containsKey(configKey) ||
+        (_cachedMeta[configKey]?.op == 'ROLLBACK') ||
         (config != null && !config.challanHwmMeta.containsKey(configKey));
 
     if (issuedInt > (_cachedHwm[hwmKey] ?? 0)) {
@@ -579,10 +710,8 @@ class PharoahNumberingEngine {
     if (issuedInt > (_cachedHwm[configKey] ?? 0)) {
       _cachedHwm[configKey] = issuedInt;
     }
-    final rPrefSuffix = '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
-    final rCfgSuffix = '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
     for (final k in _cachedHwm.keys.toList()) {
-      if (k.endsWith(rPrefSuffix) || k.endsWith(rCfgSuffix)) {
+      if (_matchesScopedSuffix(k, cfgSuffix: rCfgSuffix, prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
         if (effVal > (_cachedHwm[k] ?? 0)) _cachedHwm[k] = effVal;
       }
     }
@@ -598,6 +727,11 @@ class PharoahNumberingEngine {
       );
       _cachedMeta[configKey] = st.copy();
       _cachedMeta[metaPrefKey] = st.copy();
+      for (final k in _cachedMeta.keys.toList()) {
+        if (_matchesScopedSuffix(k, cfgSuffix: rCfgSuffix, prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
+          _cachedMeta[k] = st.copy();
+        }
+      }
       if (config != null) {
         config.challanHwm[configKey] = effVal;
         config.challanHwmMeta[configKey] = st.copy();
@@ -683,12 +817,13 @@ class PharoahNumberingEngine {
       tombUuid: tombUuid.trim(),
     );
 
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
     final prefSuffix = '_${cleanFy}_${resolvedNormType}_${normEnv}_$cleanPrefix';
     final cfgSuffix = '::${cleanFy}::${resolvedNormType}::${normEnv}::$cleanPrefix';
 
-    // Update exact keys and any matching legacy/alias keys in memory cache
+    // Update exact keys and alias keys belonging ONLY to the same company scopes
     for (final k in _cachedHwm.keys.toList()) {
-      if (k.endsWith(prefSuffix) || k.endsWith(cfgSuffix)) {
+      if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
         if (safeTail > 0) {
           _cachedHwm[k] = safeTail;
         } else {
@@ -707,7 +842,7 @@ class PharoahNumberingEngine {
     _cachedMeta[configKey] = state.copy();
     _cachedMeta[metaPrefKey] = state.copy();
     for (final k in _cachedMeta.keys.toList()) {
-      if (k.endsWith(prefSuffix) || k.endsWith(cfgSuffix)) {
+      if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
         _cachedMeta[k] = state.copy();
       }
     }
@@ -744,14 +879,16 @@ class PharoahNumberingEngine {
       await prefs.setString(metaPrefKey, jsonEncode(state.toMap()));
 
       for (final k in prefs.getKeys()) {
-        if (k.startsWith('challan_hwm_') && !k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
-          if (safeTail > 0) {
-            await prefs.setInt(k, safeTail);
-          } else {
-            await prefs.remove(k);
+        if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+          if (k.startsWith('challan_hwm_meta_')) {
+            await prefs.setString(k, jsonEncode(state.toMap()));
+          } else if (k.startsWith('challan_hwm_')) {
+            if (safeTail > 0) {
+              await prefs.setInt(k, safeTail);
+            } else {
+              await prefs.remove(k);
+            }
           }
-        } else if (k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
-          await prefs.setString(k, jsonEncode(state.toMap()));
         }
       }
 
@@ -764,14 +901,17 @@ class PharoahNumberingEngine {
           }
         }
         for (final k in prefs.getKeys()) {
-          if (k.startsWith('lastID_') && (k.contains('_CHALLAN_') || k.contains('_SALE_CHALLAN_') || k.contains('_PURCHASE_CHALLAN_') || k.contains('_CHALLAN_PUR_'))) {
-            if (k.contains('_${cleanPrefix}_') && k.endsWith('_${cleanFy}')) {
-              if (safeTail > 0) {
-                final existingLeg = prefs.getInt(k) ?? 0;
-                if (existingLeg > safeTail) await prefs.setInt(k, safeTail);
-              } else {
-                await prefs.remove(k);
-              }
+          if (_matchesScopedLegacyLastId(
+            k,
+            cleanPrefix: cleanPrefix,
+            cleanFy: cleanFy,
+            allowedScopes: allowedScopes,
+          )) {
+            if (safeTail > 0) {
+              final existingLeg = prefs.getInt(k) ?? 0;
+              if (existingLeg > safeTail) await prefs.setInt(k, safeTail);
+            } else {
+              await prefs.remove(k);
             }
           }
         }
@@ -938,6 +1078,7 @@ class PharoahNumberingEngine {
       hwm: config.challanHwm,
       meta: config.challanHwmMeta,
       recordFloor: floor,
+      companyScopes: [if (cleanComp.isNotEmpty) cleanComp],
     );
     return mutated;
   }

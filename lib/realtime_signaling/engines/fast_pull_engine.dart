@@ -207,6 +207,7 @@ class FastPullEngine {
                 hwm: ph.config.challanHwm,
                 meta: ph.config.challanHwmMeta,
                 recordFloor: appHarvestFloor,
+                companyScopes: [companyId, storeToken],
               );
             }
             bool d1SeriesMutated = SettingsSyncModule.applyEdgeEventsToLocalSeries(

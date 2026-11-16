@@ -719,6 +719,11 @@ class PharoahWebManager with ChangeNotifier {
     companyProfile = (result['profile'] is Map)
         ? Map<String, dynamic>.from(result['profile'])
         : {};
+    appConfig = AppConfig();
+    WebPharoahNumberingEngine.setActiveCompanyScopes([
+      activeStoreToken,
+      (companyProfile['id'] ?? '').toString(),
+    ]);
 
     final Map<String, dynamic> files = (result['files'] is Map)
         ? Map<String, dynamic>.from(result['files'])
@@ -1541,6 +1546,11 @@ class PharoahWebManager with ChangeNotifier {
     WebPharoahNumberingEngine.absorbChallanHwmState(
       hwm: appConfig.challanHwm,
       meta: appConfig.challanHwmMeta,
+      recordFloor: webFloor,
+      companyScopes: [
+        activeStoreToken,
+        (companyProfile['id'] ?? '').toString(),
+      ],
     );
 
     // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-764): Never wipe in-flight local batch edits!
@@ -2246,6 +2256,11 @@ class PharoahWebManager with ChangeNotifier {
           WebPharoahNumberingEngine.absorbChallanHwmState(
             hwm: appConfig.challanHwm,
             meta: appConfig.challanHwmMeta,
+            recordFloor: webHarvestFloor,
+            companyScopes: [
+              activeStoreToken,
+              (companyProfile['id'] ?? '').toString(),
+            ],
           );
         }
         final bool serMut = SettingsSyncModule.applyEdgeEventsToLocalSeries(
@@ -5498,17 +5513,21 @@ class PharoahWebManager with ChangeNotifier {
     activeStoreToken = "";
     activeUsername = "";
     activePassword = "";
-    sales.clear();
-    medicines.clear();
-    parties.clear();
-    purchases.clear();
-    vouchers.clear();
-    saleChallans.clear();
-    purchaseChallans.clear();
-    saleReturns.clear();
-    purchaseReturns.clear();
-    batchHistory.clear();
+    companyName = "";
+    companyProfile = {};
+    appConfig = AppConfig();
+    fyVault.clear();
+    availableFinancialYears = [];
+    isExplicitBackYearSelected = false;
+    _clearYearScopedMemory();
+    shortages.clear();
+    companies.clear();
+    salts.clear();
+    routes.clear();
     deletedRecordIds.clear();
+    unmarkedRecordIds.clear();
+    localTombstoneRegistry.clear();
+    WebPharoahNumberingEngine.clearActiveCompanyScopes();
     notifyListeners();
   }
 

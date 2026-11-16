@@ -445,6 +445,18 @@ class PharoahManager with ChangeNotifier {
     isAppLocked = false;
     _inactivityTimer?.cancel();
     loggedInStaff = null; 
+    config = AppConfig();
+    sales.clear();
+    purchases.clear();
+    vouchers.clear();
+    saleChallans.clear();
+    purchaseChallans.clear();
+    saleReturns.clear();
+    purchaseReturns.clear();
+    cheques.clear();
+    logs.clear();
+    batchHistory.clear();
+    PharoahNumberingEngine.clearActiveCompanyScopes();
     AppRealtimeCoordinator.instance.stop();
     AppAutoSyncDaemon.instance.stop();
     notifyListeners(); 
@@ -654,9 +666,18 @@ class PharoahManager with ChangeNotifier {
         }
         return !D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt);
       }).toList();
+      final String? activeLiveToken = activeCompany != null
+          ? await WebLiveToken.getToken(activeCompany!.id)
+          : null;
+      final List<String> activeScopes = [
+        if (activeCompany != null && activeCompany!.id.trim().isNotEmpty) activeCompany!.id.trim(),
+        if (activeLiveToken != null && activeLiveToken.trim().isNotEmpty) activeLiveToken.trim(),
+      ];
+      PharoahNumberingEngine.setActiveCompanyScopes(activeScopes);
       PharoahNumberingEngine.absorbChallanHwmState(
         hwm: config.challanHwm,
         meta: config.challanHwmMeta,
+        companyScopes: activeScopes,
       );
       if (activeCompany != null && currentFY.isNotEmpty) {
         final bool healed = await PharoahNumberingEngine.reconcileLegacyHwmOnLoad(
@@ -4409,7 +4430,22 @@ void registerBatchActivity({
   // 9. DATA REGISTRY & YEAR-END
   // ===========================================================================
 
-  Future<void> setupNewCompanyEnvironment(CompanyProfile p, String f) async { activeCompany = p; currentFY = f; numberingSeries = [
+  Future<void> setupNewCompanyEnvironment(CompanyProfile p, String f) async {
+    activeCompany = p;
+    currentFY = f;
+    config = AppConfig();
+    sales.clear();
+    purchases.clear();
+    vouchers.clear();
+    saleChallans.clear();
+    purchaseChallans.clear();
+    saleReturns.clear();
+    purchaseReturns.clear();
+    cheques.clear();
+    logs.clear();
+    batchHistory.clear();
+    PharoahNumberingEngine.setActiveCompanyScopes([p.id]);
+    numberingSeries = [
       NumberingSeries(id: 's1', name: "Standard Retail", type: "SALE", prefix: "INV-", isDefault: true),
       NumberingSeries(id: 's_ret', name: "Standard Credit Note", type: "RETURN", prefix: "TXN-", isDefault: true, startNumber: 1),
     ]; medicines = DemoData.getMedicines(); companies = MasterDataLibrary.getTopCompanies(); salts = MasterDataLibrary.getTopSalts(); drugTypes = MasterDataLibrary.getDrugTypes(); parties = [DemoData.getDemoParty(), Party(id: 'cash', name: "CASH", group: "Cash in Hand")]; await save(); if (!companiesRegistry.any((c) => c.id == p.id)) { companiesRegistry.add(p); await saveRegistry(); } notifyListeners(); }
@@ -4491,6 +4527,7 @@ void registerBatchActivity({
       await saveRegistry();
 
       await WebLiveToken.saveToken(cleanToken, companyId: restoredProfile.id);
+      PharoahNumberingEngine.setActiveCompanyScopes([restoredProfile.id, cleanToken]);
 
       activeCompany = restoredProfile;
       currentFY = fy;

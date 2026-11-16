@@ -514,6 +514,8 @@ class DeltaMergeEngine {
           PharoahNumberingEngine.absorbChallanHwmState(
             hwm: ph.config.challanHwm,
             meta: ph.config.challanHwmMeta,
+            recordFloor: recordFloor,
+            companyScopes: [if ((ph.activeCompany?.id ?? '').trim().isNotEmpty) ph.activeCompany!.id.trim()],
           );
         }
       } catch (_) {}
@@ -539,6 +541,8 @@ class DeltaMergeEngine {
           PharoahNumberingEngine.absorbChallanHwmState(
             hwm: ph.config.challanHwm,
             meta: ph.config.challanHwmMeta,
+            recordFloor: recordFloor,
+            companyScopes: [if ((ph.activeCompany?.id ?? '').trim().isNotEmpty) ph.activeCompany!.id.trim()],
           );
           cConfig = true;
         }

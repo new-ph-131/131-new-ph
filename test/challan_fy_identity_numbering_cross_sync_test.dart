@@ -2249,5 +2249,100 @@ void main() {
       );
       expect(nextNo, equals('WSCH-1'));
     });
+
+    test('Scenario 20: Cross-company HWM isolation prevents old store WSCH-3/SCH-3 leaking into fresh company while keeping intra-company alias sync', () async {
+      SharedPreferences.setMockInitialValues({
+        'challan_hwm_PH-LIVE-OLD_2026-27_SALE_CHALLAN_WEB_WSCH-': 3,
+        'challan_hwm_meta_PH-LIVE-OLD_2026-27_SALE_CHALLAN_WEB_WSCH-': jsonEncode({
+          'value': 3,
+          'seq': 10,
+          'gen': 4,
+          'op': 'SET',
+          'updatedAt': 1000,
+        }),
+        'challan_hwm_COMP-OLD_2026-27_SALE_CHALLAN_APP_SCH-': 5,
+        'lastID_CHALLAN_SCH-_COMP-OLD_2026-27': 5,
+      });
+
+      PharoahNumberingEngine.debugResetHwmCache();
+      WebPharoahNumberingEngine.debugResetHwmCache();
+      await PharoahNumberingEngine.loadFromPrefs();
+      await WebPharoahNumberingEngine.loadFromPrefs();
+
+      // Fresh company NAAM (COMP-NAAM <-> PH-LIVE-NEW) signs in on Web after old company
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+      webPh.activeStoreToken = 'PH-LIVE-NEW';
+      webPh.companyProfile = {'id': 'COMP-NAAM', 'name': 'NAAM'};
+      webPh.appConfig = AppConfig();
+      webPh.saleChallans = [
+        makeSaleChallan(
+          id: 'SC-NAAM-1',
+          billNo: 'SCH-1',
+          date: DateTime(2026, 11, 16),
+          originalFy: '2026-27',
+        ), // APP challan only; zero WEB challans created yet
+      ];
+
+      WebPharoahNumberingEngine.setActiveCompanyScopes(['PH-LIVE-NEW', 'COMP-NAAM']);
+      WebPharoahNumberingEngine.absorbChallanHwmState(
+        hwm: webPh.appConfig.challanHwm,
+        meta: webPh.appConfig.challanHwmMeta,
+        companyScopes: ['PH-LIVE-NEW', 'COMP-NAAM'],
+      );
+
+      final nextWebForNaam = webPh.getNextBillNumber('CHALLAN', 'WSCH-', 1);
+      expect(nextWebForNaam, equals('WSCH-1'));
+
+      // Fresh company NAAM on Mobile must also ignore COMP-OLD's SCH-5
+      PharoahNumberingEngine.setActiveCompanyScopes(['COMP-NAAM', 'PH-LIVE-NEW']);
+      final nextAppForNaam = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: 'COMP-NAAM',
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        env: 'APP',
+        currentList: const [],
+      );
+      expect(nextAppForNaam, equals('SCH-1'));
+
+      // Intra-company alias sync: Web creates WSCH-1 under PH-LIVE-NEW, Mobile (COMP-NAAM) deletes & rolls back
+      WebPharoahNumberingEngine.recordChallanHwm(
+        prefix: 'WSCH-',
+        number: 'WSCH-1',
+        fy: '2026-27',
+        env: 'WEB',
+        companyID: 'PH-LIVE-NEW',
+        config: webPh.appConfig,
+      );
+      PharoahNumberingEngine.absorbChallanHwmState(
+        hwm: webPh.appConfig.challanHwm,
+        meta: webPh.appConfig.challanHwmMeta,
+        companyScopes: ['COMP-NAAM', 'PH-LIVE-NEW'],
+      );
+      final rb = PharoahNumberingEngine.rollbackChallanHwmToTail(
+        companyID: 'COMP-NAAM',
+        type: 'SALE_CHALLAN',
+        prefix: 'WSCH-',
+        newTail: 0,
+        deletedNum: 1,
+        fy: '2026-27',
+        env: 'WEB',
+      );
+      expect(rb, isNotNull);
+      expect(rb!.value, equals(0));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Old company's persisted HWM in SharedPreferences must remain completely untouched
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt('challan_hwm_PH-LIVE-OLD_2026-27_SALE_CHALLAN_WEB_WSCH-'), equals(3));
+      expect(prefs.getInt('lastID_CHALLAN_SCH-_COMP-OLD_2026-27'), equals(5));
+
+      // signOut clears active scopes & appConfig cleanly
+      await webPh.signOut();
+      expect(webPh.appConfig.challanHwm, isEmpty);
+      expect(webPh.companyProfile, isEmpty);
+    });
   });
 }
