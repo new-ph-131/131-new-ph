@@ -1256,6 +1256,8 @@ class D1SalesLedgerService {
     for (final ev in events) {
       final String action = (ev["action"] ?? "").toString().toUpperCase();
       final dynamic rawData = ev["sale_data"];
+      final String billId = (ev["bill_id"] ?? (rawData is Map ? (rawData["id"] ?? rawData["billId"]) : "") ?? "").toString().trim();
+      final String billNo = (ev["bill_no"] ?? (rawData is Map ? (rawData["billNo"] ?? rawData["internalNo"]) : "") ?? "").toString().trim();
       final bool payloadDel = rawData is Map &&
           ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
               rawData["status"] == "Deleted");
