@@ -1,6 +1,8 @@
 import '../outbox/sync_queue_manager.dart';
 import '../../models.dart';
 import '../../logic/app_settings_model.dart';
+import '../../logic/pharoah_numbering_engine.dart';
+import '../../web_live_sync/web_pharoah_numbering_engine.dart';
 // FILE: lib/sync_core/orchestrator/master_sync_orchestrator.dart
 import 'package:flutter/foundation.dart';
 import '../d1_sales_ledger_service.dart';
@@ -457,7 +459,32 @@ class MasterSyncOrchestrator {
               customUpdatedAt: envelope.updatedAt,
             );
           }
-          if (mutated) {
+          final bool scHwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+            currentConfig: phApp.config,
+            edgeEvents: [
+              {
+                'seq': 0,
+                'bill_id': envelope.syncId,
+                'action': envelope.action,
+                'sale_data': envelope.billData,
+              }
+            ],
+            companyID: phApp.activeCompany?.id ?? '',
+            recordFloor: AppConfig.computeChallanRecordFloor(
+              companyID: phApp.activeCompany?.id ?? '',
+              saleChallans: phApp.saleChallans,
+              purchaseChallans: phApp.purchaseChallans,
+              targetFy: phApp.currentFY,
+            ),
+            targetLogs: phApp.logs,
+          );
+          if (scHwmAuditMut) {
+            PharoahNumberingEngine.absorbChallanHwmState(
+              hwm: phApp.config.challanHwm,
+              meta: phApp.config.challanHwmMeta,
+            );
+          }
+          if (mutated || scHwmAuditMut) {
             phApp.save();
             phApp.notifyListeners();
           }
@@ -544,7 +571,32 @@ class MasterSyncOrchestrator {
               customUpdatedAt: envelope.updatedAt,
             );
           }
-          if (mutated) {
+          final bool pcHwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+            currentConfig: phApp.config,
+            edgeEvents: [
+              {
+                'seq': 0,
+                'bill_id': envelope.syncId,
+                'action': envelope.action,
+                'sale_data': envelope.billData,
+              }
+            ],
+            companyID: phApp.activeCompany?.id ?? '',
+            recordFloor: AppConfig.computeChallanRecordFloor(
+              companyID: phApp.activeCompany?.id ?? '',
+              saleChallans: phApp.saleChallans,
+              purchaseChallans: phApp.purchaseChallans,
+              targetFy: phApp.currentFY,
+            ),
+            targetLogs: phApp.logs,
+          );
+          if (pcHwmAuditMut) {
+            PharoahNumberingEngine.absorbChallanHwmState(
+              hwm: phApp.config.challanHwm,
+              meta: phApp.config.challanHwmMeta,
+            );
+          }
+          if (mutated || pcHwmAuditMut) {
             phApp.save();
             phApp.notifyListeners();
           }
@@ -723,10 +775,31 @@ class MasterSyncOrchestrator {
         case 'CONFIG':
         case 'APP_CONFIG':
           final incomingCfg = AppConfig.fromMap(envelope.billData);
-          if (phApp.config.updatedAt == 0 ||
+          final appFloor = AppConfig.computeChallanRecordFloor(
+            companyID: phApp.activeCompany?.id ?? '',
+            saleChallans: phApp.saleChallans,
+            purchaseChallans: phApp.purchaseChallans,
+            targetFy: phApp.currentFY,
+          );
+          final bool fieldsWin = phApp.config.updatedAt == 0 ||
               incomingCfg.updatedAt >= phApp.config.updatedAt ||
-              incomingCfg.version >= phApp.config.version) {
-            phApp.config = incomingCfg;
+              incomingCfg.version >= phApp.config.version;
+          final mergedCfg = AppConfig.mergeAppConfigWithCausalHwm(
+            local: phApp.config,
+            incoming: incomingCfg,
+            recordFloor: appFloor,
+            incomingFieldsWin: fieldsWin,
+          );
+          final bool hwmDiff =
+              mergedCfg.challanHwm.toString() != phApp.config.challanHwm.toString() ||
+              mergedCfg.challanHwmMeta.length != phApp.config.challanHwmMeta.length ||
+              mergedCfg.challanHwmTailMigrated != phApp.config.challanHwmTailMigrated;
+          if (fieldsWin || hwmDiff) {
+            phApp.config = mergedCfg;
+            PharoahNumberingEngine.absorbChallanHwmState(
+              hwm: phApp.config.challanHwm,
+              meta: phApp.config.challanHwmMeta,
+            );
             mutated = true;
             phApp.save();
             phApp.notifyListeners();
@@ -1104,7 +1177,32 @@ class MasterSyncOrchestrator {
               customUpdatedAt: envelope.updatedAt,
             );
           }
-          if (mutated) {
+          final bool webScHwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+            currentConfig: phWeb.appConfig,
+            edgeEvents: [
+              {
+                'seq': 0,
+                'bill_id': envelope.syncId,
+                'action': envelope.action,
+                'sale_data': envelope.billData,
+              }
+            ],
+            companyID: phWeb.activeStoreToken,
+            recordFloor: AppConfig.computeChallanRecordFloor(
+              companyID: phWeb.activeStoreToken,
+              saleChallans: phWeb.saleChallans,
+              purchaseChallans: phWeb.purchaseChallans,
+              targetFy: phWeb.financialYear,
+            ),
+            targetLogs: phWeb.logs,
+          );
+          if (webScHwmAuditMut) {
+            WebPharoahNumberingEngine.absorbChallanHwmState(
+              hwm: phWeb.appConfig.challanHwm,
+              meta: phWeb.appConfig.challanHwmMeta,
+            );
+          }
+          if (mutated || webScHwmAuditMut) {
             phWeb.snapshotActiveFyToVault();
             phWeb.notifyListeners();
           }
@@ -1172,7 +1270,32 @@ class MasterSyncOrchestrator {
               customUpdatedAt: envelope.updatedAt,
             );
           }
-          if (mutated) {
+          final bool webPcHwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+            currentConfig: phWeb.appConfig,
+            edgeEvents: [
+              {
+                'seq': 0,
+                'bill_id': envelope.syncId,
+                'action': envelope.action,
+                'sale_data': envelope.billData,
+              }
+            ],
+            companyID: phWeb.activeStoreToken,
+            recordFloor: AppConfig.computeChallanRecordFloor(
+              companyID: phWeb.activeStoreToken,
+              saleChallans: phWeb.saleChallans,
+              purchaseChallans: phWeb.purchaseChallans,
+              targetFy: phWeb.financialYear,
+            ),
+            targetLogs: phWeb.logs,
+          );
+          if (webPcHwmAuditMut) {
+            WebPharoahNumberingEngine.absorbChallanHwmState(
+              hwm: phWeb.appConfig.challanHwm,
+              meta: phWeb.appConfig.challanHwmMeta,
+            );
+          }
+          if (mutated || webPcHwmAuditMut) {
             phWeb.snapshotActiveFyToVault();
             phWeb.notifyListeners();
           }
@@ -1305,10 +1428,31 @@ class MasterSyncOrchestrator {
         case 'CONFIG':
         case 'APP_CONFIG':
           final incomingCfg = AppConfig.fromMap(envelope.billData);
-          if (phWeb.appConfig.updatedAt == 0 ||
+          final webFloor = AppConfig.computeChallanRecordFloor(
+            companyID: phWeb.activeStoreToken,
+            saleChallans: phWeb.saleChallans,
+            purchaseChallans: phWeb.purchaseChallans,
+            targetFy: phWeb.financialYear,
+          );
+          final bool fieldsWin = phWeb.appConfig.updatedAt == 0 ||
               incomingCfg.updatedAt >= phWeb.appConfig.updatedAt ||
-              incomingCfg.version >= phWeb.appConfig.version) {
-            phWeb.appConfig = incomingCfg;
+              incomingCfg.version >= phWeb.appConfig.version;
+          final mergedCfg = AppConfig.mergeAppConfigWithCausalHwm(
+            local: phWeb.appConfig,
+            incoming: incomingCfg,
+            recordFloor: webFloor,
+            incomingFieldsWin: fieldsWin,
+          );
+          final bool hwmDiff =
+              mergedCfg.challanHwm.toString() != phWeb.appConfig.challanHwm.toString() ||
+              mergedCfg.challanHwmMeta.length != phWeb.appConfig.challanHwmMeta.length ||
+              mergedCfg.challanHwmTailMigrated != phWeb.appConfig.challanHwmTailMigrated;
+          if (fieldsWin || hwmDiff) {
+            phWeb.appConfig = mergedCfg;
+            WebPharoahNumberingEngine.absorbChallanHwmState(
+              hwm: phWeb.appConfig.challanHwm,
+              meta: phWeb.appConfig.challanHwmMeta,
+            );
             mutated = true;
             phWeb.notifyListeners();
           }

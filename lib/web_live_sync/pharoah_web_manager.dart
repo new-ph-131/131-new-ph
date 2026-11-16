@@ -49,6 +49,18 @@ import '../sync_core/models/sync_envelope.dart';
 import 'pharoah_auto_sync_service.dart';
 
 class PharoahWebManager with ChangeNotifier {
+  List<LogEntry> logs = [];
+
+  void addLog(String action, String details) {
+    logs.add(LogEntry(
+      id: 'LOG_${DateTime.now().millisecondsSinceEpoch}',
+      action: action,
+      details: details,
+      time: DateTime.now(),
+    ));
+    _snapshotActiveFyToVault();
+  }
+
   bool isLoading = false;
   bool isAutoLoggingIn = true;
   bool isAuthenticated = false;
@@ -404,7 +416,13 @@ class PharoahWebManager with ChangeNotifier {
       'gst_sessions.json': jsonEncode(gstDiarySessions.map((e) => e.toMap()).toList()),
       'pending_invoices.json': jsonEncode(carriedPendingInvoices),
       'config.json': jsonEncode(appConfig.toMap()),
+      'logs.json': jsonEncode(logs.map((e) => e.toMap()).toList()),
       'bats.json': jsonEncode(batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
+      if (appConfig.challanHwm.isNotEmpty) 'challan_hwm.json': jsonEncode(appConfig.challanHwm),
+      if (appConfig.challanHwmMeta.isNotEmpty)
+        'challan_hwm_meta.json': jsonEncode(
+          appConfig.challanHwmMeta.map((k, v) => MapEntry(k, v.toMap())),
+        ),
     };
   }
 
@@ -428,6 +446,7 @@ class PharoahWebManager with ChangeNotifier {
     medicines.clear();
     banks.clear();
     numberingSeries.clear();
+    logs.clear();
   }
 
   void snapshotActiveFyToVault() {
@@ -543,7 +562,7 @@ class PharoahWebManager with ChangeNotifier {
                         final int itemUpd = int.tryParse((m['updatedAt'] ?? m['updated_at'] ?? '0').toString()) ?? 0;
                         if (fname == 'p_challan.json') {
                           final String st = (m['status'] ?? '').toString().trim();
-                          if (st == 'Billed' || st == 'Cancelled') return false;
+                          if (st == 'Billed') return false;
                           final String effFy = (m['originalFy'] ?? m['original_fy'] ?? m['fy'] ?? cleanFy).toString().trim();
                           return D1SalesLedgerService.isPurchaseChallanDeleted(
                             id,
@@ -567,7 +586,7 @@ class PharoahWebManager with ChangeNotifier {
                         final String sec = (m['billNo'] ?? m['voucherNo'] ?? '').toString().trim();
                         if (fname == 's_challan.json') {
                           final String st = (m['status'] ?? '').toString().trim();
-                          if (st == 'Billed' || st == 'Cancelled') return false;
+                          if (st == 'Billed') return false;
                           final String effFy = (m['originalFy'] ?? m['original_fy'] ?? m['fy'] ?? cleanFy).toString().trim();
                           return D1SalesLedgerService.isSaleChallanDeleted(id, sec, effFy.isNotEmpty ? effFy : cleanFy, itemUpd);
                         }
@@ -1473,28 +1492,58 @@ class PharoahWebManager with ChangeNotifier {
     banks = (decodeJson('banks.json') as List?)?.map((e) => Bank.fromMap(e)).toList() ?? [];
     numberingSeries = (decodeJson('series.json') as List?)?.map((e) => NumberingSeries.fromMap(e)).toList() ?? [];
 
+    if (filesMap.containsKey('logs.json')) {
+      final rawLogs = _decodeJsonSafe(filesMap['logs.json']);
+      if (rawLogs is List) {
+        logs = rawLogs.whereType<Map>().map((e) => LogEntry.fromMap(Map<String, dynamic>.from(e))).toList();
+      }
+    }
+
+    final webFloor = AppConfig.computeChallanRecordFloor(
+      companyID: activeStoreToken,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      targetFy: financialYear,
+    );
     var cData = decodeJson('config.json');
     if (cData != null && cData is Map<String, dynamic>) {
       final incomingCfg = AppConfig.fromMap(cData);
-      final mergedHwm = AppConfig.mergeHwmMaps(appConfig.challanHwm, incomingCfg.challanHwm);
-      WebPharoahNumberingEngine.absorbChallanHwmMap(mergedHwm);
-      if (appConfig.updatedAt == 0 ||
+      final bool fieldsWin = appConfig.updatedAt == 0 ||
           incomingCfg.updatedAt >= appConfig.updatedAt ||
-          incomingCfg.version > appConfig.version) {
-        incomingCfg.challanHwm = mergedHwm;
-        appConfig = incomingCfg;
-      } else {
-        appConfig.challanHwm = mergedHwm;
-      }
+          incomingCfg.version > appConfig.version;
+      appConfig = AppConfig.mergeAppConfigWithCausalHwm(
+        local: appConfig,
+        incoming: incomingCfg,
+        recordFloor: webFloor,
+        incomingFieldsWin: fieldsWin,
+      );
     }
     var hwmData = decodeJson('challan_hwm.json');
-    if (hwmData != null) {
-      final parsed = AppConfig.parseHwmMap(hwmData);
-      if (parsed.isNotEmpty) {
-        appConfig.challanHwm = AppConfig.mergeHwmMaps(appConfig.challanHwm, parsed);
-        WebPharoahNumberingEngine.absorbChallanHwmMap(appConfig.challanHwm);
-      }
+    var hwmMetaData = decodeJson('challan_hwm_meta.json');
+    if (hwmData != null || hwmMetaData != null) {
+      final parsedHwm = AppConfig.parseHwmMap(hwmData);
+      final parsedMeta = AppConfig.parseHwmMetaMap(hwmMetaData);
+      final mergedSlice = AppConfig.mergeHwmMapsWithMeta(
+        localHwm: appConfig.challanHwm,
+        localMeta: appConfig.challanHwmMeta,
+        remoteHwm: parsedHwm,
+        remoteMeta: parsedMeta,
+        recordFloor: webFloor,
+      );
+      appConfig.challanHwm = mergedSlice.hwm;
+      appConfig.challanHwmMeta = mergedSlice.meta;
     }
+    WebPharoahNumberingEngine.reconcileLegacyHwmOnLoad(
+      companyID: activeStoreToken,
+      fy: financialYear,
+      config: appConfig,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+    );
+    WebPharoahNumberingEngine.absorbChallanHwmState(
+      hwm: appConfig.challanHwm,
+      meta: appConfig.challanHwmMeta,
+    );
 
     // 🛡️ NON-DESTRUCTIVE LWW DELTA MERGE (#PH-REV-764): Never wipe in-flight local batch edits!
     var bData = decodeJson('bats.json');
@@ -2176,11 +2225,31 @@ class PharoahWebManager with ChangeNotifier {
         final bool prMut = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(purchaseReturns, edgeEvents, expectedFy);
         final bool vMut = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(vouchers, edgeEvents, expectedFy);
         final bool gMut = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(gstDiarySessions, edgeEvents);
+        final webHarvestFloor = AppConfig.computeChallanRecordFloor(
+          companyID: activeStoreToken,
+          saleChallans: saleChallans,
+          purchaseChallans: purchaseChallans,
+          targetFy: expectedFy,
+        );
+        final bool hwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+          currentConfig: appConfig,
+          edgeEvents: edgeEvents,
+          companyID: activeStoreToken,
+          recordFloor: webHarvestFloor,
+          targetLogs: logs,
+        );
         final bool cMut = SettingsSyncModule.applyEdgeEventsToLocalConfig(
           currentConfig: appConfig,
           edgeEvents: edgeEvents,
           onConfigMutated: (cfg) => appConfig = cfg,
+          recordFloor: webHarvestFloor,
         );
+        if (hwmAuditMut || cMut) {
+          WebPharoahNumberingEngine.absorbChallanHwmState(
+            hwm: appConfig.challanHwm,
+            meta: appConfig.challanHwmMeta,
+          );
+        }
         final bool serMut = SettingsSyncModule.applyEdgeEventsToLocalSeries(
           currentSeries: numberingSeries,
           edgeEvents: edgeEvents,
@@ -2213,7 +2282,7 @@ class PharoahWebManager with ChangeNotifier {
         if (sMut || pMut || srMut || prMut) {
           rebuildInventory();
         }
-        if (sMut || pMut || srMut || prMut || vMut || gMut || cMut || serMut || scRevMut || pcRevMut) {
+        if (sMut || pMut || srMut || prMut || vMut || gMut || cMut || serMut || scRevMut || pcRevMut || hwmAuditMut) {
           _snapshotActiveFyToVault();
           notifyListeners();
         }
@@ -3534,7 +3603,7 @@ class PharoahWebManager with ChangeNotifier {
     return true;
   }
 
-  /// Checks whether a Sale Challan is eligible for permanent deletion (Last-Eligible-Draft Gate).
+  /// Checks whether a Sale Challan is eligible for permanent deletion (Last-Eligible-Draft / Cancelled-Tail Gate).
   /// Middle challans must be cancelled instead of deleted to protect audit trail and monotonic numbering.
   bool canDeleteSaleChallan(String challanId) {
     SaleChallan? targetC;
@@ -3542,72 +3611,89 @@ class PharoahWebManager with ChangeNotifier {
       targetC = saleChallans.firstWhere((item) => item.id == challanId || item.billNo == challanId);
     } catch (_) {}
     if (targetC == null) return false;
-    if (targetC.status != "Pending") return false;
+    // 🛡️ Tail Rule: Both Pending and Cancelled challans are eligible if they are the tail of the series!
+    if (targetC.status != "Pending" && targetC.status != "Cancelled") return false;
     if (targetC.isSigned || targetC.sigHistory.isNotEmpty) return false;
     final fwd = getForwardChallanStatus(targetC.id, isPurchase: false);
     if (fwd.billedFy != null) return false;
 
-    final String cFy = normalizeFyString(targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear);
-    final String cBill = targetC.billNo.trim().toUpperCase();
-
-    String prefix = "";
-    int? cNum;
-    for (int i = 0; i < cBill.length; i++) {
-      if (RegExp(r'^[0-9]').hasMatch(cBill.substring(i))) {
-        prefix = cBill.substring(0, i);
-        cNum = int.tryParse(cBill.substring(i));
-        break;
+    // Check active sales for links
+    for (final s in sales) {
+      if (s.isDeleted == 1) continue;
+      if (s.linkedChallanIds.contains(targetC.id)) return false;
+      for (final it in s.items) {
+        if (it.sourceChallanId == targetC.id) return false;
       }
     }
-    if (cNum == null) return true;
 
-    final bool targetIsWeb = WebPharoahNumberingEngine.isWebChallanRecord(targetC);
-    final String cEnv = targetIsWeb ? "WEB" : "APP";
+    final String cFy = normalizeFyString(targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear);
+    final parsed = AppConfig.parseSeriesNumber(targetC.billNo);
+    if (parsed.prefix.isEmpty || parsed.number == null) return true;
+    final String prefix = parsed.prefix;
+    final int cNum = parsed.number!;
+
+    final bool cIsWeb = WebPharoahNumberingEngine.isWebChallanRecord(targetC);
+    final String cEnv = cIsWeb ? "WEB" : "APP";
     final int hwm = WebPharoahNumberingEngine.getCachedChallanHwm(
       prefix: prefix,
       fy: cFy,
-      normType: "SALE_CHALLAN",
       env: cEnv,
-      companyID: activeStoreToken,
       configHwm: appConfig.challanHwm,
+      companyID: activeStoreToken,
+      type: "SALE_CHALLAN",
     );
     if (hwm > cNum) return false;
 
     for (final other in saleChallans) {
-      if (other.id == targetC.id) continue;
-      if (other.isDeleted == 1) continue;
-      final String oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : financialYear);
+      if (other.id == targetC.id || other.isDeleted == 1) continue;
+      final oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : financialYear);
       if (oFy != cFy) continue;
-      if (WebPharoahNumberingEngine.isWebChallanRecord(other) != targetIsWeb) continue;
-      final String oBill = other.billNo.trim().toUpperCase();
-      if (prefix.isNotEmpty && oBill.startsWith(prefix)) {
-        final int? oNum = int.tryParse(oBill.substring(prefix.length).trim());
-        if (oNum != null && oNum > cNum) {
-          return false; // Middle challan
+      if (WebPharoahNumberingEngine.isWebChallanRecord(other) != cIsWeb) continue;
+      final oParsed = AppConfig.parseSeriesNumber(other.billNo);
+      if (oParsed.prefix.toUpperCase() == prefix.toUpperCase() && oParsed.number != null) {
+        if (oParsed.number! > cNum) {
+          return false; // Higher number exists in same series: Middle challan cannot be deleted
         }
       }
     }
     return true;
   }
 
-  /// Cancels a Sale Challan on Web preserving its UUID, number and audit history (Middle-Challan Cancel)
+  /// Cancels a Sale Challan preserving its UUID, visible bill number, and audit history (Middle-Challan Cancel)
   bool cancelSaleChallan(String challanId) {
     SaleChallan? targetC;
     try {
       targetC = saleChallans.firstWhere((item) => item.id == challanId || item.billNo == challanId);
     } catch (_) {}
     if (targetC == null) return false;
-    if (targetC.status == "Billed") return false;
+    if (targetC.status == "Billed") {
+      debugPrint("🔒 [Web cancelSaleChallan] Blocked cancel on Billed challan ${targetC.id}");
+      return false;
+    }
     final fwd = getForwardChallanStatus(targetC.id, isPurchase: false);
-    if (fwd.billedFy != null) return false;
+    if (fwd.billedFy != null) {
+      debugPrint("🔒 [Web cancelSaleChallan] Blocked cancel on challan ${targetC.id} already Billed in ${fwd.billedFy}");
+      return false;
+    }
+    for (final s in sales) {
+      if (s.isDeleted == 1) continue;
+      if (s.linkedChallanIds.contains(targetC.id)) return false;
+      for (final it in s.items) {
+        if (it.sourceChallanId == targetC.id) return false;
+      }
+    }
     if (targetC.status == "Cancelled") return true;
 
+    final String priorStatus = targetC.status;
     targetC.status = "Cancelled";
     targetC.version += 1;
     targetC.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
-    final String cId = targetC.id.trim();
+    final cId = targetC.id.trim();
     final String cOfy = targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
+    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final auditDetails = "Cancelled Sale Challan ${targetC.billNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
+    addLog("CANCEL_SALE_CHALLAN", auditDetails);
 
     SaleChallanSyncModule.onSaleChallanCancelled(targetC, activeStoreToken);
     trackPendingD1Write(
@@ -3616,6 +3702,12 @@ class PharoahWebManager with ChangeNotifier {
         activeStoreToken,
         clientSource: "WEB_PORTAL",
         fy: cOfy,
+        audit: {
+          'id': 'LOG_${DateTime.now().millisecondsSinceEpoch}_$cId',
+          'action': 'CANCEL_SALE_CHALLAN',
+          'details': auditDetails,
+          'time': DateTime.now().toIso8601String(),
+        },
       ),
     );
     _snapshotActiveFyToVault();
@@ -3628,78 +3720,95 @@ class PharoahWebManager with ChangeNotifier {
     return true;
   }
 
-  /// Checks whether a Purchase Challan is eligible for permanent deletion (Last-Eligible-Draft Gate).
+  /// Checks whether a Purchase Challan is eligible for permanent deletion (Last-Eligible-Draft / Cancelled-Tail Gate).
   bool canDeletePurchaseChallan(String challanId) {
     PurchaseChallan? targetC;
     try {
       targetC = purchaseChallans.firstWhere((item) => item.id == challanId || item.internalNo == challanId || item.billNo == challanId);
     } catch (_) {}
     if (targetC == null) return false;
-    if (targetC.status != "Pending") return false;
+    // 🛡️ Tail Rule: Both Pending and Cancelled purchase challans are eligible if they are the tail of the series!
+    if (targetC.status != "Pending" && targetC.status != "Cancelled") return false;
     final fwd = getForwardChallanStatus(targetC.id, isPurchase: true);
     if (fwd.billedFy != null) return false;
 
-    final String cFy = normalizeFyString(targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear);
-    final String cInt = targetC.internalNo.trim().toUpperCase();
-
-    String prefix = "";
-    int? cNum;
-    for (int i = 0; i < cInt.length; i++) {
-      if (RegExp(r'^[0-9]').hasMatch(cInt.substring(i))) {
-        prefix = cInt.substring(0, i);
-        cNum = int.tryParse(cInt.substring(i));
-        break;
+    // Check active purchases for links
+    for (final p in purchases) {
+      if (p.isDeleted == 1) continue;
+      if (p.linkedChallanIds.contains(targetC.id)) return false;
+      for (final it in p.items) {
+        if (it.sourceChallanId == targetC.id) return false;
       }
     }
-    if (cNum == null) return true;
 
-    final bool targetIsWeb = WebPharoahNumberingEngine.isWebChallanRecord(targetC);
-    final String cEnv = targetIsWeb ? "WEB" : "APP";
+    final String cFy = normalizeFyString(targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear);
+    final parsed = AppConfig.parseSeriesNumber(targetC.internalNo);
+    if (parsed.prefix.isEmpty || parsed.number == null) return true;
+    final String prefix = parsed.prefix;
+    final int cNum = parsed.number!;
+
+    final bool cIsWeb = WebPharoahNumberingEngine.isWebChallanRecord(targetC);
+    final String cEnv = cIsWeb ? "WEB" : "APP";
     final int hwm = WebPharoahNumberingEngine.getCachedChallanHwm(
       prefix: prefix,
       fy: cFy,
-      normType: "PURCHASE_CHALLAN",
       env: cEnv,
-      companyID: activeStoreToken,
       configHwm: appConfig.challanHwm,
+      companyID: activeStoreToken,
+      type: "PURCHASE_CHALLAN",
     );
     if (hwm > cNum) return false;
 
     for (final other in purchaseChallans) {
-      if (other.id == targetC.id) continue;
-      if (other.isDeleted == 1) continue;
-      final String oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : financialYear);
+      if (other.id == targetC.id || other.isDeleted == 1) continue;
+      final oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : financialYear);
       if (oFy != cFy) continue;
-      if (WebPharoahNumberingEngine.isWebChallanRecord(other) != targetIsWeb) continue;
-      final String oInt = other.internalNo.trim().toUpperCase();
-      if (prefix.isNotEmpty && oInt.startsWith(prefix)) {
-        final int? oNum = int.tryParse(oInt.substring(prefix.length).trim());
-        if (oNum != null && oNum > cNum) {
-          return false; // Middle challan
+      if (WebPharoahNumberingEngine.isWebChallanRecord(other) != cIsWeb) continue;
+      final oParsed = AppConfig.parseSeriesNumber(other.internalNo);
+      if (oParsed.prefix.toUpperCase() == prefix.toUpperCase() && oParsed.number != null) {
+        if (oParsed.number! > cNum) {
+          return false; // Higher number exists in same series: Middle challan cannot be deleted
         }
       }
     }
     return true;
   }
 
-  /// Cancels a Purchase Challan on Web preserving its UUID, internalNo and audit history
+  /// Cancels a Purchase Challan preserving its UUID, internalNo and audit history
   bool cancelPurchaseChallan(String challanId) {
     PurchaseChallan? targetC;
     try {
       targetC = purchaseChallans.firstWhere((item) => item.id == challanId || item.internalNo == challanId || item.billNo == challanId);
     } catch (_) {}
     if (targetC == null) return false;
-    if (targetC.status == "Billed") return false;
+    if (targetC.status == "Billed") {
+      debugPrint("🔒 [Web cancelPurchaseChallan] Blocked cancel on Billed challan ${targetC.id}");
+      return false;
+    }
     final fwd = getForwardChallanStatus(targetC.id, isPurchase: true);
-    if (fwd.billedFy != null) return false;
+    if (fwd.billedFy != null) {
+      debugPrint("🔒 [Web cancelPurchaseChallan] Blocked cancel on challan ${targetC.id} already Billed in ${fwd.billedFy}");
+      return false;
+    }
+    for (final p in purchases) {
+      if (p.isDeleted == 1) continue;
+      if (p.linkedChallanIds.contains(targetC.id)) return false;
+      for (final it in p.items) {
+        if (it.sourceChallanId == targetC.id) return false;
+      }
+    }
     if (targetC.status == "Cancelled") return true;
 
+    final String priorStatus = targetC.status;
     targetC.status = "Cancelled";
     targetC.version += 1;
     targetC.updatedAt = DateTime.now().millisecondsSinceEpoch;
 
-    final String cId = targetC.id.trim();
+    final cId = targetC.id.trim();
     final String cOfy = targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
+    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final auditDetails = "Cancelled Purchase Challan ${targetC.internalNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
+    addLog("CANCEL_PURCHASE_CHALLAN", auditDetails);
 
     PurchaseChallanSyncModule.onPurchaseChallanCancelled(targetC, activeStoreToken);
     trackPendingD1Write(
@@ -3708,6 +3817,12 @@ class PharoahWebManager with ChangeNotifier {
         activeStoreToken,
         clientSource: "WEB_PORTAL",
         fy: cOfy,
+        audit: {
+          'id': 'LOG_${DateTime.now().millisecondsSinceEpoch}_$cId',
+          'action': 'CANCEL_PURCHASE_CHALLAN',
+          'details': auditDetails,
+          'time': DateTime.now().toIso8601String(),
+        },
       ),
     );
     _snapshotActiveFyToVault();
@@ -3747,27 +3862,62 @@ class PharoahWebManager with ChangeNotifier {
     final String bNo = targetC != null ? targetC.billNo.trim().toUpperCase() : "";
     final String cOfy = targetC != null && targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
     final String delEnv = (targetC != null && !WebPharoahNumberingEngine.isWebChallanRecord(targetC)) ? "APP" : "WEB";
-    if (targetC != null && bNo.isNotEmpty) {
-      String scDelPrefix = "";
-      for (int i = 0; i < bNo.length; i++) {
-        if (RegExp(r'^[0-9]').hasMatch(bNo.substring(i))) {
-          scDelPrefix = bNo.substring(0, i);
-          break;
-        }
-      }
-      if (scDelPrefix.isNotEmpty) {
-        WebPharoahNumberingEngine.recordChallanHwm(
-          prefix: scDelPrefix,
-          number: bNo,
-          fy: cOfy,
-          env: delEnv,
-          config: appConfig,
-          companyID: activeStoreToken,
-        );
+
+    final parsed = AppConfig.parseSeriesNumber(bNo);
+    final String scPrefix = parsed.prefix;
+    final int? cNum = parsed.number;
+
+    // 🛡️ Compute remainingMax among other non-deleted records
+    int remainingMax = 0;
+    for (final other in saleChallans) {
+      if (other.id == cId || other.isDeleted == 1) continue;
+      final oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : financialYear);
+      if (oFy != cOfy) continue;
+      if (WebPharoahNumberingEngine.isWebChallanRecord(other) != (delEnv == "WEB")) continue;
+      final oParsed = AppConfig.parseSeriesNumber(other.billNo);
+      if (oParsed.prefix.toUpperCase() == scPrefix.toUpperCase() && oParsed.number != null) {
+        if (oParsed.number! > remainingMax) remainingMax = oParsed.number!;
       }
     }
+
+    ChallanHwmState? rolledState;
+    if (scPrefix.isNotEmpty && cNum != null) {
+      rolledState = WebPharoahNumberingEngine.rollbackChallanHwmToTail(
+        prefix: scPrefix,
+        normType: "SALE_CHALLAN",
+        newTail: remainingMax,
+        deletedNum: cNum,
+        fy: cOfy,
+        env: delEnv,
+        config: appConfig,
+        companyID: activeStoreToken,
+        tombUuid: cId.isNotEmpty ? cId : challanId,
+      );
+      final String cleanComp = activeStoreToken.trim();
+      final String suffix = '::${cOfy}::SALE_CHALLAN::${delEnv}::$scPrefix';
+      for (final k in appConfig.challanHwm.keys.toList()) {
+        if (k.endsWith(suffix)) {
+          if (remainingMax > 0) {
+            appConfig.challanHwm[k] = remainingMax;
+          } else {
+            appConfig.challanHwm.remove(k);
+          }
+        }
+      }
+      for (final k in appConfig.challanHwmMeta.keys.toList()) {
+        if (k.endsWith(suffix) && rolledState != null) {
+          appConfig.challanHwmMeta[k] = rolledState.copy();
+        }
+      }
+    }
+
+    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final auditDetails = "Deleted Sale Challan $bNo (UUID: ${cId.isNotEmpty ? cId : challanId}, priorStatus: ${targetC?.status}) by $actor. Series tail rolled back to $remainingMax.";
+    addLog("DELETE_SALE_CHALLAN", auditDetails);
+
     if (targetC != null) {
       SaleChallanSyncModule.onSaleChallanDeleted(targetC, activeStoreToken);
+      SettingsSyncModule.onConfigSaved(appConfig, activeStoreToken, fy: cOfy);
     }
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, cOfy) : "";
@@ -3788,6 +3938,18 @@ class PharoahWebManager with ChangeNotifier {
       unmarkedRecordIds.remove(k.toUpperCase());
     }
     D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : challanId, bNo, cOfy, delTime);
+
+    final Map<String, dynamic>? hwmRollbackPayload = (rolledState != null && scPrefix.isNotEmpty) ? {
+      'key': '${activeStoreToken.trim()}::${cOfy}::SALE_CHALLAN::${delEnv}::$scPrefix',
+      ...rolledState.toMap(),
+    } : null;
+    final Map<String, dynamic> auditPayload = {
+      'id': 'LOG_${delTime}_${cId.isNotEmpty ? cId : challanId}',
+      'action': 'DELETE_SALE_CHALLAN',
+      'details': auditDetails,
+      'time': DateTime.now().toIso8601String(),
+    };
+
     trackPendingD1Write(
       D1SalesLedgerService.onSaleChallanDeleted(
         targetC ?? (cId.isNotEmpty ? cId : challanId),
@@ -3796,6 +3958,15 @@ class PharoahWebManager with ChangeNotifier {
         clientSource: "WEB_PORTAL",
         fy: cOfy,
         deletedAtMs: delTime,
+        hwmRollback: hwmRollbackPayload,
+        audit: auditPayload,
+        onServerSeq: (s) {
+          if (rolledState != null && s > rolledState.seq) {
+            rolledState.seq = s;
+            final key = '${activeStoreToken.trim()}::${cOfy}::SALE_CHALLAN::${delEnv}::$scPrefix';
+            appConfig.challanHwmMeta[key] = rolledState.copy();
+          }
+        },
       ),
     );
     _saveLocalTombstones();
@@ -3850,13 +4021,80 @@ class PharoahWebManager with ChangeNotifier {
     final String bNo = targetC != null ? targetC.billNo.trim() : "";
     final String pId = targetC != null ? targetC.partyId.trim().toUpperCase() : "";
     final String cOfy = targetC != null && targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
+    final String delEnv = (targetC != null && !WebPharoahNumberingEngine.isWebChallanRecord(targetC)) ? "APP" : "WEB";
     final String compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
     final String compKey = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
+
+    final parsed = AppConfig.parseSeriesNumber(iNo);
+    final String pcPrefix = parsed.prefix;
+    final int? cNum = parsed.number;
+
+    // 🛡️ Compute remainingMax among other non-deleted records
+    int remainingMax = 0;
+    for (final other in purchaseChallans) {
+      if (other.id == cId || other.isDeleted == 1) continue;
+      final oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : financialYear);
+      if (oFy != cOfy) continue;
+      if (WebPharoahNumberingEngine.isWebChallanRecord(other) != (delEnv == "WEB")) continue;
+      final oParsed = AppConfig.parseSeriesNumber(other.internalNo);
+      if (oParsed.prefix.toUpperCase() == pcPrefix.toUpperCase() && oParsed.number != null) {
+        if (oParsed.number! > remainingMax) remainingMax = oParsed.number!;
+      }
+    }
+
+    ChallanHwmState? rolledState;
+    if (pcPrefix.isNotEmpty && cNum != null) {
+      rolledState = WebPharoahNumberingEngine.rollbackChallanHwmToTail(
+        prefix: pcPrefix,
+        normType: "PURCHASE_CHALLAN",
+        newTail: remainingMax,
+        deletedNum: cNum,
+        fy: cOfy,
+        env: delEnv,
+        config: appConfig,
+        companyID: activeStoreToken,
+        tombUuid: cId.isNotEmpty ? cId : challanId,
+      );
+      final String cleanComp = activeStoreToken.trim();
+      final String suffix = '::${cOfy}::PURCHASE_CHALLAN::${delEnv}::$pcPrefix';
+      for (final k in appConfig.challanHwm.keys.toList()) {
+        if (k.endsWith(suffix)) {
+          if (remainingMax > 0) {
+            appConfig.challanHwm[k] = remainingMax;
+          } else {
+            appConfig.challanHwm.remove(k);
+          }
+        }
+      }
+      for (final k in appConfig.challanHwmMeta.keys.toList()) {
+        if (k.endsWith(suffix) && rolledState != null) {
+          appConfig.challanHwmMeta[k] = rolledState.copy();
+        }
+      }
+    }
+
+    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final auditDetails = "Deleted Purchase Challan $iNo (UUID: ${cId.isNotEmpty ? cId : challanId}, priorStatus: ${targetC?.status}) by $actor. Series tail rolled back to $remainingMax.";
+    addLog("DELETE_PURCHASE_CHALLAN", auditDetails);
+
     if (targetC != null) {
       PurchaseChallanSyncModule.onPurchaseChallanDeleted(targetC, activeStoreToken);
+      SettingsSyncModule.onConfigSaved(appConfig, activeStoreToken, fy: cOfy);
     }
     final int delTime = DateTime.now().millisecondsSinceEpoch;
     D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : challanId, pId, bNo, iNo, cOfy, delTime);
+
+    final Map<String, dynamic>? hwmRollbackPayload = (rolledState != null && pcPrefix.isNotEmpty) ? {
+      'key': '${activeStoreToken.trim()}::${cOfy}::PURCHASE_CHALLAN::${delEnv}::$pcPrefix',
+      ...rolledState.toMap(),
+    } : null;
+    final Map<String, dynamic> auditPayload = {
+      'id': 'LOG_${delTime}_${cId.isNotEmpty ? cId : challanId}',
+      'action': 'DELETE_PURCHASE_CHALLAN',
+      'details': auditDetails,
+      'time': DateTime.now().toIso8601String(),
+    };
+
     trackPendingD1Write(
       D1SalesLedgerService.onPurchaseChallanDeleted(
         targetC ?? (cId.isNotEmpty ? cId : challanId),
@@ -3867,28 +4105,17 @@ class PharoahWebManager with ChangeNotifier {
         clientSource: "WEB_PORTAL",
         fy: cOfy,
         deletedAtMs: delTime,
+        hwmRollback: hwmRollbackPayload,
+        audit: auditPayload,
+        onServerSeq: (s) {
+          if (rolledState != null && s > rolledState.seq) {
+            rolledState.seq = s;
+            final key = '${activeStoreToken.trim()}::${cOfy}::PURCHASE_CHALLAN::${delEnv}::$pcPrefix';
+            appConfig.challanHwmMeta[key] = rolledState.copy();
+          }
+        },
       ),
     );
-    final String delEnv = (targetC != null && !WebPharoahNumberingEngine.isWebChallanRecord(targetC)) ? "APP" : "WEB";
-    if (targetC != null && iNo.isNotEmpty) {
-      String pcDelPrefix = "";
-      for (int i = 0; i < iNo.length; i++) {
-        if (RegExp(r'^[0-9]').hasMatch(iNo.substring(i))) {
-          pcDelPrefix = iNo.substring(0, i);
-          break;
-        }
-      }
-      if (pcDelPrefix.isNotEmpty) {
-        WebPharoahNumberingEngine.recordChallanHwm(
-          prefix: pcDelPrefix,
-          number: iNo,
-          fy: cOfy,
-          env: delEnv,
-          config: appConfig,
-          companyID: activeStoreToken,
-        );
-      }
-    }
     final scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, cOfy) : "";
     final envINo = iNo.isNotEmpty ? "${normalizeFyString(cOfy)}::$delEnv::$iNo" : "";
     final scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, cOfy, true) : "";
@@ -3929,7 +4156,7 @@ class PharoahWebManager with ChangeNotifier {
       extraTombstoneKeys: [
         if (iNo.isNotEmpty) iNo,
         if (compKey2.isNotEmpty) compKey2,
-        if (compKey.isNotEmpty) compKey,
+        if (compKey3.isNotEmpty) compKey3,
       ],
       customDeletedAt: delTime,
     );
@@ -3942,7 +4169,6 @@ class PharoahWebManager with ChangeNotifier {
     );
     return true;
   }
-
   void addSaleReturnAndSync(SaleReturn ret) {
     unmarkDeletedId(ret.id, referenceNo: ret.billNo);
     D1SalesLedgerService.unmarkPermanentlyDeleted(ret.id, ret.billNo);
@@ -4922,6 +5148,7 @@ class PharoahWebManager with ChangeNotifier {
 
     String prefix = s?.prefix ?? defaultPrefix;
     int start = s?.startNumber ?? defaultStart;
+    if (start < 1) start = 1;
     if (type == "SALE" && prefix.trim().toUpperCase() == "INV-") {
       prefix = "W-";
       start = 1;

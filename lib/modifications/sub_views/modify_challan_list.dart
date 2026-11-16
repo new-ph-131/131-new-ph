@@ -95,7 +95,7 @@ class ModifyChallanList extends StatelessWidget {
     final bool isCancelled = challan.status == "Cancelled";
     final bool isBilledLocked = challan.status == "Billed" || fwd.billedFy != null;
     final bool isLocked = isBilledLocked || isCancelled;
-    final bool canDelete = !isLocked && (isSale ? ph.canDeleteSaleChallan(challan.id) : ph.canDeletePurchaseChallan(challan.id));
+    final bool canDelete = !isBilledLocked && (isSale ? ph.canDeleteSaleChallan(challan.id) : ph.canDeletePurchaseChallan(challan.id));
     
     showModalBottomSheet(
       context: context,
@@ -169,21 +169,27 @@ class ModifyChallanList extends StatelessWidget {
 
             // 4. DELETE LAST DRAFT / CANCEL MIDDLE CHALLAN
             _menuTile(
-              isLocked ? Icons.lock_outline : (canDelete ? Icons.delete_forever : Icons.cancel_outlined),
+              isBilledLocked
+                  ? Icons.lock_outline
+                  : (canDelete
+                      ? Icons.delete_forever
+                      : (isCancelled ? Icons.lock_outline : Icons.cancel_outlined)),
               isBilledLocked
                   ? "Delete Locked (Billed)"
-                  : (isCancelled
-                      ? "Already Cancelled"
-                      : (canDelete ? "Delete Draft (Last)" : "Cancel Challan")),
-              isLocked ? Colors.grey : (canDelete ? Colors.red : Colors.deepOrange),
+                  : (canDelete
+                      ? (isCancelled ? "Delete Cancelled (Last)" : "Delete Draft (Last)")
+                      : (isCancelled ? "Locked: Cancelled (Middle)" : "Cancel Challan")),
+              isBilledLocked
+                  ? Colors.grey
+                  : (canDelete
+                      ? Colors.red
+                      : (isCancelled ? Colors.grey : Colors.deepOrange)),
               () {
-                if (isLocked) {
+                if (isBilledLocked) {
                   Navigator.pop(c);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isCancelled
-                          ? "🔒 Already Cancelled."
-                          : "🔒 Locked: Bill already generated. Delete linked Bill first."),
+                    const SnackBar(
+                      content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
                       backgroundColor: Colors.orange,
                     ),
                   );
@@ -192,6 +198,13 @@ class ModifyChallanList extends StatelessWidget {
                 Navigator.pop(c);
                 if (canDelete) {
                   _confirmDelete(context, ph, challan);
+                } else if (isCancelled) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("🔒 Cancelled challan is retained for audit trail compliance. Only the last challan in series can be deleted."),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
                 } else {
                   _confirmCancel(context, ph, challan);
                 }
@@ -224,7 +237,11 @@ class ModifyChallanList extends StatelessWidget {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text("Confirm Delete?"),
-        content: const Text("This action will remove the challan and reverse the stock impact."),
+        content: Text(
+          ch.status == "Cancelled"
+              ? "Are you sure? This will permanently delete cancelled challan ${ch.billNo} and reclaim the number."
+              : "This action will remove the challan and reverse the stock impact.",
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text("CANCEL")),
           ElevatedButton(
@@ -237,7 +254,7 @@ class ModifyChallanList extends StatelessWidget {
               if (!ok && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text("🔒 Delete blocked: Not the last eligible draft (use Cancel instead)."),
+                    content: const Text("🔒 Delete blocked: Only the last eligible challan can be permanently deleted."),
                     backgroundColor: Colors.orange,
                   ),
                 );

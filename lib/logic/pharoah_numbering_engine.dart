@@ -1,24 +1,30 @@
-// FILE: lib/logic/pharoah_numbering_engine.dart (UPGRADED MONOTONIC HWM CHALLAN ENGINE)
+// FILE: lib/logic/pharoah_numbering_engine.dart (TAIL-ROLLBACK & CAUSAL HWM CHALLAN ENGINE)
+
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
-import '../web_live_sync/sync_protocol/tombstone_engine.dart';
 import 'app_settings_model.dart';
 
 class PharoahNumberingEngine {
   static final Map<String, int> _cachedHwm = {};
+  static final Map<String, ChallanHwmState> _cachedMeta = {};
 
   @visibleForTesting
   static void debugResetHwmCache() {
     _cachedHwm.clear();
+    _cachedMeta.clear();
   }
 
   /// Checks whether a numbering type belongs to Challans
   static bool isChallanType(String type) {
     final u = type.trim().toUpperCase();
-    return u == "CHALLAN" || u == "SALE_CHALLAN" || u == "CHALLAN_SALE" ||
-        u == "CHALLAN_PUR" || u == "PURCHASE_CHALLAN";
+    return u == "CHALLAN" ||
+        u == "SALE_CHALLAN" ||
+        u == "CHALLAN_SALE" ||
+        u == "CHALLAN_PUR" ||
+        u == "PURCHASE_CHALLAN";
   }
 
   /// Checks whether a numbering type belongs specifically to Purchase Challans
@@ -29,64 +35,168 @@ class PharoahNumberingEngine {
 
   /// Identifies whether a Challan record originated from Web Portal vs Mobile App
   static bool isWebChallanRecord(dynamic item) {
-    try {
-      if (item is SaleChallan) {
-        return item.id.trim().startsWith("SCH-WEB") ||
-            item.salesmanName.trim().toUpperCase() == "WEB-PORTAL" ||
-            item.billNo.trim().toUpperCase().startsWith("WSCH-");
+    return AppConfig.inferIsWebChallanRecord(item);
+  }
+
+  static String _prefKey(String comp, String fy, String normType, String normEnv, String prefix) =>
+      'challan_hwm_${comp}_${fy}_${normType}_${normEnv}_$prefix';
+
+  static String _metaPrefKey(String comp, String fy, String normType, String normEnv, String prefix) =>
+      'challan_hwm_meta_${comp}_${fy}_${normType}_${normEnv}_$prefix';
+
+  static String _configKey(String comp, String fy, String normType, String normEnv, String prefix) =>
+      '${comp}::${fy}::${normType}::${normEnv}::$prefix';
+
+  static String? _configKeyToPrefKey(String cfgKey, {bool meta = false}) {
+    final parts = cfgKey.split('::');
+    if (parts.length != 5) return null;
+    return meta
+        ? _metaPrefKey(parts[0], parts[1], parts[2], parts[3], parts[4])
+        : _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
+  }
+
+  static List<String> _legacyLastIdKeys(String type, String normType, String cleanPrefix, String cleanComp, String cleanFy) {
+    final Set<String> aliases = {
+      type.trim().toUpperCase(),
+      normType,
+      normType == "PURCHASE_CHALLAN" ? "CHALLAN_PUR" : "CHALLAN",
+    };
+    return aliases
+        .where((a) => a.isNotEmpty)
+        .map((a) => 'lastID_${a}_${cleanPrefix}_${cleanComp}_$cleanFy')
+        .toList();
+  }
+
+  /// Absorbs an incoming `challanHwm` map + optional `challanHwmMeta` into in-memory cache
+  /// using causal (`seq` -> `gen`) resolution + `recordFloor` so rollbacks persist cleanly.
+  static void absorbChallanHwmState({
+    required Map<String, int> hwm,
+    Map<String, ChallanHwmState> meta = const {},
+    Map<String, int> recordFloor = const {},
+  }) {
+    final Map<String, int> curCfgHwm = {};
+    final Map<String, ChallanHwmState> curCfgMeta = {};
+    _cachedHwm.forEach((k, v) {
+      if (k.contains('::')) curCfgHwm[k] = v;
+    });
+    _cachedMeta.forEach((k, v) {
+      if (k.contains('::')) curCfgMeta[k] = v;
+    });
+
+    final resolved = AppConfig.mergeHwmMapsWithMeta(
+      localHwm: curCfgHwm,
+      localMeta: curCfgMeta,
+      remoteHwm: hwm,
+      remoteMeta: meta,
+      recordFloor: recordFloor,
+    );
+
+    final Set<String> affectedKeys = {
+      ...curCfgHwm.keys,
+      ...curCfgMeta.keys,
+      ...resolved.hwm.keys,
+      ...resolved.meta.keys,
+    };
+
+    for (final cfgKey in affectedKeys) {
+      final int val = resolved.hwm[cfgKey] ?? 0;
+      final ChallanHwmState? st = resolved.meta[cfgKey];
+      final String? prefKey = _configKeyToPrefKey(cfgKey);
+      final String? metaPrefKey = _configKeyToPrefKey(cfgKey, meta: true);
+
+      if (val > 0) {
+        _cachedHwm[cfgKey] = val;
+        if (prefKey != null) _cachedHwm[prefKey] = val;
+      } else {
+        _cachedHwm.remove(cfgKey);
+        if (prefKey != null) _cachedHwm.remove(prefKey);
       }
-      if (item is PurchaseChallan) {
-        return item.id.trim().startsWith("PCH-WEB") ||
-            item.internalNo.trim().toUpperCase().startsWith("WPCH-") ||
-            item.remarks.contains("WEB-PORTAL");
+
+      if (st != null) {
+        _cachedMeta[cfgKey] = st.copy();
+        if (metaPrefKey != null) _cachedMeta[metaPrefKey] = st.copy();
       }
-      if (item is Map) {
-        final id = (item['id'] ?? '').toString().trim();
-        final sm = (item['salesmanName'] ?? '').toString().trim().toUpperCase();
-        final rem = (item['remarks'] ?? '').toString();
-        final bNo = (item['billNo'] ?? '').toString().trim().toUpperCase();
-        final iNo = (item['internalNo'] ?? '').toString().trim().toUpperCase();
-        return id.startsWith("SCH-WEB") ||
-            id.startsWith("PCH-WEB") ||
-            sm == "WEB-PORTAL" ||
-            rem.contains("WEB-PORTAL") ||
-            bNo.startsWith("WSCH-") ||
-            iNo.startsWith("WPCH-");
+    }
+
+    // Persist any causally resolved rollbacks/updates to SharedPreferences asynchronously
+    SharedPreferences.getInstance().then((prefs) {
+      for (final cfgKey in affectedKeys) {
+        final parts = cfgKey.split('::');
+        if (parts.length != 5) continue;
+        final String prefKey = _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
+        final String metaPrefKey = _metaPrefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
+        final int val = resolved.hwm[cfgKey] ?? 0;
+        final ChallanHwmState? st = resolved.meta[cfgKey];
+        if (val > 0) {
+          prefs.setInt(prefKey, val);
+        } else {
+          prefs.remove(prefKey);
+        }
+        if (st != null) {
+          prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+          if (st.op == 'ROLLBACK' && parts[3] == 'APP') {
+            for (final legKey in _legacyLastIdKeys(parts[2], parts[2], parts[4], parts[0], parts[1])) {
+              if (val > 0) {
+                final existingLeg = prefs.getInt(legKey) ?? 0;
+                if (existingLeg > val) prefs.setInt(legKey, val);
+              } else {
+                prefs.remove(legKey);
+              }
+            }
+          }
+        }
       }
-    } catch (_) {}
-    return false;
+    }).catchError((_) {});
   }
 
   static void absorbChallanHwmMap(Map<String, int> incoming) {
-    incoming.forEach((key, val) {
-      final cleanK = key.trim();
-      if (cleanK.isEmpty || val <= 0) return;
-      final current = _cachedHwm[cleanK] ?? 0;
-      if (val > current) {
-        _cachedHwm[cleanK] = val;
-      }
-      final parts = cleanK.split('::');
-      if (parts.length == 5) {
-        final prefKey = 'challan_hwm_${parts[0]}_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
-        final curPref = _cachedHwm[prefKey] ?? 0;
-        if (val > curPref) {
-          _cachedHwm[prefKey] = val;
-        }
-      }
-    });
+    if (incoming.isEmpty) return;
+    absorbChallanHwmState(hwm: incoming);
   }
 
   static Future<void> loadFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final Map<String, int> prefHwm = {};
+      final Map<String, ChallanHwmState> prefMeta = {};
+
       for (final k in prefs.getKeys()) {
-        if (k.startsWith('challan_hwm_')) {
+        if (k.startsWith('challan_hwm_meta_')) {
+          final rawStr = prefs.getString(k);
+          if (rawStr != null && rawStr.trim().isNotEmpty) {
+            try {
+              final decoded = jsonDecode(rawStr);
+              if (decoded is Map) {
+                prefMeta[k] = ChallanHwmState.fromMap(decoded);
+              }
+            } catch (_) {}
+          }
+        } else if (k.startsWith('challan_hwm_')) {
           final val = prefs.getInt(k);
-          if (val != null && val > (_cachedHwm[k] ?? 0)) {
-            _cachedHwm[k] = val;
+          if (val != null && val >= 0) {
+            prefHwm[k] = val;
           }
         }
       }
+
+      prefMeta.forEach((metaK, st) {
+        final hwmK = metaK.replaceFirst('challan_hwm_meta_', 'challan_hwm_');
+        final existingHwm = _cachedHwm[hwmK];
+        final existingMeta = _cachedMeta[metaK];
+        if (existingMeta == null || st.gen > existingMeta.gen || (st.seq > 0 && st.seq > existingMeta.seq)) {
+          _cachedMeta[metaK] = st.copy();
+          _cachedHwm[hwmK] = st.value;
+        } else if (existingHwm == null && st.value > 0) {
+          _cachedHwm[hwmK] = st.value;
+        }
+      });
+
+      prefHwm.forEach((hwmK, val) {
+        final metaK = hwmK.replaceFirst('challan_hwm_', 'challan_hwm_meta_');
+        if (!_cachedMeta.containsKey(metaK) && val > (_cachedHwm[hwmK] ?? 0)) {
+          _cachedHwm[hwmK] = val;
+        }
+      });
     } catch (e) {
       debugPrint("⚠️ [PharoahNumberingEngine] loadFromPrefs error: $e");
     }
@@ -108,8 +218,8 @@ class PharoahNumberingEngine {
     if (cleanPrefix.isEmpty) return 0;
 
     int best = 0;
-    final exactPrefKey = 'challan_hwm_${cleanComp}_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
-    final exactCfgKey = '${cleanComp}::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
+    final exactPrefKey = _prefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final exactCfgKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
     if ((_cachedHwm[exactPrefKey] ?? 0) > best) best = _cachedHwm[exactPrefKey]!;
     if ((_cachedHwm[exactCfgKey] ?? 0) > best) best = _cachedHwm[exactCfgKey]!;
 
@@ -132,45 +242,8 @@ class PharoahNumberingEngine {
     return best;
   }
 
-  static int _scanTombstoneMax({
-    required Iterable<String> tombstones,
-    required String cleanPrefix,
-    required String currentFY,
-    required String normEnv,
-  }) {
-    int maxTomb = 0;
-    for (final t in tombstones) {
-      final ut = t.trim().toUpperCase();
-      if (ut.isEmpty) continue;
-      if (ut.contains('::')) {
-        final parts = ut.split('::');
-        if (parts.length >= 2) {
-          final first = parts[0].trim();
-          if (RegExp(r'^\d{4}-\d{2,4}$').hasMatch(first) && currentFY.isNotEmpty && currentFY != "default_fy") {
-            if (normalizeFyString(first) != currentFY) continue;
-          }
-          if (parts.length >= 3) {
-            final envPart = parts[1].trim();
-            if ((envPart == "APP" || envPart == "WEB") && envPart != normEnv) {
-              continue;
-            }
-          }
-        }
-      }
-      final rawKey = ut.contains('::') ? ut.split('::').last.trim() : ut;
-      if (cleanPrefix.isNotEmpty && rawKey.startsWith(cleanPrefix)) {
-        final numPart = rawKey.substring(cleanPrefix.length).trim();
-        final int? n = int.tryParse(numPart);
-        if (n != null && n > maxTomb) {
-          maxTomb = n;
-        }
-      }
-    }
-    return maxTomb;
-  }
-
   // ===========================================================================
-  // 1. GET NEXT SMART NUMBER (FY-Isolated, Monotonic HWM for Challans, Gap-Filling for Bills)
+  // 1. GET NEXT SMART NUMBER (FY-Isolated, Tail-Rollback HWM for Challans, Gap-Filling for Bills)
   // ===========================================================================
   static Future<String> getNextNumber({
     required String type,           // SALE, PURCHASE, PRODUCT, CHALLAN, etc.
@@ -181,7 +254,7 @@ class PharoahNumberingEngine {
     String? targetFy,
     String env = "APP",
     Map<String, int>? configHwm,
-    Iterable<String>? tombstones,
+    Iterable<String>? tombstones, // Retained for signature compatibility; ignored for Challan tail reclaim
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final cleanComp = companyID.trim();
@@ -191,14 +264,25 @@ class PharoahNumberingEngine {
             : (prefs.getString('active_fy_$cleanComp') ?? "default_fy"));
     final cleanPrefix = prefix.trim().toUpperCase();
     final normEnv = env.trim().toUpperCase();
+    final int safeStart = startFrom < 1 ? 1 : startFrom;
 
     // -------------------------------------------------------------------------
-    // CHALLAN NUMBERING: MONOTONIC HIGH-WATER MARK (NO GAP-FILLING)
+    // CHALLAN NUMBERING: TAIL-ROLLBACK HWM (RESERVES CANCELLED, RECLAIMS DELETED TAIL)
     // -------------------------------------------------------------------------
     if (isChallanType(type)) {
       final String normType = isPurchaseChallanType(type) ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
-      final String hwmPrefKey = 'challan_hwm_${cleanComp}_${currentFY}_${normType}_${normEnv}_$cleanPrefix';
+      final String hwmPrefKey = _prefKey(cleanComp, currentFY, normType, normEnv, cleanPrefix);
+      final String metaPrefKey = _metaPrefKey(cleanComp, currentFY, normType, normEnv, cleanPrefix);
       int savedHwm = prefs.getInt(hwmPrefKey) ?? 0;
+      if (prefs.containsKey(metaPrefKey)) {
+        try {
+          final dec = jsonDecode(prefs.getString(metaPrefKey) ?? '{}');
+          if (dec is Map) {
+            final st = ChallanHwmState.fromMap(dec);
+            savedHwm = st.value;
+          }
+        } catch (_) {}
+      }
 
       final int cachedVal = getCachedChallanHwm(
         companyID: cleanComp,
@@ -211,14 +295,16 @@ class PharoahNumberingEngine {
       if (cachedVal > savedHwm) savedHwm = cachedVal;
 
       if (normEnv == "APP") {
-        final String legacyKey = 'lastID_${type}_${cleanPrefix}_${cleanComp}_$currentFY';
-        final int legacyVal = prefs.getInt(legacyKey) ?? 0;
-        if (legacyVal > savedHwm) savedHwm = legacyVal;
+        for (final legacyKey in _legacyLastIdKeys(type, normType, cleanPrefix, cleanComp, currentFY)) {
+          final int legacyVal = prefs.getInt(legacyKey) ?? 0;
+          if (legacyVal > savedHwm) savedHwm = legacyVal;
+        }
       }
 
       int maxExisting = 0;
       for (var item in currentList) {
         if (item is SaleChallan) {
+          if (item.isDeleted == 1 || item.status.trim().toUpperCase() == "DELETED") continue;
           if (currentFY.isNotEmpty && currentFY != "default_fy" &&
               normalizeFyString(item.effectiveOriginalFy) != currentFY) {
             continue;
@@ -227,6 +313,7 @@ class PharoahNumberingEngine {
           if (normEnv == "APP" && itemIsWeb) continue;
           if (normEnv == "WEB" && !itemIsWeb) continue;
         } else if (item is PurchaseChallan) {
+          if (item.isDeleted == 1 || item.status.trim().toUpperCase() == "DELETED") continue;
           if (currentFY.isNotEmpty && currentFY != "default_fy" &&
               normalizeFyString(item.effectiveOriginalFy) != currentFY) {
             continue;
@@ -234,14 +321,18 @@ class PharoahNumberingEngine {
           final bool itemIsWeb = isWebChallanRecord(item);
           if (normEnv == "APP" && itemIsWeb) continue;
           if (normEnv == "WEB" && !itemIsWeb) continue;
+        } else if (item is Map) {
+          final int isDel = int.tryParse((item['isDeleted'] ?? item['is_deleted'] ?? '0').toString()) ?? 0;
+          final String st = (item['status'] ?? '').toString().trim().toUpperCase();
+          if (isDel == 1 || st == 'DELETED') continue;
         }
 
         String idToParse = "";
         try {
           if (normType == "PURCHASE_CHALLAN") {
-            idToParse = item.internalNo;
+            idToParse = item is Map ? (item['internalNo'] ?? '').toString() : item.internalNo;
           } else {
-            idToParse = item.billNo;
+            idToParse = item is Map ? (item['billNo'] ?? '').toString() : item.billNo;
           }
         } catch (_) {
           idToParse = "";
@@ -256,23 +347,8 @@ class PharoahNumberingEngine {
         }
       }
 
-      Iterable<String>? effTombstones = tombstones;
-      if (effTombstones == null && cleanComp.isNotEmpty) {
-        try {
-          effTombstones = await TombstoneEngine.getLocalTombstones(cleanComp);
-        } catch (_) {}
-      }
-      final int maxTomb = effTombstones != null
-          ? _scanTombstoneMax(
-              tombstones: effTombstones,
-              cleanPrefix: cleanPrefix,
-              currentFY: currentFY,
-              normEnv: normEnv,
-            )
-          : 0;
-
-      int hwm = max(savedHwm, max(maxExisting, maxTomb));
-      int next = (hwm >= startFrom) ? (hwm + 1) : startFrom;
+      int hwm = max(savedHwm, maxExisting);
+      int next = (hwm >= safeStart) ? (hwm + 1) : safeStart;
       return "$prefix$next";
     }
 
@@ -305,18 +381,18 @@ class PharoahNumberingEngine {
 
     if (existingNumbers.isNotEmpty) {
       existingNumbers.sort();
-      for (int i = startFrom; i <= existingNumbers.last; i++) {
+      for (int i = safeStart; i <= existingNumbers.last; i++) {
         if (!existingNumbers.contains(i)) {
           return "$prefix$i";
         }
       }
       return "$prefix${existingNumbers.last + 1}";
     }
-    return "$prefix$startFrom";
+    return "$prefix$safeStart";
   }
 
   // ===========================================================================
-  // 2. UPDATE PERSISTENT POINTER & CHALLAN HIGH-WATER MARK
+  // 2. UPDATE PERSISTENT POINTER, CHALLAN HWM SET & TAIL ROLLBACK
   // ===========================================================================
   static Future<void> updateSeriesCounter({
     required String type,
@@ -360,7 +436,7 @@ class PharoahNumberingEngine {
     }
   }
 
-  /// Monotonically records issued Challan number into persistent HWM storage
+  /// Records an issued Challan number into persistent HWM cache, `challanHwmMeta`, and SharedPreferences.
   static Future<void> recordChallanHwm({
     required String companyID,
     required String type,
@@ -369,6 +445,7 @@ class PharoahNumberingEngine {
     required String fy,
     String env = "APP",
     AppConfig? config,
+    int d1Seq = 0,
   }) async {
     final cleanNum = number.trim().toUpperCase();
     final cleanPrefix = prefix.trim().toUpperCase();
@@ -382,27 +459,326 @@ class PharoahNumberingEngine {
     final normType = isPurchaseChallanType(type) ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
     final normEnv = env.trim().toUpperCase();
 
-    final hwmKey = 'challan_hwm_${cleanComp}_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
+    final hwmKey = _prefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final configKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+
+    final int prevVal = max(
+      _cachedHwm[hwmKey] ?? 0,
+      max(_cachedHwm[configKey] ?? 0, config?.challanHwm[configKey] ?? 0),
+    );
+    final int prevGen = max(
+      prevVal,
+      max(
+        _cachedMeta[configKey]?.gen ?? 0,
+        max(_cachedMeta[metaPrefKey]?.gen ?? 0, config?.challanHwmMeta[configKey]?.gen ?? 0),
+      ),
+    );
+    final int prevSeq = max(
+      d1Seq,
+      max(_cachedMeta[configKey]?.seq ?? 0, config?.challanHwmMeta[configKey]?.seq ?? 0),
+    );
+
+    final int effVal = issuedInt > prevVal ? issuedInt : prevVal;
+    final bool needsMetaUpdate = issuedInt > prevVal || !_cachedMeta.containsKey(configKey) ||
+        (config != null && !config.challanHwmMeta.containsKey(configKey));
+
     if (issuedInt > (_cachedHwm[hwmKey] ?? 0)) {
       _cachedHwm[hwmKey] = issuedInt;
     }
+    if (issuedInt > (_cachedHwm[configKey] ?? 0)) {
+      _cachedHwm[configKey] = issuedInt;
+    }
+
+    if (needsMetaUpdate) {
+      final int nextGen = issuedInt > prevVal ? (prevGen + 1) : max(prevGen, issuedInt);
+      final st = ChallanHwmState(
+        value: effVal,
+        seq: prevSeq,
+        gen: nextGen,
+        op: 'SET',
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      _cachedMeta[configKey] = st.copy();
+      _cachedMeta[metaPrefKey] = st.copy();
+      if (config != null) {
+        config.challanHwm[configKey] = effVal;
+        config.challanHwmMeta[configKey] = st.copy();
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final currentSaved = prefs.getInt(hwmKey) ?? 0;
+      if (effVal > currentSaved) {
+        await prefs.setInt(hwmKey, effVal);
+      }
+      await prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+    } else {
+      if (config != null) {
+        final existingCfgHwm = config.challanHwm[configKey] ?? 0;
+        if (effVal > existingCfgHwm) {
+          config.challanHwm[configKey] = effVal;
+        }
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final currentSaved = prefs.getInt(hwmKey) ?? 0;
+      if (effVal > currentSaved) {
+        await prefs.setInt(hwmKey, effVal);
+      }
+    }
+  }
+
+  /// Safely rolls back the Challan HWM for a specific `(companyID, fy, normType, env, prefix)` scope
+  /// down to [newTail] after permanently deleting the series tail challan [deletedNum].
+  /// Also rolls back legacy `lastID_` keys on APP so gap/tail reclaim works immediately across restarts.
+  static Future<ChallanHwmState?> rollbackChallanHwmToTail({
+    required String companyID,
+    required String type,
+    required String prefix,
+    required int newTail,
+    required int deletedNum,
+    required String fy,
+    String env = "APP",
+    AppConfig? config,
+    String tombUuid = "",
+    int d1Seq = 0,
+  }) async {
+    final cleanPrefix = prefix.trim().toUpperCase();
+    if (cleanPrefix.isEmpty) return null;
+
+    final cleanComp = companyID.trim();
+    final cleanFy = normalizeFyString(fy);
+    final normType = isPurchaseChallanType(type) ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
+    final normEnv = env.trim().toUpperCase();
+    final int safeTail = newTail < 0 ? 0 : newTail;
+
+    final hwmKey = _prefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final configKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+
+    final int prevVal = max(
+      deletedNum,
+      max(
+        _cachedHwm[hwmKey] ?? 0,
+        max(_cachedHwm[configKey] ?? 0, config?.challanHwm[configKey] ?? 0),
+      ),
+    );
+    final int prevGen = max(
+      prevVal,
+      max(
+        _cachedMeta[configKey]?.gen ?? 0,
+        max(_cachedMeta[metaPrefKey]?.gen ?? 0, config?.challanHwmMeta[configKey]?.gen ?? 0),
+      ),
+    );
+    final int prevSeq = d1Seq > 0
+        ? d1Seq
+        : max(_cachedMeta[configKey]?.seq ?? 0, config?.challanHwmMeta[configKey]?.seq ?? 0);
+
+    final state = ChallanHwmState(
+      value: safeTail,
+      seq: prevSeq,
+      gen: prevGen + 1,
+      op: 'ROLLBACK',
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      deletedNum: deletedNum,
+      tombUuid: tombUuid.trim(),
+    );
+
+    final prefSuffix = '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
+
+    // Update exact keys and any matching legacy/alias keys in memory cache
+    for (final k in _cachedHwm.keys.toList()) {
+      if ((cleanComp.isEmpty || k.startsWith('challan_hwm_${cleanComp}_') || k.startsWith('${cleanComp}::')) &&
+          (k.endsWith(prefSuffix) || k.endsWith(cfgSuffix))) {
+        if (safeTail > 0) {
+          _cachedHwm[k] = safeTail;
+        } else {
+          _cachedHwm.remove(k);
+        }
+      }
+    }
+    if (safeTail > 0) {
+      _cachedHwm[hwmKey] = safeTail;
+      _cachedHwm[configKey] = safeTail;
+    } else {
+      _cachedHwm.remove(hwmKey);
+      _cachedHwm.remove(configKey);
+    }
+
+    _cachedMeta[configKey] = state.copy();
+    _cachedMeta[metaPrefKey] = state.copy();
 
     if (config != null) {
-      final configKey = '${cleanComp}::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
-      final existingCfgHwm = config.challanHwm[configKey] ?? 0;
-      if (issuedInt > existingCfgHwm) {
-        config.challanHwm[configKey] = issuedInt;
+      if (safeTail > 0) {
+        config.challanHwm[configKey] = safeTail;
+      } else {
+        config.challanHwm.remove(configKey);
       }
-      if (issuedInt > (_cachedHwm[configKey] ?? 0)) {
-        _cachedHwm[configKey] = issuedInt;
-      }
+      config.challanHwmMeta[configKey] = state.copy();
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final currentSaved = prefs.getInt(hwmKey) ?? 0;
-    if (issuedInt > currentSaved) {
-      await prefs.setInt(hwmKey, issuedInt);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (safeTail > 0) {
+        await prefs.setInt(hwmKey, safeTail);
+      } else {
+        await prefs.remove(hwmKey);
+      }
+      await prefs.setString(metaPrefKey, jsonEncode(state.toMap()));
+      if (normEnv == "APP") {
+        for (final legKey in _legacyLastIdKeys(type, normType, cleanPrefix, cleanComp, cleanFy)) {
+          if (safeTail > 0) {
+            await prefs.setInt(legKey, safeTail);
+          } else {
+            await prefs.remove(legKey);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("⚠️ [PharoahNumberingEngine] rollback prefs error: $e");
     }
+
+    return state;
+  }
+
+  /// One-time migration self-heal on store load (`!config.challanHwmTailMigrated`):
+  /// Clears orphan legacy HWMs (where no `challanHwmMeta` exists and `hwm > actual remaining non-deleted floor`),
+  /// fixing legacy fresh stores stuck at `#2` after past tail deletes.
+  static Future<bool> reconcileLegacyHwmOnLoad({
+    required String companyID,
+    required String fy,
+    required AppConfig config,
+    required Iterable<dynamic> saleChallans,
+    required Iterable<dynamic> purchaseChallans,
+  }) async {
+    final String cleanComp = companyID.trim();
+    final String cleanFy = normalizeFyString(fy);
+    final Map<String, int> floor = AppConfig.computeChallanRecordFloor(
+      companyID: cleanComp,
+      saleChallans: saleChallans,
+      purchaseChallans: purchaseChallans,
+      targetFy: cleanFy,
+    );
+
+    bool mutated = false;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    final String scopeHeader = '${cleanComp}::${cleanFy}::';
+
+    if (!config.challanHwmTailMigrated) {
+      final Set<String> legacyCfgKeys = {
+        ...config.challanHwm.keys.where((k) => k.startsWith(scopeHeader)),
+        ..._cachedHwm.keys.where((k) => k.startsWith(scopeHeader)),
+      };
+
+      for (final cfgKey in legacyCfgKeys) {
+        if (config.challanHwmMeta.containsKey(cfgKey)) continue;
+        final parts = cfgKey.split('::');
+        if (parts.length != 5) continue;
+        final int curHwm = max(config.challanHwm[cfgKey] ?? 0, _cachedHwm[cfgKey] ?? 0);
+        final int fl = floor[cfgKey] ?? 0;
+        if (curHwm > fl) {
+          final String pKey = _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
+          final String mKey = _metaPrefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
+          final st = ChallanHwmState(
+            value: fl,
+            seq: 0,
+            gen: curHwm + 1,
+            op: 'ROLLBACK',
+            updatedAt: nowMs,
+          );
+          if (fl > 0) {
+            config.challanHwm[cfgKey] = fl;
+            _cachedHwm[cfgKey] = fl;
+            _cachedHwm[pKey] = fl;
+          } else {
+            config.challanHwm.remove(cfgKey);
+            _cachedHwm.remove(cfgKey);
+            _cachedHwm.remove(pKey);
+          }
+          config.challanHwmMeta[cfgKey] = st.copy();
+          _cachedMeta[cfgKey] = st.copy();
+          _cachedMeta[mKey] = st.copy();
+          mutated = true;
+        }
+      }
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final String prefPrefix = 'challan_hwm_${cleanComp}_${cleanFy}_';
+        for (final k in prefs.getKeys().toList()) {
+          if (k.startsWith(prefPrefix) && !k.startsWith('challan_hwm_meta_')) {
+            final suffix = k.substring('challan_hwm_'.length);
+            // Parse <comp>_<fy>_<normType>_<env>_<prefix> safely via prefix match
+            final rest = k.substring(prefPrefix.length);
+            String? normType;
+            String? restAfterType;
+            if (rest.startsWith('SALE_CHALLAN_')) {
+              normType = 'SALE_CHALLAN';
+              restAfterType = rest.substring('SALE_CHALLAN_'.length);
+            } else if (rest.startsWith('PURCHASE_CHALLAN_')) {
+              normType = 'PURCHASE_CHALLAN';
+              restAfterType = rest.substring('PURCHASE_CHALLAN_'.length);
+            }
+            if (normType == null || restAfterType == null) continue;
+            final usIdx = restAfterType.indexOf('_');
+            if (usIdx <= 0) continue;
+            final String env = restAfterType.substring(0, usIdx);
+            final String prefix = restAfterType.substring(usIdx + 1);
+            final String cfgKey = _configKey(cleanComp, cleanFy, normType, env, prefix);
+            final String metaK = _metaPrefKey(cleanComp, cleanFy, normType, env, prefix);
+            if (config.challanHwmMeta.containsKey(cfgKey) || prefs.containsKey(metaK)) continue;
+
+            final int savedVal = prefs.getInt(k) ?? 0;
+            final int fl = floor[cfgKey] ?? 0;
+            if (savedVal > fl) {
+              final st = ChallanHwmState(
+                value: fl,
+                seq: 0,
+                gen: savedVal + 1,
+                op: 'ROLLBACK',
+                updatedAt: nowMs,
+              );
+              if (fl > 0) {
+                await prefs.setInt(k, fl);
+                config.challanHwm[cfgKey] = fl;
+                _cachedHwm[cfgKey] = fl;
+                _cachedHwm[k] = fl;
+              } else {
+                await prefs.remove(k);
+                config.challanHwm.remove(cfgKey);
+                _cachedHwm.remove(cfgKey);
+                _cachedHwm.remove(k);
+              }
+              await prefs.setString(metaK, jsonEncode(st.toMap()));
+              config.challanHwmMeta[cfgKey] = st.copy();
+              _cachedMeta[cfgKey] = st.copy();
+              _cachedMeta[metaK] = st.copy();
+              if (env == 'APP') {
+                for (final legKey in _legacyLastIdKeys(normType, normType, prefix, cleanComp, cleanFy)) {
+                  if (fl > 0) {
+                    await prefs.setInt(legKey, fl);
+                  } else {
+                    await prefs.remove(legKey);
+                  }
+                }
+              }
+              mutated = true;
+            } else if (suffix.isEmpty) {
+              continue;
+            }
+          }
+        }
+      } catch (_) {}
+
+      config.challanHwmTailMigrated = true;
+      mutated = true;
+    }
+
+    absorbChallanHwmState(
+      hwm: config.challanHwm,
+      meta: config.challanHwmMeta,
+      recordFloor: floor,
+    );
+    return mutated;
   }
 
   // ===========================================================================
@@ -414,7 +790,7 @@ class PharoahNumberingEngine {
     required String prefix,
   }) async {
     if (isChallanType(type)) {
-      debugPrint("🛡️ [PharoahNumberingEngine] Refusing to reset monotonic Challan HWM for $type");
+      debugPrint("🛡️ [PharoahNumberingEngine] Refusing bulk resetSeries for Challan $type (use rollbackChallanHwmToTail)");
       return;
     }
     final prefs = await SharedPreferences.getInstance();

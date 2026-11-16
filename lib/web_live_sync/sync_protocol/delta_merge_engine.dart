@@ -1,5 +1,5 @@
 import '../../logic/app_settings_model.dart';
-import '../web_pharoah_numbering_engine.dart';
+import '../../logic/pharoah_numbering_engine.dart';
 import '../../sync_core/modules/batch_delta_merge_module.dart';
 import "../../sync_core/modules/medicine_sync_module.dart";
 import "../../sync_core/modules/company_sync_module.dart";
@@ -147,7 +147,8 @@ class DeltaMergeEngine {
         String internalNo = (cloudMap["internalNo"] ?? "").toString().trim();
         int cloudVersion = int.tryParse(cloudMap["version"]?.toString() ?? "1") ?? 1;
         int cloudTimestamp = int.tryParse(cloudMap["updated_at"]?.toString() ?? cloudMap["updatedAt"]?.toString() ?? "0") ?? 0;
-        int cloudIsDeleted = int.tryParse(cloudMap["is_deleted"]?.toString() ?? cloudMap["isDeleted"]?.toString() ?? (cloudMap["status"] == "Deleted" || cloudMap["status"] == "Cancelled" ? "1" : "0")) ?? 0;
+        final bool isChallanRecord = T == SaleChallan || T == PurchaseChallan;
+        int cloudIsDeleted = int.tryParse(cloudMap["is_deleted"]?.toString() ?? cloudMap["isDeleted"]?.toString() ?? (cloudMap["status"] == "Deleted" || (!isChallanRecord && cloudMap["status"] == "Cancelled") ? "1" : "0")) ?? 0;
 
         if (id.isEmpty) continue;
 
@@ -445,7 +446,13 @@ class DeltaMergeEngine {
       );
     }
 
-    // 🛡️ Merge AppConfig (config.json) with LWW & Field Diffing (#PH-REV-765)
+    // 🛡️ Merge AppConfig (config.json) + Causal Challan HWM / Meta (#PH-REV-765)
+    final Map<String, int> recordFloor = AppConfig.computeChallanRecordFloor(
+      companyID: ph.activeCompany?.id ?? '',
+      saleChallans: ph.saleChallans,
+      purchaseChallans: ph.purchaseChallans,
+      targetFy: ph.currentFY,
+    );
     bool cConfig = false;
     final rawConfigJson = cloudFiles['config.json'];
     if (rawConfigJson != null) {
@@ -484,31 +491,86 @@ class DeltaMergeEngine {
               incomingCfg.caName != localCfg.caName ||
               incomingCfg.caMailID != localCfg.caMailID ||
               incomingCfg.caPhone != localCfg.caPhone ||
-              incomingCfg.isAuditMode != localCfg.isAuditMode;
-          final mergedHwm = AppConfig.mergeHwmMaps(localCfg.challanHwm, incomingCfg.challanHwm);
-          WebPharoahNumberingEngine.absorbChallanHwmMap(mergedHwm);
-          if (incomingCfg.updatedAt > localCfg.updatedAt ||
-              incomingCfg.version > localCfg.version ||
-              (localCfg.updatedAt == 0 && isDiff)) {
-            incomingCfg.challanHwm = mergedHwm;
-            ph.config = incomingCfg;
+              incomingCfg.isAuditMode != localCfg.isAuditMode ||
+              incomingCfg.saleChallanPrefix != localCfg.saleChallanPrefix ||
+              incomingCfg.salePrefix != localCfg.salePrefix ||
+              incomingCfg.purPrefix != localCfg.purPrefix;
+          final mergedCfg = AppConfig.mergeAppConfigWithCausalHwm(
+            local: localCfg,
+            incoming: incomingCfg,
+            recordFloor: recordFloor,
+            incomingFieldsWin: incomingCfg.updatedAt > localCfg.updatedAt ||
+                incomingCfg.version > localCfg.version ||
+                (localCfg.updatedAt == 0 && isDiff),
+          );
+          if (mergedCfg.challanHwm.toString() != localCfg.challanHwm.toString() ||
+              mergedCfg.challanHwmMeta.length != localCfg.challanHwmMeta.length ||
+              mergedCfg.updatedAt != localCfg.updatedAt ||
+              mergedCfg.version != localCfg.version ||
+              isDiff) {
             cConfig = true;
-          } else {
-            ph.config.challanHwm = mergedHwm;
           }
+          ph.config = mergedCfg;
+          PharoahNumberingEngine.absorbChallanHwmState(
+            hwm: ph.config.challanHwm,
+            meta: ph.config.challanHwmMeta,
+          );
         }
       } catch (_) {}
     }
     final rawHwmJson = cloudFiles['challan_hwm.json'];
-    if (rawHwmJson != null) {
+    final rawHwmMetaJson = cloudFiles['challan_hwm_meta.json'];
+    if (rawHwmJson != null || rawHwmMetaJson != null) {
       try {
         final dynamic decHwm = rawHwmJson is String ? jsonDecode(rawHwmJson) : rawHwmJson;
-        final parsed = AppConfig.parseHwmMap(decHwm);
-        if (parsed.isNotEmpty) {
-          ph.config.challanHwm = AppConfig.mergeHwmMaps(ph.config.challanHwm, parsed);
-          WebPharoahNumberingEngine.absorbChallanHwmMap(ph.config.challanHwm);
+        final dynamic decMeta = rawHwmMetaJson is String ? jsonDecode(rawHwmMetaJson) : rawHwmMetaJson;
+        final parsedHwm = AppConfig.parseHwmMap(decHwm);
+        final parsedMeta = AppConfig.parseHwmMetaMap(decMeta);
+        if (parsedHwm.isNotEmpty || parsedMeta.isNotEmpty) {
+          final mergedSlice = AppConfig.mergeHwmMapsWithMeta(
+            localHwm: ph.config.challanHwm,
+            localMeta: ph.config.challanHwmMeta,
+            remoteHwm: parsedHwm,
+            remoteMeta: parsedMeta,
+            recordFloor: recordFloor,
+          );
+          ph.config.challanHwm = mergedSlice.hwm;
+          ph.config.challanHwmMeta = mergedSlice.meta;
+          PharoahNumberingEngine.absorbChallanHwmState(
+            hwm: ph.config.challanHwm,
+            meta: ph.config.challanHwmMeta,
+          );
+          cConfig = true;
         }
       } catch (_) {}
+    }
+
+    // 🛡️ Merge Audit Logs (logs.json) with deduplication (preserving Cancel/Delete audit history across nodes)
+    bool cLogs = false;
+    final rawLogs = decodeJson('logs.json') as List?;
+    if (rawLogs != null) {
+      final Set<String> seenIds = ph.logs.map((l) => l.id.trim()).where((s) => s.isNotEmpty).toSet();
+      final Set<String> seenSig = ph.logs
+          .map((l) => "${l.action.trim()}|${l.time.toIso8601String()}|${l.details.trim()}")
+          .toSet();
+      for (final rawL in rawLogs) {
+        if (rawL is! Map) continue;
+        try {
+          final entry = LogEntry.fromMap(Map<String, dynamic>.from(rawL));
+          final String eid = entry.id.trim();
+          final String esig = "${entry.action.trim()}|${entry.time.toIso8601String()}|${entry.details.trim()}";
+          if ((eid.isNotEmpty && seenIds.contains(eid)) || seenSig.contains(esig)) {
+            continue;
+          }
+          if (eid.isNotEmpty) seenIds.add(eid);
+          seenSig.add(esig);
+          ph.logs.add(entry);
+          cLogs = true;
+        } catch (_) {}
+      }
+      if (cLogs) {
+        ph.logs.sort((a, b) => a.time.compareTo(b.time));
+      }
     }
 
     // 🛡️ Merge Company, Salt & Route Masters with LWW & Cascade Updates (#PH-REV-768)
@@ -545,7 +607,7 @@ class DeltaMergeEngine {
         (s.items.isEmpty && s.totalAmount <= 0));
     final bool ghostPurged = ph.sales.length != beforePurgeGhost;
 
-    final anyChanged = hasChanges || ghostPurged || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cComps || cSalts || cRouts || cGstSessions;
+    final anyChanged = hasChanges || ghostPurged || cSales || cPurc || cVouc || cSCh || cPCh || cSRet || cPRet || cBats || cConfig || cLogs || cComps || cSalts || cRouts || cGstSessions;
     if (anyChanged) {
       try {
         ph.autoHydrateBatchHistoryFromTransactions();

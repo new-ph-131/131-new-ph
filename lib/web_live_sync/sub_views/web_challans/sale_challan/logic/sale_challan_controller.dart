@@ -102,6 +102,7 @@ class SaleChallanController extends ChangeNotifier {
   double get grandTotal => SaleChallanMechanism.calculateChallanTotal(items);
 
   Future<bool> saveChallan(BuildContext context, PharoahWebManager webPh, {bool andPrint = false}) async {
+    if (isSaving) return false;
     if (selectedCustomer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select Customer first!"), backgroundColor: Colors.orange),
@@ -119,41 +120,43 @@ class SaleChallanController extends ChangeNotifier {
     isSaving = true;
     notifyListeners();
 
-    String id = existingRecordId ?? "SCH-WEB-${DateTime.now().millisecondsSinceEpoch}";
-    double total = grandTotal;
+    try {
+      String id = existingRecordId ?? "SCH-WEB-${DateTime.now().millisecondsSinceEpoch}";
+      double total = grandTotal;
 
-    bool success = await SaleChallanMechanism.commitSaleChallan(
-      webPh: webPh,
-      challanId: id,
-      challanNo: challanNoC.text.trim(),
-      customer: selectedCustomer!,
-      date: selectedDate,
-      items: items,
-      totalAmount: total,
-      remarks: remarksC.text.trim(),
-      existingId: existingRecordId,
-    );
-
-    if (andPrint && success) {
-      final newChallan = SaleChallan(
-        id: id,
-        billNo: challanNoC.text.trim(),
-        partyId: selectedCustomer!.id,
-        partyName: selectedCustomer!.name,
-        partyGstin: selectedCustomer!.gst,
-        partyState: selectedCustomer!.state,
+      bool success = await SaleChallanMechanism.commitSaleChallan(
+        webPh: webPh,
+        challanId: id,
+        challanNo: challanNoC.text.trim(),
+        customer: selectedCustomer!,
         date: selectedDate,
-        items: List.from(items),
+        items: items,
         totalAmount: total,
         remarks: remarksC.text.trim(),
+        existingId: existingRecordId,
       );
-      final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
-      await WebPdfRouterService.printSaleChallan(challan: newChallan, party: selectedCustomer!, shop: shopProfile);
-    }
 
-    isSaving = false;
-    notifyListeners();
-    return success;
+      if (andPrint && success) {
+        final newChallan = SaleChallan(
+          id: id,
+          billNo: challanNoC.text.trim(),
+          partyId: selectedCustomer!.id,
+          partyName: selectedCustomer!.name,
+          partyGstin: selectedCustomer!.gst,
+          partyState: selectedCustomer!.state,
+          date: selectedDate,
+          items: List.from(items),
+          totalAmount: total,
+          remarks: remarksC.text.trim(),
+        );
+        final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
+        await WebPdfRouterService.printSaleChallan(challan: newChallan, party: selectedCustomer!, shop: shopProfile);
+      }
+      return success;
+    } finally {
+      isSaving = false;
+      notifyListeners();
+    }
   }
 
   @override

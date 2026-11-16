@@ -38,6 +38,7 @@ class MultiFyCloudVault {
     'dtypes.json',
     'pending_invoices.json',
     'gst_sessions.json',
+    'logs.json',
   ];
 
   static int _challanStatusRank(String s) {
@@ -547,6 +548,106 @@ class MultiFyCloudVault {
     return (mergedJson: jsonEncode(mergedList), changed: true);
   }
 
+  static ({String mergedJson, bool changed}) _mergeLogsJson({
+    required String localRaw,
+    required String cloudRaw,
+  }) {
+    try {
+      final dynamic locDec = jsonDecode(localRaw);
+      final dynamic cldDec = jsonDecode(cloudRaw);
+      if (locDec is! List && cldDec is! List) {
+        return (mergedJson: localRaw, changed: false);
+      }
+      final List<dynamic> locList = locDec is List ? locDec : const [];
+      final List<dynamic> cldList = cldDec is List ? cldDec : const [];
+      final List<LogEntry> merged = [];
+      final Set<String> seenIds = {};
+      final Set<String> seenSigs = {};
+      bool changed = false;
+
+      void absorb(List<dynamic> list, {required bool isCloud}) {
+        for (final item in list) {
+          if (item is! Map) continue;
+          try {
+            final entry = LogEntry.fromMap(Map<String, dynamic>.from(item));
+            final String eid = entry.id.trim();
+            final String esig = "${entry.action.trim()}|${entry.time.toIso8601String()}|${entry.details.trim()}";
+            if ((eid.isNotEmpty && seenIds.contains(eid)) || seenSigs.contains(esig)) {
+              continue;
+            }
+            if (eid.isNotEmpty) seenIds.add(eid);
+            seenSigs.add(esig);
+            merged.add(entry);
+            if (isCloud) changed = true;
+          } catch (_) {}
+        }
+      }
+
+      absorb(locList, isCloud: false);
+      absorb(cldList, isCloud: true);
+      if (!changed) {
+        return (mergedJson: localRaw, changed: false);
+      }
+      merged.sort((a, b) => a.time.compareTo(b.time));
+      return (mergedJson: jsonEncode(merged.map((e) => e.toMap()).toList()), changed: true);
+    } catch (_) {
+      return (mergedJson: localRaw, changed: false);
+    }
+  }
+
+  static ({String mergedJson, bool changed}) _mergeConfigJsonWithCausalHwm({
+    required String companyID,
+    required String fy,
+    required String localRaw,
+    required String remoteRaw,
+    required Map<String, int> recordFloor,
+  }) {
+    try {
+      final dynamic locDec = localRaw.trim().isNotEmpty ? jsonDecode(localRaw) : {};
+      final dynamic remDec = remoteRaw.trim().isNotEmpty ? jsonDecode(remoteRaw) : {};
+      if (locDec is! Map && remDec is! Map) {
+        return (mergedJson: localRaw.isNotEmpty ? localRaw : remoteRaw, changed: false);
+      }
+      final AppConfig locCfg = AppConfig.fromMap(
+        locDec is Map ? Map<String, dynamic>.from(locDec) : <String, dynamic>{},
+      );
+      final AppConfig remCfg = AppConfig.fromMap(
+        remDec is Map ? Map<String, dynamic>.from(remDec) : <String, dynamic>{},
+      );
+      final bool remWins = remCfg.version > locCfg.version ||
+          (remCfg.version == locCfg.version && remCfg.updatedAt > locCfg.updatedAt) ||
+          (locCfg.updatedAt == 0 && remCfg.updatedAt > 0);
+      final AppConfig mergedCfg = AppConfig.mergeAppConfigWithCausalHwm(
+        local: locCfg,
+        incoming: remCfg,
+        recordFloor: recordFloor,
+        incomingFieldsWin: remWins,
+      );
+      final Map<String, dynamic> outMap = mergedCfg.toMap();
+      final bool diff = remWins ||
+          mergedCfg.challanHwm.toString() != locCfg.challanHwm.toString() ||
+          mergedCfg.challanHwmMeta.length != locCfg.challanHwmMeta.length ||
+          mergedCfg.challanHwmTailMigrated != locCfg.challanHwmTailMigrated;
+      return (mergedJson: jsonEncode(outMap), changed: diff);
+    } catch (_) {
+      return (mergedJson: localRaw.isNotEmpty ? localRaw : remoteRaw, changed: false);
+    }
+  }
+
+  static List<String> _orderedVaultFiles(Iterable<String> names) {
+    final list = names.toList();
+    list.sort((a, b) {
+      int rank(String n) {
+        if (n == 's_challan.json' || n == 'p_challan.json') return 0;
+        if (n == 'config.json') return 2;
+        return 1;
+      }
+      final r = rank(a).compareTo(rank(b));
+      return r != 0 ? r : a.compareTo(b);
+    });
+    return list;
+  }
+
   /// Syncs any other Financial Years present in `cloudData` (e.g. created or edited on Web) to App local disk folders
   /// using Record-Level LWW Merge, and triggers carry-forward cascade if any prior FY was updated.
   static Future<bool> syncVaultYearsToLocalDisk({
@@ -645,8 +746,9 @@ class MultiFyCloudVault {
           await fyDir.create(recursive: true);
         }
         bool fyHadTransactionMutation = false;
-        for (final fEntry in entry.value.entries) {
-          final String fileName = fEntry.key;
+        final List<String> orderedKeys = _orderedVaultFiles(entry.value.keys);
+        for (final fileName in orderedKeys) {
+          final fEntry = MapEntry(fileName, entry.value[fileName]!);
           if (fileName == 'fy_vault.json') continue;
           final targetFile = File('$fyDirPath/$fileName');
           final String cloudTrim = fEntry.value.trim();
@@ -703,6 +805,49 @@ class MultiFyCloudVault {
                   }
                   continue;
                 }
+              } else if (fileName == 'logs.json') {
+                final mergedLogs = _mergeLogsJson(
+                  localRaw: existingContent,
+                  cloudRaw: fEntry.value,
+                );
+                if (mergedLogs.changed) {
+                  await targetFile.writeAsString(mergedLogs.mergedJson);
+                }
+                continue;
+              } else if (fileName == 'config.json') {
+                List<dynamic> diskSc = const [];
+                List<dynamic> diskPc = const [];
+                try {
+                  final scF = File('$fyDirPath/s_challan.json');
+                  if (await scF.exists()) {
+                    final dec = jsonDecode(await scF.readAsString());
+                    if (dec is List) diskSc = dec;
+                  }
+                } catch (_) {}
+                try {
+                  final pcF = File('$fyDirPath/p_challan.json');
+                  if (await pcF.exists()) {
+                    final dec = jsonDecode(await pcF.readAsString());
+                    if (dec is List) diskPc = dec;
+                  }
+                } catch (_) {}
+                final floor = AppConfig.computeChallanRecordFloor(
+                  companyID: comp.id,
+                  saleChallans: diskSc,
+                  purchaseChallans: diskPc,
+                  targetFy: fy,
+                );
+                final mergedCfg = _mergeConfigJsonWithCausalHwm(
+                  companyID: comp.id,
+                  fy: fy,
+                  localRaw: existingContent,
+                  remoteRaw: fEntry.value,
+                  recordFloor: floor,
+                );
+                if (mergedCfg.changed) {
+                  await targetFile.writeAsString(mergedCfg.mergedJson);
+                }
+                continue;
               }
             } catch (e) {
               debugPrint("⚠ [MultiFyCloudVault] LWW merge fallback for $fy/$fileName: $e");
@@ -957,6 +1102,43 @@ class MultiFyCloudVault {
         if (prChanged) {
           await pRetFile.writeAsString(jsonEncode(fyPRet.map((e) => e.toMap()).toList()));
         }
+        final File cfgFile = File('$fyDirPath/config.json');
+        final File logsFile = File('$fyDirPath/logs.json');
+        AppConfig fyCfg = AppConfig();
+        if (await cfgFile.exists()) {
+          try {
+            final dec = jsonDecode(await cfgFile.readAsString());
+            if (dec is Map) fyCfg = AppConfig.fromMap(Map<String, dynamic>.from(dec));
+          } catch (_) {}
+        }
+        final List<LogEntry> fyLogs = [];
+        if (await logsFile.exists()) {
+          try {
+            final dec = jsonDecode(await logsFile.readAsString());
+            if (dec is List) {
+              for (final item in dec) {
+                if (item is Map) fyLogs.add(LogEntry.fromMap(Map<String, dynamic>.from(item)));
+              }
+            }
+          } catch (_) {}
+        }
+        final bool hwmOrAuditChanged = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+          currentConfig: fyCfg,
+          edgeEvents: fyEvents,
+          companyID: comp.id,
+          recordFloor: AppConfig.computeChallanRecordFloor(
+            companyID: comp.id,
+            saleChallans: fySChallans,
+            purchaseChallans: fyPChallans,
+            targetFy: targetFy,
+          ),
+          targetLogs: fyLogs,
+        );
+        if (hwmOrAuditChanged) {
+          await cfgFile.writeAsString(jsonEncode(fyCfg.toMap()));
+          await logsFile.writeAsString(jsonEncode(fyLogs.map((e) => e.toMap()).toList()));
+          anyMutated = true;
+        }
         if (scChanged) {
           await sChFile.writeAsString(jsonEncode(fySChallans.map((e) => e.toMap()).toList()));
         }
@@ -1118,7 +1300,7 @@ class MultiFyCloudVault {
       final Set<String> allFileNames = {...remoteFyMap.keys, ...singleFyMap.keys};
       final Map<String, String> mergedFyMap = {};
 
-      for (final fileName in allFileNames) {
+      for (final fileName in _orderedVaultFiles(allFileNames)) {
         if (fileName == 'fy_vault.json') continue;
         final String? localContent = singleFyMap[fileName];
         final String? remoteContent = remoteFyMap[fileName];
@@ -1143,21 +1325,47 @@ class MultiFyCloudVault {
           } catch (_) {
             mergedFyMap[fileName] = localContent ?? remoteContent ?? '[]';
           }
+        } else if (fileName == 'logs.json' && (localContent != null || remoteContent != null)) {
+          if (localContent != null && remoteContent != null) {
+            mergedFyMap[fileName] = _mergeLogsJson(
+              localRaw: localContent,
+              cloudRaw: remoteContent,
+            ).mergedJson;
+          } else {
+            mergedFyMap[fileName] = localContent ?? remoteContent!;
+          }
         } else if (fileName == 'config.json' && (localContent != null || remoteContent != null)) {
-          try {
-            final locCfg = localContent != null ? jsonDecode(localContent) : {};
-            final remCfg = remoteContent != null ? jsonDecode(remoteContent) : {};
-            if (locCfg is Map && remCfg is Map) {
-              final locHwm = AppConfig.parseHwmMap(locCfg['challanHwm'] ?? locCfg['challan_hwm']);
-              final remHwm = AppConfig.parseHwmMap(remCfg['challanHwm'] ?? remCfg['challan_hwm']);
-              final mergedHwm = AppConfig.mergeHwmMaps(locHwm, remHwm);
-              final Map<String, dynamic> baseCfg = Map<String, dynamic>.from(localContent != null ? locCfg : remCfg);
-              baseCfg['challanHwm'] = mergedHwm;
-              mergedFyMap[fileName] = jsonEncode(baseCfg);
-            } else {
-              mergedFyMap[fileName] = localContent ?? remoteContent!;
-            }
-          } catch (_) {
+          if (localContent != null && remoteContent != null) {
+            List<dynamic> scList = const [];
+            List<dynamic> pcList = const [];
+            try {
+              final scRaw = mergedFyMap['s_challan.json'] ?? singleFyMap['s_challan.json'] ?? remoteFyMap['s_challan.json'];
+              if (scRaw != null) {
+                final dec = jsonDecode(scRaw);
+                if (dec is List) scList = dec;
+              }
+            } catch (_) {}
+            try {
+              final pcRaw = mergedFyMap['p_challan.json'] ?? singleFyMap['p_challan.json'] ?? remoteFyMap['p_challan.json'];
+              if (pcRaw != null) {
+                final dec = jsonDecode(pcRaw);
+                if (dec is List) pcList = dec;
+              }
+            } catch (_) {}
+            final floor = AppConfig.computeChallanRecordFloor(
+              companyID: comp.id,
+              saleChallans: scList,
+              purchaseChallans: pcList,
+              targetFy: fy,
+            );
+            mergedFyMap[fileName] = _mergeConfigJsonWithCausalHwm(
+              companyID: comp.id,
+              fy: fy,
+              localRaw: localContent,
+              remoteRaw: remoteContent,
+              recordFloor: floor,
+            ).mergedJson;
+          } else {
             mergedFyMap[fileName] = localContent ?? remoteContent!;
           }
         } else if (fileName == 'bats.json' && localContent != null && remoteContent != null) {
@@ -1208,8 +1416,11 @@ class MultiFyCloudVault {
     filesPayload['registered_fyears.json'] = jsonEncode(sortedFys);
     filesPayload['tombstones.json'] = jsonEncode(localTombstones.where((k) => !k.contains('/')).toList());
     filesPayload['tombstone_registry.json'] = jsonEncode(localRegistry);
-    if (ph.config.challanHwm.isNotEmpty) {
+    if (ph.config.challanHwm.isNotEmpty || ph.config.challanHwmMeta.isNotEmpty) {
       filesPayload['challan_hwm.json'] = jsonEncode(ph.config.challanHwm);
+      filesPayload['challan_hwm_meta.json'] = jsonEncode(
+        ph.config.challanHwmMeta.map((k, v) => MapEntry(k, v.toMap())),
+      );
     }
     final unmarkedReg = await TombstoneEngine.getUnmarkedRegistry(comp.id);
     if (unmarkedReg.isNotEmpty) {

@@ -184,7 +184,7 @@ class _WebChallanViewState extends State<WebChallanView> {
                   final fwd = webPh.getForwardChallanStatus(item.id, isPurchase: false);
                   bool isBilledLocked = isBilled || fwd.billedFy != null;
                   bool isLocked = isBilledLocked || isCancelled;
-                  bool canDelete = !isLocked && webPh.canDeleteSaleChallan(item.id);
+                  bool canDelete = !isBilledLocked && webPh.canDeleteSaleChallan(item.id);
                   bool isCarry = _isCarryForward(item.effectiveOriginalFy, webPh.financialYear);
                   final String cfLabel = (!item.hasValidDate && item.effectiveOriginalFy.isEmpty)
                       ? "CF / LEGACY"
@@ -329,20 +329,28 @@ class _WebChallanViewState extends State<WebChallanView> {
                           // 🗑️ DELETE LAST DRAFT OR 🚫 CANCEL MIDDLE CHALLAN
                           IconButton(
                             icon: Icon(
-                              isLocked ? Icons.lock_outline_rounded : (canDelete ? Icons.delete_outline_rounded : Icons.cancel_outlined),
-                              color: isLocked ? Colors.white24 : (canDelete ? Colors.redAccent : Colors.deepOrangeAccent),
+                              isBilledLocked
+                                  ? Icons.lock_outline_rounded
+                                  : (canDelete
+                                      ? Icons.delete_outline_rounded
+                                      : (isCancelled ? Icons.lock_outline_rounded : Icons.cancel_outlined)),
+                              color: isBilledLocked
+                                  ? Colors.white24
+                                  : (canDelete
+                                      ? Colors.redAccent
+                                      : (isCancelled ? Colors.white24 : Colors.deepOrangeAccent)),
                               size: 18,
                             ),
                             tooltip: isBilledLocked
                                 ? "Locked: Billed (Delete Bill first)"
-                                : (isCancelled
-                                    ? "Already Cancelled"
-                                    : (canDelete ? "Delete Draft (Last)" : "Cancel Challan")),
+                                : (canDelete
+                                    ? (isCancelled ? "Delete Cancelled (Last)" : "Delete Draft (Last)")
+                                    : (isCancelled ? "Locked: Cancelled (Middle)" : "Cancel Challan")),
                             onPressed: () {
-                              if (isLocked) {
+                              if (isBilledLocked) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(isCancelled ? "🔒 Already Cancelled for audit trail." : "🔒 Locked: Bill already generated. Delete linked Bill first."),
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Bill already generated. Delete linked Bill first."),
                                     backgroundColor: Colors.orange,
                                   ),
                                 );
@@ -350,6 +358,13 @@ class _WebChallanViewState extends State<WebChallanView> {
                               }
                               if (canDelete) {
                                 _confirmDeleteSaleChallan(context, webPh, item);
+                              } else if (isCancelled) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Cancelled challan is retained for audit trail compliance. Only the last challan in series can be deleted."),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
                               } else {
                                 _confirmCancelSaleChallan(context, webPh, item);
                               }
@@ -438,7 +453,7 @@ class _WebChallanViewState extends State<WebChallanView> {
                   final fwd = webPh.getForwardChallanStatus(item.id, isPurchase: true);
                   bool isBilledLocked = isBilled || fwd.billedFy != null;
                   bool isLocked = isBilledLocked || isCancelled;
-                  bool canDelete = !isLocked && webPh.canDeletePurchaseChallan(item.id);
+                  bool canDelete = !isBilledLocked && webPh.canDeletePurchaseChallan(item.id);
                   bool isCarry = _isCarryForward(item.effectiveOriginalFy, webPh.financialYear);
                   final String cfLabel = (!item.hasValidDate && item.effectiveOriginalFy.isEmpty)
                       ? "CF / LEGACY"
@@ -583,20 +598,28 @@ class _WebChallanViewState extends State<WebChallanView> {
                           // 🗑️ DELETE LAST DRAFT OR 🚫 CANCEL MIDDLE CHALLAN
                           IconButton(
                             icon: Icon(
-                              isLocked ? Icons.lock_outline_rounded : (canDelete ? Icons.delete_outline_rounded : Icons.cancel_outlined),
-                              color: isLocked ? Colors.white24 : (canDelete ? Colors.redAccent : Colors.deepOrangeAccent),
+                              isBilledLocked
+                                  ? Icons.lock_outline_rounded
+                                  : (canDelete
+                                      ? Icons.delete_outline_rounded
+                                      : (isCancelled ? Icons.lock_outline_rounded : Icons.cancel_outlined)),
+                              color: isBilledLocked
+                                  ? Colors.white24
+                                  : (canDelete
+                                      ? Colors.redAccent
+                                      : (isCancelled ? Colors.white24 : Colors.deepOrangeAccent)),
                               size: 18,
                             ),
                             tooltip: isBilledLocked
                                 ? "Locked: Invoiced (Delete Bill first)"
-                                : (isCancelled
-                                    ? "Already Cancelled"
-                                    : (canDelete ? "Delete Draft (Last)" : "Cancel Challan")),
+                                : (canDelete
+                                    ? (isCancelled ? "Delete Cancelled (Last)" : "Delete Draft (Last)")
+                                    : (isCancelled ? "Locked: Cancelled (Middle)" : "Cancel Challan")),
                             onPressed: () {
-                              if (isLocked) {
+                              if (isBilledLocked) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(isCancelled ? "🔒 Already Cancelled for audit trail." : "🔒 Locked: Purchase Invoice already generated. Delete linked Bill first."),
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Purchase Invoice already generated. Delete linked Bill first."),
                                     backgroundColor: Colors.orange,
                                   ),
                                 );
@@ -604,6 +627,13 @@ class _WebChallanViewState extends State<WebChallanView> {
                               }
                               if (canDelete) {
                                 _confirmDeletePurchaseChallan(context, webPh, item);
+                              } else if (isCancelled) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("🔒 Locked: Cancelled inward challan is retained for audit trail compliance. Only the last challan in series can be deleted."),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
                               } else {
                                 _confirmCancelPurchaseChallan(context, webPh, item);
                               }
@@ -692,9 +722,11 @@ class _WebChallanViewState extends State<WebChallanView> {
               style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text(
-              "Are you sure you want to permanently delete this challan? This will remove the record and reverse stock impact.",
-              style: TextStyle(color: Colors.white60, fontSize: 11.5),
+            Text(
+              ch.status == "Cancelled"
+                  ? "Are you sure? This will permanently delete cancelled challan ${ch.billNo} and reclaim the number."
+                  : "Are you sure you want to permanently delete this challan? This will remove the record and reverse stock impact.",
+              style: const TextStyle(color: Colors.white60, fontSize: 11.5),
             ),
           ],
         ),
@@ -712,7 +744,7 @@ class _WebChallanViewState extends State<WebChallanView> {
                 SnackBar(
                   content: Text(ok
                       ? "🗑️ Sale Challan Deleted Permanently!"
-                      : "🔒 Delete blocked: Not the last eligible draft (use Cancel instead)."),
+                      : "🔒 Delete blocked: Only the last eligible challan can be permanently deleted."),
                   backgroundColor: ok ? Colors.redAccent : Colors.orange,
                 ),
               );
@@ -758,9 +790,11 @@ class _WebChallanViewState extends State<WebChallanView> {
               style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text(
-              "Are you sure you want to permanently delete this inward entry? This will reverse stock and delete the record.",
-              style: TextStyle(color: Colors.white60, fontSize: 11.5),
+            Text(
+              ch.status == "Cancelled"
+                  ? "Are you sure? This will permanently delete cancelled inward challan ${ch.internalNo} and reclaim the number."
+                  : "Are you sure you want to permanently delete this inward entry? This will reverse stock and delete the record.",
+              style: const TextStyle(color: Colors.white60, fontSize: 11.5),
             ),
           ],
         ),
@@ -778,7 +812,7 @@ class _WebChallanViewState extends State<WebChallanView> {
                 SnackBar(
                   content: Text(ok
                       ? "🗑️ Inward Challan Deleted Permanently!"
-                      : "🔒 Delete blocked: Not the last eligible draft (use Cancel instead)."),
+                      : "🔒 Delete blocked: Only the last eligible challan can be permanently deleted."),
                   backgroundColor: ok ? Colors.redAccent : Colors.orange,
                 ),
               );

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
+import '../logic/app_settings_model.dart';
 import '../web_live_sync/web_cloud_config.dart';
 import 'modules/sale_challan_sync_module.dart';
 import 'modules/purchase_challan_sync_module.dart';
@@ -666,10 +667,7 @@ class D1SalesLedgerService {
             purchase.internalNo,
             effFy,
           );
-          final int? newSeq = data["seq"];
-          if (newSeq != null && newSeq > 0) {
-            await _updateHighestLocalSeq(storeToken, newSeq);
-          }
+
           return true;
         }
       } else if (res.statusCode == 410) {
@@ -774,12 +772,7 @@ class D1SalesLedgerService {
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
-        try {
-          final data = jsonDecode(res.body);
-          if (data["seq"] != null) {
-            await _updateHighestLocalSeq(storeToken, data["seq"]);
-          }
-        } catch (_) {}
+
         return true;
       }
     } catch (e) {
@@ -901,10 +894,7 @@ class D1SalesLedgerService {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS") {
           recordKnownVersion(sale.id, sale.billNo, sale.version);
-          final int? newSeq = data["seq"];
-          if (newSeq != null && newSeq > 0) {
-            await _updateHighestLocalSeq(storeToken, newSeq);
-          }
+
           return true;
         }
       } else if (res.statusCode == 410) {
@@ -968,9 +958,7 @@ class D1SalesLedgerService {
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        if (data["status"] == "SUCCESS" && data["seq"] != null) {
-          final int s = data["seq"];
-          await _updateHighestLocalSeq(storeToken, s);
+        if (data["status"] == "SUCCESS") {
           return true;
         }
       }
@@ -1038,9 +1026,7 @@ class D1SalesLedgerService {
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        if (data["status"] == "SUCCESS" && data["seq"] != null) {
-          final int s = data["seq"];
-          await _updateHighestLocalSeq(storeToken, s);
+        if (data["status"] == "SUCCESS") {
           return true;
         }
       }
@@ -1760,6 +1746,8 @@ class D1SalesLedgerService {
         final data = jsonDecode(res.body);
         if (data["status"] == "SUCCESS") {
           recordKnownVersion(challan.id, challan.billNo, challan.version, effFy);
+          final int? newSeq = int.tryParse(data["seq"]?.toString() ?? '');
+          if (newSeq != null && newSeq > 0) onServerSeq?.call(newSeq);
           return true;
         }
       } else if (res.statusCode == 410) {
@@ -1799,6 +1787,8 @@ class D1SalesLedgerService {
     String storeToken, {
     String clientSource = "APP_MOBILE",
     String? fy,
+    Map<String, dynamic>? audit,
+    void Function(int serverSeq)? onServerSeq,
   }) async {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
     final String effFy = normalizeFyString(
@@ -1816,6 +1806,9 @@ class D1SalesLedgerService {
       chMap["is_deleted"] = 0;
       chMap["originalFy"] = effFy;
       chMap["fy"] = effFy;
+      if (audit != null && audit.isNotEmpty) {
+        chMap["audit"] = audit;
+      }
 
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
@@ -1860,6 +1853,9 @@ class D1SalesLedgerService {
     String clientSource = "APP_MOBILE",
     String? fy,
     int? deletedAtMs,
+    Map<String, dynamic>? hwmRollback,
+    Map<String, dynamic>? audit,
+    void Function(int serverSeq)? onServerSeq,
   }) async {
     final String cId = challanOrId is SaleChallan ? challanOrId.id.trim() : challanOrId.toString().trim();
     final String cBill = challanOrId is SaleChallan
@@ -1915,6 +1911,8 @@ class D1SalesLedgerService {
             "isDeleted": 1,
             "status": "Deleted",
             "updatedAt": delTs,
+            if (hwmRollback != null && hwmRollback.isNotEmpty) "hwmRollback": hwmRollback,
+            if (audit != null && audit.isNotEmpty) "audit": audit,
           },
         },
       };
@@ -1926,6 +1924,11 @@ class D1SalesLedgerService {
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
+        try {
+          final data = jsonDecode(res.body);
+          final int? newSeq = int.tryParse(data["seq"]?.toString() ?? '');
+          if (newSeq != null && newSeq > 0) onServerSeq?.call(newSeq);
+        } catch (_) {}
         return true;
       }
     } catch (e) {
@@ -2172,6 +2175,8 @@ class D1SalesLedgerService {
             challan.internalNo,
             effFy,
           );
+          final int? newSeq = int.tryParse(data["seq"]?.toString() ?? '');
+          if (newSeq != null && newSeq > 0) onServerSeq?.call(newSeq);
           return true;
         }
       } else if (res.statusCode == 410) {
@@ -2230,6 +2235,8 @@ class D1SalesLedgerService {
     String storeToken, {
     String clientSource = "APP_MOBILE",
     String? fy,
+    Map<String, dynamic>? audit,
+    void Function(int serverSeq)? onServerSeq,
   }) async {
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
     final String effFy = normalizeFyString(
@@ -2254,6 +2261,9 @@ class D1SalesLedgerService {
       chMap["is_deleted"] = 0;
       chMap["originalFy"] = effFy;
       chMap["fy"] = effFy;
+      if (audit != null && audit.isNotEmpty) {
+        chMap["audit"] = audit;
+      }
 
       final payload = {
         "storeToken": storeToken.trim().toUpperCase(),
@@ -2309,6 +2319,9 @@ class D1SalesLedgerService {
     String clientSource = "APP_MOBILE",
     String? fy,
     int? deletedAtMs,
+    Map<String, dynamic>? hwmRollback,
+    Map<String, dynamic>? audit,
+    void Function(int serverSeq)? onServerSeq,
   }) async {
     final String cId = challanOrId is PurchaseChallan ? challanOrId.id.trim() : challanOrId.toString().trim();
     final String cParty = challanOrId is PurchaseChallan ? challanOrId.partyId.trim() : partyId.trim();
@@ -2377,6 +2390,8 @@ class D1SalesLedgerService {
             "isDeleted": 1,
             "status": "Deleted",
             "updatedAt": delTs,
+            if (hwmRollback != null && hwmRollback.isNotEmpty) "hwmRollback": hwmRollback,
+            if (audit != null && audit.isNotEmpty) "audit": audit,
           },
         },
       };
@@ -2388,6 +2403,11 @@ class D1SalesLedgerService {
       ).timeout(const Duration(seconds: 6));
 
       if (res.statusCode == 200) {
+        try {
+          final data = jsonDecode(res.body);
+          final int? newSeq = int.tryParse(data["seq"]?.toString() ?? '');
+          if (newSeq != null && newSeq > 0) onServerSeq?.call(newSeq);
+        } catch (_) {}
         return true;
       }
     } catch (e) {
@@ -2890,6 +2910,139 @@ class D1SalesLedgerService {
       }
     }
     return mutated;
+  }
+
+
+  /// Applies incoming D1 edge `hwmRollback` + Challan HWM SET transitions (using server `seq` -> causal `gen`)
+  /// and extracts structured Challan `audit` entries without depending on client wall-clock timestamps.
+  static bool applyEdgeHwmAndAuditFromEvents({
+    required AppConfig currentConfig,
+    required List<Map<String, dynamic>> edgeEvents,
+    String companyID = "",
+    Map<String, int> recordFloor = const {},
+    List<LogEntry>? targetLogs,
+  }) {
+    if (edgeEvents.isEmpty) return false;
+    final Map<String, int> incHwm = Map<String, int>.from(currentConfig.challanHwm);
+    final Map<String, ChallanHwmState> incMeta =
+        currentConfig.challanHwmMeta.map((k, v) => MapEntry(k, v.copy()));
+    bool hasHwmUpdate = false;
+    bool auditMutated = false;
+
+    int lookupFloor(String key) {
+      if (recordFloor.containsKey(key)) return recordFloor[key]!;
+      final parts = key.split('::');
+      if (parts.length == 5) {
+        final suffix = '::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
+        int best = 0;
+        recordFloor.forEach((rk, rv) {
+          if (rk.endsWith(suffix) && rv > best) best = rv;
+        });
+        return best;
+      }
+      return 0;
+    }
+
+    void foldState(String key, ChallanHwmState st) {
+      final prev = incMeta[key] ??
+          (incHwm.containsKey(key)
+              ? ChallanHwmState(value: incHwm[key]!, seq: 0, gen: incHwm[key]!, op: 'SET')
+              : null);
+      final int fl = lookupFloor(key);
+      final resolved = AppConfig.resolveCausalHwmState(prev, st, floor: fl);
+      incMeta[key] = resolved;
+      if (resolved.value > 0) {
+        incHwm[key] = resolved.value;
+      } else {
+        incHwm.remove(key);
+      }
+      hasHwmUpdate = true;
+    }
+
+    for (final ev in edgeEvents) {
+      final int evSeq = int.tryParse(ev["seq"]?.toString() ?? "0") ?? 0;
+      final dynamic rawData = ev["sale_data"];
+      if (rawData is! Map) continue;
+      final rawMap = Map<String, dynamic>.from(rawData);
+
+      // 1. Extract optional structured audit entry
+      if (targetLogs != null && rawMap["audit"] is Map) {
+        try {
+          final aMap = Map<String, dynamic>.from(rawMap["audit"] as Map);
+          final String logId = (aMap["id"] ?? "${ev['bill_id'] ?? ''}_${aMap['action'] ?? 'LOG'}_$evSeq").toString().trim();
+          final String action = (aMap["action"] ?? ev["action"] ?? "LOG").toString().trim();
+          final String details = (aMap["details"] ?? "").toString().trim();
+          final DateTime t = DateTime.tryParse((aMap["time"] ?? "").toString()) ?? DateTime.now();
+          if (details.isNotEmpty && !targetLogs.any((l) => l.id == logId || (l.action == action && l.details == details))) {
+            targetLogs.add(LogEntry(id: logId, action: action, details: details, time: t));
+            auditMutated = true;
+          }
+        } catch (_) {}
+      }
+
+      // 2. Apply explicit hwmRollback attached to Challan DELETE event
+      if (rawMap["hwmRollback"] is Map) {
+        final rb = Map<String, dynamic>.from(rawMap["hwmRollback"] as Map);
+        final String key = (rb["key"] ?? "").toString().trim();
+        if (key.isNotEmpty) {
+          final st = ChallanHwmState.fromMap({
+            ...rb,
+            'op': 'ROLLBACK',
+            if (evSeq > 0) 'seq': evSeq,
+          });
+          foldState(key, st);
+          final parts = key.split('::');
+          if (parts.length == 5 && companyID.trim().isNotEmpty) {
+            final localKey = '${companyID.trim()}::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
+            if (localKey != key) {
+              foldState(localKey, st);
+            }
+          }
+        }
+      } else {
+        // 3. Fold non-deleted Challan create/save events cleanly with their D1 seq
+        final String docType = (rawMap["doc_type"] ?? "").toString().trim().toUpperCase();
+        final String act = (ev["action"] ?? "").toString().trim().toUpperCase();
+        final int isDel = int.tryParse((rawMap["is_deleted"] ?? rawMap["isDeleted"] ?? "0").toString()) ?? 0;
+        final bool isDeleteEvt = act == "DELETE" || act.startsWith("DELETE_") || isDel == 1 || rawMap["status"] == "Deleted";
+        if (!isDeleteEvt && (docType == "SALE_CHALLAN" || docType == "CHALLAN" || docType == "PURCHASE_CHALLAN")) {
+          final bool isPur = docType == "PURCHASE_CHALLAN";
+          final String numStr = (isPur ? (rawMap["internalNo"] ?? "") : (rawMap["billNo"] ?? "")).toString();
+          final parsed = AppConfig.parseSeriesNumber(numStr);
+          if (parsed.prefix.isNotEmpty && parsed.number != null) {
+            final String evFy = normalizeFyString((rawMap["originalFy"] ?? rawMap["original_fy"] ?? rawMap["fy"] ?? ev["fy"] ?? "").toString());
+            final String env = AppConfig.inferIsWebChallanRecord(rawMap) ? "WEB" : "APP";
+            final String normType = isPur ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
+            final String comp = companyID.trim();
+            final String key = '${comp}::${evFy}::${normType}::${env}::${parsed.prefix}';
+            final int prevGen = incMeta[key]?.gen ?? (incHwm[key] ?? 0);
+            foldState(
+              key,
+              ChallanHwmState(
+                value: parsed.number!,
+                seq: evSeq,
+                gen: prevGen + 1 > parsed.number! ? prevGen + 1 : parsed.number!,
+                op: 'SET',
+                updatedAt: int.tryParse((rawMap["updatedAt"] ?? rawMap["updated_at"] ?? "0").toString()) ?? 0,
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    if (hasHwmUpdate) {
+      final merged = AppConfig.mergeHwmMapsWithMeta(
+        localHwm: currentConfig.challanHwm,
+        localMeta: currentConfig.challanHwmMeta,
+        remoteHwm: incHwm,
+        remoteMeta: incMeta,
+        recordFloor: recordFloor,
+      );
+      currentConfig.challanHwm = merged.hwm;
+      currentConfig.challanHwmMeta = merged.meta;
+    }
+    return hasHwmUpdate || auditMutated;
   }
 
   /// =========================================================================

@@ -73,7 +73,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
         }
         setState(() => isLoading = false);
       } else {
-        String nextNo = webPh.getNextBillNumber("CHALLAN", "SCH-", 101);
+        String nextNo = webPh.getNextBillNumber("CHALLAN", "WSCH-", 1);
         setState(() {
           challanNoC.text = nextNo;
           selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
@@ -361,7 +361,7 @@ class _WebSaleChallanViewState extends State<WebSaleChallanView> {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  challanNoC.text.isNotEmpty ? challanNoC.text : "SCH-NEW",
+                  challanNoC.text.isNotEmpty ? challanNoC.text : "WSCH-NEW",
                   style: const TextStyle(
                     color: Color(0xFF2DD4BF),
                     fontWeight: FontWeight.w900,

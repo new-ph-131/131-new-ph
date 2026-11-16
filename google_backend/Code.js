@@ -170,31 +170,212 @@ function mergeChallanJsonString(existingRaw, incomingRaw, mergedTombMap, mergedR
   return JSON.stringify(result);
 }
 
-function mergeHwmMaps(baseMap, extraMap) {
-  var out = {};
-  var k;
-  if (baseMap && typeof baseMap === "object" && !Array.isArray(baseMap)) {
-    for (k in baseMap) {
-      if (Object.prototype.hasOwnProperty.call(baseMap, k)) {
-        var bv = parseInt(baseMap[k], 10);
-        if (!isNaN(bv) && bv >= 0) out[k] = bv;
+function normalizeFyJs(raw) {
+  var s = (raw || "").toString().trim();
+  if (!s) return "";
+  return s.replace(/\s+/g, "");
+}
+
+function parseSeriesNumberJs(rawNo) {
+  var s = (rawNo || "").toString().trim().toUpperCase();
+  if (!s) return { prefix: "", number: null };
+  var m = /^(.*?)(\d+)$/.exec(s);
+  if (!m) return { prefix: s, number: null };
+  var num = parseInt(m[2], 10);
+  return {
+    prefix: (m[1] || "").trim(),
+    number: isNaN(num) ? null : num
+  };
+}
+
+function inferIsWebChallanJs(rec) {
+  if (!rec || typeof rec !== "object") return false;
+  var rawNo = (rec.internalNo || rec.billNo || "").toString().trim().toUpperCase();
+  if (rawNo.indexOf("WSCH") === 0 || rawNo.indexOf("WPCH") === 0) return true;
+  if (rec.sigHistory && Array.isArray(rec.sigHistory)) {
+    for (var i = 0; i < rec.sigHistory.length; i++) {
+      var sig = rec.sigHistory[i];
+      if (!sig || typeof sig !== "object") continue;
+      var action = (sig.action || "").toString().toUpperCase();
+      var staff = (sig.staffName || "").toString().toUpperCase();
+      if (action.indexOf("WEB") !== -1 || staff.indexOf("WEB") !== -1) return true;
+    }
+  }
+  return false;
+}
+
+function computeChallanRecordFloorBySuffixJs(challanSources) {
+  var floorBySuffix = {};
+  function scanArr(arr, normType, fallbackFy) {
+    if (!Array.isArray(arr)) return;
+    for (var i = 0; i < arr.length; i++) {
+      var r = arr[i];
+      if (!r || typeof r !== "object") continue;
+      if (isRecordHardDeleted(r)) continue;
+      var rawNo = normType === "PURCHASE_CHALLAN"
+        ? (r.internalNo || "").toString()
+        : (r.billNo || "").toString();
+      var parsed = parseSeriesNumberJs(rawNo);
+      if (!parsed.prefix || parsed.number === null) continue;
+      var fy = normalizeFyJs(r.originalFy || r.original_fy || r.fy || fallbackFy || "");
+      var env = inferIsWebChallanJs(r) ? "WEB" : "APP";
+      var suffix = "::" + fy + "::" + normType + "::" + env + "::" + parsed.prefix;
+      if (!Object.prototype.hasOwnProperty.call(floorBySuffix, suffix) || parsed.number > floorBySuffix[suffix]) {
+        floorBySuffix[suffix] = parsed.number;
       }
     }
   }
-  if (extraMap && typeof extraMap === "object" && !Array.isArray(extraMap)) {
-    for (k in extraMap) {
-      if (Object.prototype.hasOwnProperty.call(extraMap, k)) {
-        var ev = parseInt(extraMap[k], 10);
-        if (!isNaN(ev) && ev >= 0) {
-          out[k] = Object.prototype.hasOwnProperty.call(out, k) ? Math.max(out[k], ev) : ev;
-        }
-      }
+  if (Array.isArray(challanSources)) {
+    for (var j = 0; j < challanSources.length; j++) {
+      var srcItem = challanSources[j];
+      if (!srcItem) continue;
+      scanArr(parseJsonArraySafe(srcItem.sRaw), "SALE_CHALLAN", srcItem.fy || "");
+      scanArr(parseJsonArraySafe(srcItem.pRaw), "PURCHASE_CHALLAN", srcItem.fy || "");
     }
+  }
+  return floorBySuffix;
+}
+
+function lookupFloorForKeyJs(key, floorBySuffix) {
+  if (!key || !floorBySuffix) return 0;
+  var parts = key.split("::");
+  if (parts.length === 5) {
+    var suffix = "::" + parts[1] + "::" + parts[2] + "::" + parts[3] + "::" + parts[4];
+    if (Object.prototype.hasOwnProperty.call(floorBySuffix, suffix)) {
+      return Number(floorBySuffix[suffix]) || 0;
+    }
+  }
+  return 0;
+}
+
+function parseHwmMetaObjJs(rawObj) {
+  var out = {};
+  if (!rawObj || typeof rawObj !== "object" || Array.isArray(rawObj)) return out;
+  for (var k in rawObj) {
+    if (!Object.prototype.hasOwnProperty.call(rawObj, k)) continue;
+    var v = rawObj[k];
+    if (!v || typeof v !== "object") continue;
+    var val = parseInt(v.v !== undefined ? v.v : v.value, 10);
+    if (isNaN(val) || val < 0) val = 0;
+    var seq = parseInt(v.seq, 10);
+    if (isNaN(seq) || seq < 0) seq = 0;
+    var gen = parseInt(v.gen, 10);
+    if (isNaN(gen) || gen < 0) gen = val;
+    var op = (v.op || "SET").toString().trim().toUpperCase() === "ROLLBACK" ? "ROLLBACK" : "SET";
+    var ts = parseInt(v.ts !== undefined ? v.ts : v.updatedAt, 10);
+    if (isNaN(ts) || ts < 0) ts = 0;
+    var delNum = parseInt(v.delNum !== undefined ? v.delNum : v.deletedNum, 10);
+    if (isNaN(delNum) || delNum < 0) delNum = 0;
+    var tombUuid = (v.tombUuid || "").toString().trim();
+    out[k] = {
+      v: val,
+      seq: seq,
+      gen: gen,
+      op: op,
+      ts: ts,
+      delNum: delNum,
+      tombUuid: tombUuid
+    };
   }
   return out;
 }
 
-function mergeConfigWithMonotonicHwm(existingCfgRaw, incomingCfgRaw, globalMergedHwm) {
+function resolveCausalHwmStateJs(a, b, floor) {
+  floor = Number(floor) || 0;
+  var maxGenAB = Math.max(a ? a.gen : 0, b ? b.gen : 0);
+  var chosen;
+  if (!a && !b) {
+    chosen = { v: floor > 0 ? floor : 0, seq: 0, gen: floor > 0 ? floor : 0, op: "SET", ts: 0, delNum: 0, tombUuid: "" };
+  } else if (!a) {
+    chosen = JSON.parse(JSON.stringify(b));
+  } else if (!b) {
+    chosen = JSON.parse(JSON.stringify(a));
+  } else if (a.op !== "ROLLBACK" && b.op !== "ROLLBACK") {
+    chosen = {
+      v: Math.max(a.v, b.v),
+      seq: Math.max(a.seq, b.seq),
+      gen: maxGenAB,
+      op: "SET",
+      ts: Math.max(a.ts, b.ts),
+      delNum: 0,
+      tombUuid: ""
+    };
+  } else {
+    var aWins;
+    if (a.seq > 0 && b.seq > 0 && a.seq !== b.seq) {
+      aWins = a.seq > b.seq;
+    } else if (a.gen !== b.gen) {
+      aWins = a.gen > b.gen;
+    } else if (a.op !== b.op) {
+      aWins = a.op !== "ROLLBACK";
+    } else {
+      aWins = a.v >= b.v;
+    }
+    chosen = JSON.parse(JSON.stringify(aWins ? a : b));
+    if (chosen.seq < Math.max(a.seq, b.seq) && chosen.op !== "ROLLBACK") {
+      chosen.seq = Math.max(a.seq, b.seq);
+    }
+  }
+  if (floor > chosen.v) {
+    chosen = {
+      v: floor,
+      seq: Math.max(a ? a.seq : 0, b ? b.seq : 0),
+      gen: Math.max(maxGenAB, chosen.gen) + 1,
+      op: "SET",
+      ts: chosen.ts || 0,
+      delNum: 0,
+      tombUuid: ""
+    };
+  }
+  return chosen;
+}
+
+function mergeHwmStateMapsJs(exHwm, exMeta, inHwm, inMeta, floorBySuffix) {
+  var allKeys = {};
+  var k;
+  function addKeys(obj) {
+    if (!obj || typeof obj !== "object") return;
+    for (k in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, k) && k) allKeys[k] = true;
+    }
+  }
+  addKeys(exHwm);
+  addKeys(exMeta);
+  addKeys(inHwm);
+  addKeys(inMeta);
+
+  function derive(key, hwm, meta) {
+    var hasM = meta && Object.prototype.hasOwnProperty.call(meta, key);
+    var hasH = hwm && Object.prototype.hasOwnProperty.call(hwm, key);
+    if (!hasM && !hasH) return null;
+    var rawV = hasH ? (parseInt(hwm[key], 10) || 0) : 0;
+    if (hasM) {
+      var s = JSON.parse(JSON.stringify(meta[key]));
+      if (s.op === "SET" && rawV > s.v) {
+        s.v = rawV;
+        if (rawV > s.gen) s.gen = rawV;
+      }
+      return s;
+    }
+    var safeV = rawV < 0 ? 0 : rawV;
+    return { v: safeV, seq: 0, gen: safeV, op: "SET", ts: 0, delNum: 0, tombUuid: "" };
+  }
+
+  var outHwm = {};
+  var outMeta = {};
+  for (k in allKeys) {
+    if (!Object.prototype.hasOwnProperty.call(allKeys, k)) continue;
+    var a = derive(k, exHwm, exMeta);
+    var b = derive(k, inHwm, inMeta);
+    var fl = lookupFloorForKeyJs(k, floorBySuffix);
+    var resolved = resolveCausalHwmStateJs(a, b, fl);
+    if (resolved.v > 0) outHwm[k] = resolved.v;
+    if (resolved.v > 0 || resolved.op === "ROLLBACK") outMeta[k] = resolved;
+  }
+  return { hwm: outHwm, meta: outMeta };
+}
+
+function mergeConfigWithCausalHwm(existingCfgRaw, incomingCfgRaw, globalHwmState, floorBySuffix) {
   var exCfg = parseJsonObjSafe(existingCfgRaw);
   var inCfg = parseJsonObjSafe(incomingCfgRaw);
 
@@ -218,27 +399,59 @@ function mergeConfigWithMonotonicHwm(existingCfgRaw, incomingCfgRaw, globalMerge
     baseCfg = JSON.parse(JSON.stringify(exCfg));
   }
 
-  var combinedHwm = mergeHwmMaps(
-    exCfg.challanHwm || exCfg.challan_hwm,
-    inCfg.challanHwm || inCfg.challan_hwm
+  var localState = mergeHwmStateMapsJs(
+    parseJsonObjSafe(exCfg.challanHwm || exCfg.challan_hwm),
+    parseHwmMetaObjJs(exCfg.challanHwmMeta || exCfg.challan_hwm_meta),
+    parseJsonObjSafe(inCfg.challanHwm || inCfg.challan_hwm),
+    parseHwmMetaObjJs(inCfg.challanHwmMeta || inCfg.challan_hwm_meta),
+    floorBySuffix
   );
-  if (globalMergedHwm && typeof globalMergedHwm === "object") {
-    combinedHwm = mergeHwmMaps(combinedHwm, globalMergedHwm);
+  if (globalHwmState) {
+    localState = mergeHwmStateMapsJs(
+      localState.hwm,
+      localState.meta,
+      globalHwmState.hwm,
+      globalHwmState.meta,
+      floorBySuffix
+    );
   }
-  if (Object.keys(combinedHwm).length > 0) {
-    baseCfg.challanHwm = combinedHwm;
+  baseCfg.challanHwm = localState.hwm;
+  baseCfg.challanHwmMeta = localState.meta;
+  if (exCfg.challanHwmTailMigrated || inCfg.challanHwmTailMigrated) {
+    baseCfg.challanHwmTailMigrated = true;
   }
   return JSON.stringify(baseCfg);
 }
 
-function mergeHwmFileString(existingRaw, incomingRaw, globalMergedHwm) {
-  var exMap = parseJsonObjSafe(existingRaw);
-  var inMap = parseJsonObjSafe(incomingRaw);
-  var combined = mergeHwmMaps(exMap, inMap);
-  if (globalMergedHwm && typeof globalMergedHwm === "object") {
-    combined = mergeHwmMaps(combined, globalMergedHwm);
+function mergeLogsJsonStringJs(existingRaw, incomingRaw) {
+  var exArr = parseJsonArraySafe(existingRaw);
+  var inArr = parseJsonArraySafe(incomingRaw);
+  var out = [];
+  var seenIds = {};
+  var seenSigs = {};
+  function absorb(arr) {
+    for (var i = 0; i < arr.length; i++) {
+      var item = arr[i];
+      if (!item || typeof item !== "object") continue;
+      var eid = (item.id || "").toString().trim();
+      var action = (item.action || "").toString().trim();
+      var timeStr = (item.time || "").toString().trim();
+      var details = (item.details || "").toString().trim();
+      var sig = action + "|" + timeStr + "|" + details;
+      if ((eid && seenIds[eid]) || seenSigs[sig]) continue;
+      if (eid) seenIds[eid] = true;
+      seenSigs[sig] = true;
+      out.push(item);
+    }
   }
-  return JSON.stringify(combined);
+  absorb(exArr);
+  absorb(inArr);
+  out.sort(function(a, b) {
+    var ta = Date.parse((a && a.time) || "") || 0;
+    var tb = Date.parse((b && b.time) || "") || 0;
+    return ta - tb;
+  });
+  return JSON.stringify(out);
 }
 
 function doGet(e) {
@@ -535,33 +748,9 @@ function doPost(e) {
             ? parseJsonObjSafe(request.files["fy_vault.json"])
             : {};
 
-          // Collect monotonic global Challan High-Water Mark map across top-level + all FY slices
-          var globalMergedHwm = {};
-          function absorbHwmFromFilesMap(filesMap) {
-            if (!filesMap || typeof filesMap !== "object") return;
-            if (filesMap["challan_hwm.json"]) {
-              globalMergedHwm = mergeHwmMaps(globalMergedHwm, parseJsonObjSafe(filesMap["challan_hwm.json"]));
-            }
-            if (filesMap["config.json"]) {
-              var cObj = parseJsonObjSafe(filesMap["config.json"]);
-              globalMergedHwm = mergeHwmMaps(globalMergedHwm, cObj.challanHwm || cObj.challan_hwm);
-            }
-          }
-          absorbHwmFromFilesMap(existingContent.files);
-          absorbHwmFromFilesMap(request.files);
+          // Step 1: Merge challan records & audit logs inside fy_vault.json FIRST so recordFloor reflects authoritative non-deleted challans
+          var challanSourcesForFloor = [];
           var fyK;
-          for (fyK in existingVault) {
-            if (Object.prototype.hasOwnProperty.call(existingVault, fyK)) {
-              absorbHwmFromFilesMap(existingVault[fyK]);
-            }
-          }
-          for (fyK in incomingVault) {
-            if (Object.prototype.hasOwnProperty.call(incomingVault, fyK)) {
-              absorbHwmFromFilesMap(incomingVault[fyK]);
-            }
-          }
-
-          // Record-level UUID merge inside fy_vault.json for every FY (preserving missing FYs & merging shared FYs)
           if (Object.keys(existingVault).length > 0 || Object.keys(incomingVault).length > 0) {
             var allVaultFys = {};
             for (fyK in existingVault) {
@@ -591,21 +780,22 @@ function doPost(e) {
                   mergedTombMap, mergedReg, incomingTombSet, unmarkedMap, fyK
                 );
               }
-              if (Object.prototype.hasOwnProperty.call(exSlice, "config.json") || Object.prototype.hasOwnProperty.call(inSlice, "config.json")) {
-                var mCfgStr = mergeConfigWithMonotonicHwm(exSlice["config.json"], inSlice["config.json"], globalMergedHwm);
-                if (mCfgStr !== null) targetSlice["config.json"] = mCfgStr;
-              }
-              if (Object.keys(globalMergedHwm).length > 0 || Object.prototype.hasOwnProperty.call(exSlice, "challan_hwm.json") || Object.prototype.hasOwnProperty.call(inSlice, "challan_hwm.json")) {
-                targetSlice["challan_hwm.json"] = mergeHwmFileString(exSlice["challan_hwm.json"], inSlice["challan_hwm.json"], globalMergedHwm);
+              if (Object.prototype.hasOwnProperty.call(exSlice, "logs.json") || Object.prototype.hasOwnProperty.call(inSlice, "logs.json")) {
+                targetSlice["logs.json"] = mergeLogsJsonStringJs(exSlice["logs.json"], inSlice["logs.json"]);
               }
 
               mergedVault[fyK] = targetSlice;
+              challanSourcesForFloor.push({
+                fy: fyK,
+                sRaw: targetSlice["s_challan.json"] || "[]",
+                pRaw: targetSlice["p_challan.json"] || "[]"
+              });
             }
             request.files["fy_vault.json"] = JSON.stringify(mergedVault);
             incomingVault = mergedVault;
           }
 
-          // Top-level Challan & HWM merge strictly scoped to request FY (avoid mixing 2026-27 top-level into 2027-28!)
+          // Step 2: Top-level Challan & Logs merge strictly scoped to request FY
           var existingFy = (existingContent.fy || "").toString().trim();
           var sameTopFy = (!existingFy || !rootFy || existingFy === rootFy);
           var existingTopSlice = (rootFy && existingVault[rootFy]) ? parseJsonObjSafe(existingVault[rootFy]) : {};
@@ -627,7 +817,6 @@ function doPost(e) {
               mergedTopSlice["s_challan.json"] = topMergedSCh;
               if (rootFy && incomingVault[rootFy]) {
                 incomingVault[rootFy] = mergedTopSlice;
-                request.files["fy_vault.json"] = JSON.stringify(incomingVault);
               }
             }
             request.files["s_challan.json"] = topMergedSCh;
@@ -649,27 +838,103 @@ function doPost(e) {
               mergedTopSlice["p_challan.json"] = topMergedPCh;
               if (rootFy && incomingVault[rootFy]) {
                 incomingVault[rootFy] = mergedTopSlice;
-                request.files["fy_vault.json"] = JSON.stringify(incomingVault);
               }
             }
             request.files["p_challan.json"] = topMergedPCh;
+          }
+
+          var baseExLogs = Object.prototype.hasOwnProperty.call(existingTopSlice, "logs.json")
+            ? existingTopSlice["logs.json"]
+            : (sameTopFy && existingContent.files ? existingContent.files["logs.json"] : "[]");
+          if (request.files["logs.json"] || Object.prototype.hasOwnProperty.call(mergedTopSlice, "logs.json") || (baseExLogs && baseExLogs !== "[]")) {
+            var topMergedLogs = mergeLogsJsonStringJs(baseExLogs, request.files["logs.json"] || "[]");
+            if (Object.prototype.hasOwnProperty.call(mergedTopSlice, "logs.json")) {
+              topMergedLogs = mergeLogsJsonStringJs(mergedTopSlice["logs.json"], topMergedLogs);
+              mergedTopSlice["logs.json"] = topMergedLogs;
+              if (rootFy && incomingVault[rootFy]) {
+                incomingVault[rootFy] = mergedTopSlice;
+              }
+            }
+            request.files["logs.json"] = topMergedLogs;
+          }
+
+          challanSourcesForFloor.push({
+            fy: rootFy,
+            sRaw: request.files["s_challan.json"] || "[]",
+            pRaw: request.files["p_challan.json"] || "[]"
+          });
+          var floorBySuffix = computeChallanRecordFloorBySuffixJs(challanSourcesForFloor);
+
+          // Step 3: Collect and causally resolve Challan HWM + Meta across top-level + all FY slices
+          var globalHwmState = { hwm: {}, meta: {} };
+          function absorbHwmStateFromFilesMap(filesMap) {
+            if (!filesMap || typeof filesMap !== "object") return;
+            if (filesMap["challan_hwm.json"] || filesMap["challan_hwm_meta.json"]) {
+              globalHwmState = mergeHwmStateMapsJs(
+                globalHwmState.hwm,
+                globalHwmState.meta,
+                parseJsonObjSafe(filesMap["challan_hwm.json"]),
+                parseHwmMetaObjJs(parseJsonObjSafe(filesMap["challan_hwm_meta.json"])),
+                floorBySuffix
+              );
+            }
+            if (filesMap["config.json"]) {
+              var cObj = parseJsonObjSafe(filesMap["config.json"]);
+              globalHwmState = mergeHwmStateMapsJs(
+                globalHwmState.hwm,
+                globalHwmState.meta,
+                parseJsonObjSafe(cObj.challanHwm || cObj.challan_hwm),
+                parseHwmMetaObjJs(cObj.challanHwmMeta || cObj.challan_hwm_meta),
+                floorBySuffix
+              );
+            }
+          }
+          absorbHwmStateFromFilesMap(existingContent.files);
+          for (fyK in existingVault) {
+            if (Object.prototype.hasOwnProperty.call(existingVault, fyK)) {
+              absorbHwmStateFromFilesMap(existingVault[fyK]);
+            }
+          }
+          absorbHwmStateFromFilesMap(request.files);
+          for (fyK in incomingVault) {
+            if (Object.prototype.hasOwnProperty.call(incomingVault, fyK)) {
+              absorbHwmStateFromFilesMap(incomingVault[fyK]);
+            }
+          }
+
+          // Step 4: Write resolved causal HWM + Meta back to every vault slice and top-level files
+          if (Object.keys(incomingVault).length > 0) {
+            for (fyK in incomingVault) {
+              if (!Object.prototype.hasOwnProperty.call(incomingVault, fyK)) continue;
+              var tSlice = incomingVault[fyK];
+              var eSlice = parseJsonObjSafe(existingVault[fyK]);
+              var iSlice = tSlice;
+              if (Object.prototype.hasOwnProperty.call(eSlice, "config.json") || Object.prototype.hasOwnProperty.call(iSlice, "config.json")) {
+                var mCfgStr = mergeConfigWithCausalHwm(eSlice["config.json"], iSlice["config.json"], globalHwmState, floorBySuffix);
+                if (mCfgStr !== null) tSlice["config.json"] = mCfgStr;
+              }
+              if (Object.keys(globalHwmState.hwm).length > 0 || Object.keys(globalHwmState.meta).length > 0 ||
+                  Object.prototype.hasOwnProperty.call(eSlice, "challan_hwm.json") || Object.prototype.hasOwnProperty.call(iSlice, "challan_hwm.json")) {
+                tSlice["challan_hwm.json"] = JSON.stringify(globalHwmState.hwm);
+                tSlice["challan_hwm_meta.json"] = JSON.stringify(globalHwmState.meta);
+              }
+            }
+            request.files["fy_vault.json"] = JSON.stringify(incomingVault);
           }
 
           var baseExCfg = Object.prototype.hasOwnProperty.call(existingTopSlice, "config.json")
             ? existingTopSlice["config.json"]
             : (sameTopFy && existingContent.files ? existingContent.files["config.json"] : null);
           if (request.files["config.json"] || baseExCfg) {
-            var topMergedCfg = mergeConfigWithMonotonicHwm(baseExCfg, request.files["config.json"], globalMergedHwm);
+            var topMergedCfg = mergeConfigWithCausalHwm(baseExCfg, request.files["config.json"], globalHwmState, floorBySuffix);
             if (topMergedCfg !== null) {
               request.files["config.json"] = topMergedCfg;
             }
           }
-          if (Object.keys(globalMergedHwm).length > 0 || request.files["challan_hwm.json"] || (existingContent.files && existingContent.files["challan_hwm.json"])) {
-            request.files["challan_hwm.json"] = mergeHwmFileString(
-              existingContent.files ? existingContent.files["challan_hwm.json"] : null,
-              request.files["challan_hwm.json"],
-              globalMergedHwm
-            );
+          if (Object.keys(globalHwmState.hwm).length > 0 || Object.keys(globalHwmState.meta).length > 0 ||
+              request.files["challan_hwm.json"] || (existingContent.files && existingContent.files["challan_hwm.json"])) {
+            request.files["challan_hwm.json"] = JSON.stringify(globalHwmState.hwm);
+            request.files["challan_hwm_meta.json"] = JSON.stringify(globalHwmState.meta);
           }
         } catch(mergeErr) {}
       }

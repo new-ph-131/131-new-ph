@@ -302,7 +302,7 @@ void main() {
   });
 
   group('Group 2: Per-FY Sequential Numbering & Monotonic HWM Enforcement', () {
-    test('T5: PharoahNumberingEngine enforces Monotonic HWM per FY ignoring Carry-Forward while blocking deleted-number reuse', () async {
+    test('T5: PharoahNumberingEngine enforces Monotonic HWM per FY ignoring Carry-Forward while reclaiming deleted tail', () async {
       final carriedFromOldFy = makeSaleChallan(
         id: 'sc-old-1',
         billNo: 'Y-42',
@@ -317,7 +317,7 @@ void main() {
         isDeleted: 1,
       );
 
-      // Carry-forward Y-42 (2025-26) is ignored, while current-FY soft-deleted Y-99 advances monotonic HWM -> Y-100
+      // Carry-forward Y-42 (2025-26) is ignored. Soft-deleted Y-99 does not advance HWM when reclaimed -> Y-1
       final nextSaleChallanNo = await PharoahNumberingEngine.getNextNumber(
         type: 'SALE_CHALLAN',
         companyID: 'COMP-1',
@@ -326,7 +326,7 @@ void main() {
         targetFy: '2026-27',
         currentList: [carriedFromOldFy, softDeletedCurrentFy],
       );
-      expect(nextSaleChallanNo, equals('Y-100'));
+      expect(nextSaleChallanNo, equals('Y-1'));
 
       // Fresh FY with only prior-FY Carry-Forward starts cleanly at Y-1
       final nextFreshFy = await PharoahNumberingEngine.getNextNumber(
@@ -364,7 +364,7 @@ void main() {
       expect(nextPurChallanNo, equals('PC-2'));
     });
 
-    test('T6: WebPharoahNumberingEngine isolates numbering by targetFy & WEB env and enforces monotonic HWM across deleted records', () {
+    test('T6: WebPharoahNumberingEngine isolates numbering by targetFy & WEB env and reclaims deleted records', () {
       final list = [
         makeSaleChallan(
           id: 'SCH-WEB-OLD',
@@ -400,7 +400,8 @@ void main() {
         targetFy: '2026-2027',
         env: 'WEB',
       );
-      expect(nextNo, equals('Y-9'));
+      // Y-8 is deleted, Y-1 is active -> next is Y-2
+      expect(nextNo, equals('Y-2'));
     });
   });
 
@@ -1356,11 +1357,11 @@ void main() {
       expect(await ph.deleteSaleChallanAsync('SC-UUID-5'), isTrue);
       expect(await ph.deletePurchaseChallanAsync('PC-UUID-5'), isTrue);
 
-      // Now #4 MUST still be blocked from hard delete because HWM is locked at 5!
-      expect(ph.canDeleteSaleChallan('SC-UUID-4'), isFalse);
-      expect(ph.canDeletePurchaseChallan('PC-UUID-4'), isFalse);
+      // Tail Rollback: Deleting #5 rolls back HWM to 4, so #4 is now the tail and CAN be deleted!
+      expect(ph.canDeleteSaleChallan('SC-UUID-4'), isTrue);
+      expect(ph.canDeletePurchaseChallan('PC-UUID-4'), isTrue);
 
-      // Next generated numbers MUST be 6, never 5
+      // Next generated numbers roll back to 5 (number reclaimed!)
       final nextSc = await PharoahNumberingEngine.getNextNumber(
         type: 'SALE_CHALLAN',
         companyID: compId,
@@ -1379,8 +1380,22 @@ void main() {
         currentList: ph.purchaseChallans,
         configHwm: ph.config.challanHwm,
       );
-      expect(nextSc, equals('SCH-6'));
-      expect(nextPc, equals('PCH-6'));
+      expect(nextSc, equals('SCH-5'));
+      expect(nextPc, equals('PCH-5'));
+
+      // Subsequent tail delete of #4 also succeeds, rolling back to 3!
+      expect(await ph.deleteSaleChallanAsync('SC-UUID-4'), isTrue);
+      expect(await ph.deletePurchaseChallanAsync('PC-UUID-4'), isTrue);
+      final nextScAfter4 = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: compId,
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        currentList: ph.saleChallans,
+        configHwm: ph.config.challanHwm,
+      );
+      expect(nextScAfter4, equals('SCH-4'));
     });
 
     test('Scenario 2 & 10: Middle Challan Cancel preserves UUID/number, excludes Cancelled from stock/totals/party-block, allows Supplier Ref re-entry', () async {
@@ -1589,6 +1604,7 @@ void main() {
 
       expect(webPh.saleChallans.firstWhere((c) => c.id == 'SC-APP-2').status, equals('Pending'));
       expect(webPh.saleChallans.any((c) => c.id == 'SC-APP-3'), isTrue);
+      // Tail rollback: Web deleting SCH-WEB-5 rolls back Web's SCH- counter to 4, so next is SCH-5
       expect(
         WebPharoahNumberingEngine.getNextNumber(
           prefix: 'SCH-',
@@ -1598,7 +1614,7 @@ void main() {
           env: 'WEB',
           configHwm: webPh.appConfig.challanHwm,
         ),
-        equals('SCH-6'),
+        equals('SCH-5'),
       );
     });
 
@@ -1892,9 +1908,342 @@ void main() {
         },
         tombstones: [wrongFyTombstone, validFyTombstone, crossEnvTombstone],
       );
-      // Must ignore 2025-26::APP::SCH-99 and 2026-27::WEB::SCH-50, and pick max(5, 4, 7) + 1 = SCH-8
-      expect(nextMigrated, equals('SCH-8'));
+      // For Challan tail reclaim, tombstones are isolated from numbering series;
+      // persisted HWM is 5, active is 2, cancelled is 4 -> next is SCH-6
+      expect(nextMigrated, equals('SCH-6'));
+    });
+  });
+
+  group('Group 6: Tail Rollback, Cancelled-Tail Delete, Causal HWM & Clock Skew Resilience', () {
+    test('Scenario 13: Real-World Web User Flow - WSCH-1 Cancelled, WSCH-2 Deleted, WSCH-1 Tail Deleted -> Reclaims WSCH-1', () async {
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+      webPh.companyProfile = {'id': 'COMP-W1', 'name': 'Web Store'};
+
+      final cust = WebCustomer(id: 'CUST-1', name: 'Web Customer', state: 'Delhi');
+      final med = WebMedicine(
+        id: 'WMED-1',
+        name: 'DOLO 650',
+        packing: '15T',
+        batch: 'B1',
+        exp: '12/28',
+        mrp: 60,
+        rate: 50,
+        stock: 100,
+      );
+
+      // 1. Create WSCH-1
+      final ok1 = await webPh.addSaleChallanAndSync(
+        customer: cust,
+        billNo: 'WSCH-1',
+        date: DateTime(2026, 4, 10),
+        items: [
+          WebSaleItem(
+            medicine: med,
+            qty: 2,
+            rate: 50,
+            gstPercent: 12,
+            total: 100,
+          ),
+        ],
+        totalAmount: 100,
+        remarks: 'First web challan',
+        existingId: 'SCH-WEB-1',
+      );
+      expect(ok1, isTrue);
+      expect(webPh.saleChallans.length, equals(1));
+      expect(webPh.saleChallans.single.billNo, equals('WSCH-1'));
+      expect(webPh.saleChallans.single.status, equals('Pending'));
+
+      // 2. Cancel WSCH-1 (audit trail preserved, number reserved)
+      final cancelOk = webPh.cancelSaleChallan('SCH-WEB-1');
+      expect(cancelOk, isTrue);
+      expect(webPh.saleChallans.single.status, equals('Cancelled'));
+
+      // 3. Create WSCH-2
+      final ok2 = await webPh.addSaleChallanAndSync(
+        customer: cust,
+        billNo: 'WSCH-2',
+        date: DateTime(2026, 4, 12),
+        items: [
+          WebSaleItem(
+            medicine: med,
+            qty: 1,
+            rate: 50,
+            gstPercent: 12,
+            total: 50,
+          ),
+        ],
+        totalAmount: 50,
+        remarks: 'Second web challan',
+        existingId: 'SCH-WEB-2',
+      );
+      expect(ok2, isTrue);
+      expect(webPh.saleChallans.length, equals(2));
+
+      // 4. Try to delete WSCH-1 (Cancelled middle record) -> BLOCKED!
+      expect(webPh.canDeleteSaleChallan('SCH-WEB-1'), isFalse);
+      expect(webPh.deleteSaleChallan('SCH-WEB-1'), isFalse);
+
+      // 5. Delete WSCH-2 (Tail record) -> SUCCEEDS!
+      expect(webPh.canDeleteSaleChallan('SCH-WEB-2'), isTrue);
+      expect(webPh.deleteSaleChallan('SCH-WEB-2'), isTrue);
+
+      // WSCH-2 is now deleted, HWM rolled back to 1 (retaining WSCH-1)
+      final nextAfter2 = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'WSCH-',
+        startFrom: 1,
+        currentList: webPh.saleChallans,
+        targetFy: '2026-27',
+        env: 'WEB',
+        configHwm: webPh.appConfig.challanHwm,
+      );
+      expect(nextAfter2, equals('WSCH-2'));
+
+      // 6. Now WSCH-1 IS THE TAIL! Even though Cancelled, it CAN now be permanently deleted!
+      expect(webPh.canDeleteSaleChallan('SCH-WEB-1'), isTrue);
+      expect(webPh.deleteSaleChallan('SCH-WEB-1'), isTrue);
+
+      // 7. WSCH-1 is permanently deleted, HWM rolled back to 0 -> Next generated number is WSCH-1!
+      final nextAfter1 = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'WSCH-',
+        startFrom: 1,
+        currentList: webPh.saleChallans,
+        targetFy: '2026-27',
+        env: 'WEB',
+        configHwm: webPh.appConfig.challanHwm,
+      );
+      expect(nextAfter1, equals('WSCH-1'));
+    });
+
+    test('Scenario 14: Multi-Step Tail Rollback iteratively reclaims numbers', () async {
+      const compId = 'COMP-MULTI';
+      SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
+      final ph = PharoahManager(
+        initialCompany: 'Shop M',
+        initialCompanyID: compId,
+        initialPassword: 'pw',
+        fYears: ['2026-27'],
+      );
+      ph.currentFY = '2026-27';
+      final party = Party(id: 'P1', name: 'Cust', state: 'Delhi');
+
+      // Create SCH-1, SCH-2, SCH-3
+      for (int i = 1; i <= 3; i++) {
+        await ph.finalizeSaleChallan(
+          billNo: 'SCH-$i',
+          date: DateTime(2026, 4, i),
+          party: party,
+          items: [
+            BillItem(
+              id: 'BI-$i',
+              srNo: 1,
+              medicineID: 'MED-1',
+              name: 'MED',
+              packing: '10T',
+              batch: 'B1',
+              exp: '12/27',
+              hsn: '3004',
+              mrp: 50,
+              qty: 1,
+              rate: 40,
+              gstRate: 12,
+              total: 40,
+            ),
+          ],
+          total: 40,
+          partyId: 'P1',
+          existingId: 'SC-M-$i',
+        );
+      }
+
+      // Cancel SCH-1
+      expect(await ph.cancelSaleChallan('SC-M-1'), isTrue);
+
+      // Tail delete SCH-3 -> rolls back to 2, next is SCH-3
+      expect(ph.canDeleteSaleChallan('SC-M-3'), isTrue);
+      expect(await ph.deleteSaleChallanAsync('SC-M-3'), isTrue);
+      expect(
+        await PharoahNumberingEngine.getNextNumber(
+          type: 'SALE_CHALLAN',
+          companyID: compId,
+          prefix: 'SCH-',
+          startFrom: 1,
+          targetFy: '2026-27',
+          currentList: ph.saleChallans,
+          configHwm: ph.config.challanHwm,
+        ),
+        equals('SCH-3'),
+      );
+
+      // Tail delete SCH-2 -> rolls back to 1, next is SCH-2
+      expect(ph.canDeleteSaleChallan('SC-M-2'), isTrue);
+      expect(await ph.deleteSaleChallanAsync('SC-M-2'), isTrue);
+      expect(
+        await PharoahNumberingEngine.getNextNumber(
+          type: 'SALE_CHALLAN',
+          companyID: compId,
+          prefix: 'SCH-',
+          startFrom: 1,
+          targetFy: '2026-27',
+          currentList: ph.saleChallans,
+          configHwm: ph.config.challanHwm,
+        ),
+        equals('SCH-2'),
+      );
+
+      // Tail delete Cancelled SCH-1 -> rolls back to 0, next is SCH-1
+      expect(ph.canDeleteSaleChallan('SC-M-1'), isTrue);
+      expect(await ph.deleteSaleChallanAsync('SC-M-1'), isTrue);
+      expect(
+        await PharoahNumberingEngine.getNextNumber(
+          type: 'SALE_CHALLAN',
+          companyID: compId,
+          prefix: 'SCH-',
+          startFrom: 1,
+          targetFy: '2026-27',
+          currentList: ph.saleChallans,
+          configHwm: ph.config.challanHwm,
+        ),
+        equals('SCH-1'),
+      );
+    });
+
+    test('Scenario 15: Series tail check uses numeric sequence, not creation timestamp', () {
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+
+      final chEarlyDateHighNo = makeSaleChallan(
+        id: 'SCH-EARLY',
+        billNo: 'WSCH-2',
+        date: DateTime(2026, 4, 1),
+        originalFy: '2026-27',
+      )..salesmanName = 'WEB-PORTAL';
+
+      final chLateDateLowNo = makeSaleChallan(
+        id: 'SCH-LATE',
+        billNo: 'WSCH-1',
+        date: DateTime(2026, 4, 25),
+        originalFy: '2026-27',
+      )..salesmanName = 'WEB-PORTAL';
+
+      webPh.saleChallans = [chLateDateLowNo, chEarlyDateHighNo];
+
+      // WSCH-2 is the tail because 2 > 1, regardless of its earlier calendar date
+      expect(webPh.canDeleteSaleChallan('SCH-EARLY'), isTrue);
+      expect(webPh.canDeleteSaleChallan('SCH-LATE'), isFalse);
+    });
+
+    test('Scenario 16: UUID identity separation - tombstone on UUID-A never deletes or collides with reclaimed UUID-B', () {
+      final deltaMerge = DeltaMergeEngine();
+      final List<SaleChallan> currentMemory = [
+        makeSaleChallan(
+          id: 'UUID-B-RECLAIMED',
+          billNo: 'WSCH-1',
+          date: DateTime(2026, 4, 20),
+          originalFy: '2026-27',
+          status: 'Pending',
+        ),
+      ];
+
+      final Map<String, dynamic> incomingTombstones = {
+        's_challan': ['UUID-A-OLD-DELETED'],
+      };
+
+      final merged = deltaMerge.mergeSaleChallans(
+        current: currentMemory,
+        incoming: [],
+        tombstones: incomingTombstones['s_challan']!,
+      );
+
+      // UUID-B is completely safe from UUID-A tombstone!
+      expect(merged.length, equals(1));
+      expect(merged.single.id, equals('UUID-B-RECLAIMED'));
+      expect(merged.single.billNo, equals('WSCH-1'));
+    });
+
+    test('Scenario 17: Causal Lamport HWM resolution prevails across extreme clock skew', () {
+      final olderHighClockState = ChallanHwmState(
+        value: 4,
+        seq: 10,
+        gen: 1,
+        op: 'SET',
+        updatedAt: 2000000000000, // Year 2033 wall-clock
+      );
+
+      final newerLowClockState = ChallanHwmState(
+        value: 2,
+        seq: 11,
+        gen: 2, // Higher Lamport generation wins
+        op: 'ROLLBACK',
+        updatedAt: 1000000000000, // Year 2001 wall-clock (severe backward skew)
+      );
+
+      final resolved = resolveCausalHwmState(
+        'COMP::2026-27::SALE_CHALLAN::WEB::WSCH-',
+        olderHighClockState,
+        newerLowClockState,
+        recordFloor: 0,
+      );
+
+      expect(resolved.value, equals(2));
+      expect(resolved.op, equals('ROLLBACK'));
+      expect(resolved.gen, equals(2));
+
+      // With an active record floor of 3, rollback to 2 is clamped safely to 3
+      final clamped = resolveCausalHwmState(
+        'COMP::2026-27::SALE_CHALLAN::WEB::WSCH-',
+        olderHighClockState,
+        newerLowClockState,
+        recordFloor: 3,
+      );
+      expect(clamped.value, equals(3));
+    });
+
+    test('Scenario 18: Audit logging produces structured LogEntry on both Cancel and Delete', () {
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+
+      final ch = makeSaleChallan(
+        id: 'SCH-LOG-1',
+        billNo: 'WSCH-1',
+        date: DateTime(2026, 4, 1),
+        originalFy: '2026-27',
+      )..salesmanName = 'WEB-PORTAL';
+
+      webPh.saleChallans = [ch];
+
+      expect(webPh.cancelSaleChallan('SCH-LOG-1'), isTrue);
+      expect(webPh.logs.any((l) => l.action == 'CHALLAN_CANCELLED'), isTrue);
+
+      // Now delete tail
+      expect(webPh.deleteSaleChallan('SCH-LOG-1'), isTrue);
+      expect(webPh.logs.any((l) => l.action == 'CHALLAN_DELETED'), isTrue);
+    });
+
+    test('Scenario 19: Legacy Web HWM self-heal on load cleans up stale counter=1 for empty store', () async {
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+      webPh.appConfig.challanHwm = {'2026-27::SALE_CHALLAN::WEB::WSCH-': 1};
+      webPh.saleChallans = [];
+
+      WebPharoahNumberingEngine.reconcileLegacyHwmOnLoad(
+        configHwm: webPh.appConfig.challanHwm,
+        fy: '2026-27',
+        activeChallans: webPh.saleChallans,
+      );
+
+      expect(webPh.appConfig.challanHwm['2026-27::SALE_CHALLAN::WEB::WSCH-'], equals(0));
+
+      final nextNo = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'WSCH-',
+        startFrom: 1,
+        currentList: webPh.saleChallans,
+        targetFy: '2026-27',
+        env: 'WEB',
+        configHwm: webPh.appConfig.challanHwm,
+      );
+      expect(nextNo, equals('WSCH-1'));
     });
   });
 }
-

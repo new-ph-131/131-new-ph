@@ -26,7 +26,7 @@ class SaleChallanMechanism {
       final idx = webPh.saleChallans.indexWhere((c) => c.id.trim() == existingId.trim());
       if (idx != -1) {
         existingCh = webPh.saleChallans[idx];
-        if (existingCh.status == "Billed") {
+        if (existingCh.status == "Billed" || existingCh.status == "Cancelled") {
           return false;
         }
       }
