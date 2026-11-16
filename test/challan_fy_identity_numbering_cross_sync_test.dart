@@ -1616,7 +1616,6 @@ void main() {
       );
       WebPharoahNumberingEngine.recordChallanHwm(
         companyID: compId,
-        type: 'SALE_CHALLAN',
         prefix: 'WSCH-',
         number: 'WSCH-5',
         fy: '2026-27',
@@ -1646,7 +1645,6 @@ void main() {
         startFrom: 1,
         targetFy: '2026-27',
         env: 'WEB',
-        companyID: compId,
         currentList: const [],
       );
       expect(afterRestartApp, equals('SCH-6'));
