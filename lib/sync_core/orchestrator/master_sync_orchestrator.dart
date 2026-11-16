@@ -79,6 +79,11 @@ class MasterSyncOrchestrator {
         final String normTargetFy = normalizeFyString(targetFy);
         final String cleanSyncId = envelope.syncId.trim();
         final String envBNo = (envelope.billData['billNo'] ?? '').toString().trim().toUpperCase();
+
+        // 🛡️ CRITICAL FY DIRECTION GUARD (#PH-CHALLAN-FY-ISOLATION):
+        // Future-FY records (eventFy > targetFy) must NEVER leak into active older FY memory!
+        final bool isFutureEvent = normEventFy.isNotEmpty && normTargetFy.isNotEmpty && compareFyStrings(normEventFy, normTargetFy) > 0;
+
         if (phWeb != null && normEventFy.isNotEmpty && normEventFy != normTargetFy &&
             ((isDelEnv && (docType == 'SALE' || docType == 'PURCHASE' || isChallanDoc)) || isChallanDoc)) {
           final bool vaultChanged = phWeb.applyCrossFyBatchEnvelopeToVault(
@@ -86,10 +91,18 @@ class MasterSyncOrchestrator {
             docType: docType,
             envelope: envelope,
           );
-          if (!isChallanDoc) {
+          if (!isChallanDoc || isFutureEvent) {
+            // 🛡️ Future challans routed directly to vault slice; purge any accidental local copy in active view
+            if (isChallanDoc && isFutureEvent && cleanSyncId.isNotEmpty) {
+              if (docType == 'PURCHASE_CHALLAN') {
+                phWeb.purchaseChallans.removeWhere((c) => c.id.trim() == cleanSyncId);
+              } else {
+                phWeb.saleChallans.removeWhere((c) => c.id.trim() == cleanSyncId);
+              }
+            }
             return vaultChanged;
           }
-          // Strictly ID-matched for carry-forward active memory fall-through
+          // Strictly ID-matched for carry-forward active memory fall-through (Old FY -> New FY only)
           final bool existsInActiveWeb = isChallanDoc && (
             docType == 'PURCHASE_CHALLAN'
               ? phWeb.purchaseChallans.any((c) => cleanSyncId.isNotEmpty
@@ -110,7 +123,14 @@ class MasterSyncOrchestrator {
               docType: docType,
               envelope: envelope,
             ));
-            if (!isChallanDoc) {
+            if (!isChallanDoc || isFutureEvent) {
+              if (isChallanDoc && isFutureEvent && cleanSyncId.isNotEmpty) {
+                if (docType == 'PURCHASE_CHALLAN') {
+                  phApp.purchaseChallans.removeWhere((c) => c.id.trim() == cleanSyncId);
+                } else {
+                  phApp.saleChallans.removeWhere((c) => c.id.trim() == cleanSyncId);
+                }
+              }
               return false;
             }
           }
@@ -173,6 +193,7 @@ class MasterSyncOrchestrator {
                 )) {
                   if (c.status != 'Pending') {
                     c.status = 'Pending';
+                    c.clearBilledMeta();
                     c.version += 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, "", targetFy);
@@ -185,6 +206,7 @@ class MasterSyncOrchestrator {
                       isPurchase: false,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      clearBilledMeta: true,
                     );
                     revMut = true;
                   }
@@ -218,8 +240,13 @@ class MasterSyncOrchestrator {
                   billPartyId: billPartyId,
                   billFy: targetFy,
                 )) {
-                  if (c.status != 'Billed') {
-                    c.status = 'Billed';
+                  if (c.status != 'Billed' || c.billedInvoiceNo.isEmpty) {
+                    c.markBilled(
+                      invoiceFy: targetFy,
+                      invoiceId: envelope.syncId,
+                      invoiceNo: sBNo,
+                      invoiceDate: _extractEnvelopeDate(sBill),
+                    );
                     c.version = envelope.version > c.version ? envelope.version : c.version + 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     phApp.propagateChallanStatusAcrossDiskFolders(
@@ -228,6 +255,10 @@ class MasterSyncOrchestrator {
                       isPurchase: false,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      billedInFy: targetFy,
+                      billedInvoiceId: envelope.syncId,
+                      billedInvoiceNo: sBNo,
+                      billedDate: _extractEnvelopeDate(sBill)?.toIso8601String(),
                     );
                     cMutated = true;
                   }
@@ -305,6 +336,7 @@ class MasterSyncOrchestrator {
                 )) {
                   if (c.status != 'Pending') {
                     c.status = 'Pending';
+                    c.clearBilledMeta();
                     c.version += 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, c.internalNo, targetFy);
@@ -318,6 +350,7 @@ class MasterSyncOrchestrator {
                       isPurchase: true,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      clearBilledMeta: true,
                     );
                     revMut = true;
                   }
@@ -381,8 +414,13 @@ class MasterSyncOrchestrator {
                   billPartyId: (billData['partyId'] ?? '').toString().trim(),
                   billFy: targetFy,
                 )) {
-                  if (c.status != 'Billed') {
-                    c.status = 'Billed';
+                  if (c.status != 'Billed' || c.billedInvoiceNo.isEmpty) {
+                    c.markBilled(
+                      invoiceFy: targetFy,
+                      invoiceId: envelope.syncId,
+                      invoiceNo: bNo.isNotEmpty ? bNo : iNo,
+                      invoiceDate: _extractEnvelopeDate(billData),
+                    );
                     c.version = envelope.version > c.version ? envelope.version : c.version + 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     phApp.propagateChallanStatusAcrossDiskFolders(
@@ -391,6 +429,10 @@ class MasterSyncOrchestrator {
                       isPurchase: true,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      billedInFy: targetFy,
+                      billedInvoiceId: envelope.syncId,
+                      billedInvoiceNo: bNo.isNotEmpty ? bNo : iNo,
+                      billedDate: _extractEnvelopeDate(billData)?.toIso8601String(),
                     );
                     cMutated = true;
                   }
@@ -947,6 +989,7 @@ class MasterSyncOrchestrator {
                 )) {
                   if (c.status != 'Pending') {
                     c.status = 'Pending';
+                    c.clearBilledMeta();
                     c.version += 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     phWeb.unmarkDeletedId(c.id, referenceNo: c.billNo, fy: targetFy);
@@ -957,6 +1000,7 @@ class MasterSyncOrchestrator {
                       isPurchase: false,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      clearBilledMeta: true,
                     );
                     revMut = true;
                   }
@@ -984,8 +1028,13 @@ class MasterSyncOrchestrator {
                   billPartyId: billPartyId,
                   billFy: targetFy,
                 )) {
-                  if (c.status != 'Billed') {
-                    c.status = 'Billed';
+                  if (c.status != 'Billed' || c.billedInvoiceNo.isEmpty) {
+                    c.markBilled(
+                      invoiceFy: targetFy,
+                      invoiceId: envelope.syncId,
+                      invoiceNo: sBNo,
+                      invoiceDate: _extractEnvelopeDate(sBill),
+                    );
                     c.version = envelope.version > c.version ? envelope.version : c.version + 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     phWeb.propagateChallanStatusAcrossVault(
@@ -994,6 +1043,10 @@ class MasterSyncOrchestrator {
                       isPurchase: false,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      billedInFy: targetFy,
+                      billedInvoiceId: envelope.syncId,
+                      billedInvoiceNo: sBNo,
+                      billedDate: _extractEnvelopeDate(sBill)?.toIso8601String(),
                     );
                     cMutated = true;
                   }
@@ -1056,6 +1109,7 @@ class MasterSyncOrchestrator {
                 )) {
                   if (c.status != 'Pending') {
                     c.status = 'Pending';
+                    c.clearBilledMeta();
                     c.version += 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     phWeb.unmarkDeletedId(c.id, referenceNo: c.internalNo, fy: targetFy);
@@ -1069,6 +1123,7 @@ class MasterSyncOrchestrator {
                       isPurchase: true,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      clearBilledMeta: true,
                     );
                     revMut = true;
                   }
@@ -1118,8 +1173,13 @@ class MasterSyncOrchestrator {
                   billPartyId: (billData['partyId'] ?? '').toString().trim(),
                   billFy: targetFy,
                 )) {
-                  if (c.status != 'Billed') {
-                    c.status = 'Billed';
+                  if (c.status != 'Billed' || c.billedInvoiceNo.isEmpty) {
+                    c.markBilled(
+                      invoiceFy: targetFy,
+                      invoiceId: envelope.syncId,
+                      invoiceNo: bNo.isNotEmpty ? bNo : iNo,
+                      invoiceDate: _extractEnvelopeDate(billData),
+                    );
                     c.version = envelope.version > c.version ? envelope.version : c.version + 1;
                     c.updatedAt = envelope.updatedAt > 0 ? envelope.updatedAt : DateTime.now().millisecondsSinceEpoch;
                     phWeb.propagateChallanStatusAcrossVault(
@@ -1128,6 +1188,10 @@ class MasterSyncOrchestrator {
                       isPurchase: true,
                       customVersion: c.version,
                       customUpdatedAt: c.updatedAt,
+                      billedInFy: targetFy,
+                      billedInvoiceId: envelope.syncId,
+                      billedInvoiceNo: bNo.isNotEmpty ? bNo : iNo,
+                      billedDate: _extractEnvelopeDate(billData)?.toIso8601String(),
                     );
                     cMutated = true;
                   }

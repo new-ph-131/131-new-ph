@@ -532,6 +532,10 @@ class PharoahWebManager with ChangeNotifier {
                     try {
                       final localArr = jsonDecode(mergedYearFiles[fname]!) as List;
                       final cloudArr = jsonDecode(fcontent) as List;
+                      if (fname == 's_challan.json' || fname == 'p_challan.json') {
+                        localArr.removeWhere((item) => item is Map && isFutureFyRecord((item['originalFy'] ?? item['original_fy'] ?? '').toString(), cleanFy));
+                        cloudArr.removeWhere((item) => item is Map && isFutureFyRecord((item['originalFy'] ?? item['original_fy'] ?? '').toString(), cleanFy));
+                      }
                       String itemPrimaryKey(Map m) {
                         final rawId = (m['id'] ?? '').toString().trim();
                         if (rawId.isNotEmpty) return rawId;
@@ -1219,6 +1223,7 @@ class PharoahWebManager with ChangeNotifier {
         }
       }
       saleChallans = masterSChMap.values.where((c) {
+        if (isFutureFyRecord(c.effectiveOriginalFy, financialYear)) return false;
         final bNo = c.billNo.trim().toUpperCase();
         final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : financialYear;
         if (c.id.isNotEmpty && (deletedRecordIds.contains(c.id) || deletedRecordIds.contains(c.id.toUpperCase()))) return false;
@@ -1321,6 +1326,7 @@ class PharoahWebManager with ChangeNotifier {
         }
       }
       purchaseChallans = masterPChMap.values.where((c) {
+        if (isFutureFyRecord(c.effectiveOriginalFy, financialYear)) return false;
         final iNo = c.internalNo.trim().toUpperCase();
         final bNo = c.billNo.trim();
         final pId = c.partyId.trim().toUpperCase();
@@ -1893,6 +1899,7 @@ class PharoahWebManager with ChangeNotifier {
         if (vaultScList != null) {
           for (final vc in vaultScList) {
             if (vc.isDeleted == 1) continue;
+            if (isFutureFyRecord(vc.effectiveOriginalFy, financialYear)) continue;
             final cleanId = vc.id.trim();
             final cleanBNo = vc.billNo.trim().toUpperCase();
             if (cleanId.isNotEmpty &&
@@ -1940,6 +1947,7 @@ class PharoahWebManager with ChangeNotifier {
         if (vaultPcList != null) {
           for (final vc in vaultPcList) {
             if (vc.isDeleted == 1) continue;
+            if (isFutureFyRecord(vc.effectiveOriginalFy, financialYear)) continue;
             final cleanId = vc.id.trim();
             final cleanINo = vc.internalNo.trim().toUpperCase();
             final cleanBNo = vc.billNo.trim();
@@ -1972,6 +1980,8 @@ class PharoahWebManager with ChangeNotifier {
       } catch (_) {}
     }
 
+    saleChallans.removeWhere((c) => isFutureFyRecord(c.effectiveOriginalFy, financialYear));
+    purchaseChallans.removeWhere((c) => isFutureFyRecord(c.effectiveOriginalFy, financialYear));
     // 4. Rebuild live inventory stock from updated opening batches
     rebuildInventory();
   }
@@ -2672,8 +2682,13 @@ class PharoahWebManager with ChangeNotifier {
           billPartyId: sale.partyId,
           billFy: financialYear,
         )) {
-          if (ch.status != "Billed") {
-            ch.status = "Billed";
+          if (ch.status != "Billed" || ch.billedInvoiceNo.isEmpty) {
+            ch.markBilled(
+              invoiceFy: financialYear,
+              invoiceId: sale.id,
+              invoiceNo: sale.billNo,
+              invoiceDate: sale.date,
+            );
             ch.version += 1;
             ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
             SaleChallanSyncModule.onSaleChallanSaved(ch, activeStoreToken);
@@ -2683,6 +2698,10 @@ class PharoahWebManager with ChangeNotifier {
               isPurchase: false,
               customVersion: ch.version,
               customUpdatedAt: ch.updatedAt,
+              billedInFy: financialYear,
+              billedInvoiceId: sale.id,
+              billedInvoiceNo: sale.billNo,
+              billedDate: sale.date.toIso8601String(),
             );
           }
         }
@@ -2787,6 +2806,7 @@ class PharoahWebManager with ChangeNotifier {
             billFy: financialYear,
           )) {
             ch.status = "Pending";
+            ch.clearBilledMeta();
             ch.version += 1;
             ch.updatedAt = revTs;
             revertedChIds.add(ch.id);
@@ -2801,6 +2821,7 @@ class PharoahWebManager with ChangeNotifier {
               isPurchase: false,
               customVersion: ch.version,
               customUpdatedAt: revTs,
+              clearBilledMeta: true,
             );
           }
         }
@@ -2910,8 +2931,14 @@ class PharoahWebManager with ChangeNotifier {
           billPartyId: purchase.partyId,
           billFy: financialYear,
         )) {
-          if (ch.status != "Billed") {
-            ch.status = "Billed";
+          if (ch.status != "Billed" || ch.billedInvoiceNo.isEmpty) {
+            final String invNo = purchase.billNo.isNotEmpty ? purchase.billNo : purchase.internalNo;
+            ch.markBilled(
+              invoiceFy: financialYear,
+              invoiceId: purchase.id,
+              invoiceNo: invNo,
+              invoiceDate: purchase.date,
+            );
             ch.version += 1;
             ch.updatedAt = DateTime.now().millisecondsSinceEpoch;
             PurchaseChallanSyncModule.onPurchaseChallanSaved(ch, activeStoreToken);
@@ -2921,6 +2948,10 @@ class PharoahWebManager with ChangeNotifier {
               isPurchase: true,
               customVersion: ch.version,
               customUpdatedAt: ch.updatedAt,
+              billedInFy: financialYear,
+              billedInvoiceId: purchase.id,
+              billedInvoiceNo: invNo,
+              billedDate: purchase.date.toIso8601String(),
             );
           }
         }
@@ -3046,6 +3077,7 @@ class PharoahWebManager with ChangeNotifier {
             billFy: financialYear,
           )) {
             ch.status = "Pending";
+            ch.clearBilledMeta();
             ch.version += 1;
             ch.updatedAt = revTs;
             revertedChIds.add(ch.id);
@@ -3061,6 +3093,7 @@ class PharoahWebManager with ChangeNotifier {
               isPurchase: true,
               customVersion: ch.version,
               customUpdatedAt: revTs,
+              clearBilledMeta: true,
             );
           }
         }
@@ -3216,6 +3249,11 @@ class PharoahWebManager with ChangeNotifier {
     required bool isPurchase,
     int? customVersion,
     int? customUpdatedAt,
+    String? billedInFy,
+    String? billedInvoiceId,
+    String? billedInvoiceNo,
+    String? billedDate,
+    bool clearBilledMeta = false,
   }) {
     if (challanId.trim().isEmpty || fyVault.isEmpty) return;
     final String cleanTargetId = challanId.trim();
@@ -3232,6 +3270,10 @@ class PharoahWebManager with ChangeNotifier {
         bool modified = false;
         final updatedList = raw.map((item) {
           if (item is Map && (item['id'] ?? '').toString().trim() == cleanTargetId) {
+            final String itemOfy = (item['originalFy'] ?? item['original_fy'] ?? '').toString().trim();
+            if (itemOfy.isNotEmpty && compareFyStrings(vaultFy, itemOfy) < 0) {
+              return item; // 🛡️ Never propagate into an FY older than challan origin
+            }
             if ((item['isDeleted'] ?? 0) != 1) {
               final int destVer = int.tryParse((item['version'] ?? 1).toString()) ?? 1;
               final int destTs = int.tryParse((item['updatedAt'] ?? 0).toString()) ?? 0;
@@ -3242,6 +3284,33 @@ class PharoahWebManager with ChangeNotifier {
               item['status'] = newStatus;
               item['version'] = targetVer;
               item['updatedAt'] = nowMs;
+              if (clearBilledMeta) {
+                item['billedInFy'] = '';
+                item['billed_in_fy'] = '';
+                item['billedInvoiceId'] = '';
+                item['billed_invoice_id'] = '';
+                item['billedInvoiceNo'] = '';
+                item['billed_invoice_no'] = '';
+                item['billedDate'] = '';
+                item['billed_date'] = '';
+              } else {
+                if (billedInFy != null && billedInFy.isNotEmpty) {
+                  item['billedInFy'] = billedInFy;
+                  item['billed_in_fy'] = billedInFy;
+                }
+                if (billedInvoiceId != null && billedInvoiceId.isNotEmpty) {
+                  item['billedInvoiceId'] = billedInvoiceId;
+                  item['billed_invoice_id'] = billedInvoiceId;
+                }
+                if (billedInvoiceNo != null && billedInvoiceNo.isNotEmpty) {
+                  item['billedInvoiceNo'] = billedInvoiceNo;
+                  item['billed_invoice_no'] = billedInvoiceNo;
+                }
+                if (billedDate != null && billedDate.isNotEmpty) {
+                  item['billedDate'] = billedDate;
+                  item['billed_date'] = billedDate;
+                }
+              }
               modified = true;
             }
           }
@@ -3294,6 +3363,54 @@ class PharoahWebManager with ChangeNotifier {
       } catch (_) {}
     }
     return (shiftedFy: shiftedFy, billedFy: billedFy);
+  }
+
+  /// Resolves the billed invoice number for a challan, checking memory then searching vault bills
+  String? getBilledInvoiceNoForChallan(
+    String challanId, {
+    required bool isPurchase,
+    String? forwardFy,
+  }) {
+    final cleanId = challanId.trim();
+    if (cleanId.isEmpty) return null;
+    if (isPurchase) {
+      for (final c in purchaseChallans) {
+        if (c.id.trim() == cleanId && c.billedInvoiceNo.trim().isNotEmpty) {
+          return c.billedInvoiceNo.trim();
+        }
+      }
+    } else {
+      for (final c in saleChallans) {
+        if (c.id.trim() == cleanId && c.billedInvoiceNo.trim().isNotEmpty) {
+          return c.billedInvoiceNo.trim();
+        }
+      }
+    }
+    final String targetFy = forwardFy ?? financialYear;
+    final files = fyVault[targetFy];
+    if (files != null) {
+      final String fn = isPurchase ? 'purc.json' : 'sales.json';
+      if (files.containsKey(fn) && files[fn] != null) {
+        try {
+          final raw = jsonDecode(files[fn]!);
+          if (raw is List) {
+            for (final b in raw) {
+              if (b is Map && (b['isDeleted'] ?? 0) != 1) {
+                final links = ChallanLinkMatcher.extractLinks(
+                  linkedChallanIds: (b['linkedChallanIds'] is List) ? (b['linkedChallanIds'] as List) : const [],
+                  items: (b['items'] is List) ? (b['items'] as List) : const [],
+                );
+                if (links.explicitIds.contains(cleanId.toUpperCase())) {
+                  final String bNo = (b['billNo'] ?? b['internalNo'] ?? '').toString().trim();
+                  if (bNo.isNotEmpty) return bNo;
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    return null;
   }
 
   /// 🛡️ CROSS-FY PENDING CHALLAN DELETION PROPAGATOR (Web In-Memory Vault):

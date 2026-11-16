@@ -82,6 +82,30 @@ class PharoahManager with ChangeNotifier {
     return _forwardChallanStatusCache[key] ?? (shiftedFy: null, billedFy: null);
   }
 
+  /// Resolves the billed invoice number for a challan from active memory
+  String? getBilledInvoiceNoForChallan(
+    String challanId, {
+    required bool isPurchase,
+    String? forwardFy,
+  }) {
+    final cleanId = challanId.trim();
+    if (cleanId.isEmpty) return null;
+    if (isPurchase) {
+      for (final c in purchaseChallans) {
+        if (c.id.trim() == cleanId && c.billedInvoiceNo.trim().isNotEmpty) {
+          return c.billedInvoiceNo.trim();
+        }
+      }
+    } else {
+      for (final c in saleChallans) {
+        if (c.id.trim() == cleanId && c.billedInvoiceNo.trim().isNotEmpty) {
+          return c.billedInvoiceNo.trim();
+        }
+      }
+    }
+    return null;
+  }
+
   Future<void> _refreshForwardChallanStatusCache() async {
     _forwardChallanStatusCache.clear();
     if (activeCompany == null || activeCompany!.fYears.length < 2 || currentFY.trim().isEmpty) {
@@ -652,6 +676,7 @@ class PharoahManager with ChangeNotifier {
           .toList();
       saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e)).where((c) {
         if (c.isDeleted == 1) return false;
+        if (isFutureFyRecord(c.effectiveOriginalFy, currentFY)) return false;
         final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
         if (c.status == "Pending" || c.status == "Active" || c.status == "Billed" || c.status == "Cancelled") {
           return !D1SalesLedgerService.isSaleChallanIdDeleted(c.id, cFy);
@@ -660,6 +685,7 @@ class PharoahManager with ChangeNotifier {
       }).toList();
       purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e)).where((c) {
         if (c.isDeleted == 1) return false;
+        if (isFutureFyRecord(c.effectiveOriginalFy, currentFY)) return false;
         final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
         if (c.status == "Pending" || c.status == "Active" || c.status == "Billed" || c.status == "Cancelled") {
           return !D1SalesLedgerService.isPurchaseIdDeleted(c.id, cFy);
@@ -882,8 +908,13 @@ Future<void> finalizeSale({
           billPartyId: p.id,
           billFy: currentFY,
         )) {
-          if (c.status != "Billed") {
-            c.status = "Billed";
+          if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+            c.markBilled(
+              invoiceFy: currentFY,
+              invoiceId: newFinalSale.id,
+              invoiceNo: newFinalSale.billNo,
+              invoiceDate: newFinalSale.date,
+            );
             c.version += 1;
             c.updatedAt = DateTime.now().millisecondsSinceEpoch;
             if (activeToken.isNotEmpty) {
@@ -895,6 +926,10 @@ Future<void> finalizeSale({
               isPurchase: false,
               customVersion: c.version,
               customUpdatedAt: c.updatedAt,
+              billedInFy: currentFY,
+              billedInvoiceId: newFinalSale.id,
+              billedInvoiceNo: newFinalSale.billNo,
+              billedDate: newFinalSale.date.toIso8601String(),
             );
           }
         }
@@ -1059,8 +1094,14 @@ Future<bool> finalizePurchase({
           billPartyId: party.id,
           billFy: currentFY,
         )) {
-          if (c.status != "Billed") {
-            c.status = "Billed";
+          if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+            final String invNo = newFinalPurchase.billNo.isNotEmpty ? newFinalPurchase.billNo : newFinalPurchase.internalNo;
+            c.markBilled(
+              invoiceFy: currentFY,
+              invoiceId: newFinalPurchase.id,
+              invoiceNo: invNo,
+              invoiceDate: newFinalPurchase.date,
+            );
             c.version += 1;
             c.updatedAt = DateTime.now().millisecondsSinceEpoch;
             if (activeToken.isNotEmpty) {
@@ -1072,6 +1113,10 @@ Future<bool> finalizePurchase({
               isPurchase: true,
               customVersion: c.version,
               customUpdatedAt: c.updatedAt,
+              billedInFy: currentFY,
+              billedInvoiceId: newFinalPurchase.id,
+              billedInvoiceNo: invNo,
+              billedDate: newFinalPurchase.date.toIso8601String(),
             );
           }
         }
@@ -1347,6 +1392,11 @@ Future<bool> finalizePurchase({
     required bool isPurchase,
     int? customVersion,
     int? customUpdatedAt,
+    String? billedInFy,
+    String? billedInvoiceId,
+    String? billedInvoiceNo,
+    String? billedDate,
+    bool clearBilledMeta = false,
   }) async {
     if (activeCompany == null || challanId.trim().isEmpty) return;
     try {
@@ -1365,6 +1415,10 @@ Future<bool> finalizePurchase({
         bool modified = false;
         final updatedList = raw.map((item) {
           if (item is Map && (item['id'] ?? '').toString().trim() == cleanTargetId) {
+            final String itemOfy = (item['originalFy'] ?? item['original_fy'] ?? '').toString().trim();
+            if (itemOfy.isNotEmpty && compareFyStrings(fy, itemOfy) < 0) {
+              return item; // 🛡️ Never propagate into an FY older than challan origin
+            }
             if ((item['isDeleted'] ?? 0) != 1) {
               final int destVer = int.tryParse((item['version'] ?? 1).toString()) ?? 1;
               final int destTs = int.tryParse((item['updatedAt'] ?? 0).toString()) ?? 0;
@@ -1375,6 +1429,33 @@ Future<bool> finalizePurchase({
               item['status'] = newStatus;
               item['version'] = targetVer;
               item['updatedAt'] = nowMs;
+              if (clearBilledMeta) {
+                item['billedInFy'] = '';
+                item['billed_in_fy'] = '';
+                item['billedInvoiceId'] = '';
+                item['billed_invoice_id'] = '';
+                item['billedInvoiceNo'] = '';
+                item['billed_invoice_no'] = '';
+                item['billedDate'] = '';
+                item['billed_date'] = '';
+              } else {
+                if (billedInFy != null && billedInFy.isNotEmpty) {
+                  item['billedInFy'] = billedInFy;
+                  item['billed_in_fy'] = billedInFy;
+                }
+                if (billedInvoiceId != null && billedInvoiceId.isNotEmpty) {
+                  item['billedInvoiceId'] = billedInvoiceId;
+                  item['billed_invoice_id'] = billedInvoiceId;
+                }
+                if (billedInvoiceNo != null && billedInvoiceNo.isNotEmpty) {
+                  item['billedInvoiceNo'] = billedInvoiceNo;
+                  item['billed_invoice_no'] = billedInvoiceNo;
+                }
+                if (billedDate != null && billedDate.isNotEmpty) {
+                  item['billedDate'] = billedDate;
+                  item['billed_date'] = billedDate;
+                }
+              }
               modified = true;
             }
           }
@@ -3378,6 +3459,7 @@ void registerBatchActivity({
             billFy: delFy,
           )) {
             c.status = "Pending";
+            c.clearBilledMeta();
             c.version += 1;
             c.updatedAt = revTs;
             revertedChallans.add(c);
@@ -3392,6 +3474,7 @@ void registerBatchActivity({
               isPurchase: false,
               customVersion: c.version,
               customUpdatedAt: revTs,
+              clearBilledMeta: true,
             );
           }
         }
@@ -3496,6 +3579,7 @@ void registerBatchActivity({
             billFy: delFy,
           )) {
             c.status = "Pending";
+            c.clearBilledMeta();
             c.version += 1;
             c.updatedAt = revTs;
             revertedPChallans.add(c);
@@ -3510,6 +3594,7 @@ void registerBatchActivity({
               isPurchase: true,
               customVersion: c.version,
               customUpdatedAt: revTs,
+              clearBilledMeta: true,
             );
           }
         }

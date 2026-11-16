@@ -82,9 +82,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
   }
 
   bool _isCarryForwardChallan(String effectiveOriginalFy, String currentFy) {
-    final ofy = normalizeFyString(effectiveOriginalFy);
-    final curr = normalizeFyString(currentFy);
-    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+    return isStrictCarryForwardFy(effectiveOriginalFy, currentFy);
   }
 
   bool _isChallanEligible(DateTime dt, String effectiveOriginalFy, String currentFy) {

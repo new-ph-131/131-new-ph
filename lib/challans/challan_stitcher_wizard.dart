@@ -277,9 +277,7 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   }
 
   bool _isCarryForwardChallan(String effectiveOriginalFy, String currentFy) {
-    final ofy = normalizeFyString(effectiveOriginalFy);
-    final curr = normalizeFyString(currentFy);
-    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+    return isStrictCarryForwardFy(effectiveOriginalFy, currentFy);
   }
 
   Widget _stepMode(PharoahManager ph, Color color) => Center(child: Padding(padding: const EdgeInsets.all(30.0), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

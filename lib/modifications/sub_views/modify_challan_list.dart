@@ -50,7 +50,7 @@ class ModifyChallanList extends StatelessWidget {
         final String ofy = isSale ? (ch as SaleChallan).effectiveOriginalFy : (ch as PurchaseChallan).effectiveOriginalFy;
         final bool hasValidDt = isSale ? (ch as SaleChallan).hasValidDate : (ch as PurchaseChallan).hasValidDate;
         final String currFy = normalizeFyString(ph.currentFY);
-        final bool isCarry = ofy.isEmpty || (currFy.isNotEmpty && ofy != currFy);
+        final bool isCarry = isStrictCarryForwardFy(ofy, currFy);
         final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: !isSale);
         final String cfTag = (!hasValidDt && ofy.isEmpty) ? "CF / LEGACY" : (ofy.isNotEmpty ? "CF • $ofy" : "CF / LEGACY");
         final String fwdTag = fwd.billedFy != null

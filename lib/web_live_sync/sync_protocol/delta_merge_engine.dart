@@ -159,6 +159,9 @@ class DeltaMergeEngine {
         final bool isChallanDoc = isSaleChallanDoc || isPurcChallanDoc;
         final String rawItemFy = (cloudMap["originalFy"] ?? cloudMap["original_fy"] ?? cloudMap["fy"] ?? "").toString().trim();
         final String effDocFy = (isChallanDoc && rawItemFy.isNotEmpty) ? rawItemFy : activeFy;
+        if (isChallanDoc && rawItemFy.isNotEmpty && isFutureFyRecord(rawItemFy, activeFy)) {
+          continue; // 🛡️ Drop future-FY challan from leaking into active older FY
+        }
         final bool isBilledChallan = isChallanDoc && (cloudMap["status"] ?? "").toString().trim() == "Billed";
 
         final bool isCompositeDoc = getCloudCompositeKey != null;

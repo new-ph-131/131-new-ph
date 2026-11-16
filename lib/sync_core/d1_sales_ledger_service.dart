@@ -1325,8 +1325,14 @@ class D1SalesLedgerService {
             billPartyId: billPartyId,
             billFy: billFy,
           );
-          if (match && ch.status != "Billed" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
-            ch.status = "Billed";
+          final String invNo = (rawData is Map ? (rawData["billNo"] ?? rawData["internalNo"] ?? billNo) : billNo).toString().trim();
+          if (match && (ch.status != "Billed" || ch.billedInvoiceNo.isEmpty) && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
+            ch.markBilled(
+              invoiceFy: billFy,
+              invoiceId: billId,
+              invoiceNo: invNo,
+              invoiceDate: evDate,
+            );
             ch.version = (ch.version < evVer ? evVer : ch.version) + 1;
             ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
             onPurchaseChallanBilled?.call(ch);
@@ -1343,8 +1349,14 @@ class D1SalesLedgerService {
             billPartyId: billPartyId,
             billFy: billFy,
           );
-          if (match && ch.status != "Billed" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
-            ch.status = "Billed";
+          final String invNo = (rawData is Map ? (rawData["billNo"] ?? billNo) : billNo).toString().trim();
+          if (match && (ch.status != "Billed" || ch.billedInvoiceNo.isEmpty) && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
+            ch.markBilled(
+              invoiceFy: billFy,
+              invoiceId: billId,
+              invoiceNo: invNo,
+              invoiceDate: evDate,
+            );
             ch.version = (ch.version < evVer ? evVer : ch.version) + 1;
             ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
             onSaleChallanBilled?.call(ch);
@@ -1471,6 +1483,7 @@ class D1SalesLedgerService {
             );
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
               ch.status = "Pending";
+              ch.clearBilledMeta();
               ch.version = (ch.version < 1 ? 1 : ch.version) + 1;
               ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
               unmarkPurchasePermanentlyDeleted(ch.id, ch.partyId, ch.billNo, ch.internalNo, effFy);
@@ -1506,6 +1519,7 @@ class D1SalesLedgerService {
             );
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
               ch.status = "Pending";
+              ch.clearBilledMeta();
               ch.version = (ch.version < 1 ? 1 : ch.version) + 1;
               ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
               unmarkPermanentlyDeleted(ch.id, ch.billNo, "", effFy);
@@ -2033,12 +2047,17 @@ class D1SalesLedgerService {
         final String challanFy = incoming.effectiveOriginalFy.isNotEmpty ? incoming.effectiveOriginalFy : effFy;
 
         // FY Isolation with Cross-FY Pending Challan support on active memory list
-        if (effFy.isNotEmpty && challanFy.isNotEmpty && challanFy != effFy) {
-          final bool alreadyInLocal = incoming.id.trim().isNotEmpty && localChallans.any((c) => c.id.trim() == incoming.id.trim());
-          final bool isCrossFyPendingAllowed = !isStrictFyVaultSlice &&
-              (incoming.status.trim().toUpperCase() == "PENDING" || alreadyInLocal);
-          if (!isCrossFyPendingAllowed) {
-            continue;
+        if (effFy.isNotEmpty && challanFy.isNotEmpty) {
+          if (compareFyStrings(challanFy, effFy) > 0) {
+            continue; // 🛡️ Hard reject: Future-FY challan must NEVER enter older FY local list!
+          }
+          if (challanFy != effFy) {
+            final bool alreadyInLocal = incoming.id.trim().isNotEmpty && localChallans.any((c) => c.id.trim() == incoming.id.trim());
+            final bool isCrossFyPendingAllowed = !isStrictFyVaultSlice &&
+                (incoming.status.trim().toUpperCase() == "PENDING" || alreadyInLocal);
+            if (!isCrossFyPendingAllowed) {
+              continue;
+            }
           }
         }
 
@@ -2079,6 +2098,12 @@ class D1SalesLedgerService {
           }
           if (version > local.version ||
               (version == local.version && incoming.updatedAt >= local.updatedAt)) {
+            if (incoming.status == "Billed" && incoming.billedInvoiceNo.isEmpty && local.billedInvoiceNo.isNotEmpty) {
+              incoming.billedInFy = local.billedInFy;
+              incoming.billedInvoiceId = local.billedInvoiceId;
+              incoming.billedInvoiceNo = local.billedInvoiceNo;
+              incoming.billedDate = local.billedDate;
+            }
             localChallans[existingIdx] = incoming;
             mutated = true;
           }
@@ -2523,12 +2548,17 @@ class D1SalesLedgerService {
         }
         final String challanFy = incoming.effectiveOriginalFy.isNotEmpty ? incoming.effectiveOriginalFy : effFy;
 
-        if (effFy.isNotEmpty && challanFy.isNotEmpty && challanFy != effFy) {
-          final bool alreadyInLocal = incoming.id.trim().isNotEmpty && localChallans.any((c) => c.id.trim() == incoming.id.trim());
-          final bool isCrossFyPendingAllowed = !isStrictFyVaultSlice &&
-              (incoming.status.trim().toUpperCase() == "PENDING" || alreadyInLocal);
-          if (!isCrossFyPendingAllowed) {
-            continue;
+        if (effFy.isNotEmpty && challanFy.isNotEmpty) {
+          if (compareFyStrings(challanFy, effFy) > 0) {
+            continue; // 🛡️ Hard reject: Future-FY purchase challan must NEVER enter older FY local list!
+          }
+          if (challanFy != effFy) {
+            final bool alreadyInLocal = incoming.id.trim().isNotEmpty && localChallans.any((c) => c.id.trim() == incoming.id.trim());
+            final bool isCrossFyPendingAllowed = !isStrictFyVaultSlice &&
+                (incoming.status.trim().toUpperCase() == "PENDING" || alreadyInLocal);
+            if (!isCrossFyPendingAllowed) {
+              continue;
+            }
           }
         }
 
@@ -2599,6 +2629,12 @@ class D1SalesLedgerService {
           }
           if (version > local.version ||
               (version == local.version && incoming.updatedAt >= local.updatedAt)) {
+            if (incoming.status == "Billed" && incoming.billedInvoiceNo.isEmpty && local.billedInvoiceNo.isNotEmpty) {
+              incoming.billedInFy = local.billedInFy;
+              incoming.billedInvoiceId = local.billedInvoiceId;
+              incoming.billedInvoiceNo = local.billedInvoiceNo;
+              incoming.billedDate = local.billedDate;
+            }
             localChallans[existingIdx] = incoming;
             mutated = true;
           }

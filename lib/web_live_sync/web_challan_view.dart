@@ -41,9 +41,7 @@ class _WebChallanViewState extends State<WebChallanView> {
   bool _isInit = false;
 
   bool _isCarryForward(String effectiveOriginalFy, String currentFy) {
-    final ofy = normalizeFyString(effectiveOriginalFy);
-    final curr = normalizeFyString(currentFy);
-    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+    return isStrictCarryForwardFy(effectiveOriginalFy, currentFy);
   }
 
   @override
@@ -139,14 +137,24 @@ class _WebChallanViewState extends State<WebChallanView> {
     final filtered = list.where((c) {
       if (c.isDeleted == 1) return false;
       final bool isCancelled = c.status == "Cancelled";
+      final bool isPending = c.status == "Pending";
+      final bool isBilled = c.status == "Billed";
       if (statusFilter == "ACTIVE" && isCancelled) return false;
+      if (statusFilter == "PENDING" && !isPending) return false;
+      if (statusFilter == "BILLED" && !isBilled) return false;
       if (statusFilter == "CANCELLED" && !isCancelled) return false;
       final cDateOnly = _dateOnly(c.date);
-      bool dateMatch = (!cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly)) || c.status == "Pending" || statusFilter == "CANCELLED";
+      bool isCarry = _isCarryForward(c.effectiveOriginalFy, webPh.financialYear);
+      final bool isBilledCfInActiveFy = isCarry && isBilled &&
+          (c.billedInFy.trim().isEmpty || normalizeFyString(c.billedInFy) == normalizeFyString(webPh.financialYear));
+      bool dateMatch = (!cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly)) ||
+          isPending ||
+          statusFilter == "CANCELLED" ||
+          statusFilter == "BILLED" ||
+          isBilledCfInActiveFy;
       bool searchMatch = registerSearch.isEmpty ||
           c.partyName.toLowerCase().contains(registerSearch.toLowerCase()) ||
           c.billNo.toString().toLowerCase().contains(registerSearch.toLowerCase());
-      bool isCarry = _isCarryForward(c.effectiveOriginalFy, webPh.financialYear);
       bool fyMatch = fyFilter == "ALL" ||
           (fyFilter == "CURRENT" && !isCarry) ||
           (fyFilter == "CARRY" && isCarry);
@@ -223,9 +231,16 @@ class _WebChallanViewState extends State<WebChallanView> {
                             const SizedBox(width: 6),
                             _fyTagBadge(cfLabel, const Color(0xFFA855F7)),
                           ],
+                          if (isCarry && isBilled && item.billedInvoiceNo.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge("BILL: ${item.billedInvoiceNo}", const Color(0xFF14B8A6)),
+                          ],
                           if (fwd.billedFy != null) ...[
                             const SizedBox(width: 6),
-                            _fyTagBadge("BILLED IN ${fwd.billedFy}", const Color(0xFF10B981)),
+                            Builder(builder: (_) {
+                              final inv = webPh.getBilledInvoiceNoForChallan(item.id, isPurchase: false, forwardFy: fwd.billedFy);
+                              return _fyTagBadge(inv != null && inv.isNotEmpty ? "BILLED IN ${fwd.billedFy} ($inv)" : "BILLED IN ${fwd.billedFy}", const Color(0xFF10B981));
+                            }),
                           ] else if (fwd.shiftedFy != null) ...[
                             const SizedBox(width: 6),
                             _fyTagBadge("SHIFTED → ${fwd.shiftedFy}", const Color(0xFF38BDF8)),
@@ -407,15 +422,25 @@ class _WebChallanViewState extends State<WebChallanView> {
     final filtered = list.where((c) {
       if (c.isDeleted == 1) return false;
       final bool isCancelled = c.status == "Cancelled";
+      final bool isPending = c.status == "Pending";
+      final bool isBilled = c.status == "Billed";
       if (statusFilter == "ACTIVE" && isCancelled) return false;
+      if (statusFilter == "PENDING" && !isPending) return false;
+      if (statusFilter == "BILLED" && !isBilled) return false;
       if (statusFilter == "CANCELLED" && !isCancelled) return false;
       final cDateOnly = _dateOnly(c.date);
-      bool dateMatch = (!cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly)) || c.status == "Pending" || statusFilter == "CANCELLED";
+      bool isCarry = _isCarryForward(c.effectiveOriginalFy, webPh.financialYear);
+      final bool isBilledCfInActiveFy = isCarry && isBilled &&
+          (c.billedInFy.trim().isEmpty || normalizeFyString(c.billedInFy) == normalizeFyString(webPh.financialYear));
+      bool dateMatch = (!cDateOnly.isBefore(fDateOnly) && !cDateOnly.isAfter(tDateOnly)) ||
+          isPending ||
+          statusFilter == "CANCELLED" ||
+          statusFilter == "BILLED" ||
+          isBilledCfInActiveFy;
       bool searchMatch = registerSearch.isEmpty ||
           c.distributorName.toLowerCase().contains(registerSearch.toLowerCase()) ||
           c.internalNo.toLowerCase().contains(registerSearch.toLowerCase()) ||
           c.billNo.toLowerCase().contains(registerSearch.toLowerCase());
-      bool isCarry = _isCarryForward(c.effectiveOriginalFy, webPh.financialYear);
       bool fyMatch = fyFilter == "ALL" ||
           (fyFilter == "CURRENT" && !isCarry) ||
           (fyFilter == "CARRY" && isCarry);
@@ -492,9 +517,16 @@ class _WebChallanViewState extends State<WebChallanView> {
                             const SizedBox(width: 6),
                             _fyTagBadge(cfLabel, const Color(0xFFA855F7)),
                           ],
+                          if (isCarry && isBilled && item.billedInvoiceNo.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _fyTagBadge("BILL: ${item.billedInvoiceNo}", const Color(0xFF14B8A6)),
+                          ],
                           if (fwd.billedFy != null) ...[
                             const SizedBox(width: 6),
-                            _fyTagBadge("BILLED IN ${fwd.billedFy}", const Color(0xFF10B981)),
+                            Builder(builder: (_) {
+                              final inv = webPh.getBilledInvoiceNoForChallan(item.id, isPurchase: true, forwardFy: fwd.billedFy);
+                              return _fyTagBadge(inv != null && inv.isNotEmpty ? "BILLED IN ${fwd.billedFy} ($inv)" : "BILLED IN ${fwd.billedFy}", const Color(0xFF10B981));
+                            }),
                           ] else if (fwd.shiftedFy != null) ...[
                             const SizedBox(width: 6),
                             _fyTagBadge("SHIFTED → ${fwd.shiftedFy}", const Color(0xFF38BDF8)),
@@ -947,9 +979,13 @@ class _WebChallanViewState extends State<WebChallanView> {
           const SizedBox(height: 8),
           Row(
             children: [
-              _webStatusFilterChip("ACTIVE CHALLANS", "ACTIVE"),
+              _webStatusFilterChip("ALL ACTIVE", "ACTIVE"),
               const SizedBox(width: 8),
-              _webStatusFilterChip("CANCELLED / AUDIT", "CANCELLED"),
+              _webStatusFilterChip("PENDING", "PENDING"),
+              const SizedBox(width: 8),
+              _webStatusFilterChip("BILLED", "BILLED"),
+              const SizedBox(width: 8),
+              _webStatusFilterChip("CANCELLED", "CANCELLED"),
             ],
           ),
         ],
@@ -986,6 +1022,18 @@ class _WebChallanViewState extends State<WebChallanView> {
 
   Widget _webStatusFilterChip(String label, String key) {
     final bool selected = statusFilter == key;
+    Color selBg = const Color(0xFF0F766E);
+    Color selBorder = const Color(0xFF2DD4BF);
+    if (key == "CANCELLED") {
+      selBg = const Color(0xFF7F1D1D);
+      selBorder = Colors.redAccent;
+    } else if (key == "PENDING") {
+      selBg = const Color(0xFF78350F);
+      selBorder = Colors.amber;
+    } else if (key == "BILLED") {
+      selBg = const Color(0xFF065F46);
+      selBorder = Colors.tealAccent;
+    }
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => statusFilter = key),
@@ -993,16 +1041,16 @@ class _WebChallanViewState extends State<WebChallanView> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 7),
           decoration: BoxDecoration(
-            color: selected ? (key == "CANCELLED" ? const Color(0xFF7F1D1D) : const Color(0xFF0F766E)) : Colors.black26,
+            color: selected ? selBg : Colors.black26,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: selected ? (key == "CANCELLED" ? Colors.redAccent : const Color(0xFF2DD4BF)) : Colors.white12),
+            border: Border.all(color: selected ? selBorder : Colors.white12),
           ),
           alignment: Alignment.center,
           child: Text(
             label,
             style: TextStyle(
               color: selected ? Colors.white : Colors.white54,
-              fontSize: 10,
+              fontSize: 9.5,
               fontWeight: FontWeight.w900,
             ),
           ),

@@ -444,6 +444,12 @@ class MultiFyCloudVault {
     bool changed = false;
 
     void upsertCandidate(Map<String, dynamic> candidate, {required bool isCloud}) {
+      if (fileName == 's_challan.json' || fileName == 'p_challan.json') {
+        final String itemOfy = (candidate['originalFy'] ?? candidate['original_fy'] ?? '').toString().trim();
+        if (itemOfy.isNotEmpty && fy.isNotEmpty && isFutureFyRecord(itemOfy, fy)) {
+          return; // 🛡️ Drop future-FY challan from leaking into older FY vault slice
+        }
+      }
       final String k = _recordKeyForMap(fileName, candidate);
       final String sec = _secondarySeriesKeyForMap(fileName, candidate);
       if (k.isEmpty && sec.isEmpty) return;
@@ -1071,6 +1077,8 @@ class MultiFyCloudVault {
         );
         final bool scDirect = D1SalesLedgerService.applyEventsToLocalSaleChallans(fySChallans, fyEvents, targetFy);
         final bool pcDirect = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(fyPChallans, fyEvents, targetFy);
+        fySChallans.removeWhere((c) => isFutureFyRecord(c.effectiveOriginalFy, targetFy));
+        fyPChallans.removeWhere((c) => isFutureFyRecord(c.effectiveOriginalFy, targetFy));
         final bool scChanged = revRes.saleChallansMutated || billRes.saleChallansMutated || scDirect;
         final bool pcChanged = revRes.purchaseChallansMutated || billRes.purchaseChallansMutated || pcDirect;
 

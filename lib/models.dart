@@ -677,6 +677,34 @@ String deriveFyFromDate(DateTime dt) {
   return '$startYr-${(endYr % 100).toString().padLeft(2, '0')}';
 }
 
+int parseFyStartYear(String raw) {
+  final clean = normalizeFyString(raw);
+  if (clean.isEmpty || !clean.contains('-')) return 0;
+  final parts = clean.split('-');
+  return int.tryParse(parts[0].trim()) ?? 0;
+}
+
+int compareFyStrings(String a, String b) {
+  final yA = parseFyStartYear(a);
+  final yB = parseFyStartYear(b);
+  return yA.compareTo(yB);
+}
+
+bool isStrictCarryForwardFy(String recordFy, String activeFy) {
+  final ofy = normalizeFyString(recordFy);
+  final curr = normalizeFyString(activeFy);
+  if (curr.isEmpty) return false;
+  if (ofy.isEmpty) return true;
+  return compareFyStrings(ofy, curr) < 0;
+}
+
+bool isFutureFyRecord(String recordFy, String activeFy) {
+  final ofy = normalizeFyString(recordFy);
+  final curr = normalizeFyString(activeFy);
+  if (ofy.isEmpty || curr.isEmpty) return false;
+  return compareFyStrings(ofy, curr) > 0;
+}
+
 ({DateTime date, bool isValid}) parseChallanDateWithValidity(dynamic raw, {dynamic hasValidFlag}) {
   DateTime? parsed;
   if (raw is DateTime) {
@@ -699,6 +727,7 @@ String deriveFyFromDate(DateTime dt) {
 
 class SaleChallan {
   String id, billNo, partyId, partyName, partyGstin, partyState, status, salesmanName, remarks, originalFy;
+  String billedInFy, billedInvoiceId, billedInvoiceNo, billedDate;
   DateTime date;
   bool hasValidDate;
   List<BillItem> items;
@@ -715,6 +744,10 @@ class SaleChallan {
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
     String originalFy = "",
     this.hasValidDate = true,
+    this.billedInFy = "",
+    this.billedInvoiceId = "",
+    this.billedInvoiceNo = "",
+    this.billedDate = "",
   }) : originalFy = normalizeFyString(originalFy);
 
   String get effectiveOriginalFy {
@@ -744,6 +777,14 @@ class SaleChallan {
       'sync_id': id,
       'originalFy': persistedOfy,
       'original_fy': persistedOfy,
+      'billedInFy': billedInFy,
+      'billed_in_fy': billedInFy,
+      'billedInvoiceId': billedInvoiceId,
+      'billed_invoice_id': billedInvoiceId,
+      'billedInvoiceNo': billedInvoiceNo,
+      'billed_invoice_no': billedInvoiceNo,
+      'billedDate': billedDate,
+      'billed_date': billedDate,
     };
   }
 
@@ -773,6 +814,10 @@ class SaleChallan {
       version: int.tryParse((map['version'] ?? 1).toString()) ?? 1,
       isDeleted: int.tryParse((map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toString()) ?? 0,
       originalFy: normalizeFyString(rawOfy),
+      billedInFy: (map['billedInFy'] ?? map['billed_in_fy'] ?? '').toString(),
+      billedInvoiceId: (map['billedInvoiceId'] ?? map['billed_invoice_id'] ?? '').toString(),
+      billedInvoiceNo: (map['billedInvoiceNo'] ?? map['billed_invoice_no'] ?? '').toString(),
+      billedDate: (map['billedDate'] ?? map['billed_date'] ?? '').toString(),
     );
   }
 
@@ -793,15 +838,50 @@ class SaleChallan {
         if (rawOfy.isNotEmpty) {
           s.originalFy = normalizeFyString(rawOfy);
         }
+        final rawBilledFy = (d['billedInFy'] ?? d['billed_in_fy'] ?? map['billedInFy'] ?? map['billed_in_fy'] ?? '').toString().trim();
+        if (rawBilledFy.isNotEmpty) s.billedInFy = normalizeFyString(rawBilledFy);
+        final rawBilledId = (d['billedInvoiceId'] ?? d['billed_invoice_id'] ?? map['billedInvoiceId'] ?? map['billed_invoice_id'] ?? '').toString().trim();
+        if (rawBilledId.isNotEmpty) s.billedInvoiceId = rawBilledId;
+        final rawBilledNo = (d['billedInvoiceNo'] ?? d['billed_invoice_no'] ?? map['billedInvoiceNo'] ?? map['billed_invoice_no'] ?? '').toString().trim();
+        if (rawBilledNo.isNotEmpty) s.billedInvoiceNo = rawBilledNo;
+        final rawBilledDate = (d['billedDate'] ?? d['billed_date'] ?? map['billedDate'] ?? map['billed_date'] ?? '').toString().trim();
+        if (rawBilledDate.isNotEmpty) s.billedDate = rawBilledDate;
         return s;
       }
     }
     return SaleChallan.fromMap(map);
   }
+
+  void markBilled({
+    required String invoiceFy,
+    required String invoiceId,
+    required String invoiceNo,
+    dynamic invoiceDate,
+  }) {
+    status = "Billed";
+    if (invoiceFy.trim().isNotEmpty) billedInFy = normalizeFyString(invoiceFy);
+    if (invoiceId.trim().isNotEmpty) billedInvoiceId = invoiceId.trim();
+    if (invoiceNo.trim().isNotEmpty) billedInvoiceNo = invoiceNo.trim();
+    if (invoiceDate != null) {
+      if (invoiceDate is DateTime) {
+        billedDate = invoiceDate.toIso8601String();
+      } else {
+        billedDate = invoiceDate.toString().trim();
+      }
+    }
+  }
+
+  void clearBilledMeta() {
+    billedInFy = "";
+    billedInvoiceId = "";
+    billedInvoiceNo = "";
+    billedDate = "";
+  }
 }
 
 class PurchaseChallan {
   String id, internalNo, billNo, partyId, distributorName, status, remarks, originalFy;
+  String billedInFy, billedInvoiceId, billedInvoiceNo, billedDate;
   DateTime date;
   bool hasValidDate;
   List<PurchaseItem> items;
@@ -815,6 +895,10 @@ class PurchaseChallan {
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
     String originalFy = "",
     this.hasValidDate = true,
+    this.billedInFy = "",
+    this.billedInvoiceId = "",
+    this.billedInvoiceNo = "",
+    this.billedDate = "",
   }) : originalFy = normalizeFyString(originalFy);
 
   String get effectiveOriginalFy {
@@ -843,6 +927,14 @@ class PurchaseChallan {
       'sync_id': id,
       'originalFy': persistedOfy,
       'original_fy': persistedOfy,
+      'billedInFy': billedInFy,
+      'billed_in_fy': billedInFy,
+      'billedInvoiceId': billedInvoiceId,
+      'billed_invoice_id': billedInvoiceId,
+      'billedInvoiceNo': billedInvoiceNo,
+      'billed_invoice_no': billedInvoiceNo,
+      'billedDate': billedDate,
+      'billed_date': billedDate,
     };
   }
 
@@ -868,6 +960,10 @@ class PurchaseChallan {
       version: int.tryParse((map['version'] ?? 1).toString()) ?? 1,
       isDeleted: int.tryParse((map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toString()) ?? 0,
       originalFy: normalizeFyString(rawOfy),
+      billedInFy: (map['billedInFy'] ?? map['billed_in_fy'] ?? '').toString(),
+      billedInvoiceId: (map['billedInvoiceId'] ?? map['billed_invoice_id'] ?? '').toString(),
+      billedInvoiceNo: (map['billedInvoiceNo'] ?? map['billed_invoice_no'] ?? '').toString(),
+      billedDate: (map['billedDate'] ?? map['billed_date'] ?? '').toString(),
     );
   }
 
@@ -888,10 +984,44 @@ class PurchaseChallan {
         if (rawOfy.isNotEmpty) {
           s.originalFy = normalizeFyString(rawOfy);
         }
+        final rawBilledFy = (d['billedInFy'] ?? d['billed_in_fy'] ?? map['billedInFy'] ?? map['billed_in_fy'] ?? '').toString().trim();
+        if (rawBilledFy.isNotEmpty) s.billedInFy = normalizeFyString(rawBilledFy);
+        final rawBilledId = (d['billedInvoiceId'] ?? d['billed_invoice_id'] ?? map['billedInvoiceId'] ?? map['billed_invoice_id'] ?? '').toString().trim();
+        if (rawBilledId.isNotEmpty) s.billedInvoiceId = rawBilledId;
+        final rawBilledNo = (d['billedInvoiceNo'] ?? d['billed_invoice_no'] ?? map['billedInvoiceNo'] ?? map['billed_invoice_no'] ?? '').toString().trim();
+        if (rawBilledNo.isNotEmpty) s.billedInvoiceNo = rawBilledNo;
+        final rawBilledDate = (d['billedDate'] ?? d['billed_date'] ?? map['billedDate'] ?? map['billed_date'] ?? '').toString().trim();
+        if (rawBilledDate.isNotEmpty) s.billedDate = rawBilledDate;
         return s;
       }
     }
     return PurchaseChallan.fromMap(map);
+  }
+
+  void markBilled({
+    required String invoiceFy,
+    required String invoiceId,
+    required String invoiceNo,
+    dynamic invoiceDate,
+  }) {
+    status = "Billed";
+    if (invoiceFy.trim().isNotEmpty) billedInFy = normalizeFyString(invoiceFy);
+    if (invoiceId.trim().isNotEmpty) billedInvoiceId = invoiceId.trim();
+    if (invoiceNo.trim().isNotEmpty) billedInvoiceNo = invoiceNo.trim();
+    if (invoiceDate != null) {
+      if (invoiceDate is DateTime) {
+        billedDate = invoiceDate.toIso8601String();
+      } else {
+        billedDate = invoiceDate.toString().trim();
+      }
+    }
+  }
+
+  void clearBilledMeta() {
+    billedInFy = "";
+    billedInvoiceId = "";
+    billedInvoiceNo = "";
+    billedDate = "";
   }
 }
 
@@ -1282,8 +1412,8 @@ class ChallanLinkMatcher {
 
     final String cleanBillFy = normalizeFyString(billFy ?? '');
     final String cOfy = normalizeFyString(c.effectiveOriginalFy);
-    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanBillFy) {
-      return false;
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && compareFyStrings(cOfy, cleanBillFy) > 0) {
+      return false; // 🛡️ Future-FY challan can never link to older FY bill
     }
     final String bParty = (billPartyId ?? '').trim().toUpperCase();
     final String cParty = c.partyId.trim().toUpperCase();
@@ -1313,8 +1443,8 @@ class ChallanLinkMatcher {
 
     final String cleanBillFy = normalizeFyString(billFy ?? '');
     final String cOfy = normalizeFyString(c.effectiveOriginalFy);
-    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanBillFy) {
-      return false;
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && compareFyStrings(cOfy, cleanBillFy) > 0) {
+      return false; // 🛡️ Future-FY challan can never link to older FY bill
     }
     final String bParty = (billPartyId ?? '').trim().toUpperCase();
     final String cParty = c.partyId.trim().toUpperCase();

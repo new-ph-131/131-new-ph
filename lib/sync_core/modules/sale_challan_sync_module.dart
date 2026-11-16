@@ -126,6 +126,12 @@ class SaleChallanSyncModule {
         return false;
       }
 
+      if (incoming.status == "Billed" && incoming.billedInvoiceNo.isEmpty && local.billedInvoiceNo.isNotEmpty) {
+        incoming.billedInFy = local.billedInFy;
+        incoming.billedInvoiceId = local.billedInvoiceId;
+        incoming.billedInvoiceNo = local.billedInvoiceNo;
+        incoming.billedDate = local.billedDate;
+      }
       currentChallans[idx] = incoming;
       return true;
     } else {
@@ -157,6 +163,10 @@ class SaleChallanSyncModule {
       'totalAmount': c.totalAmount,
       'date': c.date.toIso8601String(),
       'originalFy': c.effectiveOriginalFy,
+      'billedInFy': c.billedInFy.trim(),
+      'billedInvoiceId': c.billedInvoiceId.trim(),
+      'billedInvoiceNo': c.billedInvoiceNo.trim(),
+      'billedDate': c.billedDate.trim(),
       'remarks': c.remarks.trim(),
       'isDeleted': c.isDeleted,
       'isSigned': c.isSigned,

@@ -29,9 +29,7 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
   String _boundFy = "";
 
   bool _isCarryForward(PurchaseChallan ch, String currentFy) {
-    final ofy = ch.effectiveOriginalFy;
-    final curr = normalizeFyString(currentFy);
-    return ofy.isEmpty || (curr.isNotEmpty && ofy != curr);
+    return isStrictCarryForwardFy(ch.effectiveOriginalFy, currentFy);
   }
 
   @override
@@ -57,14 +55,24 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
     final list = ph.purchaseChallans.where((ch) {
       if (ch.isDeleted == 1) return false;
       final bool isCancelled = ch.status == "Cancelled";
+      final bool isPending = ch.status == "Pending";
+      final bool isBilled = ch.status == "Billed";
       if (statusFilter == "ACTIVE" && isCancelled) return false;
+      if (statusFilter == "PENDING" && !isPending) return false;
+      if (statusFilter == "BILLED" && !isBilled) return false;
       if (statusFilter == "CANCELLED" && !isCancelled) return false;
       bool matchesSearch = ch.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) ||
                            ch.billNo.toLowerCase().contains(searchQuery.toLowerCase()) ||
                            ch.internalNo.toLowerCase().contains(searchQuery.toLowerCase());
       final cOnly = dOnly(ch.date);
-      bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) || ch.status == "Pending" || statusFilter == "CANCELLED";
       bool isCarry = _isCarryForward(ch, ph.currentFY);
+      final bool isBilledCfInActiveFy = isCarry && isBilled &&
+          (ch.billedInFy.trim().isEmpty || normalizeFyString(ch.billedInFy) == normalizeFyString(ph.currentFY));
+      bool matchesDate = (!cOnly.isBefore(fOnly) && !cOnly.isAfter(tOnly)) ||
+          isPending ||
+          statusFilter == "CANCELLED" ||
+          statusFilter == "BILLED" ||
+          isBilledCfInActiveFy;
       bool matchesFy = fyFilter == "ALL" ||
           (fyFilter == "CURRENT" && !isCarry) ||
           (fyFilter == "CARRY" && isCarry);
@@ -161,9 +169,13 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
           const SizedBox(height: 8),
           Row(
             children: [
-              _statusTabChip("ACTIVE CHALLANS", "ACTIVE"),
+              _statusTabChip("ALL ACTIVE", "ACTIVE"),
               const SizedBox(width: 8),
-              _statusTabChip("CANCELLED / AUDIT", "CANCELLED"),
+              _statusTabChip("PENDING", "PENDING"),
+              const SizedBox(width: 8),
+              _statusTabChip("BILLED", "BILLED"),
+              const SizedBox(width: 8),
+              _statusTabChip("CANCELLED", "CANCELLED"),
             ],
           ),
         ],
@@ -200,6 +212,14 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
 
   Widget _statusTabChip(String label, String key) {
     final bool selected = statusFilter == key;
+    Color textColor = Colors.amber.shade900;
+    if (key == "CANCELLED") {
+      textColor = Colors.red.shade900;
+    } else if (key == "PENDING") {
+      textColor = Colors.orange.shade900;
+    } else if (key == "BILLED") {
+      textColor = Colors.teal.shade900;
+    }
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => statusFilter = key),
@@ -215,8 +235,8 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? (key == "CANCELLED" ? Colors.red.shade900 : Colors.amber.shade900) : Colors.white70,
-              fontSize: 9.5,
+              color: selected ? textColor : Colors.white70,
+              fontSize: 9,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -304,8 +324,10 @@ class _PurchaseChallanRegisterState extends State<PurchaseChallanRegister> {
                           runSpacing: 4,
                           children: [
                             if (isCarry) _fyOriginBadge(cfLabel, Colors.deepPurple),
+                            if (isCarry && ch.status == "Billed" && ch.billedInvoiceNo.isNotEmpty)
+                              _fyOriginBadge("BILL: ${ch.billedInvoiceNo}", Colors.teal),
                             if (fwd.billedFy != null)
-                              _fyOriginBadge("BILLED IN ${fwd.billedFy}", Colors.teal)
+                              _fyOriginBadge(ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: true, forwardFy: fwd.billedFy) != null && ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: true, forwardFy: fwd.billedFy)!.isNotEmpty ? "BILLED IN ${fwd.billedFy} (${ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: true, forwardFy: fwd.billedFy)})" : "BILLED IN ${fwd.billedFy}", Colors.teal)
                             else if (fwd.shiftedFy != null)
                               _fyOriginBadge("SHIFTED → ${fwd.shiftedFy}", Colors.indigo),
                           ],
