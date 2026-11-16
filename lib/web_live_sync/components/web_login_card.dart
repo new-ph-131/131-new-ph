@@ -506,8 +506,7 @@ class _WebLoginCardState extends State<WebLoginCard> {
                       CircularProgressIndicator(color: Colors.teal, strokeWidth: 3),
                       SizedBox(height: 10),
                       Text(
-                        "APPROVED!
-LOGGING IN...",
+                        "APPROVED!\nLOGGING IN...",
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.teal,
