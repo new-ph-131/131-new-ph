@@ -434,7 +434,7 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                     5: FixedColumnWidth(70),
                     6: FixedColumnWidth(70),
                     7: FixedColumnWidth(85),
-                    8: FixedColumnWidth(84),
+                    8: FixedColumnWidth(100),
                   },
                   children: [
                     TableRow(
@@ -453,8 +453,8 @@ class _WebSaleChallanBillingViewState extends State<WebSaleChallanBillingView> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              if (!widget.isReadOnly) IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), icon: const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF38BDF8)), onPressed: () { final med = webPh.medicines.firstWhere((m) => m.id == it.medicineID); _openItemEntry(med, itemToEdit: it, editIndex: idx); }),
-                              if (!widget.isReadOnly) IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent), onPressed: () => setState(() { items.removeAt(idx); _recalculateSR(); })),
+                              if (!widget.isReadOnly) IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap), icon: const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF38BDF8)), onPressed: () { final med = webPh.medicines.firstWhere((m) => m.id == it.medicineID); _openItemEntry(med, itemToEdit: it, editIndex: idx); }),
+                              if (!widget.isReadOnly) IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap), icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent), onPressed: () => setState(() { items.removeAt(idx); _recalculateSR(); })),
                             ],
                           ),
                         ],

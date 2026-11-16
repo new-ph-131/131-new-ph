@@ -947,7 +947,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                     7: FixedColumnWidth(55),
                     8: FixedColumnWidth(50),
                     9: FixedColumnWidth(80),
-                    10: FixedColumnWidth(84),
+                    10: FixedColumnWidth(100),
                   },
                   children: [
                     TableRow(
@@ -994,6 +994,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                 IconButton(
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                                   icon: const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF38BDF8)),
                                   onPressed: () {
                                     final med = webPh.medicines.firstWhere((m) => m.id == it.medicineID);
@@ -1004,6 +1005,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                 IconButton(
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                  style: IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                                   icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Colors.redAccent),
                                   onPressed: () => setState(() {
                                     items.removeAt(idx);
