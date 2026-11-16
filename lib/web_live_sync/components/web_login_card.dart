@@ -30,7 +30,7 @@ class _WebLoginCardState extends State<WebLoginCard> {
   final passwordC = TextEditingController();
   bool isObscured = true;
 
-  // Telegram-style QR Login Session state
+  // Secure QR Login Session state
   QrSessionChallenge? _challenge;
   bool _qrInitializing = true;
   bool _qrExpired = false;

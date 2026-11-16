@@ -1,5 +1,5 @@
 // FILE: functions/api/qr_login.ts
-// Cloudflare Pages Function: Telegram-Style Ephemeral QR Workstation Login Relay (D1 SIGNAL_DB)
+// Cloudflare Pages Function: Secure Ephemeral QR Workstation Login Relay (D1 SIGNAL_DB)
 // Stores ONLY opaque encrypted payload (sealed client-side with QR-embedded OTP key).
 // Plaintext password never touches D1; rows are 120s TTL and single-use (deleted on claim).
 

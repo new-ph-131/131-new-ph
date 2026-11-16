@@ -18,6 +18,8 @@ import '../../web_live_sync/sync_protocol/snapshot_watcher.dart';
 import '../../web_live_sync/sync_protocol/tombstone_engine.dart';
 import '../../web_live_sync/sync_protocol/delta_merge_engine.dart';
 import '../../sync_core/multi_fy_cloud_vault.dart';
+import '../../logic/app_settings_model.dart';
+import '../../logic/pharoah_numbering_engine.dart';
 
 /// FastPullEngine: Dedicated high-speed pull & merge engine.
 /// Pulls cloud changes from Web and immediately updates App memory,
@@ -173,11 +175,40 @@ class FastPullEngine {
             bool d1SrMutated = D1SalesLedgerService.applyEventsToLocalSaleReturns(ph.saleReturns, edgeEvents, targetFyAtStart);
             bool d1PrMutated = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(ph.purchaseReturns, edgeEvents, targetFyAtStart);
             bool d1GstMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
-            bool d1CfgMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+            final appHarvestFloor = AppConfig.computeChallanRecordFloor(
+              companyID: ph.activeCompany?.id ?? '',
+              saleChallans: ph.saleChallans,
+              purchaseChallans: ph.purchaseChallans,
+              targetFy: targetFyAtStart,
+            );
+            final bool d1HwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+              currentConfig: ph.config,
+              edgeEvents: edgeEvents,
+              companyID: ph.activeCompany?.id ?? '',
+              recordFloor: appHarvestFloor,
+              targetLogs: ph.logs,
+            );
+            bool d1CfgMutated = SettingsSyncModule.applyEdgeEventsToLocalConfig(
               currentConfig: ph.config,
               edgeEvents: edgeEvents,
               onConfigMutated: (cfg) => ph.config = cfg,
+              recordFloor: appHarvestFloor,
             );
+            if (!d1CfgMutated) {
+              d1CfgMutated = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+                currentConfig: ph.config,
+                edgeEvents: edgeEvents,
+                onConfigMutated: (cfg) => ph.config = cfg,
+              );
+            }
+            if (d1HwmAuditMut || d1CfgMutated) {
+              d1CfgMutated = true;
+              PharoahNumberingEngine.absorbChallanHwmState(
+                hwm: ph.config.challanHwm,
+                meta: ph.config.challanHwmMeta,
+                recordFloor: appHarvestFloor,
+              );
+            }
             bool d1SeriesMutated = SettingsSyncModule.applyEdgeEventsToLocalSeries(
               currentSeries: ph.numberingSeries,
               edgeEvents: edgeEvents,

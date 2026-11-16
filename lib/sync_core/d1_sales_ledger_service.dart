@@ -2994,10 +2994,23 @@ class D1SalesLedgerService {
           });
           foldState(key, st);
           final parts = key.split('::');
-          if (parts.length == 5 && companyID.trim().isNotEmpty) {
-            final localKey = '${companyID.trim()}::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
-            if (localKey != key) {
-              foldState(localKey, st);
+          if (parts.length == 5) {
+            final suffix = '::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
+            for (final exK in currentConfig.challanHwm.keys.toList()) {
+              if (exK.endsWith(suffix) && exK != key) {
+                foldState(exK, st);
+              }
+            }
+            for (final exK in currentConfig.challanHwmMeta.keys.toList()) {
+              if (exK.endsWith(suffix) && exK != key) {
+                foldState(exK, st);
+              }
+            }
+            if (companyID.trim().isNotEmpty) {
+              final localKey = '${companyID.trim()}$suffix';
+              if (localKey != key) {
+                foldState(localKey, st);
+              }
             }
           }
         }

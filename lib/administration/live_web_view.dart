@@ -296,12 +296,12 @@ class _LiveWebViewState extends State<LiveWebView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "TELEGRAM-STYLE QR WEB LOGIN",
+                      "SECURE QR WORKSTATION LOGIN",
                       style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5),
                     ),
                     SizedBox(height: 3),
                     Text(
-                      "Web screen par dikhne wala QR scan karke turant login karein.",
+                      "Web Workstation screen par dikh raha QR Code scan karke turant securely login karein.",
                       style: TextStyle(color: Colors.white60, fontSize: 11),
                     ),
                   ],
@@ -323,7 +323,7 @@ class _LiveWebViewState extends State<LiveWebView> {
               onPressed: () => _openQrScanner(ph),
               icon: const Icon(Icons.qr_code_2_rounded, size: 22),
               label: const Text(
-                "SCAN WEB LOGIN QR",
+                "SCAN WORKSTATION QR",
                 style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.6),
               ),
             ),

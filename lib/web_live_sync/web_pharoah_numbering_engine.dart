@@ -85,6 +85,29 @@ class WebPharoahNumberingEngine {
         _cachedMeta[cfgKey] = st.copy();
         if (metaPrefKey != null) _cachedMeta[metaPrefKey] = st.copy();
       }
+
+      // Harmonize all memory cache entries matching this series suffix
+      final parts = cfgKey.split('::');
+      if (parts.length == 5) {
+        final cfgSuffix = '::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
+        final prefSuffix = '_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
+        for (final k in _cachedHwm.keys.toList()) {
+          if (k.endsWith(cfgSuffix) || k.endsWith(prefSuffix)) {
+            if (val > 0) {
+              _cachedHwm[k] = val;
+            } else {
+              _cachedHwm.remove(k);
+            }
+          }
+        }
+        for (final k in _cachedMeta.keys.toList()) {
+          if (k.endsWith(cfgSuffix) || k.endsWith(prefSuffix)) {
+            if (st != null) {
+              _cachedMeta[k] = st.copy();
+            }
+          }
+        }
+      }
     }
 
     SharedPreferences.getInstance().then((prefs) {
@@ -102,6 +125,18 @@ class WebPharoahNumberingEngine {
         }
         if (st != null) {
           prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+          final prefSuffix = '_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
+          for (final k in prefs.getKeys()) {
+            if (k.startsWith('challan_hwm_') && !k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
+              if (val > 0) {
+                prefs.setInt(k, val);
+              } else {
+                prefs.remove(k);
+              }
+            } else if (k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
+              prefs.setString(k, jsonEncode(st.toMap()));
+            }
+          }
         }
       }
     }).catchError((_) {});
@@ -197,12 +232,22 @@ class WebPharoahNumberingEngine {
         ? '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
         : '::${normType}::${normEnv}::$cleanPrefix';
 
-    for (final entry in _cachedHwm.entries) {
-      if (cleanComp.isNotEmpty &&
-          !entry.key.startsWith('challan_hwm_${cleanComp}_') &&
-          !entry.key.startsWith('${cleanComp}::')) {
-        continue;
+    // Check if winning causal meta for this series suffix indicates ROLLBACK
+    ChallanHwmState? winningMeta;
+    for (final entry in _cachedMeta.entries) {
+      if (entry.key.endsWith(cfgSuffix) || entry.key.endsWith(prefSuffix)) {
+        if (winningMeta == null ||
+            entry.value.gen > winningMeta.gen ||
+            (entry.value.seq > 0 && entry.value.seq > winningMeta.seq)) {
+          winningMeta = entry.value;
+        }
       }
+    }
+    if (winningMeta != null && winningMeta.op == 'ROLLBACK') {
+      return winningMeta.value;
+    }
+
+    for (final entry in _cachedHwm.entries) {
       if (entry.key.endsWith(prefSuffix) || entry.key.endsWith(cfgSuffix)) {
         if (entry.value > best) best = entry.value;
       }
@@ -279,6 +324,17 @@ class WebPharoahNumberingEngine {
     }
     if (issuedInt > (_cachedHwm[configKey] ?? 0)) {
       _cachedHwm[configKey] = issuedInt;
+    }
+    final rPrefSuffix = (cleanFy.isNotEmpty)
+        ? '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix'
+        : '_${normType}_${normEnv}_$cleanPrefix';
+    final rCfgSuffix = (cleanFy.isNotEmpty)
+        ? '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
+        : '::${normType}::${normEnv}::$cleanPrefix';
+    for (final k in _cachedHwm.keys.toList()) {
+      if (k.endsWith(rPrefSuffix) || k.endsWith(rCfgSuffix)) {
+        if (effVal > (_cachedHwm[k] ?? 0)) _cachedHwm[k] = effVal;
+      }
     }
 
     ChallanHwmState? stToPersist;
@@ -377,8 +433,7 @@ class WebPharoahNumberingEngine {
         : '::${normType}::${normEnv}::$cleanPrefix';
 
     for (final k in _cachedHwm.keys.toList()) {
-      if ((cleanComp.isEmpty || k.startsWith('challan_hwm_${cleanComp}_') || k.startsWith('${cleanComp}::')) &&
-          (k.endsWith(prefSuffix) || k.endsWith(cfgSuffix))) {
+      if (k.endsWith(prefSuffix) || k.endsWith(cfgSuffix)) {
         if (safeTail > 0) {
           _cachedHwm[k] = safeTail;
         } else {
@@ -396,8 +451,27 @@ class WebPharoahNumberingEngine {
 
     _cachedMeta[configKey] = state.copy();
     _cachedMeta[metaPrefKey] = state.copy();
+    for (final k in _cachedMeta.keys.toList()) {
+      if (k.endsWith(prefSuffix) || k.endsWith(cfgSuffix)) {
+        _cachedMeta[k] = state.copy();
+      }
+    }
 
     if (config != null) {
+      for (final k in config.challanHwm.keys.toList()) {
+        if (k.endsWith(cfgSuffix)) {
+          if (safeTail > 0) {
+            config.challanHwm[k] = safeTail;
+          } else {
+            config.challanHwm.remove(k);
+          }
+        }
+      }
+      for (final k in config.challanHwmMeta.keys.toList()) {
+        if (k.endsWith(cfgSuffix)) {
+          config.challanHwmMeta[k] = state.copy();
+        }
+      }
       if (safeTail > 0) {
         config.challanHwm[configKey] = safeTail;
       } else {
@@ -413,6 +487,18 @@ class WebPharoahNumberingEngine {
         prefs.remove(cacheKey);
       }
       prefs.setString(metaPrefKey, jsonEncode(state.toMap()));
+
+      for (final k in prefs.getKeys()) {
+        if (k.startsWith('challan_hwm_') && !k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
+          if (safeTail > 0) {
+            prefs.setInt(k, safeTail);
+          } else {
+            prefs.remove(k);
+          }
+        } else if (k.startsWith('challan_hwm_meta_') && k.endsWith(prefSuffix)) {
+          prefs.setString(k, jsonEncode(state.toMap()));
+        }
+      }
     }).catchError((_) {});
 
     return state;

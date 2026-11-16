@@ -400,9 +400,12 @@ class AppConfig {
       final String env = inferIsWebChallanRecord(item) ? 'WEB' : 'APP';
       final String normType = isPurchase ? 'PURCHASE_CHALLAN' : 'SALE_CHALLAN';
       final String key = '${cleanComp}::${itemFy}::${normType}::${env}::${parsed.prefix}';
-      if (parsed.number! > (floor[key] ?? 0)) {
-        floor[key] = parsed.number!;
-      }
+      final String canonical4 = '${itemFy}::${normType}::${env}::${parsed.prefix}';
+      final String suffixKey = '::$canonical4';
+      final int num = parsed.number!;
+      if (num > (floor[key] ?? 0)) floor[key] = num;
+      if (num > (floor[canonical4] ?? 0)) floor[canonical4] = num;
+      if (num > (floor[suffixKey] ?? 0)) floor[suffixKey] = num;
     }
 
     for (final sc in saleChallans) {
@@ -491,6 +494,7 @@ class AppConfig {
       final hasMeta = meta.containsKey(k);
       final hasHwm = hwm.containsKey(k);
       if (!hasMeta && !hasHwm) return null;
+
       final int rawV = hwm[k] ?? 0;
       if (hasMeta) {
         final s = meta[k]!.copy();
@@ -509,18 +513,70 @@ class AppConfig {
       );
     }
 
+    String extractSuffix(String k) {
+      final parts = k.trim().split('::');
+      if (parts.length == 5) {
+        return '::${parts[1]}::${parts[2]}::${parts[3]}::${parts[4]}';
+      } else if (parts.length == 4) {
+        return '::${parts[0]}::${parts[1]}::${parts[2]}::${parts[3]}';
+      }
+      return k.trim();
+    }
+
+    int getFloorForSuffix(String suffix) {
+      if (recordFloor.containsKey(suffix)) return recordFloor[suffix]!;
+      final raw4 = suffix.startsWith('::') ? suffix.substring(2) : suffix;
+      if (recordFloor.containsKey(raw4)) return recordFloor[raw4]!;
+      int best = 0;
+      recordFloor.forEach((rk, rv) {
+        if (rk.endsWith(suffix) && rv > best) best = rv;
+      });
+      return best;
+    }
+
+    // Group all keys by series suffix
+    final Map<String, List<String>> suffixToKeys = {};
     for (final rawK in allKeys) {
       final k = rawK.trim();
       if (k.isEmpty) continue;
-      final a = derive(k, localHwm, localMeta);
-      final b = derive(k, remoteHwm, remoteMeta);
-      final int floor = recordFloor[k] ?? 0;
-      final resolved = resolveCausalHwmState(a, b, floor: floor);
-      if (resolved.value > 0) {
-        outHwm[k] = resolved.value;
+      final s = extractSuffix(k);
+      (suffixToKeys[s] ??= []).add(k);
+    }
+
+    for (final entry in suffixToKeys.entries) {
+      final String suffix = entry.key;
+      final List<String> keys = entry.value;
+      final int fl = getFloorForSuffix(suffix);
+
+      // Collect best local state for this series suffix
+      ChallanHwmState? localState;
+      for (final k in keys) {
+        final st = derive(k, localHwm, localMeta);
+        if (st != null) {
+          localState = resolveCausalHwmState(localState, st, floor: fl);
+        }
       }
-      if (resolved.value > 0 || resolved.op == 'ROLLBACK') {
-        outMeta[k] = resolved;
+
+      // Collect best remote state for this series suffix
+      ChallanHwmState? remoteState;
+      for (final k in keys) {
+        final st = derive(k, remoteHwm, remoteMeta);
+        if (st != null) {
+          remoteState = resolveCausalHwmState(remoteState, st, floor: fl);
+        }
+      }
+
+      // Causally resolve local vs remote with authoritative floor
+      final resolved = resolveCausalHwmState(localState, remoteState, floor: fl);
+
+      // Harmonize resolved state to all keys in this series
+      for (final k in keys) {
+        if (resolved.value > 0) {
+          outHwm[k] = resolved.value;
+        }
+        if (resolved.value > 0 || resolved.op == 'ROLLBACK') {
+          outMeta[k] = resolved.copy();
+        }
       }
     }
 
