@@ -1,4 +1,5 @@
 import '../../logic/app_settings_model.dart';
+import '../web_pharoah_numbering_engine.dart';
 import '../../sync_core/modules/batch_delta_merge_module.dart';
 import "../../sync_core/modules/medicine_sync_module.dart";
 import "../../sync_core/modules/company_sync_module.dart";

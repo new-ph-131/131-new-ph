@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
 import '../web_live_sync/web_cloud_config.dart';
+import 'modules/sale_challan_sync_module.dart';
+import 'modules/purchase_challan_sync_module.dart';
 
 class D1SalesLedgerService {
   /// 🎚️ MASTER SAFETY SWITCH: Toggle true for D1 Edge sync, false to safely fallback

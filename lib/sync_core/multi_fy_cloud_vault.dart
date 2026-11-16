@@ -14,6 +14,7 @@ import '../web_live_sync/sync_protocol/tombstone_engine.dart';
 import '../web_live_sync/sub_views/web_accounts/services/web_voucher_d1_sync_service.dart';
 import 'd1_sales_ledger_service.dart';
 import 'modules/batch_delta_merge_module.dart';
+import '../logic/app_settings_model.dart';
 
 class MultiFyCloudVault {
   static const List<String> vaultFileKeys = [
