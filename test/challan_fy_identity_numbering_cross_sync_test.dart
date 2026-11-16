@@ -20,6 +20,7 @@ import 'package:pharoah_erp/sync_core/multi_fy_cloud_vault.dart';
 import 'package:pharoah_erp/sync_core/orchestrator/master_sync_orchestrator.dart';
 import 'package:pharoah_erp/sync_core/outbox/sync_queue_manager.dart';
 import 'package:pharoah_erp/pharoah_manager.dart';
+import 'package:pharoah_erp/realtime_signaling/coordinators/app_realtime_coordinator.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/web_item_entry_card.dart';
 import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart';
@@ -138,8 +139,16 @@ void main() {
   });
 
   tearDownAll(() async {
+    AppRealtimeCoordinator.instance.stop();
     if (await mockDocsDir.exists()) {
-      await mockDocsDir.delete(recursive: true);
+      try {
+        await mockDocsDir.delete(recursive: true);
+      } on FileSystemException {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (await mockDocsDir.exists()) {
+          await mockDocsDir.delete(recursive: true);
+        }
+      }
     }
   });
 

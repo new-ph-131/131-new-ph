@@ -458,7 +458,16 @@ class PharoahManager with ChangeNotifier {
     return dir.path;
   }
 
-  Future<void> save() async {
+  Future<void> _saveQueue = Future.value();
+  Future<void> get pendingSaveFuture => _saveQueue;
+
+  Future<void> save() {
+    final next = _saveQueue.then((_) => _performSave());
+    _saveQueue = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> _performSave() async {
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
     Future _w(String n, List data) async => await File('$dir/$n').writeAsString(jsonEncode(data.map((e) => e.toMap()).toList()));
@@ -658,7 +667,7 @@ class PharoahManager with ChangeNotifier {
           purchaseChallans: purchaseChallans,
         );
         if (healed) {
-          save();
+          await File('$dir/config.json').writeAsString(jsonEncode(config.toMap()));
         }
       }
       if (activeCompany != null) {
@@ -3048,7 +3057,7 @@ void registerBatchActivity({
   void addNumberingSeries(NumberingSeries ns) { numberingSeries.add(ns); save(); }
   void addBank(Bank b) { banks.add(b); save(); }
   void addCheque(ChequeEntry c) { cheques.add(c); save(); }
-  void addLog(String a, String d) { logs.add(LogEntry(id: DateTime.now().toString(), action: a, details: d, time: DateTime.now())); save(); }
+  void addLog(String a, String d, {bool persist = true}) { logs.add(LogEntry(id: DateTime.now().toString(), action: a, details: d, time: DateTime.now())); if (persist) save(); }
   void addManualShortage({required Medicine med, required double qty, String cust = ""}) { shortages.add(ShortageItem(id: DateTime.now().toString(), medicineId: med.id, medicineName: med.name, companyName: med.companyId, qtyRequired: qty, currentStock: med.stock, date: DateTime.now(), customerName: cust)); save(); }
   
   void _reverseVoucherImpact(Voucher v) {
@@ -3668,7 +3677,7 @@ void registerBatchActivity({
       final String effFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
       final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Cancelled Sale Challan ${c.billNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
-      addLog("CANCEL_SALE_CHALLAN", auditDetails);
+      addLog("CANCEL_SALE_CHALLAN", auditDetails, persist: false);
 
       if (activeCompany != null) {
         final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
@@ -3793,7 +3802,7 @@ void registerBatchActivity({
       final String effFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
       final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Cancelled Purchase Challan ${c.internalNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
-      addLog("CANCEL_PURCHASE_CHALLAN", auditDetails);
+      addLog("CANCEL_PURCHASE_CHALLAN", auditDetails, persist: false);
 
       if (activeCompany != null) {
         final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
@@ -3844,6 +3853,7 @@ void registerBatchActivity({
     if (pending != null) {
       await pending;
     }
+    await _saveQueue;
     return true;
   }
 
@@ -3858,6 +3868,7 @@ void registerBatchActivity({
     if (pending != null) {
       await pending;
     }
+    await _saveQueue;
     return true;
   }
 
@@ -3945,7 +3956,7 @@ void registerBatchActivity({
 
       final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Deleted Sale Challan $bNo (UUID: ${cId.isNotEmpty ? cId : id}, priorStatus: ${c.status}) by $actor. Series tail rolled back to $remainingMax.";
-      addLog("DELETE_SALE_CHALLAN", auditDetails);
+      addLog("DELETE_SALE_CHALLAN", auditDetails, persist: false);
 
       D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, effDelFy, delTs);
       if (delFy != effDelFy) {
@@ -4123,7 +4134,7 @@ void registerBatchActivity({
 
       final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Deleted Purchase Challan $iNo (UUID: ${cId.isNotEmpty ? cId : id}, priorStatus: ${c.status}) by $actor. Series tail rolled back to $remainingMax.";
-      addLog("DELETE_PURCHASE_CHALLAN", auditDetails);
+      addLog("DELETE_PURCHASE_CHALLAN", auditDetails, persist: false);
 
       D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, effDelFy, delTs);
       if (delFy != effDelFy) {
