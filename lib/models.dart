@@ -1402,6 +1402,12 @@ class ChallanLinkMatcher {
     String? billPartyId,
     String? billFy,
   }) {
+    final String cleanBillFy = normalizeFyString(billFy ?? '');
+    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && compareFyStrings(cOfy, cleanBillFy) > 0) {
+      return false; // 🛡️ Future-FY challan can never link to older FY bill
+    }
+
     final String cid = c.id.trim().toUpperCase();
     if (cid.isNotEmpty && explicitIds.contains(cid)) {
       return true;
@@ -1410,10 +1416,9 @@ class ChallanLinkMatcher {
     final String bNo = c.billNo.trim().toUpperCase();
     if (bNo.isEmpty || !legacyNos.contains(bNo)) return false;
 
-    final String cleanBillFy = normalizeFyString(billFy ?? '');
-    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
-    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && compareFyStrings(cOfy, cleanBillFy) > 0) {
-      return false; // 🛡️ Future-FY challan can never link to older FY bill
+    // Legacy fallback is strictly scoped to the same FY to avoid number collisions across years
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanBillFy) {
+      return false;
     }
     final String bParty = (billPartyId ?? '').trim().toUpperCase();
     final String cParty = c.partyId.trim().toUpperCase();
@@ -1430,6 +1435,12 @@ class ChallanLinkMatcher {
     String? billPartyId,
     String? billFy,
   }) {
+    final String cleanBillFy = normalizeFyString(billFy ?? '');
+    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && compareFyStrings(cOfy, cleanBillFy) > 0) {
+      return false; // 🛡️ Future-FY challan can never link to older FY bill
+    }
+
     final String cid = c.id.trim().toUpperCase();
     if (cid.isNotEmpty && explicitIds.contains(cid)) {
       return true;
@@ -1441,10 +1452,9 @@ class ChallanLinkMatcher {
         (bNo.isNotEmpty && legacyNos.contains(bNo));
     if (!noMatch) return false;
 
-    final String cleanBillFy = normalizeFyString(billFy ?? '');
-    final String cOfy = normalizeFyString(c.effectiveOriginalFy);
-    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && compareFyStrings(cOfy, cleanBillFy) > 0) {
-      return false; // 🛡️ Future-FY challan can never link to older FY bill
+    // Legacy fallback is strictly scoped to the same FY to avoid number collisions across years
+    if (cleanBillFy.isNotEmpty && cOfy.isNotEmpty && cOfy != cleanBillFy) {
+      return false;
     }
     final String bParty = (billPartyId ?? '').trim().toUpperCase();
     final String cParty = c.partyId.trim().toUpperCase();
