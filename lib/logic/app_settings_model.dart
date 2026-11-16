@@ -542,26 +542,26 @@ class AppConfig {
   /// Causally merges incoming `AppConfig` with `current`, preserving non-monotonic rollbacks
   /// when `challanHwmMeta` causality dictates while taking newer general settings.
   static AppConfig mergeAppConfigWithCausalHwm({
-    required AppConfig current,
+    required AppConfig local,
     required AppConfig incoming,
     Map<String, int> recordFloor = const {},
-    bool incomingSettingsWin = false,
+    bool incomingFieldsWin = false,
   }) {
     final mergedState = mergeHwmMapsWithMeta(
-      localHwm: current.challanHwm,
-      localMeta: current.challanHwmMeta,
+      localHwm: local.challanHwm,
+      localMeta: local.challanHwmMeta,
       remoteHwm: incoming.challanHwm,
       remoteMeta: incoming.challanHwmMeta,
       recordFloor: recordFloor,
     );
-    final bool useIncoming = incomingSettingsWin ||
-        current.updatedAt == 0 ||
-        incoming.updatedAt > current.updatedAt ||
-        incoming.version > current.version;
-    final AppConfig target = useIncoming ? AppConfig.fromMap(incoming.toMap()) : AppConfig.fromMap(current.toMap());
+    final bool useIncoming = incomingFieldsWin ||
+        local.updatedAt == 0 ||
+        incoming.updatedAt > local.updatedAt ||
+        incoming.version > local.version;
+    final AppConfig target = useIncoming ? AppConfig.fromMap(incoming.toMap()) : AppConfig.fromMap(local.toMap());
     target.challanHwm = mergedState.hwm;
     target.challanHwmMeta = mergedState.meta;
-    target.challanHwmTailMigrated = current.challanHwmTailMigrated || incoming.challanHwmTailMigrated;
+    target.challanHwmTailMigrated = local.challanHwmTailMigrated || incoming.challanHwmTailMigrated;
     return target;
   }
 }

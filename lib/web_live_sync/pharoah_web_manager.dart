@@ -1492,11 +1492,9 @@ class PharoahWebManager with ChangeNotifier {
     banks = (decodeJson('banks.json') as List?)?.map((e) => Bank.fromMap(e)).toList() ?? [];
     numberingSeries = (decodeJson('series.json') as List?)?.map((e) => NumberingSeries.fromMap(e)).toList() ?? [];
 
-    if (filesMap.containsKey('logs.json')) {
-      final rawLogs = _decodeJsonSafe(filesMap['logs.json']);
-      if (rawLogs is List) {
-        logs = rawLogs.whereType<Map>().map((e) => LogEntry.fromMap(Map<String, dynamic>.from(e))).toList();
-      }
+    final rawLogs = decodeJson('logs.json');
+    if (rawLogs is List) {
+      logs = rawLogs.whereType<Map>().map((e) => LogEntry.fromMap(Map<String, dynamic>.from(e))).toList();
     }
 
     final webFloor = AppConfig.computeChallanRecordFloor(
@@ -3640,7 +3638,7 @@ class PharoahWebManager with ChangeNotifier {
       env: cEnv,
       configHwm: appConfig.challanHwm,
       companyID: activeStoreToken,
-      type: "SALE_CHALLAN",
+      normType: "SALE_CHALLAN",
     );
     if (hwm > cNum) return false;
 
@@ -3691,7 +3689,7 @@ class PharoahWebManager with ChangeNotifier {
 
     final cId = targetC.id.trim();
     final String cOfy = targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
-    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final String actor = activeUsername.trim().isNotEmpty ? activeUsername.trim() : "WEB_USER";
     final auditDetails = "Cancelled Sale Challan ${targetC.billNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
     addLog("CANCEL_SALE_CHALLAN", auditDetails);
 
@@ -3755,7 +3753,7 @@ class PharoahWebManager with ChangeNotifier {
       env: cEnv,
       configHwm: appConfig.challanHwm,
       companyID: activeStoreToken,
-      type: "PURCHASE_CHALLAN",
+      normType: "PURCHASE_CHALLAN",
     );
     if (hwm > cNum) return false;
 
@@ -3806,7 +3804,7 @@ class PharoahWebManager with ChangeNotifier {
 
     final cId = targetC.id.trim();
     final String cOfy = targetC.effectiveOriginalFy.isNotEmpty ? targetC.effectiveOriginalFy : financialYear;
-    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final String actor = activeUsername.trim().isNotEmpty ? activeUsername.trim() : "WEB_USER";
     final auditDetails = "Cancelled Purchase Challan ${targetC.internalNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
     addLog("CANCEL_PURCHASE_CHALLAN", auditDetails);
 
@@ -3911,7 +3909,7 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final String actor = activeUsername.trim().isNotEmpty ? activeUsername.trim() : "WEB_USER";
     final auditDetails = "Deleted Sale Challan $bNo (UUID: ${cId.isNotEmpty ? cId : challanId}, priorStatus: ${targetC?.status}) by $actor. Series tail rolled back to $remainingMax.";
     addLog("DELETE_SALE_CHALLAN", auditDetails);
 
@@ -4073,7 +4071,7 @@ class PharoahWebManager with ChangeNotifier {
       }
     }
 
-    final String actor = loggedInUser?.name ?? "WEB_USER";
+    final String actor = activeUsername.trim().isNotEmpty ? activeUsername.trim() : "WEB_USER";
     final auditDetails = "Deleted Purchase Challan $iNo (UUID: ${cId.isNotEmpty ? cId : challanId}, priorStatus: ${targetC?.status}) by $actor. Series tail rolled back to $remainingMax.";
     addLog("DELETE_PURCHASE_CHALLAN", auditDetails);
 
@@ -4156,7 +4154,7 @@ class PharoahWebManager with ChangeNotifier {
       extraTombstoneKeys: [
         if (iNo.isNotEmpty) iNo,
         if (compKey2.isNotEmpty) compKey2,
-        if (compKey3.isNotEmpty) compKey3,
+        if (compKey.isNotEmpty) compKey,
       ],
       customDeletedAt: delTime,
     );

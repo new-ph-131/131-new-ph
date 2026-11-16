@@ -1918,39 +1918,21 @@ void main() {
     test('Scenario 13: Real-World Web User Flow - WSCH-1 Cancelled, WSCH-2 Deleted, WSCH-1 Tail Deleted -> Reclaims WSCH-1', () async {
       final webPh = PharoahWebManager();
       webPh.financialYear = '2026-27';
+      webPh.activeStoreToken = 'COMP-W1';
       webPh.companyProfile = {'id': 'COMP-W1', 'name': 'Web Store'};
 
-      final cust = WebCustomer(id: 'CUST-1', name: 'Web Customer', state: 'Delhi');
-      final med = WebMedicine(
-        id: 'WMED-1',
-        name: 'DOLO 650',
-        packing: '15T',
-        batch: 'B1',
-        exp: '12/28',
-        mrp: 60,
-        rate: 50,
-        stock: 100,
-      );
+      final sc1 = makeSaleChallan(
+        id: 'SCH-WEB-1',
+        billNo: 'WSCH-1',
+        partyId: 'CUST-1',
+        partyName: 'Web Customer',
+        date: DateTime(2026, 4, 10),
+        originalFy: '2026-27',
+        status: 'Pending',
+      )..salesmanName = 'WEB-PORTAL';
 
       // 1. Create WSCH-1
-      final ok1 = await webPh.addSaleChallanAndSync(
-        customer: cust,
-        billNo: 'WSCH-1',
-        date: DateTime(2026, 4, 10),
-        items: [
-          WebSaleItem(
-            medicine: med,
-            qty: 2,
-            rate: 50,
-            gstPercent: 12,
-            total: 100,
-          ),
-        ],
-        totalAmount: 100,
-        remarks: 'First web challan',
-        existingId: 'SCH-WEB-1',
-      );
-      expect(ok1, isTrue);
+      webPh.addSaleChallanAndSync(sc1);
       expect(webPh.saleChallans.length, equals(1));
       expect(webPh.saleChallans.single.billNo, equals('WSCH-1'));
       expect(webPh.saleChallans.single.status, equals('Pending'));
@@ -1961,24 +1943,16 @@ void main() {
       expect(webPh.saleChallans.single.status, equals('Cancelled'));
 
       // 3. Create WSCH-2
-      final ok2 = await webPh.addSaleChallanAndSync(
-        customer: cust,
+      final sc2 = makeSaleChallan(
+        id: 'SCH-WEB-2',
         billNo: 'WSCH-2',
+        partyId: 'CUST-1',
+        partyName: 'Web Customer',
         date: DateTime(2026, 4, 12),
-        items: [
-          WebSaleItem(
-            medicine: med,
-            qty: 1,
-            rate: 50,
-            gstPercent: 12,
-            total: 50,
-          ),
-        ],
-        totalAmount: 50,
-        remarks: 'Second web challan',
-        existingId: 'SCH-WEB-2',
-      );
-      expect(ok2, isTrue);
+        originalFy: '2026-27',
+        status: 'Pending',
+      )..salesmanName = 'WEB-PORTAL';
+      webPh.addSaleChallanAndSync(sc2);
       expect(webPh.saleChallans.length, equals(2));
 
       // 4. Try to delete WSCH-1 (Cancelled middle record) -> BLOCKED!
@@ -1996,6 +1970,7 @@ void main() {
         currentList: webPh.saleChallans,
         targetFy: '2026-27',
         env: 'WEB',
+        companyID: webPh.activeStoreToken,
         configHwm: webPh.appConfig.challanHwm,
       );
       expect(nextAfter2, equals('WSCH-2'));
@@ -2011,6 +1986,7 @@ void main() {
         currentList: webPh.saleChallans,
         targetFy: '2026-27',
         env: 'WEB',
+        companyID: webPh.activeStoreToken,
         configHwm: webPh.appConfig.challanHwm,
       );
       expect(nextAfter1, equals('WSCH-1'));
@@ -2019,10 +1995,13 @@ void main() {
     test('Scenario 14: Multi-Step Tail Rollback iteratively reclaims numbers', () async {
       const compId = 'COMP-MULTI';
       SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
-      final ph = PharoahManager(
-        initialCompany: 'Shop M',
-        initialCompanyID: compId,
-        initialPassword: 'pw',
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'Shop M',
+        businessType: 'Wholesale Pharma',
+        createdAt: DateTime(2026, 4, 1),
+        password: 'pw',
         fYears: ['2026-27'],
       );
       ph.currentFY = '2026-27';
@@ -2135,31 +2114,43 @@ void main() {
     });
 
     test('Scenario 16: UUID identity separation - tombstone on UUID-A never deletes or collides with reclaimed UUID-B', () {
-      final deltaMerge = DeltaMergeEngine();
-      final List<SaleChallan> currentMemory = [
+      final ph = PharoahManager();
+      ph.currentFY = '2026-27';
+      ph.saleChallans = [
         makeSaleChallan(
           id: 'UUID-B-RECLAIMED',
           billNo: 'WSCH-1',
           date: DateTime(2026, 4, 20),
           originalFy: '2026-27',
           status: 'Pending',
-        ),
+          updatedAt: 2000,
+        )..salesmanName = 'WEB-PORTAL',
       ];
 
-      final Map<String, dynamic> incomingTombstones = {
-        's_challan': ['UUID-A-OLD-DELETED'],
+      final staleDeletedA = makeSaleChallan(
+        id: 'UUID-A-OLD-DELETED',
+        billNo: 'WSCH-1',
+        date: DateTime(2026, 4, 10),
+        originalFy: '2026-27',
+        status: 'Pending',
+        updatedAt: 1000,
+      )..salesmanName = 'WEB-PORTAL';
+
+      final Map<String, int> registry = {
+        'UUID-A-OLD-DELETED': 1500,
+        '2026-27::WSCH-1': 1500,
+        '2026-27::WEB::WSCH-1': 1500,
+      };
+      final Map<String, dynamic> cloudFiles = {
+        's_challan.json': jsonEncode([staleDeletedA.toMap()]),
       };
 
-      final merged = deltaMerge.mergeSaleChallans(
-        current: currentMemory,
-        incoming: [],
-        tombstones: incomingTombstones['s_challan']!,
-      );
+      DeltaMergeEngine.processCloudData(ph, cloudFiles, registry, {});
 
-      // UUID-B is completely safe from UUID-A tombstone!
-      expect(merged.length, equals(1));
-      expect(merged.single.id, equals('UUID-B-RECLAIMED'));
-      expect(merged.single.billNo, equals('WSCH-1'));
+      // UUID-B is completely safe from UUID-A tombstone, and stale UUID-A does not resurrect!
+      expect(ph.saleChallans.length, equals(1));
+      expect(ph.saleChallans.single.id, equals('UUID-B-RECLAIMED'));
+      expect(ph.saleChallans.single.billNo, equals('WSCH-1'));
     });
 
     test('Scenario 17: Causal Lamport HWM resolution prevails across extreme clock skew', () {
@@ -2179,11 +2170,10 @@ void main() {
         updatedAt: 1000000000000, // Year 2001 wall-clock (severe backward skew)
       );
 
-      final resolved = resolveCausalHwmState(
-        'COMP::2026-27::SALE_CHALLAN::WEB::WSCH-',
+      final resolved = AppConfig.resolveCausalHwmState(
         olderHighClockState,
         newerLowClockState,
-        recordFloor: 0,
+        floor: 0,
       );
 
       expect(resolved.value, equals(2));
@@ -2191,11 +2181,10 @@ void main() {
       expect(resolved.gen, equals(2));
 
       // With an active record floor of 3, rollback to 2 is clamped safely to 3
-      final clamped = resolveCausalHwmState(
-        'COMP::2026-27::SALE_CHALLAN::WEB::WSCH-',
+      final clamped = AppConfig.resolveCausalHwmState(
         olderHighClockState,
         newerLowClockState,
-        recordFloor: 3,
+        floor: 3,
       );
       expect(clamped.value, equals(3));
     });
@@ -2214,26 +2203,31 @@ void main() {
       webPh.saleChallans = [ch];
 
       expect(webPh.cancelSaleChallan('SCH-LOG-1'), isTrue);
-      expect(webPh.logs.any((l) => l.action == 'CHALLAN_CANCELLED'), isTrue);
+      expect(webPh.logs.any((l) => l.action == 'CANCEL_SALE_CHALLAN'), isTrue);
 
       // Now delete tail
       expect(webPh.deleteSaleChallan('SCH-LOG-1'), isTrue);
-      expect(webPh.logs.any((l) => l.action == 'CHALLAN_DELETED'), isTrue);
+      expect(webPh.logs.any((l) => l.action == 'DELETE_SALE_CHALLAN'), isTrue);
     });
 
-    test('Scenario 19: Legacy Web HWM self-heal on load cleans up stale counter=1 for empty store', () async {
+    test('Scenario 19: Legacy Web HWM self-heal on load cleans up stale counter=1 for empty store', () {
       final webPh = PharoahWebManager();
       webPh.financialYear = '2026-27';
+      webPh.activeStoreToken = 'COMP-W19';
       webPh.appConfig.challanHwm = {'2026-27::SALE_CHALLAN::WEB::WSCH-': 1};
       webPh.saleChallans = [];
 
-      WebPharoahNumberingEngine.reconcileLegacyHwmOnLoad(
-        configHwm: webPh.appConfig.challanHwm,
+      final healed = WebPharoahNumberingEngine.reconcileLegacyHwmOnLoad(
+        companyID: webPh.activeStoreToken,
         fy: '2026-27',
-        activeChallans: webPh.saleChallans,
+        config: webPh.appConfig,
+        saleChallans: webPh.saleChallans,
+        purchaseChallans: webPh.purchaseChallans,
       );
 
-      expect(webPh.appConfig.challanHwm['2026-27::SALE_CHALLAN::WEB::WSCH-'], equals(0));
+      expect(healed, isTrue);
+      expect(webPh.appConfig.challanHwm['2026-27::SALE_CHALLAN::WEB::WSCH-'] ?? 0, equals(0));
+      expect(webPh.appConfig.challanHwm['COMP-W19::2026-27::SALE_CHALLAN::WEB::WSCH-'] ?? 0, equals(0));
 
       final nextNo = WebPharoahNumberingEngine.getNextNumber(
         prefix: 'WSCH-',
@@ -2241,6 +2235,7 @@ void main() {
         currentList: webPh.saleChallans,
         targetFy: '2026-27',
         env: 'WEB',
+        companyID: webPh.activeStoreToken,
         configHwm: webPh.appConfig.challanHwm,
       );
       expect(nextNo, equals('WSCH-1'));

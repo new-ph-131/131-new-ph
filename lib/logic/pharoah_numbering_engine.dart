@@ -233,8 +233,10 @@ class PharoahNumberingEngine {
     }
     if (configHwm != null && configHwm.isNotEmpty) {
       if ((configHwm[exactCfgKey] ?? 0) > best) best = configHwm[exactCfgKey]!;
+      final legacy4Part = '${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
       for (final entry in configHwm.entries) {
-        if ((cleanComp.isEmpty || entry.key.startsWith('${cleanComp}::')) && entry.key.endsWith(cfgSuffix)) {
+        if (((cleanComp.isEmpty || entry.key.startsWith('${cleanComp}::')) && entry.key.endsWith(cfgSuffix)) ||
+            entry.key == legacy4Part) {
           if (entry.value > best) best = entry.value;
         }
       }
@@ -529,9 +531,12 @@ class PharoahNumberingEngine {
   /// Safely rolls back the Challan HWM for a specific `(companyID, fy, normType, env, prefix)` scope
   /// down to [newTail] after permanently deleting the series tail challan [deletedNum].
   /// Also rolls back legacy `lastID_` keys on APP so gap/tail reclaim works immediately across restarts.
-  static Future<ChallanHwmState?> rollbackChallanHwmToTail({
+  static Future<void>? lastPersistFuture;
+
+  static ChallanHwmState? rollbackChallanHwmToTail({
     required String companyID,
-    required String type,
+    String type = "",
+    String normType = "",
     required String prefix,
     required int newTail,
     required int deletedNum,
@@ -540,19 +545,20 @@ class PharoahNumberingEngine {
     AppConfig? config,
     String tombUuid = "",
     int d1Seq = 0,
-  }) async {
+  }) {
     final cleanPrefix = prefix.trim().toUpperCase();
     if (cleanPrefix.isEmpty) return null;
 
+    final effectiveType = type.trim().isNotEmpty ? type : normType;
     final cleanComp = companyID.trim();
     final cleanFy = normalizeFyString(fy);
-    final normType = isPurchaseChallanType(type) ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
+    final resolvedNormType = isPurchaseChallanType(effectiveType) ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
     final normEnv = env.trim().toUpperCase();
     final int safeTail = newTail < 0 ? 0 : newTail;
 
-    final hwmKey = _prefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
-    final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
-    final configKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final hwmKey = _prefKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
+    final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
+    final configKey = _configKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
 
     final int prevVal = max(
       deletedNum,
@@ -582,8 +588,8 @@ class PharoahNumberingEngine {
       tombUuid: tombUuid.trim(),
     );
 
-    final prefSuffix = '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix';
-    final cfgSuffix = '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix';
+    final prefSuffix = '_${cleanFy}_${resolvedNormType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = '::${cleanFy}::${resolvedNormType}::${normEnv}::$cleanPrefix';
 
     // Update exact keys and any matching legacy/alias keys in memory cache
     for (final k in _cachedHwm.keys.toList()) {
@@ -616,8 +622,7 @@ class PharoahNumberingEngine {
       config.challanHwmMeta[configKey] = state.copy();
     }
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
+    lastPersistFuture = SharedPreferences.getInstance().then((prefs) async {
       if (safeTail > 0) {
         await prefs.setInt(hwmKey, safeTail);
       } else {
@@ -625,7 +630,7 @@ class PharoahNumberingEngine {
       }
       await prefs.setString(metaPrefKey, jsonEncode(state.toMap()));
       if (normEnv == "APP") {
-        for (final legKey in _legacyLastIdKeys(type, normType, cleanPrefix, cleanComp, cleanFy)) {
+        for (final legKey in _legacyLastIdKeys(effectiveType, resolvedNormType, cleanPrefix, cleanComp, cleanFy)) {
           if (safeTail > 0) {
             await prefs.setInt(legKey, safeTail);
           } else {
@@ -633,9 +638,9 @@ class PharoahNumberingEngine {
           }
         }
       }
-    } catch (e) {
+    }).catchError((e) {
       debugPrint("⚠️ [PharoahNumberingEngine] rollback prefs error: $e");
-    }
+    });
 
     return state;
   }
@@ -664,17 +669,35 @@ class PharoahNumberingEngine {
     final String scopeHeader = '${cleanComp}::${cleanFy}::';
 
     if (!config.challanHwmTailMigrated) {
+      final String legacy4Header = '${cleanFy}::';
       final Set<String> legacyCfgKeys = {
-        ...config.challanHwm.keys.where((k) => k.startsWith(scopeHeader)),
-        ..._cachedHwm.keys.where((k) => k.startsWith(scopeHeader)),
+        ...config.challanHwm.keys.where((k) => k.startsWith(scopeHeader) || k.startsWith(legacy4Header)),
+        ..._cachedHwm.keys.where((k) => k.startsWith(scopeHeader) || k.startsWith(legacy4Header)),
       };
 
-      for (final cfgKey in legacyCfgKeys) {
-        if (config.challanHwmMeta.containsKey(cfgKey)) continue;
+      for (final rawKey in legacyCfgKeys) {
+        final rawParts = rawKey.split('::');
+        final bool is4Part = rawParts.length == 4;
+        if (!is4Part && rawParts.length != 5) continue;
+        final String cfgKey = is4Part
+            ? _configKey(cleanComp, rawParts[0], rawParts[1], rawParts[2], rawParts[3])
+            : rawKey;
         final parts = cfgKey.split('::');
-        if (parts.length != 5) continue;
-        final int curHwm = max(config.challanHwm[cfgKey] ?? 0, _cachedHwm[cfgKey] ?? 0);
+        if (config.challanHwmMeta.containsKey(cfgKey) || config.challanHwmMeta.containsKey(rawKey)) continue;
+        final int curHwm = max(
+          max(config.challanHwm[cfgKey] ?? 0, config.challanHwm[rawKey] ?? 0),
+          max(_cachedHwm[cfgKey] ?? 0, _cachedHwm[rawKey] ?? 0),
+        );
         final int fl = floor[cfgKey] ?? 0;
+        if (is4Part) {
+          config.challanHwm.remove(rawKey);
+          _cachedHwm.remove(rawKey);
+          if (fl > 0 && curHwm <= fl) {
+            config.challanHwm[cfgKey] = fl;
+            _cachedHwm[cfgKey] = fl;
+            mutated = true;
+          }
+        }
         if (curHwm > fl) {
           final String pKey = _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
           final String mKey = _metaPrefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);

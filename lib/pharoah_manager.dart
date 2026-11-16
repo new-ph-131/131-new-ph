@@ -629,22 +629,6 @@ class PharoahManager with ChangeNotifier {
       vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
           .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, "", currentFY))
           .toList();
-      PharoahNumberingEngine.absorbChallanHwmState(
-        hwm: config.challanHwm,
-        meta: config.challanHwmMeta,
-      );
-      if (activeCompany != null && currentFY.isNotEmpty) {
-        final bool healed = PharoahNumberingEngine.reconcileLegacyHwmOnLoad(
-          companyID: activeCompany!.id,
-          fy: currentFY,
-          config: config,
-          saleChallans: saleChallans,
-          purchaseChallans: purchaseChallans,
-        );
-        if (healed) {
-          save();
-        }
-      }
       saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e)).where((c) {
         if (c.isDeleted == 1) return false;
         final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
@@ -661,6 +645,22 @@ class PharoahManager with ChangeNotifier {
         }
         return !D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt);
       }).toList();
+      PharoahNumberingEngine.absorbChallanHwmState(
+        hwm: config.challanHwm,
+        meta: config.challanHwmMeta,
+      );
+      if (activeCompany != null && currentFY.isNotEmpty) {
+        final bool healed = await PharoahNumberingEngine.reconcileLegacyHwmOnLoad(
+          companyID: activeCompany!.id,
+          fy: currentFY,
+          config: config,
+          saleChallans: saleChallans,
+          purchaseChallans: purchaseChallans,
+        );
+        if (healed) {
+          save();
+        }
+      }
       if (activeCompany != null) {
         for (final sc in saleChallans) {
           final String scFy = normalizeFyString(sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : currentFY);
@@ -3666,7 +3666,7 @@ void registerBatchActivity({
 
       final cId = c.id.trim();
       final String effFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
-      final String actor = loggedInStaff.isNotEmpty ? loggedInStaff : (activeCompany?.adminUser ?? "APP_USER");
+      final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Cancelled Sale Challan ${c.billNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
       addLog("CANCEL_SALE_CHALLAN", auditDetails);
 
@@ -3791,7 +3791,7 @@ void registerBatchActivity({
 
       final cId = c.id.trim();
       final String effFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
-      final String actor = loggedInStaff.isNotEmpty ? loggedInStaff : (activeCompany?.adminUser ?? "APP_USER");
+      final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Cancelled Purchase Challan ${c.internalNo} (UUID: $cId, priorStatus: $priorStatus) by $actor.";
       addLog("CANCEL_PURCHASE_CHALLAN", auditDetails);
 
@@ -3836,6 +3836,10 @@ void registerBatchActivity({
   Future<bool> deleteSaleChallanAsync(String id) async {
     final ok = deleteSaleChallan(id);
     if (!ok) return false;
+    final prefsPending = PharoahNumberingEngine.lastPersistFuture;
+    if (prefsPending != null) {
+      await prefsPending;
+    }
     final pending = _pendingChallanSyncFuture;
     if (pending != null) {
       await pending;
@@ -3846,6 +3850,10 @@ void registerBatchActivity({
   Future<bool> deletePurchaseChallanAsync(String id) async {
     final ok = deletePurchaseChallan(id);
     if (!ok) return false;
+    final prefsPending = PharoahNumberingEngine.lastPersistFuture;
+    if (prefsPending != null) {
+      await prefsPending;
+    }
     final pending = _pendingChallanSyncFuture;
     if (pending != null) {
       await pending;
@@ -3908,7 +3916,7 @@ void registerBatchActivity({
       if (activeCompany != null && scPrefix.isNotEmpty && cNum != null) {
         rolledState = PharoahNumberingEngine.rollbackChallanHwmToTail(
           prefix: scPrefix,
-          normType: "SALE_CHALLAN",
+          type: "SALE_CHALLAN",
           newTail: remainingMax,
           deletedNum: cNum,
           fy: effDelFy,
@@ -3935,7 +3943,7 @@ void registerBatchActivity({
         }
       }
 
-      final String actor = loggedInStaff.isNotEmpty ? loggedInStaff : (activeCompany?.adminUser ?? "APP_USER");
+      final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Deleted Sale Challan $bNo (UUID: ${cId.isNotEmpty ? cId : id}, priorStatus: ${c.status}) by $actor. Series tail rolled back to $remainingMax.";
       addLog("DELETE_SALE_CHALLAN", auditDetails);
 
@@ -4086,7 +4094,7 @@ void registerBatchActivity({
       if (activeCompany != null && pcPrefix.isNotEmpty && cNum != null) {
         rolledState = PharoahNumberingEngine.rollbackChallanHwmToTail(
           prefix: pcPrefix,
-          normType: "PURCHASE_CHALLAN",
+          type: "PURCHASE_CHALLAN",
           newTail: remainingMax,
           deletedNum: cNum,
           fy: effDelFy,
@@ -4113,7 +4121,7 @@ void registerBatchActivity({
         }
       }
 
-      final String actor = loggedInStaff.isNotEmpty ? loggedInStaff : (activeCompany?.adminUser ?? "APP_USER");
+      final String actor = (loggedInStaff?.name ?? "").trim().isNotEmpty ? loggedInStaff!.name.trim() : (activeCompany?.adminUser ?? "APP_USER");
       final auditDetails = "Deleted Purchase Challan $iNo (UUID: ${cId.isNotEmpty ? cId : id}, priorStatus: ${c.status}) by $actor. Series tail rolled back to $remainingMax.";
       addLog("DELETE_PURCHASE_CHALLAN", auditDetails);
 

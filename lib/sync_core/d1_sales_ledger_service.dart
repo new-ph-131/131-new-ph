@@ -1692,6 +1692,7 @@ class D1SalesLedgerService {
     bool isUpdate = false,
     String clientSource = "APP_MOBILE",
     String? fy,
+    void Function(int serverSeq)? onServerSeq,
   }) async {
     final String rawFy = (fy != null && fy.trim().isNotEmpty)
         ? fy.trim()
@@ -2098,6 +2099,7 @@ class D1SalesLedgerService {
     bool isUpdate = false,
     String clientSource = "APP_MOBILE",
     String? fy,
+    void Function(int serverSeq)? onServerSeq,
   }) async {
     final String rawFy = (fy != null && fy.trim().isNotEmpty)
         ? fy.trim()

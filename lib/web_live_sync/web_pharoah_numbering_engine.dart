@@ -208,7 +208,14 @@ class WebPharoahNumberingEngine {
       }
     }
     if (configHwm != null && configHwm.isNotEmpty) {
+      final legacy4Part = (cleanFy.isNotEmpty)
+          ? '${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
+          : '${normType}::${normEnv}::$cleanPrefix';
       for (final entry in configHwm.entries) {
+        if (entry.key == legacy4Part) {
+          if (entry.value > best) best = entry.value;
+          continue;
+        }
         if (cleanComp.isNotEmpty && !entry.key.startsWith('${cleanComp}::')) {
           continue;
         }
@@ -435,17 +442,35 @@ class WebPharoahNumberingEngine {
     final String scopeHeader = '${cleanComp}::${cleanFy}::';
 
     if (!config.challanHwmTailMigrated) {
+      final String legacy4Header = '${cleanFy}::';
       final Set<String> legacyCfgKeys = {
-        ...config.challanHwm.keys.where((k) => k.startsWith(scopeHeader)),
-        ..._cachedHwm.keys.where((k) => k.startsWith(scopeHeader)),
+        ...config.challanHwm.keys.where((k) => k.startsWith(scopeHeader) || k.startsWith(legacy4Header)),
+        ..._cachedHwm.keys.where((k) => k.startsWith(scopeHeader) || k.startsWith(legacy4Header)),
       };
 
-      for (final cfgKey in legacyCfgKeys) {
-        if (config.challanHwmMeta.containsKey(cfgKey)) continue;
+      for (final rawKey in legacyCfgKeys) {
+        final rawParts = rawKey.split('::');
+        final bool is4Part = rawParts.length == 4;
+        if (!is4Part && rawParts.length != 5) continue;
+        final String cfgKey = is4Part
+            ? _configKey(cleanComp, rawParts[0], rawParts[1], rawParts[2], rawParts[3])
+            : rawKey;
         final parts = cfgKey.split('::');
-        if (parts.length != 5) continue;
-        final int curHwm = max(config.challanHwm[cfgKey] ?? 0, _cachedHwm[cfgKey] ?? 0);
+        if (config.challanHwmMeta.containsKey(cfgKey) || config.challanHwmMeta.containsKey(rawKey)) continue;
+        final int curHwm = max(
+          max(config.challanHwm[cfgKey] ?? 0, config.challanHwm[rawKey] ?? 0),
+          max(_cachedHwm[cfgKey] ?? 0, _cachedHwm[rawKey] ?? 0),
+        );
         final int fl = floor[cfgKey] ?? 0;
+        if (is4Part) {
+          config.challanHwm.remove(rawKey);
+          _cachedHwm.remove(rawKey);
+          if (fl > 0 && curHwm <= fl) {
+            config.challanHwm[cfgKey] = fl;
+            _cachedHwm[cfgKey] = fl;
+            mutated = true;
+          }
+        }
         if (curHwm > fl) {
           final String pKey = _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
           final String mKey = _metaPrefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
