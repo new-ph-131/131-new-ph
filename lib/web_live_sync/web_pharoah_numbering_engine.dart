@@ -1,5 +1,6 @@
 // FILE: lib/web_live_sync/web_pharoah_numbering_engine.dart
-// Revision: #PH-REV-815 (MONOTONIC-CHALLAN-HWM-ENTERPRISE-ISOLATION)
+// Revision: #PH-REV-816 (MONOTONIC-CHALLAN-HWM-CROSS-ENV-ISOLATION)
+
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,9 +16,18 @@ class WebPharoahNumberingEngine {
   static void absorbChallanHwmMap(Map<String, int> incoming) {
     incoming.forEach((key, val) {
       final cleanK = key.trim();
+      if (cleanK.isEmpty || val <= 0) return;
       final current = _cachedHwm[cleanK] ?? 0;
       if (val > current) {
         _cachedHwm[cleanK] = val;
+      }
+      final parts = cleanK.split('::');
+      if (parts.length == 5) {
+        final prefKey = 'challan_hwm_${parts[0]}_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
+        final curPref = _cachedHwm[prefKey] ?? 0;
+        if (val > curPref) {
+          _cachedHwm[prefKey] = val;
+        }
       }
     });
   }
@@ -30,7 +40,7 @@ class WebPharoahNumberingEngine {
       for (final k in keys) {
         if (k.startsWith('challan_hwm_')) {
           final val = prefs.getInt(k);
-          if (val != null) {
+          if (val != null && val > (_cachedHwm[k] ?? 0)) {
             _cachedHwm[k] = val;
           }
         }
@@ -46,6 +56,82 @@ class WebPharoahNumberingEngine {
     return p == "WSCH-" || p == "SCH-" || p == "WPCH-" || p == "PCH-";
   }
 
+  /// Identifies whether a Challan record originated from Web Portal vs Mobile App
+  static bool isWebChallanRecord(dynamic item) {
+    try {
+      if (item is SaleChallan) {
+        return item.id.trim().startsWith("SCH-WEB") ||
+            item.salesmanName.trim().toUpperCase() == "WEB-PORTAL" ||
+            item.billNo.trim().toUpperCase().startsWith("WSCH-");
+      }
+      if (item is PurchaseChallan) {
+        return item.id.trim().startsWith("PCH-WEB") ||
+            item.internalNo.trim().toUpperCase().startsWith("WPCH-") ||
+            item.remarks.contains("WEB-PORTAL");
+      }
+      if (item is Map) {
+        final id = (item['id'] ?? '').toString().trim();
+        final sm = (item['salesmanName'] ?? '').toString().trim().toUpperCase();
+        final rem = (item['remarks'] ?? '').toString();
+        final bNo = (item['billNo'] ?? '').toString().trim().toUpperCase();
+        final iNo = (item['internalNo'] ?? '').toString().trim().toUpperCase();
+        return id.startsWith("SCH-WEB") ||
+            id.startsWith("PCH-WEB") ||
+            sm == "WEB-PORTAL" ||
+            rem.contains("WEB-PORTAL") ||
+            bNo.startsWith("WSCH-") ||
+            iNo.startsWith("WPCH-");
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Reads cached/config HWM for a specific (companyID, fy, docType, env, prefix) without prefix substring collisions
+  static int getCachedChallanHwm({
+    required String prefix,
+    required String fy,
+    required String normType,
+    String env = "WEB",
+    String companyID = "",
+    Map<String, int>? configHwm,
+  }) {
+    final cleanPrefix = prefix.trim().toUpperCase();
+    if (cleanPrefix.isEmpty) return 0;
+    final cleanFy = normalizeFyString(fy);
+    final normEnv = env.trim().toUpperCase();
+    final cleanComp = companyID.trim();
+
+    int best = 0;
+    final prefSuffix = (cleanFy.isNotEmpty)
+        ? '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix'
+        : '_${normType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = (cleanFy.isNotEmpty)
+        ? '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
+        : '::${normType}::${normEnv}::$cleanPrefix';
+
+    for (final entry in _cachedHwm.entries) {
+      if (cleanComp.isNotEmpty &&
+          !entry.key.startsWith('challan_hwm_${cleanComp}_') &&
+          !entry.key.startsWith('${cleanComp}::')) {
+        continue;
+      }
+      if (entry.key.endsWith(prefSuffix) || entry.key.endsWith(cfgSuffix)) {
+        if (entry.value > best) best = entry.value;
+      }
+    }
+    if (configHwm != null && configHwm.isNotEmpty) {
+      for (final entry in configHwm.entries) {
+        if (cleanComp.isNotEmpty && !entry.key.startsWith('${cleanComp}::')) {
+          continue;
+        }
+        if (entry.key.endsWith(cfgSuffix)) {
+          if (entry.value > best) best = entry.value;
+        }
+      }
+    }
+    return best;
+  }
+
   /// Monotonically records issued Challan number into persistent HWM cache and SharedPreferences
   static void recordChallanHwm({
     required String prefix,
@@ -57,7 +143,7 @@ class WebPharoahNumberingEngine {
   }) {
     final cleanNum = number.trim().toUpperCase();
     final cleanPrefix = prefix.trim().toUpperCase();
-    if (!cleanNum.startsWith(cleanPrefix)) return;
+    if (cleanPrefix.isEmpty || !cleanNum.startsWith(cleanPrefix)) return;
     final numPart = cleanNum.substring(cleanPrefix.length).trim();
     final int? issuedInt = int.tryParse(numPart);
     if (issuedInt == null) return;
@@ -79,6 +165,9 @@ class WebPharoahNumberingEngine {
       if (issuedInt > existingCfg) {
         config.challanHwm[configKey] = issuedInt;
       }
+      if (issuedInt > (_cachedHwm[configKey] ?? 0)) {
+        _cachedHwm[configKey] = issuedInt;
+      }
     }
 
     // Persist asynchronously to SharedPreferences
@@ -99,20 +188,25 @@ class WebPharoahNumberingEngine {
     required List<dynamic> currentList,
     String? targetFy,
     String env = "WEB",
+    String companyID = "",
     Map<String, int>? configHwm,
     Iterable<String>? tombstones,
+    bool isChallanDoc = false,
   }) {
     List<int> existingNumbers = [];
     final String cleanPrefix = prefix.trim().toUpperCase();
     final String cleanTargetFy = normalizeFyString(targetFy ?? '');
     final String normEnv = env.trim().toUpperCase();
-
-    bool isChallanList = isChallanPrefix(cleanPrefix);
+    bool isChallanList = isChallanDoc || isChallanPrefix(cleanPrefix);
+    bool inferredPurchaseChallan = cleanPrefix.contains("PCH");
     if (!isChallanList && currentList.isNotEmpty) {
       final first = currentList.first;
       if (first is SaleChallan || first is PurchaseChallan) {
         isChallanList = true;
+        if (first is PurchaseChallan) inferredPurchaseChallan = true;
       }
+    } else if (currentList.any((e) => e is PurchaseChallan)) {
+      inferredPurchaseChallan = true;
     }
 
     for (var item in currentList) {
@@ -123,18 +217,20 @@ class WebPharoahNumberingEngine {
         } else if (item is Purchase) {
           idToParse = item.internalNo;
         } else if (item is SaleChallan) {
-          if (item.isDeleted == 1) continue;
-          // 🛡️ STRICT FY ISOLATION: Do not count carry-forward challans from prior financial years
           if (cleanTargetFy.isNotEmpty && normalizeFyString(item.effectiveOriginalFy) != cleanTargetFy) {
             continue;
           }
+          final bool itemIsWeb = isWebChallanRecord(item);
+          if (normEnv == "WEB" && !itemIsWeb) continue;
+          if (normEnv == "APP" && itemIsWeb) continue;
           idToParse = item.billNo;
         } else if (item is PurchaseChallan) {
-          if (item.isDeleted == 1) continue;
-          // 🛡️ STRICT FY ISOLATION: Do not count carry-forward purchase challans from prior financial years
           if (cleanTargetFy.isNotEmpty && normalizeFyString(item.effectiveOriginalFy) != cleanTargetFy) {
             continue;
           }
+          final bool itemIsWeb = isWebChallanRecord(item);
+          if (normEnv == "WEB" && !itemIsWeb) continue;
+          if (normEnv == "APP" && itemIsWeb) continue;
           idToParse = item.internalNo;
         } else if (item is SaleReturn) {
           idToParse = item.billNo;
@@ -149,6 +245,11 @@ class WebPharoahNumberingEngine {
           if (cleanTargetFy.isNotEmpty && mapFy.isNotEmpty && mapFy != cleanTargetFy) {
             continue;
           }
+          if (isChallanList) {
+            final bool itemIsWeb = isWebChallanRecord(item);
+            if (normEnv == "WEB" && !itemIsWeb) continue;
+            if (normEnv == "APP" && itemIsWeb) continue;
+          }
           idToParse = (item['billNo'] ??
                   item['internalNo'] ??
                   item['voucherNo'] ??
@@ -161,7 +262,6 @@ class WebPharoahNumberingEngine {
       }
 
       final String upperId = idToParse.trim().toUpperCase();
-      // 🛡️ Strict Prefix Match: Only extract sequential integer if the ID starts with this exact prefix
       if (cleanPrefix.isNotEmpty && upperId.startsWith(cleanPrefix)) {
         final String numPart = upperId.substring(cleanPrefix.length).trim();
         final int? n = int.tryParse(numPart);
@@ -175,32 +275,37 @@ class WebPharoahNumberingEngine {
     // CHALLAN MONOTONIC HIGH-WATER MARK (NO GAP FILLING)
     // -------------------------------------------------------------------------
     if (isChallanList) {
-      final String normType = cleanPrefix.contains("PCH") ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
-      int cachedVal = 0;
-      for (final entry in _cachedHwm.entries) {
-        if (entry.key.contains(cleanPrefix) &&
-            (cleanTargetFy.isEmpty || entry.key.contains(cleanTargetFy))) {
-          if (entry.value > cachedVal) cachedVal = entry.value;
-        }
-      }
-
-      int cfgVal = 0;
-      if (configHwm != null && configHwm.isNotEmpty) {
-        for (final entry in configHwm.entries) {
-          if (entry.key.contains(cleanPrefix) &&
-              (cleanTargetFy.isEmpty || entry.key.contains(cleanTargetFy))) {
-            if (entry.value > cfgVal) cfgVal = entry.value;
-          }
-        }
-      }
-
+      final String normType = inferredPurchaseChallan ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
+      final int cachedOrCfg = getCachedChallanHwm(
+        prefix: cleanPrefix,
+        fy: cleanTargetFy,
+        normType: normType,
+        env: normEnv,
+        companyID: companyID,
+        configHwm: configHwm,
+      );
       int maxExisting = existingNumbers.isNotEmpty ? existingNumbers.reduce(max) : 0;
-
       int maxTomb = 0;
       if (tombstones != null) {
         for (final t in tombstones) {
           final ut = t.trim().toUpperCase();
-          final rawKey = ut.contains('::') ? ut.split('::').last : ut;
+          if (ut.isEmpty) continue;
+          if (ut.contains('::')) {
+            final parts = ut.split('::');
+            if (parts.length >= 2) {
+              final first = parts[0].trim();
+              if (RegExp(r'^\d{4}-\d{2,4}$').hasMatch(first) && cleanTargetFy.isNotEmpty) {
+                if (normalizeFyString(first) != cleanTargetFy) continue;
+              }
+              if (parts.length >= 3) {
+                final envPart = parts[1].trim();
+                if ((envPart == "APP" || envPart == "WEB") && envPart != normEnv) {
+                  continue;
+                }
+              }
+            }
+          }
+          final rawKey = ut.contains('::') ? ut.split('::').last.trim() : ut;
           if (cleanPrefix.isNotEmpty && rawKey.startsWith(cleanPrefix)) {
             final numPart = rawKey.substring(cleanPrefix.length).trim();
             final int? n = int.tryParse(numPart);
@@ -209,7 +314,7 @@ class WebPharoahNumberingEngine {
         }
       }
 
-      int hwm = max(cachedVal, max(cfgVal, max(maxExisting, maxTomb)));
+      int hwm = max(cachedOrCfg, max(maxExisting, maxTomb));
       int next = (hwm >= startFrom) ? (hwm + 1) : startFrom;
       return "$prefix$next";
     }
@@ -226,7 +331,6 @@ class WebPharoahNumberingEngine {
       }
       return "$prefix${existingNumbers.last + 1}";
     }
-
     return "$prefix$startFrom";
   }
 }

@@ -84,9 +84,11 @@ class PartyIntegrityService {
       );
     }
 
-    // 4. Check Sale Challans
+    // 4. Check Sale Challans (Exclude Cancelled & Hard-Deleted challans)
     int sChallanCount = saleChallans.where((c) =>
-      c.partyId.trim() == pId
+      c.isDeleted != 1 &&
+      c.status.trim().toUpperCase() != "CANCELLED" &&
+      (c.partyId.trim() == pId || c.partyName.trim().toUpperCase() == pName)
     ).length;
     if (sChallanCount > 0) {
       return PartyDeleteCheckResult(
@@ -96,9 +98,11 @@ class PartyIntegrityService {
       );
     }
 
-    // 5. Check Purchase Challans
+    // 5. Check Purchase Challans (Exclude Cancelled & Hard-Deleted challans)
     int pChallanCount = purchaseChallans.where((c) =>
-      c.partyId.trim() == pId || c.distributorName.trim().toUpperCase() == pName
+      c.isDeleted != 1 &&
+      c.status.trim().toUpperCase() != "CANCELLED" &&
+      (c.partyId.trim() == pId || c.distributorName.trim().toUpperCase() == pName)
     ).length;
     if (pChallanCount > 0) {
       return PartyDeleteCheckResult(

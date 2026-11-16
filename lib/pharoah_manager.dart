@@ -517,6 +517,7 @@ class PharoahManager with ChangeNotifier {
     }
     D1SalesLedgerService.activeFinancialYear = currentFY;
     await D1SalesLedgerService.loadPersistedGravestones();
+    await PharoahNumberingEngine.loadFromPrefs();
     SharedPreferences.getInstance().then((prefs) {
       final bool pausedByUser = prefs.getBool('is_cloud_sync_paused_by_user') ?? false;
       if (!pausedByUser) {
@@ -627,10 +628,11 @@ class PharoahManager with ChangeNotifier {
       vouchers = loadList<Voucher>('vouc.json', (e) => Voucher.fromMap(e))
           .where((v) => v.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(v.id, v.voucherNo, "", currentFY))
           .toList();
+      PharoahNumberingEngine.absorbChallanHwmMap(config.challanHwm);
       saleChallans = loadList<SaleChallan>('s_challan.json', (e) => SaleChallan.fromMap(e)).where((c) {
         if (c.isDeleted == 1) return false;
         final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
-        if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+        if (c.status == "Pending" || c.status == "Active" || c.status == "Billed" || c.status == "Cancelled") {
           return !D1SalesLedgerService.isSaleChallanIdDeleted(c.id, cFy);
         }
         return !D1SalesLedgerService.isSaleChallanDeleted(c.id, c.billNo, cFy, c.updatedAt);
@@ -638,11 +640,47 @@ class PharoahManager with ChangeNotifier {
       purchaseChallans = loadList<PurchaseChallan>('p_challan.json', (e) => PurchaseChallan.fromMap(e)).where((c) {
         if (c.isDeleted == 1) return false;
         final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
-        if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+        if (c.status == "Pending" || c.status == "Active" || c.status == "Billed" || c.status == "Cancelled") {
           return !D1SalesLedgerService.isPurchaseIdDeleted(c.id, cFy);
         }
         return !D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt);
       }).toList();
+      if (activeCompany != null) {
+        for (final sc in saleChallans) {
+          final String scFy = normalizeFyString(sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : currentFY);
+          if (scFy == normalizeFyString(currentFY)) {
+            final String scPrefix = _extractAlphaPrefix(sc.billNo);
+            if (scPrefix.isNotEmpty) {
+              await PharoahNumberingEngine.recordChallanHwm(
+                companyID: activeCompany!.id,
+                type: "SALE_CHALLAN",
+                prefix: scPrefix,
+                number: sc.billNo,
+                fy: scFy,
+                env: PharoahNumberingEngine.isWebChallanRecord(sc) ? "WEB" : "APP",
+                config: config,
+              );
+            }
+          }
+        }
+        for (final pc in purchaseChallans) {
+          final String pcFy = normalizeFyString(pc.effectiveOriginalFy.isNotEmpty ? pc.effectiveOriginalFy : currentFY);
+          if (pcFy == normalizeFyString(currentFY)) {
+            final String pcPrefix = _extractAlphaPrefix(pc.internalNo);
+            if (pcPrefix.isNotEmpty) {
+              await PharoahNumberingEngine.recordChallanHwm(
+                companyID: activeCompany!.id,
+                type: "PURCHASE_CHALLAN",
+                prefix: pcPrefix,
+                number: pc.internalNo,
+                fy: pcFy,
+                env: PharoahNumberingEngine.isWebChallanRecord(pc) ? "WEB" : "APP",
+                config: config,
+              );
+            }
+          }
+        }
+      }
       saleReturns = loadList<SaleReturn>('s_return.json', (e) => SaleReturn.fromMap(e))
           .where((r) => r.isDeleted != 1 && !D1SalesLedgerService.isBillDeleted(r.id, r.billNo, "", currentFY))
           .toList();
@@ -1548,14 +1586,10 @@ Future<bool> finalizePurchase({
   }) async { 
     final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
-    final cleanBNo = billNo.trim().toUpperCase();
-    final bool isEditMode = existingId != null && existingId.isNotEmpty;
     final String normCurrFy = normalizeFyString(currentFY);
-    final int existingIdx = isEditMode
-        ? saleChallans.indexWhere((c) => c.id == cId)
-        : saleChallans.indexWhere((c) => c.id == cId || (cleanBNo.isNotEmpty && c.billNo.trim().toUpperCase() == cleanBNo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
+    final int existingIdx = saleChallans.indexWhere((c) => c.id == cId);
     final SaleChallan? existingCh = existingIdx != -1 ? saleChallans[existingIdx] : null;
-    if (existingCh != null && existingCh.status == "Billed") {
+    if (existingCh != null && (existingCh.status == "Billed" || existingCh.status == "Cancelled")) {
       return existingCh;
     }
     if (existingCh != null) {
@@ -1586,10 +1620,11 @@ Future<bool> finalizePurchase({
     );
     saleChallans.add(newChallan);
     if (activeCompany != null) {
+      final extractedScPrefix = _extractAlphaPrefix(billNo);
       await PharoahNumberingEngine.recordChallanHwm(
         companyID: activeCompany!.id,
         type: "SALE_CHALLAN",
-        prefix: config.saleChallanPrefix,
+        prefix: extractedScPrefix.isNotEmpty ? extractedScPrefix : config.saleChallanPrefix,
         number: billNo,
         fy: effFy,
         env: "APP",
@@ -1672,13 +1707,10 @@ Future<bool> finalizePurchase({
     final String cId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
     int currentVer = 1;
     final cleanINo = internalNo.trim().toUpperCase();
-    final bool isEditMode = existingId != null && existingId.isNotEmpty;
     final String normCurrFy = normalizeFyString(currentFY);
-    final int existingIdx = isEditMode
-        ? purchaseChallans.indexWhere((c) => c.id == cId)
-        : purchaseChallans.indexWhere((c) => c.id == cId || (cleanINo.isNotEmpty && c.internalNo.trim().toUpperCase() == cleanINo && normalizeFyString(c.effectiveOriginalFy) == normCurrFy));
+    final int existingIdx = purchaseChallans.indexWhere((c) => c.id == cId);
     final PurchaseChallan? existingCh = existingIdx != -1 ? purchaseChallans[existingIdx] : null;
-    if (existingCh != null && existingCh.status == "Billed") {
+    if (existingCh != null && (existingCh.status == "Billed" || existingCh.status == "Cancelled")) {
       return false;
     }
     final String targetOfy = normalizeFyString(existingCh != null
@@ -1722,10 +1754,11 @@ Future<bool> finalizePurchase({
     );
     purchaseChallans.add(newPChallan);
     if (activeCompany != null) {
+      final extractedPcPrefix = _extractAlphaPrefix(internalNo);
       await PharoahNumberingEngine.recordChallanHwm(
         companyID: activeCompany!.id,
         type: "PURCHASE_CHALLAN",
-        prefix: config.purPrefix,
+        prefix: extractedPcPrefix.isNotEmpty ? extractedPcPrefix : "PCH-",
         number: internalNo,
         fy: effFy,
         env: "APP",
@@ -3520,8 +3553,18 @@ void registerBatchActivity({
     } catch (e) {}
   }
 
+  static String _extractAlphaPrefix(String raw) {
+    final clean = raw.trim().toUpperCase();
+    for (int i = 0; i < clean.length; i++) {
+      if (RegExp(r'^[0-9]').hasMatch(clean.substring(i))) {
+        return clean.substring(0, i);
+      }
+    }
+    return "";
+  }
+
   /// Checks whether a Sale Challan is eligible for permanent deletion (Last-Eligible-Draft Gate).
-  /// Middle challans must be cancelled instead of deleted to protect audit trail and monotonic numbering.
+  /// Middle challans, signed challans, billed challans, or numbers below persisted HWM must be cancelled instead of deleted.
   bool canDeleteSaleChallan(String id) {
     SaleChallan? c;
     try {
@@ -3529,7 +3572,8 @@ void registerBatchActivity({
     } catch (_) {
       return false;
     }
-    if (c.status == "Billed" || c.status == "Cancelled") return false;
+    if (c.status != "Pending") return false;
+    if (c.isSigned || c.sigHistory.isNotEmpty) return false;
     final fwd = getForwardChallanStatus(c.id, isPurchase: false);
     if (fwd.billedFy != null) return false;
 
@@ -3547,11 +3591,24 @@ void registerBatchActivity({
     }
     if (cNum == null) return true;
 
+    final bool cIsWeb = PharoahNumberingEngine.isWebChallanRecord(c);
+    final String cEnv = cIsWeb ? "WEB" : "APP";
+    final int hwm = PharoahNumberingEngine.getCachedChallanHwm(
+      companyID: activeCompany?.id ?? "",
+      type: "SALE_CHALLAN",
+      prefix: prefix,
+      fy: cFy,
+      env: cEnv,
+      configHwm: config.challanHwm,
+    );
+    if (hwm > cNum) return false;
+
     for (final other in saleChallans) {
       if (other.id == c.id) continue;
       if (other.isDeleted == 1) continue;
       final String oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : currentFY);
       if (oFy != cFy) continue;
+      if (PharoahNumberingEngine.isWebChallanRecord(other) != cIsWeb) continue;
       final String oBill = other.billNo.trim().toUpperCase();
       if (prefix.isNotEmpty && oBill.startsWith(prefix)) {
         final int? oNum = int.tryParse(oBill.substring(prefix.length).trim());
@@ -3623,7 +3680,7 @@ void registerBatchActivity({
     } catch (_) {
       return false;
     }
-    if (c.status == "Billed" || c.status == "Cancelled") return false;
+    if (c.status != "Pending") return false;
     final fwd = getForwardChallanStatus(c.id, isPurchase: true);
     if (fwd.billedFy != null) return false;
 
@@ -3641,11 +3698,24 @@ void registerBatchActivity({
     }
     if (cNum == null) return true;
 
+    final bool cIsWeb = PharoahNumberingEngine.isWebChallanRecord(c);
+    final String cEnv = cIsWeb ? "WEB" : "APP";
+    final int hwm = PharoahNumberingEngine.getCachedChallanHwm(
+      companyID: activeCompany?.id ?? "",
+      type: "PURCHASE_CHALLAN",
+      prefix: prefix,
+      fy: cFy,
+      env: cEnv,
+      configHwm: config.challanHwm,
+    );
+    if (hwm > cNum) return false;
+
     for (final other in purchaseChallans) {
       if (other.id == c.id) continue;
       if (other.isDeleted == 1) continue;
       final String oFy = normalizeFyString(other.effectiveOriginalFy.isNotEmpty ? other.effectiveOriginalFy : currentFY);
       if (oFy != cFy) continue;
+      if (PharoahNumberingEngine.isWebChallanRecord(other) != cIsWeb) continue;
       final String oInt = other.internalNo.trim().toUpperCase();
       if (prefix.isNotEmpty && oInt.startsWith(prefix)) {
         final int? oNum = int.tryParse(oInt.substring(prefix.length).trim());
@@ -3709,6 +3779,28 @@ void registerBatchActivity({
     }
   }
 
+  Future<void>? _pendingChallanSyncFuture;
+
+  Future<bool> deleteSaleChallanAsync(String id) async {
+    final ok = deleteSaleChallan(id);
+    if (!ok) return false;
+    final pending = _pendingChallanSyncFuture;
+    if (pending != null) {
+      await pending;
+    }
+    return true;
+  }
+
+  Future<bool> deletePurchaseChallanAsync(String id) async {
+    final ok = deletePurchaseChallan(id);
+    if (!ok) return false;
+    final pending = _pendingChallanSyncFuture;
+    if (pending != null) {
+      await pending;
+    }
+    return true;
+  }
+
   bool deleteSaleChallan(String id) {
     try {
       final c = saleChallans.firstWhere((x) => x.id == id || x.billNo == id);
@@ -3730,16 +3822,30 @@ void registerBatchActivity({
       final String delFy = currentFY;
       final String cOfy = c.effectiveOriginalFy;
       final scopedBNo = bNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(bNo, delFy) : "";
-      final List<String> delKeys = [if (cId.isNotEmpty) cId else id, if (scopedBNo.isNotEmpty) scopedBNo];
+      final String delEnv = PharoahNumberingEngine.isWebChallanRecord(c) ? "WEB" : "APP";
+      final String envBNo = bNo.isNotEmpty ? "${normalizeFyString(cOfy.isNotEmpty ? cOfy : delFy)}::$delEnv::$bNo" : "";
+      final List<String> delKeys = [if (cId.isNotEmpty) cId else id, if (scopedBNo.isNotEmpty) scopedBNo, if (envBNo.isNotEmpty) envBNo];
       final int delTs = DateTime.now().millisecondsSinceEpoch;
       final String effDelFy = cOfy.isNotEmpty ? cOfy : delFy;
+      final String scPrefix = _extractAlphaPrefix(bNo);
+      if (activeCompany != null && scPrefix.isNotEmpty) {
+        PharoahNumberingEngine.recordChallanHwm(
+          companyID: activeCompany!.id,
+          type: "SALE_CHALLAN",
+          prefix: scPrefix,
+          number: bNo,
+          fy: effDelFy,
+          env: delEnv,
+          config: config,
+        );
+      }
       D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, effDelFy, delTs);
       if (delFy != effDelFy) {
         D1SalesLedgerService.markSaleChallanPermanentlyDeleted(cId.isNotEmpty ? cId : id, bNo, delFy, delTs);
       }
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
-        Future<void>(() async {
+        _pendingChallanSyncFuture = Future<void>(() async {
           await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: effDelFy);
           if (delFy != effDelFy) {
             await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
@@ -3818,14 +3924,29 @@ void registerBatchActivity({
       final String cOfy = c.effectiveOriginalFy;
       final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
       final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
+      final String delEnv = PharoahNumberingEngine.isWebChallanRecord(c) ? "WEB" : "APP";
+      final String envINo = iNo.isNotEmpty ? "${normalizeFyString(cOfy.isNotEmpty ? cOfy : delFy)}::$delEnv::$iNo" : "";
       final List<String> delKeys = [
         if (cId.isNotEmpty) cId else id,
         if (iNo.isNotEmpty) iNo,
+        if (envINo.isNotEmpty) envINo,
         if (compKey2.isNotEmpty) compKey2,
         if (compKey3.isNotEmpty) compKey3,
       ];
       final int delTs = DateTime.now().millisecondsSinceEpoch;
       final String effDelFy = cOfy.isNotEmpty ? cOfy : delFy;
+      final String pcPrefix = _extractAlphaPrefix(iNo);
+      if (activeCompany != null && pcPrefix.isNotEmpty) {
+        PharoahNumberingEngine.recordChallanHwm(
+          companyID: activeCompany!.id,
+          type: "PURCHASE_CHALLAN",
+          prefix: pcPrefix,
+          number: iNo,
+          fy: effDelFy,
+          env: delEnv,
+          config: config,
+        );
+      }
       D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, effDelFy, delTs);
       if (delFy != effDelFy) {
         D1SalesLedgerService.markPurchasePermanentlyDeleted(cId.isNotEmpty ? cId : id, pId, bNo, iNo, delFy, delTs);
@@ -3833,7 +3954,7 @@ void registerBatchActivity({
 
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
-        Future<void>(() async {
+        _pendingChallanSyncFuture = Future<void>(() async {
           await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: effDelFy);
           if (delFy != effDelFy) {
             await TombstoneEngine.recordBatchTombstones(compId, delKeys, timestamp: delTs, fy: delFy);
@@ -4519,6 +4640,7 @@ void registerBatchActivity({
     currentFY = year.trim();
     D1SalesLedgerService.activeFinancialYear = currentFY;
     await D1SalesLedgerService.loadPersistedGravestones();
+    await PharoahNumberingEngine.loadFromPrefs();
     final dir = await getWorkingPath(); 
     if (dir.isEmpty) return;
     dynamic load(String n) {
@@ -4549,7 +4671,7 @@ void registerBatchActivity({
         .where((c) {
           if (c.isDeleted == 1) return false;
           final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
-          if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+          if (c.status == "Pending" || c.status == "Active" || c.status == "Billed" || c.status == "Cancelled") {
             return !D1SalesLedgerService.isSaleChallanIdDeleted(c.id, cFy);
           }
           return !D1SalesLedgerService.isSaleChallanDeleted(c.id, c.billNo, cFy, c.updatedAt);
@@ -4560,7 +4682,7 @@ void registerBatchActivity({
         .where((c) {
           if (c.isDeleted == 1) return false;
           final String cFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
-          if (c.status == "Pending" || c.status == "Active" || c.status == "Billed") {
+          if (c.status == "Pending" || c.status == "Active" || c.status == "Billed" || c.status == "Cancelled") {
             return !D1SalesLedgerService.isPurchaseIdDeleted(c.id, cFy);
           }
           return !D1SalesLedgerService.isPurchaseChallanDeleted(c.id, c.partyId, c.billNo, c.internalNo, cFy, c.updatedAt);

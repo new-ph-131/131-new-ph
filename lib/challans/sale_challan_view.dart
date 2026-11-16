@@ -57,6 +57,9 @@ class _SaleChallanViewState extends State<SaleChallanView> {
           prefix: series.prefix,
           startFrom: series.startNumber,
           currentList: ph.saleChallans,
+          targetFy: ph.currentFY,
+          env: "APP",
+          configHwm: ph.config.challanHwm,
         );
         
         setState(() {
