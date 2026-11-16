@@ -1,21 +1,29 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pharoah_erp/fy_transfer_engine.dart';
 import 'package:pharoah_erp/gateway/company_registry_model.dart';
+import 'package:pharoah_erp/logic/app_settings_model.dart';
+import 'package:pharoah_erp/logic/party_integrity_service.dart';
 import 'package:pharoah_erp/logic/pharoah_numbering_engine.dart';
 import 'package:pharoah_erp/models.dart';
 import 'package:pharoah_erp/sync_core/d1_sales_ledger_service.dart';
 import 'package:pharoah_erp/sync_core/models/sync_envelope.dart';
 import 'package:pharoah_erp/sync_core/modules/purchase_challan_sync_module.dart';
 import 'package:pharoah_erp/sync_core/modules/sale_challan_sync_module.dart';
+import 'package:pharoah_erp/sync_core/modules/settings_sync_module.dart';
 import 'package:pharoah_erp/sync_core/multi_fy_cloud_vault.dart';
 import 'package:pharoah_erp/sync_core/orchestrator/master_sync_orchestrator.dart';
 import 'package:pharoah_erp/sync_core/outbox/sync_queue_manager.dart';
 import 'package:pharoah_erp/pharoah_manager.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/web_item_entry_card.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_purchase_challan_billing_view.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_challans/web_sale_challan_billing_view.dart';
 import 'package:pharoah_erp/web_live_sync/sync_protocol/delta_merge_engine.dart';
 import 'package:pharoah_erp/web_live_sync/sync_protocol/tombstone_engine.dart';
 import 'package:pharoah_erp/web_live_sync/web_pharoah_numbering_engine.dart';
@@ -139,6 +147,8 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'active_fy_COMP-1': '2026-27',
     });
+    PharoahNumberingEngine.debugResetHwmCache();
+    WebPharoahNumberingEngine.debugResetHwmCache();
     await D1SalesLedgerService.loadPersistedGravestones();
     D1SalesLedgerService.activeFinancialYear = '2026-27';
     SyncQueueManager.debugReset();
@@ -291,8 +301,8 @@ void main() {
     });
   });
 
-  group('Group 2: Per-FY Sequential Numbering & Soft-Delete Filtering', () {
-    test('T5: PharoahNumberingEngine resets Sale/Purchase Challan numbering in new FY ignoring Carry-Forward & deleted records', () async {
+  group('Group 2: Per-FY Sequential Numbering & Monotonic HWM Enforcement', () {
+    test('T5: PharoahNumberingEngine enforces Monotonic HWM per FY ignoring Carry-Forward while blocking deleted-number reuse', () async {
       final carriedFromOldFy = makeSaleChallan(
         id: 'sc-old-1',
         billNo: 'Y-42',
@@ -307,14 +317,27 @@ void main() {
         isDeleted: 1,
       );
 
+      // Carry-forward Y-42 (2025-26) is ignored, while current-FY soft-deleted Y-99 advances monotonic HWM -> Y-100
       final nextSaleChallanNo = await PharoahNumberingEngine.getNextNumber(
         type: 'SALE_CHALLAN',
         companyID: 'COMP-1',
         prefix: 'Y-',
         startFrom: 1,
+        targetFy: '2026-27',
         currentList: [carriedFromOldFy, softDeletedCurrentFy],
       );
-      expect(nextSaleChallanNo, equals('Y-1'));
+      expect(nextSaleChallanNo, equals('Y-100'));
+
+      // Fresh FY with only prior-FY Carry-Forward starts cleanly at Y-1
+      final nextFreshFy = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: 'COMP-1',
+        prefix: 'Y-',
+        startFrom: 1,
+        targetFy: '2027-28',
+        currentList: [carriedFromOldFy],
+      );
+      expect(nextFreshFy, equals('Y-1'));
 
       final carriedPurChallan = makePurchaseChallan(
         id: 'pc-old-1',
@@ -335,32 +358,39 @@ void main() {
         companyID: 'COMP-1',
         prefix: 'PC-',
         startFrom: 1,
+        targetFy: '2026-27',
         currentList: [carriedPurChallan, currentPurChallan],
       );
       expect(nextPurChallanNo, equals('PC-2'));
     });
 
-    test('T6: WebPharoahNumberingEngine isolates numbering by targetFy and skips deleted records', () {
+    test('T6: WebPharoahNumberingEngine isolates numbering by targetFy & WEB env and enforces monotonic HWM across deleted records', () {
       final list = [
         makeSaleChallan(
-          id: 'wsc-old',
+          id: 'SCH-WEB-OLD',
           billNo: 'Y-50',
           date: DateTime(2026, 3, 25),
           originalFy: '2025-26',
-        ),
+        )..salesmanName = 'WEB-PORTAL',
         makeSaleChallan(
-          id: 'wsc-del',
+          id: 'sc-app-99',
+          billNo: 'Y-99',
+          date: DateTime(2026, 4, 18),
+          originalFy: '2026-27',
+        ), // APP record must NEVER pollute WEB numbering
+        makeSaleChallan(
+          id: 'SCH-WEB-DEL',
           billNo: 'Y-8',
           date: DateTime(2026, 4, 15),
           originalFy: '2026-27',
           isDeleted: 1,
-        ),
+        )..salesmanName = 'WEB-PORTAL',
         makeSaleChallan(
-          id: 'wsc-cur',
+          id: 'SCH-WEB-CUR',
           billNo: 'Y-1',
           date: DateTime(2026, 4, 20),
           originalFy: '2026-27',
-        ),
+        )..salesmanName = 'WEB-PORTAL',
       ];
 
       final nextNo = WebPharoahNumberingEngine.getNextNumber(
@@ -368,8 +398,9 @@ void main() {
         startFrom: 1,
         currentList: list,
         targetFy: '2026-2027',
+        env: 'WEB',
       );
-      expect(nextNo, equals('Y-2'));
+      expect(nextNo, equals('Y-9'));
     });
   });
 
@@ -1237,4 +1268,613 @@ void main() {
       );
     });
   });
+
+  group('Group 8: Monotonic HWM, Last-Draft Delete, Middle-Cancel, Cross-Env Isolation & Web FINISH Guard (Scenarios 1-12)', () {
+    test('Scenario 1: Sale & Purchase SCH-1..5 / PCH-1..5 — only last eligible draft deletes and HWM stays locked at 5 -> next is 6', () async {
+      const compId = 'COMP-SCEN-1';
+      SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'Scen 1 Pharmacy',
+        businessType: 'Retail',
+        createdAt: DateTime(2026, 4, 1),
+        password: 'pw',
+        fYears: ['2026-27'],
+      );
+      ph.currentFY = '2026-27';
+      D1SalesLedgerService.activeFinancialYear = '2026-27';
+      final party = Party(id: 'P1', name: 'Customer One', state: 'Rajasthan');
+      final sup = Party(id: 'S1', name: 'Supplier One', group: 'Sundry Creditors');
+
+      for (int i = 1; i <= 5; i++) {
+        await ph.finalizeSaleChallan(
+          billNo: 'SCH-$i',
+          date: DateTime(2026, 5, i),
+          party: party,
+          items: [
+            BillItem(
+              id: 'BI-$i',
+              srNo: 1,
+              medicineID: 'MED-1',
+              name: 'PARA 500',
+              packing: '10T',
+              batch: 'B1',
+              exp: '12/27',
+              hsn: '3004',
+              mrp: 50,
+              qty: 1,
+              rate: 40,
+              gstRate: 12,
+              total: 40,
+            ),
+          ],
+          total: 40,
+          partyId: 'P1',
+          existingId: 'SC-UUID-$i',
+        );
+        await ph.finalizePurchaseChallan(
+          billNo: 'SUP-$i',
+          internalNo: 'PCH-$i',
+          date: DateTime(2026, 5, i),
+          party: sup,
+          items: [
+            PurchaseItem(
+              id: 'PI-$i',
+              srNo: 1,
+              medicineID: 'MED-1',
+              name: 'PARA 500',
+              packing: '10T',
+              batch: 'B1',
+              exp: '12/27',
+              hsn: '3004',
+              mrp: 50,
+              qty: 2,
+              purchaseRate: 30,
+              gstRate: 12,
+              total: 60,
+            ),
+          ],
+          total: 60,
+          partyId: 'S1',
+          existingId: 'PC-UUID-$i',
+        );
+      }
+
+      // Only #5 is eligible for hard delete
+      expect(ph.canDeleteSaleChallan('SC-UUID-2'), isFalse);
+      expect(ph.canDeleteSaleChallan('SC-UUID-4'), isFalse);
+      expect(ph.canDeleteSaleChallan('SC-UUID-5'), isTrue);
+      expect(ph.canDeletePurchaseChallan('PC-UUID-3'), isFalse);
+      expect(ph.canDeletePurchaseChallan('PC-UUID-5'), isTrue);
+
+      // Middle delete refused
+      expect(await ph.deleteSaleChallanAsync('SC-UUID-2'), isFalse);
+      expect(await ph.deletePurchaseChallanAsync('PC-UUID-3'), isFalse);
+
+      // Last-draft delete succeeds
+      expect(await ph.deleteSaleChallanAsync('SC-UUID-5'), isTrue);
+      expect(await ph.deletePurchaseChallanAsync('PC-UUID-5'), isTrue);
+
+      // Now #4 MUST still be blocked from hard delete because HWM is locked at 5!
+      expect(ph.canDeleteSaleChallan('SC-UUID-4'), isFalse);
+      expect(ph.canDeletePurchaseChallan('PC-UUID-4'), isFalse);
+
+      // Next generated numbers MUST be 6, never 5
+      final nextSc = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: compId,
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        currentList: ph.saleChallans,
+        configHwm: ph.config.challanHwm,
+      );
+      final nextPc = await PharoahNumberingEngine.getNextNumber(
+        type: 'PURCHASE_CHALLAN',
+        companyID: compId,
+        prefix: 'PCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        currentList: ph.purchaseChallans,
+        configHwm: ph.config.challanHwm,
+      );
+      expect(nextSc, equals('SCH-6'));
+      expect(nextPc, equals('PCH-6'));
+    });
+
+    test('Scenario 2 & 10: Middle Challan Cancel preserves UUID/number, excludes Cancelled from stock/totals/party-block, allows Supplier Ref re-entry', () async {
+      const compId = 'COMP-SCEN-2';
+      SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'Scen 2 Pharmacy',
+        businessType: 'Retail',
+        createdAt: DateTime(2026, 4, 1),
+        password: 'pw',
+        fYears: ['2026-27'],
+      );
+      ph.currentFY = '2026-27';
+      D1SalesLedgerService.activeFinancialYear = '2026-27';
+      final party = Party(id: 'P2', name: 'Middle Party', state: 'Rajasthan');
+      final sup = Party(id: 'S2', name: 'Middle Supplier', group: 'Sundry Creditors');
+
+      ph.medicines = [
+        Medicine(
+          id: 'MED-ST',
+          systemId: 'PH-900',
+          name: 'AMOX 500',
+          packing: '10C',
+          mrp: 100,
+          rateA: 80,
+          purRate: 60,
+          stock: 25,
+        ),
+      ];
+
+      for (int i = 1; i <= 3; i++) {
+        await ph.finalizeSaleChallan(
+          billNo: 'SCH-$i',
+          date: DateTime(2026, 6, i),
+          party: party,
+          items: [
+            BillItem(
+              id: 'SBI-$i',
+              srNo: 1,
+              medicineID: 'MED-ST',
+              name: 'AMOX 500',
+              packing: '10C',
+              batch: 'B1',
+              exp: '12/27',
+              hsn: '3004',
+              mrp: 100,
+              qty: 2,
+              rate: 80,
+              gstRate: 12,
+              total: 160,
+            ),
+          ],
+          total: 160,
+          partyId: 'P2',
+          existingId: 'SC2-$i',
+        );
+        await ph.finalizePurchaseChallan(
+          billNo: i == 2 ? 'SUP-202' : 'SUP-10$i',
+          internalNo: 'PCH-$i',
+          date: DateTime(2026, 6, i),
+          party: sup,
+          items: [
+            PurchaseItem(
+              id: 'PBI-$i',
+              srNo: 1,
+              medicineID: 'MED-ST',
+              name: 'AMOX 500',
+              packing: '10C',
+              batch: 'B1',
+              exp: '12/27',
+              hsn: '3004',
+              mrp: 100,
+              qty: 5,
+              purchaseRate: 60,
+              gstRate: 12,
+              total: 300,
+            ),
+          ],
+          total: 300,
+          partyId: 'S2',
+          existingId: 'PC2-$i',
+        );
+      }
+
+      final stockBeforeCancel = ph.medicines.first.stock;
+      expect(await ph.cancelSaleChallan('SC2-2'), isTrue);
+      expect(await ph.cancelPurchaseChallan('PC2-2'), isTrue);
+
+      final cancelledSc = ph.saleChallans.firstWhere((c) => c.id == 'SC2-2');
+      final cancelledPc = ph.purchaseChallans.firstWhere((c) => c.id == 'PC2-2');
+      expect(cancelledSc.status, equals('Cancelled'));
+      expect(cancelledSc.isDeleted, equals(0));
+      expect(cancelledSc.billNo, equals('SCH-2'));
+      expect(cancelledPc.status, equals('Cancelled'));
+      expect(cancelledPc.isDeleted, equals(0));
+      expect(cancelledPc.internalNo, equals('PCH-2'));
+
+      // Scenario 10: Cancelling a Pending challan must have zero stock mutation
+      expect(ph.medicines.first.stock, equals(stockBeforeCancel));
+
+      // Supplier Ref SUP-202 can now be re-entered cleanly with new PCH-4
+      final dupCheck = findDuplicateSupplierChallan(
+        challans: ph.purchaseChallans,
+        partyId: 'S2',
+        partyName: sup.name,
+        billNo: 'SUP-202',
+        targetFy: '2026-27',
+      );
+      expect(dupCheck, isNull);
+      expect(
+        await ph.finalizePurchaseChallan(
+          billNo: 'SUP-202',
+          internalNo: 'PCH-4',
+          date: DateTime(2026, 6, 10),
+          party: sup,
+          items: cancelledPc.items,
+          total: 300,
+          partyId: 'S2',
+          existingId: 'PC2-4',
+        ),
+        isTrue,
+      );
+
+      // PartyIntegrityService ignores Cancelled challans
+      final partyOnlyCancelled = Party(id: 'P-CANC', name: 'Cancelled Only Party');
+      final elig = PartyIntegrityService.checkPartyDeletionEligibilityForLists(
+        sales: const [],
+        purchases: const [],
+        vouchers: const [],
+        saleChallans: [
+          makeSaleChallan(id: 'SC-CANC', billNo: 'SCH-9', partyId: 'P-CANC', partyName: 'Cancelled Only Party', status: 'Cancelled'),
+        ],
+        purchaseChallans: [
+          makePurchaseChallan(id: 'PC-CANC', internalNo: 'PCH-9', billNo: 'SUP-9', partyId: 'P-CANC', distributorName: 'Cancelled Only Party', status: 'Cancelled'),
+        ],
+        saleReturns: const [],
+        purchaseReturns: const [],
+        party: partyOnlyCancelled,
+      );
+      expect(elig.canDelete, isTrue);
+
+      final nextSc = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: compId,
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        currentList: ph.saleChallans,
+        configHwm: ph.config.challanHwm,
+      );
+      expect(nextSc, equals('SCH-4'));
+    });
+
+    test('Scenario 3, 4 & 5: App & Web counters and Delete/Cancel actions stay 100% isolated (even sharing SCH-/PCH- prefix)', () async {
+      final appSales = [
+        for (int i = 1; i <= 3; i++)
+          makeSaleChallan(id: 'SC-APP-$i', billNo: 'SCH-$i', originalFy: '2026-27'),
+      ];
+      final webSales = [
+        for (int i = 1; i <= 5; i++)
+          makeSaleChallan(id: 'SCH-WEB-$i', billNo: 'SCH-$i', originalFy: '2026-27')
+            ..salesmanName = 'WEB-PORTAL',
+        for (int i = 1; i <= 5; i++)
+          makeSaleChallan(id: 'SCH-WEB-W$i', billNo: 'WSCH-$i', originalFy: '2026-27')
+            ..salesmanName = 'WEB-PORTAL',
+      ];
+      final combined = [...appSales, ...webSales];
+
+      final nextApp = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: 'COMP-ISO',
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        env: 'APP',
+        currentList: combined,
+      );
+      final nextWebSamePrefix = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'SCH-',
+        startFrom: 1,
+        currentList: combined,
+        targetFy: '2026-27',
+        env: 'WEB',
+        companyID: 'COMP-ISO',
+      );
+      final nextWebOwnPrefix = WebPharoahNumberingEngine.getNextNumber(
+        prefix: 'WSCH-',
+        startFrom: 1,
+        currentList: combined,
+        targetFy: '2026-27',
+        env: 'WEB',
+        companyID: 'COMP-ISO',
+      );
+      expect(nextApp, equals('SCH-4'));
+      expect(nextWebSamePrefix, equals('SCH-6'));
+      expect(nextWebOwnPrefix, equals('WSCH-6'));
+
+      // Scenario 4 & 5: Cancel/Delete on Web does not touch App's SCH-2/SCH-3
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+      webPh.saleChallans = List.from(combined);
+      expect(webPh.cancelSaleChallan('SCH-WEB-2'), isTrue);
+      expect(webPh.deleteSaleChallan('SCH-WEB-5'), isTrue);
+
+      expect(webPh.saleChallans.firstWhere((c) => c.id == 'SC-APP-2').status, equals('Pending'));
+      expect(webPh.saleChallans.any((c) => c.id == 'SC-APP-3'), isTrue);
+      expect(
+        WebPharoahNumberingEngine.getNextNumber(
+          prefix: 'SCH-',
+          startFrom: 1,
+          currentList: webPh.saleChallans,
+          targetFy: '2026-27',
+          env: 'WEB',
+          configHwm: webPh.appConfig.challanHwm,
+        ),
+        equals('SCH-6'),
+      );
+    });
+
+    test('Scenario 6 & 7: Restart recovery loads persisted HWM from Prefs & 2-Device Offline HWM Sync merges via Math.max', () async {
+      const compId = 'COMP-RST';
+      SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
+
+      await PharoahNumberingEngine.recordChallanHwm(
+        companyID: compId,
+        type: 'SALE_CHALLAN',
+        prefix: 'SCH-',
+        number: 'SCH-5',
+        fy: '2026-27',
+        env: 'APP',
+      );
+      WebPharoahNumberingEngine.recordChallanHwm(
+        companyID: compId,
+        type: 'SALE_CHALLAN',
+        prefix: 'WSCH-',
+        number: 'WSCH-5',
+        fy: '2026-27',
+        env: 'WEB',
+      );
+      // Give microtask/SharedPreferences flush time to complete
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Simulate cold app & web restart by wiping in-memory caches
+      PharoahNumberingEngine.debugResetHwmCache();
+      WebPharoahNumberingEngine.debugResetHwmCache();
+      await PharoahNumberingEngine.loadFromPrefs();
+      await WebPharoahNumberingEngine.loadFromPrefs();
+
+      final afterRestartApp = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: compId,
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        env: 'APP',
+        currentList: const [],
+      );
+      final afterRestartWeb = WebPharoahNumberingEngine.getNextNumber(
+        companyID: compId,
+        prefix: 'WSCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        env: 'WEB',
+        companyID: compId,
+        currentList: const [],
+      );
+      expect(afterRestartApp, equals('SCH-6'));
+      expect(afterRestartWeb, equals('WSCH-6'));
+
+      // Scenario 7: 2-device offline HWM merge via SettingsSyncModule & AppConfig.mergeHwmMaps
+      final cfgA = AppConfig(challanHwm: {
+        '${compId}::2026-27::SALE_CHALLAN::APP::SCH-': 3,
+        '${compId}::2026-27::SALE_CHALLAN::WEB::WSCH-': 8,
+      });
+      final cfgB = AppConfig(challanHwm: {
+        '${compId}::2026-27::SALE_CHALLAN::APP::SCH-': 7,
+        '${compId}::2026-27::SALE_CHALLAN::WEB::WSCH-': 4,
+      });
+      final merged = AppConfig.mergeHwmMaps(cfgA.challanHwm, cfgB.challanHwm);
+      expect(merged['${compId}::2026-27::SALE_CHALLAN::APP::SCH-'], equals(7));
+      expect(merged['${compId}::2026-27::SALE_CHALLAN::WEB::WSCH-'], equals(8));
+
+      late AppConfig syncedCfg;
+      final mutated = SettingsSyncModule.applyEdgeEventsToLocalConfig(
+        currentConfig: cfgA,
+        edgeEvents: [
+          {
+            'bill_id': SettingsSyncModule.syncIdConfig,
+            'sale_data': {
+              ...cfgB.toMap(),
+              'fy': '2026-27',
+              'version': 1,
+              'updatedAt': 1000,
+            },
+          }
+        ],
+        onConfigMutated: (c) => syncedCfg = c,
+      );
+      expect(mutated, isTrue);
+      expect(syncedCfg.challanHwm['${compId}::2026-27::SALE_CHALLAN::APP::SCH-'], equals(7));
+      expect(syncedCfg.challanHwm['${compId}::2026-27::SALE_CHALLAN::WEB::WSCH-'], equals(8));
+    });
+
+    test('Scenario 8 & 9: Distinct UUIDs with same visible SCH-1/PCH-1 coexist; Billed & Signed Challans block Delete and Cancel', () async {
+      const compId = 'COMP-SCEN-8';
+      SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
+      final ph = PharoahManager();
+      ph.activeCompany = CompanyProfile(
+        id: compId,
+        name: 'Scen 8 Pharmacy',
+        businessType: 'Retail',
+        createdAt: DateTime(2026, 4, 1),
+        password: 'pw',
+        fYears: ['2026-27'],
+      );
+      ph.currentFY = '2026-27';
+      D1SalesLedgerService.activeFinancialYear = '2026-27';
+      final p1 = Party(id: 'P1', name: 'Party One', state: 'Rajasthan');
+      final p2 = Party(id: 'P2', name: 'Party Two', state: 'Rajasthan');
+      final sup1 = Party(id: 'S1', name: 'Sup One', group: 'Sundry Creditors');
+
+      // Scenario 8: Two distinct UUIDs both numbered SCH-1 in same FY coexist without overwrite
+      await ph.finalizeSaleChallan(
+        billNo: 'SCH-1',
+        date: DateTime(2026, 5, 1),
+        party: p1,
+        items: const [],
+        total: 100,
+        partyId: 'P1',
+        existingId: 'UUID-APP-SCH-1',
+      );
+      await ph.finalizeSaleChallan(
+        billNo: 'SCH-1',
+        date: DateTime(2026, 5, 2),
+        party: p2,
+        items: const [],
+        total: 200,
+        partyId: 'P2',
+        existingId: 'UUID-WEB-SCH-1',
+      );
+      expect(ph.saleChallans.where((c) => c.billNo == 'SCH-1').length, equals(2));
+
+      // Distinct UUIDs for PurchaseChallan PCH-1 with distinct suppliers also coexist
+      await ph.finalizePurchaseChallan(
+        billNo: 'REF-A',
+        internalNo: 'PCH-1',
+        date: DateTime(2026, 5, 1),
+        party: sup1,
+        items: const [],
+        total: 150,
+        partyId: 'S1',
+        existingId: 'UUID-APP-PCH-1',
+      );
+      await ph.finalizePurchaseChallan(
+        billNo: 'REF-B',
+        internalNo: 'PCH-1',
+        date: DateTime(2026, 5, 2),
+        party: Party(id: 'S2', name: 'Sup Two', group: 'Sundry Creditors'),
+        items: const [],
+        total: 250,
+        partyId: 'S2',
+        existingId: 'UUID-WEB-PCH-1',
+      );
+      expect(ph.purchaseChallans.where((c) => c.internalNo == 'PCH-1').length, equals(2));
+
+      // Scenario 9: Signed SaleChallan & Billed Sale/Purchase Challan block Delete; Billed blocks Cancel too
+      final signedSc = makeSaleChallan(id: 'SC-SIGNED', billNo: 'SCH-99', originalFy: '2026-27')
+        ..isSigned = true;
+      final billedSc = makeSaleChallan(id: 'SC-BILLED', billNo: 'SCH-100', status: 'Billed', originalFy: '2026-27');
+      final billedPc = makePurchaseChallan(id: 'PC-BILLED', internalNo: 'PCH-100', billNo: 'REF-100', status: 'Billed', originalFy: '2026-27');
+      ph.saleChallans.addAll([signedSc, billedSc]);
+      ph.purchaseChallans.add(billedPc);
+
+      expect(ph.canDeleteSaleChallan('SC-SIGNED'), isFalse);
+      expect(await ph.deleteSaleChallanAsync('SC-SIGNED'), isFalse);
+      expect(ph.canDeleteSaleChallan('SC-BILLED'), isFalse);
+      expect(await ph.deleteSaleChallanAsync('SC-BILLED'), isFalse);
+      expect(await ph.cancelSaleChallan('SC-BILLED'), isFalse);
+      expect(ph.canDeletePurchaseChallan('PC-BILLED'), isFalse);
+      expect(await ph.deletePurchaseChallanAsync('PC-BILLED'), isFalse);
+      expect(await ph.cancelPurchaseChallan('PC-BILLED'), isFalse);
+    });
+
+    testWidgets('Scenario 11: Web Sale & Purchase Challan FINISH rapid double-tap creates ONLY 1 challan (no twin WSCH-1+WSCH-2)', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final webPh = PharoahWebManager();
+      webPh.financialYear = '2026-27';
+      webPh.medicines = [
+        Medicine(
+          id: 'MED-DT',
+          systemId: 'PH-DT1',
+          name: 'PARACETAMOL 500',
+          packing: '10T',
+          mrp: 30.0,
+          rateA: 24.0,
+          purRate: 18.0,
+          stock: 100.0,
+        ),
+      ];
+      final customer = Party(id: 'C-DT', name: 'DoubleTap Customer', state: 'Rajasthan');
+
+      // 1. WebSaleChallanBillingView double-tap FINISH test
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PharoahWebManager>.value(
+          value: webPh,
+          child: MaterialApp(
+            home: WebSaleChallanBillingView(
+              party: customer,
+              challanNo: 'WSCH-1',
+              challanDate: DateTime(2026, 7, 15),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).first, 'PARA');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('sc_med_MED-DT_0')));
+      await tester.pumpAndSettle();
+      expect(find.byType(WebItemEntryCard), findsOneWidget);
+      await tester.tap(find.text('CONFIRM & ADD TO INVOICE'));
+      await tester.pumpAndSettle();
+
+      final finishSaleBtn = find.text('FINISH');
+      expect(finishSaleBtn, findsOneWidget);
+      // Rapid double tap before navigation completes
+      await tester.tap(finishSaleBtn);
+      await tester.tap(finishSaleBtn, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(webPh.saleChallans.length, equals(1));
+      expect(webPh.saleChallans.single.billNo, equals('WSCH-1'));
+
+      // 2. WebPurchaseChallanBillingView double-tap FINISH test
+      final supplier = Party(id: 'S-DT', name: 'DoubleTap Supplier', group: 'Sundry Creditors');
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PharoahWebManager>.value(
+          value: webPh,
+          child: MaterialApp(
+            home: WebPurchaseChallanBillingView(
+              supplier: supplier,
+              internalNo: 'WPCH-1',
+              supplierRefNo: 'SUP-DT-1',
+              challanDate: DateTime(2026, 7, 15),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.enterText(find.byType(TextField).first, 'PARA');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('pc_med_MED-DT_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('CONFIRM & ADD TO INWARD'));
+      await tester.pumpAndSettle();
+
+      final finishPurBtn = find.text('FINISH');
+      expect(finishPurBtn, findsOneWidget);
+      await tester.tap(finishPurBtn);
+      await tester.tap(finishPurBtn, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(webPh.purchaseChallans.length, equals(1));
+      expect(webPh.purchaseChallans.single.internalNo, equals('WPCH-1'));
+    });
+
+    test('Scenario 12: Migration bootstrap picks max(persisted, active/cancelled, tombstones) + 1 safely', () async {
+      const compId = 'COMP-MIG';
+      SharedPreferences.setMockInitialValues({'active_fy_$compId': '2026-27'});
+
+      final active = makeSaleChallan(id: 'SC-M-2', billNo: 'SCH-2', status: 'Pending', originalFy: '2026-27');
+      final cancelled = makeSaleChallan(id: 'SC-M-4', billNo: 'SCH-4', status: 'Cancelled', originalFy: '2026-27');
+      final wrongFyTombstone = '2025-26::APP::SCH-99';
+      final validFyTombstone = '2026-27::APP::SCH-7';
+      final crossEnvTombstone = '2026-27::WEB::SCH-50';
+
+      final nextMigrated = await PharoahNumberingEngine.getNextNumber(
+        type: 'SALE_CHALLAN',
+        companyID: compId,
+        prefix: 'SCH-',
+        startFrom: 1,
+        targetFy: '2026-27',
+        env: 'APP',
+        currentList: [active, cancelled],
+        configHwm: {
+          '${compId}::2026-27::SALE_CHALLAN::APP::SCH-': 5,
+        },
+        tombstones: [wrongFyTombstone, validFyTombstone, crossEnvTombstone],
+      );
+      // Must ignore 2025-26::APP::SCH-99 and 2026-27::WEB::SCH-50, and pick max(5, 4, 7) + 1 = SCH-8
+      expect(nextMigrated, equals('SCH-8'));
+    });
+  });
 }
+

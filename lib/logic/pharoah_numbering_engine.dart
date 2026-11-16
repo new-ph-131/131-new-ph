@@ -9,6 +9,11 @@ import 'app_settings_model.dart';
 class PharoahNumberingEngine {
   static final Map<String, int> _cachedHwm = {};
 
+  @visibleForTesting
+  static void debugResetHwmCache() {
+    _cachedHwm.clear();
+  }
+
   /// Checks whether a numbering type belongs to Challans
   static bool isChallanType(String type) {
     final u = type.trim().toUpperCase();

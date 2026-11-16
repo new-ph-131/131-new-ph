@@ -12,6 +12,11 @@ class WebPharoahNumberingEngine {
   /// In-memory cache of monotonic High-Water Marks for fast synchronous access
   static final Map<String, int> _cachedHwm = {};
 
+  @visibleForTesting
+  static void debugResetHwmCache() {
+    _cachedHwm.clear();
+  }
+
   /// Monotonically absorbs incoming HWM values into the in-memory cache
   static void absorbChallanHwmMap(Map<String, int> incoming) {
     incoming.forEach((key, val) {
