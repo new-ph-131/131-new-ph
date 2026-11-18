@@ -10,7 +10,6 @@ import 'package:file_saver/file_saver.dart';
 import 'web_models.dart';
 import 'pharoah_web_manager.dart';
 import 'web_app_date_logic.dart';
-import 'web_pharoah_numbering_engine.dart';
 import 'web_pdf_router_service.dart';
 import 'sub_views/web_billing/web_new_sale_view.dart';
 import 'web_purchase_entry_view.dart';
@@ -653,7 +652,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
   // ✏️ EDIT DRAFT (INTERACTIVE MODIFICATION BEFORE BILLING)
   // ===========================================================================
   void _editDraft(Map<String, dynamic> b, int i) async {
-    if (_tabController.index == 0) {
+    final bool isSale = _tabController.index == 0;
+    if (isSale) {
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -694,6 +694,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       );
     }
     if (!mounted) return;
+    final webPh = Provider.of<PharoahWebManager>(context, listen: false);
     final List<String> cIds = List<String>.from(b['challanIds'] ?? const []);
     bool actuallySaved = false;
     String resolvedNo = "";
