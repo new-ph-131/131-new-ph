@@ -394,7 +394,9 @@ class PharoahManager with ChangeNotifier {
     if (_isSwitchingYear) return;
     _isSwitchingYear = true;
     try {
-      // 🛡️ STRICT ORDERING: Flush and await any pending old-FY mutations BEFORE changing currentFY!
+      // 🛡️ STRICT ORDERING: Flush and await any pending old-FY disk saves / delete-recovery tasks
+      // BEFORE changing currentFY or reading prevFY files for carry-forward!
+      await flushPendingMutations();
       await AppRealtimeCoordinator.instance.flushPendingPushBeforeSwitch(this);
       AppRealtimeCoordinator.instance.stop(ph: this);
       FastPullEngine.invalidateInFlightPulls();
@@ -496,6 +498,31 @@ class PharoahManager with ChangeNotifier {
 
   Future<void> _saveQueue = Future.value();
   Future<void> get pendingSaveFuture => _saveQueue;
+  final Set<Future<void>> _pendingDiskMutationTasks = <Future<void>>{};
+
+  Future<void> _trackDiskMutationTask(Future<void> task) {
+    late final Future<void> tracked;
+    tracked = task.catchError((_) {}).whenComplete(() {
+      _pendingDiskMutationTasks.remove(tracked);
+    });
+    _pendingDiskMutationTasks.add(tracked);
+    return tracked;
+  }
+
+  /// Awaits any in-flight [save] queue and tracked background delete/challan propagation tasks.
+  Future<void> flushPendingMutations() async {
+    while (true) {
+      final Future<void> saveSnapshot = _saveQueue;
+      final List<Future<void>> taskSnapshot = List<Future<void>>.from(_pendingDiskMutationTasks);
+      await saveSnapshot;
+      if (taskSnapshot.isNotEmpty) {
+        await Future.wait(taskSnapshot);
+      }
+      if (identical(_saveQueue, saveSnapshot) && _pendingDiskMutationTasks.isEmpty) {
+        break;
+      }
+    }
+  }
 
   Future<void> save({bool triggerCloudSync = true}) {
     final next = _saveQueue.then((_) => _performSave(triggerCloudSync: triggerCloudSync));
@@ -923,7 +950,7 @@ Future<void> finalizeSale({
             if (activeToken.isNotEmpty) {
               SaleChallanSyncModule.onSaleChallanSaved(c, activeToken);
             }
-            propagateChallanStatusAcrossDiskFolders(
+            await propagateChallanStatusAcrossDiskFolders(
               challanId: c.id,
               newStatus: "Billed",
               isPurchase: false,
@@ -1111,7 +1138,7 @@ Future<bool> finalizePurchase({
             if (activeToken.isNotEmpty) {
               PurchaseChallanSyncModule.onPurchaseChallanSaved(c, activeToken);
             }
-            propagateChallanStatusAcrossDiskFolders(
+            await propagateChallanStatusAcrossDiskFolders(
               challanId: c.id,
               newStatus: "Billed",
               isPurchase: true,
@@ -3540,14 +3567,6 @@ void registerBatchActivity({
               revertedChallanBillNos.add(c.billNo);
             }
             D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, "", delFy);
-            propagateChallanStatusAcrossDiskFolders(
-              challanId: c.id,
-              newStatus: "Pending",
-              isPurchase: false,
-              customVersion: c.version,
-              customUpdatedAt: revTs,
-              clearBilledMeta: true,
-            );
           }
         }
       }
@@ -3562,24 +3581,20 @@ void registerBatchActivity({
       final List<Sale> salesSnapshot = List<Sale>.from(sales);
       final List<SaleChallan> saleChallansSnapshot = List<SaleChallan>.from(saleChallans);
 
+      InventoryLogicCenter.rebuildAllInventory(
+        medicines: medicines,
+        batchHistory: batchHistory,
+        purchases: purchases,
+        sales: sales,
+        saleReturns: saleReturns,
+        purchaseReturns: purchaseReturns,
+      );
+      final Future<void> saveDone = save();
+
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
         final String bizType = activeCompany!.businessType;
-        Future<void>(() async {
-          try {
-            final root = await getApplicationDocumentsDirectory();
-            final String dir = (delFy.isNotEmpty)
-                ? '${root.path}/Pharoah_Data/$compId/$bizType/$delFy'
-                : await getWorkingPath();
-            if (dir.isNotEmpty) {
-              final d = Directory(dir);
-              if (!await d.exists()) await d.create(recursive: true);
-              await File('$dir/sales.json').writeAsString(jsonEncode(salesSnapshot.map((e) => e.toMap()).toList()));
-              if (revertedChallans.isNotEmpty) {
-                await File('$dir/s_challan.json').writeAsString(jsonEncode(saleChallansSnapshot.map((e) => e.toMap()).toList()));
-              }
-            }
-          } catch (_) {}
+        _trackDiskMutationTask(Future<void>(() async {
           for (final ch in revertedChallans) {
             await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: ch.id, secondaryKey: ch.billNo, fy: delFy);
           }
@@ -3602,6 +3617,33 @@ void registerBatchActivity({
               SyncQueueManager.flushOutboxAsJSONBatch(),
             ]);
           }
+          await saveDone;
+          if (currentFY != delFy) {
+            try {
+              final root = await getApplicationDocumentsDirectory();
+              final String dir = (delFy.isNotEmpty)
+                  ? '${root.path}/Pharoah_Data/$compId/$bizType/$delFy'
+                  : await getWorkingPath();
+              if (dir.isNotEmpty) {
+                final d = Directory(dir);
+                if (!await d.exists()) await d.create(recursive: true);
+                await File('$dir/sales.json').writeAsString(jsonEncode(salesSnapshot.map((e) => e.toMap()).toList()));
+                if (revertedChallans.isNotEmpty) {
+                  await File('$dir/s_challan.json').writeAsString(jsonEncode(saleChallansSnapshot.map((e) => e.toMap()).toList()));
+                }
+              }
+            } catch (_) {}
+          }
+          for (final ch in revertedChallans) {
+            await propagateChallanStatusAcrossDiskFolders(
+              challanId: ch.id,
+              newStatus: "Pending",
+              isPurchase: false,
+              customVersion: ch.version,
+              customUpdatedAt: ch.updatedAt,
+              clearBilledMeta: true,
+            );
+          }
           if (revertedChallans.isNotEmpty && delFy.isNotEmpty) {
             await cascadePendingChallansOnlyFromBackYear(delFy);
           }
@@ -3613,17 +3655,8 @@ void registerBatchActivity({
             unmarkedIds: allUnmarked,
             fy: delFy,
           );
-        });
+        }));
       }
-      InventoryLogicCenter.rebuildAllInventory(
-        medicines: medicines,
-        batchHistory: batchHistory,
-        purchases: purchases,
-        sales: sales,
-        saleReturns: saleReturns,
-        purchaseReturns: purchaseReturns,
-      );
-      save();
       notifyListeners();
     } catch (e) {}
   }
@@ -3660,14 +3693,6 @@ void registerBatchActivity({
             if (c.billNo.isNotEmpty) revertedPChallanNos.add(c.billNo);
             D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, c.internalNo, delFy);
             D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, delFy);
-            propagateChallanStatusAcrossDiskFolders(
-              challanId: c.id,
-              newStatus: "Pending",
-              isPurchase: true,
-              customVersion: c.version,
-              customUpdatedAt: revTs,
-              clearBilledMeta: true,
-            );
           }
         }
       }
@@ -3694,25 +3719,13 @@ void registerBatchActivity({
       final List<String> allLinkedForCloud = {...p.linkedChallanIds, ...revertedPChallanIds}.toList();
       final List<Purchase> purchasesSnapshot = List<Purchase>.from(purchases);
       final List<PurchaseChallan> purchaseChallansSnapshot = List<PurchaseChallan>.from(purchaseChallans);
+      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
+      final Future<void> saveDone = save();
       if (activeCompany != null) {
         final String compId = activeCompany!.id;
         final String bizType = activeCompany!.businessType;
         D1SalesLedgerService.recordPurchaseKnownVersion(pId, partyId, bNo, 999999, intNo, delFy);
-        Future<void>(() async {
-          try {
-            final root = await getApplicationDocumentsDirectory();
-            final String dir = (delFy.isNotEmpty)
-                ? '${root.path}/Pharoah_Data/$compId/$bizType/$delFy'
-                : await getWorkingPath();
-            if (dir.isNotEmpty) {
-              final d = Directory(dir);
-              if (!await d.exists()) await d.create(recursive: true);
-              await File('$dir/purc.json').writeAsString(jsonEncode(purchasesSnapshot.map((e) => e.toMap()).toList()));
-              if (revertedPChallans.isNotEmpty) {
-                await File('$dir/p_challan.json').writeAsString(jsonEncode(purchaseChallansSnapshot.map((e) => e.toMap()).toList()));
-              }
-            }
-          } catch (_) {}
+        _trackDiskMutationTask(Future<void>(() async {
           for (final ch in revertedPChallans) {
             await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: ch.id, secondaryKey: ch.internalNo, fy: delFy);
           }
@@ -3737,6 +3750,33 @@ void registerBatchActivity({
               SyncQueueManager.flushOutboxAsJSONBatch(),
             ]);
           }
+          await saveDone;
+          if (currentFY != delFy) {
+            try {
+              final root = await getApplicationDocumentsDirectory();
+              final String dir = (delFy.isNotEmpty)
+                  ? '${root.path}/Pharoah_Data/$compId/$bizType/$delFy'
+                  : await getWorkingPath();
+              if (dir.isNotEmpty) {
+                final d = Directory(dir);
+                if (!await d.exists()) await d.create(recursive: true);
+                await File('$dir/purc.json').writeAsString(jsonEncode(purchasesSnapshot.map((e) => e.toMap()).toList()));
+                if (revertedPChallans.isNotEmpty) {
+                  await File('$dir/p_challan.json').writeAsString(jsonEncode(purchaseChallansSnapshot.map((e) => e.toMap()).toList()));
+                }
+              }
+            } catch (_) {}
+          }
+          for (final ch in revertedPChallans) {
+            await propagateChallanStatusAcrossDiskFolders(
+              challanId: ch.id,
+              newStatus: "Pending",
+              isPurchase: true,
+              customVersion: ch.version,
+              customUpdatedAt: ch.updatedAt,
+              clearBilledMeta: true,
+            );
+          }
           if (revertedPChallans.isNotEmpty && delFy.isNotEmpty) {
             await cascadePendingChallansOnlyFromBackYear(delFy);
           }
@@ -3748,10 +3788,8 @@ void registerBatchActivity({
             unmarkedIds: allUnmarked,
             fy: delFy,
           );
-        });
+        }));
       }
-      InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns);
-      save();
       notifyListeners();
     } catch (e) {}
   }

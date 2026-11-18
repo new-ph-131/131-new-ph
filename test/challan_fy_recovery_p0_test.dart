@@ -210,7 +210,7 @@ void main() {
       expect(ph.saleChallans.first.status, 'Billed');
 
       ph.deleteBill('SALE-UUID-1');
-      await Future.delayed(const Duration(milliseconds: 250));
+      await ph.flushPendingMutations();
 
       expect(ph.sales, isEmpty);
       expect(ph.saleChallans.first.status, 'Pending');
@@ -300,7 +300,7 @@ void main() {
       await ph.loadAllData();
 
       ph.deletePurchase('PUR-APP-1');
-      await Future.delayed(const Duration(milliseconds: 250));
+      await ph.flushPendingMutations();
 
       expect(ph.purchases, isEmpty);
       expect(ph.purchaseChallans.first.status, 'Pending');
