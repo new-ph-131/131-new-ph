@@ -131,4 +131,31 @@ class AppDateLogic {
     DateTime fyEnd = getFYEnd(currentFY);
     return !pickedDate.isBefore(fyStart) && !pickedDate.isAfter(fyEnd);
   }
+
+  /// Ensures a transaction date being saved in [activeFy] falls within [activeFy].
+  /// If a stale widget state (e.g. DateTime.now() from another FY) passed a date from
+  /// another year, aligns it to the active FY smart date.
+  static DateTime ensureDateInActiveFy(DateTime candidateDate, String activeFy) {
+    final String cleanFy = activeFy.trim();
+    if (cleanFy.isEmpty || cleanFy == "default_fy" || !cleanFy.contains('-')) {
+      return candidateDate;
+    }
+    final DateTime fyStart = getFYStart(cleanFy);
+    final DateTime fyEnd = getFYEnd(cleanFy);
+    final DateTime dOnly = DateTime(candidateDate.year, candidateDate.month, candidateDate.day);
+    final DateTime startOnly = DateTime(fyStart.year, fyStart.month, fyStart.day);
+    final DateTime endOnly = DateTime(fyEnd.year, fyEnd.month, fyEnd.day);
+    if (dOnly.isBefore(startOnly) || dOnly.isAfter(endOnly)) {
+      final DateTime smart = getSmartDate(cleanFy);
+      return DateTime(
+        smart.year,
+        smart.month,
+        smart.day,
+        candidateDate.hour,
+        candidateDate.minute,
+        candidateDate.second,
+      );
+    }
+    return candidateDate;
+  }
 }

@@ -887,12 +887,12 @@ class PharoahWebManager with ChangeNotifier {
         }
 
         // 🛡️ D1 MASTER GRAVESTONE SHIELD: If deleted in D1, Google Drive can NEVER resurrect!
-        if (D1SalesLedgerService.isBillDeleted(s.id, s.billNo)) {
+        if (D1SalesLedgerService.isBillDeleted(s.id, s.billNo, "", financialYear)) {
           continue;
         }
 
         // 🛡️ D1 MASTER VERSION SHIELD: If D1 has higher version, Google Drive can NEVER downgrade!
-        final int knownVer = D1SalesLedgerService.getKnownVersion(s.id, s.billNo);
+        final int knownVer = D1SalesLedgerService.getKnownVersion(s.id, s.billNo, "", financialYear);
         if (knownVer > s.version) {
           continue;
         }
@@ -1091,8 +1091,8 @@ class PharoahWebManager with ChangeNotifier {
       for (var v in allParsedVouc) {
         if (v.isDeleted == 1 || v.status == "Deleted") continue;
         final String cleanVNo = v.voucherNo.trim().toUpperCase();
-        if (D1SalesLedgerService.isBillDeleted(v.id, cleanVNo)) continue;
-        final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo);
+        if (D1SalesLedgerService.isBillDeleted(v.id, cleanVNo, "", financialYear)) continue;
+        final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo, "", financialYear);
         if (knownVer > v.version) continue;
 
         if (v.id.isNotEmpty && (deletedRecordIds.contains(v.id) || deletedRecordIds.contains(v.id.toUpperCase()))) {
@@ -1138,7 +1138,7 @@ class PharoahWebManager with ChangeNotifier {
       vouchers = masterVoucMap.values.where((v) {
         if (v.isDeleted == 1 || v.status == "Deleted") return false;
         final String vNo = v.voucherNo.trim().toUpperCase();
-        if (D1SalesLedgerService.isBillDeleted(v.id, vNo)) return false;
+        if (D1SalesLedgerService.isBillDeleted(v.id, vNo, "", financialYear)) return false;
         if (v.id.isNotEmpty && (deletedRecordIds.contains(v.id) || deletedRecordIds.contains(v.id.toUpperCase()))) return false;
         if (v.id.isNotEmpty && (localTombstoneRegistry.containsKey(v.id) || localTombstoneRegistry.containsKey(v.id.toUpperCase()))) return false;
         final int secDelTs = vNo.isNotEmpty
@@ -1408,7 +1408,7 @@ class PharoahWebManager with ChangeNotifier {
       }
       saleReturns = masterSRetMap.values.where((r) {
         final bNo = r.billNo.trim().toUpperCase();
-        if (D1SalesLedgerService.isBillDeleted(r.id, r.billNo)) return false;
+        if (D1SalesLedgerService.isBillDeleted(r.id, r.billNo, "", financialYear)) return false;
         if (r.id.isNotEmpty && (deletedRecordIds.contains(r.id) || deletedRecordIds.contains(r.id.toUpperCase()))) return false;
         int secDelTs = 0;
         if (bNo.isNotEmpty) {
@@ -1466,7 +1466,7 @@ class PharoahWebManager with ChangeNotifier {
       }
       purchaseReturns = masterPRetMap.values.where((r) {
         final bNo = r.billNo.trim().toUpperCase();
-        if (D1SalesLedgerService.isBillDeleted(r.id, r.billNo)) return false;
+        if (D1SalesLedgerService.isBillDeleted(r.id, r.billNo, "", financialYear)) return false;
         if (r.id.isNotEmpty && (deletedRecordIds.contains(r.id) || deletedRecordIds.contains(r.id.toUpperCase()))) return false;
         int secDelTs = 0;
         if (bNo.isNotEmpty) {
@@ -2211,10 +2211,38 @@ class PharoahWebManager with ChangeNotifier {
             if (c3.isNotEmpty) unmarkDeletedId(c3, preserveCase: true, fy: expectedFy);
           },
         );
+        final d1ChBill = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
+          events: edgeEvents,
+          targetFy: expectedFy,
+          saleChallans: saleChallans,
+          purchaseChallans: purchaseChallans,
+          onSaleChallanBilled: (ch) => propagateChallanStatusAcrossVault(
+            challanId: ch.id,
+            newStatus: "Billed",
+            isPurchase: false,
+            customVersion: ch.version,
+            customUpdatedAt: ch.updatedAt,
+            billedInFy: ch.billedInFy,
+            billedInvoiceId: ch.billedInvoiceId,
+            billedInvoiceNo: ch.billedInvoiceNo,
+            billedDate: ch.billedDate,
+          ),
+          onPurchaseChallanBilled: (ch) => propagateChallanStatusAcrossVault(
+            challanId: ch.id,
+            newStatus: "Billed",
+            isPurchase: true,
+            customVersion: ch.version,
+            customUpdatedAt: ch.updatedAt,
+            billedInFy: ch.billedInFy,
+            billedInvoiceId: ch.billedInvoiceId,
+            billedInvoiceNo: ch.billedInvoiceNo,
+            billedDate: ch.billedDate,
+          ),
+        );
         final bool scDirectMut = D1SalesLedgerService.applyEventsToLocalSaleChallans(saleChallans, edgeEvents, expectedFy);
         final bool pcDirectMut = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(purchaseChallans, edgeEvents, expectedFy);
-        final bool scRevMut = d1ChRev.saleChallansMutated || scDirectMut;
-        final bool pcRevMut = d1ChRev.purchaseChallansMutated || pcDirectMut;
+        final bool scRevMut = d1ChRev.saleChallansMutated || d1ChBill.saleChallansMutated || scDirectMut;
+        final bool pcRevMut = d1ChRev.purchaseChallansMutated || d1ChBill.purchaseChallansMutated || pcDirectMut;
         if (scDirectMut) {
           for (final sc in saleChallans) {
             final String scFy = sc.effectiveOriginalFy.isNotEmpty ? sc.effectiveOriginalFy : expectedFy;
@@ -2724,13 +2752,13 @@ class PharoahWebManager with ChangeNotifier {
     if (isUpdate && sales[existingIdx].version >= maxVer) {
       maxVer = sales[existingIdx].version + 1;
     }
-    final int d1Known = D1SalesLedgerService.getKnownVersion(sale.id, sale.billNo);
+    final int d1Known = D1SalesLedgerService.getKnownVersion(sale.id, sale.billNo, "", financialYear);
     if (d1Known >= maxVer) {
       maxVer = d1Known + 1;
     }
     sale.version = maxVer;
     sale.updatedAt = DateTime.now().millisecondsSinceEpoch;
-    D1SalesLedgerService.recordKnownVersion(sale.id, sale.billNo, sale.version);
+    D1SalesLedgerService.recordKnownVersion(sale.id, sale.billNo, sale.version, financialYear);
 
     if (!isUpdate) {
       sale.date = WebFyDateRangeHelper.ensureDateInActiveFy(sale.date, financialYear);
@@ -3169,14 +3197,14 @@ class PharoahWebManager with ChangeNotifier {
     if (existingIdx != -1 && vouchers[existingIdx].version >= maxVer) {
       maxVer = vouchers[existingIdx].version + 1;
     }
-    final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo);
+    final int knownVer = D1SalesLedgerService.getKnownVersion(v.id, cleanVNo, "", financialYear);
     if (knownVer >= maxVer) {
       maxVer = knownVer + 1;
     }
     v.version = maxVer;
     v.updatedAt = DateTime.now().millisecondsSinceEpoch;
     v.isDeleted = 0;
-    D1SalesLedgerService.recordKnownVersion(v.id, cleanVNo, v.version);
+    D1SalesLedgerService.recordKnownVersion(v.id, cleanVNo, v.version, financialYear);
 
     if (existingIdx == -1) {
       v.date = WebFyDateRangeHelper.ensureDateInActiveFy(v.date, financialYear);
@@ -5801,7 +5829,7 @@ class PharoahWebManager with ChangeNotifier {
       final String realId = targetV.id;
       final String cleanVNo = targetV.voucherNo.trim().toUpperCase();
       int nextVer = targetV.version + 1;
-      final int knownVer = D1SalesLedgerService.getKnownVersion(realId, cleanVNo);
+      final int knownVer = D1SalesLedgerService.getKnownVersion(realId, cleanVNo, "", financialYear);
       if (knownVer >= nextVer) {
         nextVer = knownVer + 1;
       }

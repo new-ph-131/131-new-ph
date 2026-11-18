@@ -198,15 +198,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
     String finalNo;
 
     if (isSale) {
-      String prefix = "INV-";
-      int start = 101;
-      try {
-        final defSeries = webPh.numberingSeries.firstWhere((s) => s.type == "SALE" && s.isDefault && s.isActive);
-        prefix = defSeries.prefix;
-        start = defSeries.startNumber;
-      } catch (_) {}
-
-      finalNo = WebPharoahNumberingEngine.getNextNumber(prefix: prefix, startFrom: start, currentList: webPh.sales);
+      finalNo = webPh.getNextBillNumber("SALE", "INV-", 101);
       final Party pRef = b['party'] as Party;
 
       webPh.unmarkDeletedId(finalNo);
@@ -252,7 +244,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         );
       }
     } else {
-      finalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "WPUR-", startFrom: 1, currentList: webPh.purchases);
+      finalNo = webPh.getNextBillNumber("PURCHASE", "PUR-", 1);
       final Party pRef = b['party'] as Party;
 
       webPh.unmarkDeletedId(finalNo);
@@ -260,7 +252,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
       final newPurchase = Purchase(
         id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalNo",
         internalNo: finalNo,
-        billNo: "CH-CONV-${finalNo.replaceAll('WPUR-', '').replaceAll('PUR-', '')}",
+        billNo: "CH-CONV-W-${finalNo.replaceAll('WPUR-', '').replaceAll('PUR-', '')}",
         partyId: pRef.id,
         distributorName: pRef.name,
         date: b['date'],
@@ -327,14 +319,6 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
     bool isSale = _tabController.index == 0;
 
     if (isSale) {
-      String prefix = "INV-";
-      int start = 101;
-      try {
-        final defSeries = webPh.numberingSeries.firstWhere((s) => s.type == "SALE" && s.isDefault && s.isActive);
-        prefix = defSeries.prefix;
-        start = defSeries.startNumber;
-      } catch (_) {}
-
       for (int k = 0; k < selected.length; k++) {
         var b = selected[k];
 
@@ -345,7 +329,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         });
         await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to paint
 
-        String finalBillNo = WebPharoahNumberingEngine.getNextNumber(prefix: prefix, startFrom: start, currentList: webPh.sales);
+        String finalBillNo = webPh.getNextBillNumber("SALE", "INV-", 101);
         final Party pRef = b['party'] as Party;
 
         webPh.unmarkDeletedId(finalBillNo);
@@ -404,7 +388,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         });
         await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to paint
 
-        String finalInternalNo = WebPharoahNumberingEngine.getNextNumber(prefix: "WPUR-", startFrom: 1, currentList: webPh.purchases);
+        String finalInternalNo = webPh.getNextBillNumber("PURCHASE", "PUR-", 1);
         final Party pRef = b['party'] as Party;
 
         webPh.unmarkDeletedId(finalInternalNo);
@@ -412,7 +396,7 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         final newPurchase = Purchase(
           id: "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}-$finalInternalNo",
           internalNo: finalInternalNo,
-          billNo: "CH-CONV-${finalInternalNo.replaceAll('WPUR-', '').replaceAll('PUR-', '')}",
+          billNo: "CH-CONV-W-${finalInternalNo.replaceAll('WPUR-', '').replaceAll('PUR-', '')}",
           partyId: pRef.id,
           distributorName: pRef.name,
           date: b['date'],
@@ -526,17 +510,8 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
           } catch (_) {}
 
           if (pObj != null) {
-            pdfBytes = await WebPdfRouterService.generatePurchaseChallanBytes(
-              challan: PurchaseChallan(
-                id: 'temp',
-                internalNo: pObj.internalNo,
-                billNo: pObj.billNo,
-                partyId: pObj.partyId,
-                distributorName: pObj.distributorName,
-                date: pObj.date,
-                items: pObj.items,
-                totalAmount: pObj.totalAmount,
-              ),
+            pdfBytes = await WebPdfRouterService.generatePurchaseBytes(
+              purchase: pObj,
               party: d['party'],
               shop: shopProfile,
             );
@@ -718,10 +693,31 @@ class _WebChallanStitcherWizardState extends State<WebChallanStitcherWizard> wit
         ),
       );
     }
-    setState(() {
-      draftBills[i]['status'] = 'SAVED';
-      draftBills[i]['billNo'] = "MANUAL-DONE";
-    });
+    if (!mounted) return;
+    final List<String> cIds = List<String>.from(b['challanIds'] ?? const []);
+    bool actuallySaved = false;
+    String resolvedNo = "";
+    if (cIds.isNotEmpty) {
+      if (isSale) {
+        final matched = webPh.saleChallans.where((c) => cIds.contains(c.id)).toList();
+        if (matched.isNotEmpty && matched.every((c) => c.status == "Billed")) {
+          actuallySaved = true;
+          resolvedNo = matched.first.billedInvoiceNo;
+        }
+      } else {
+        final matched = webPh.purchaseChallans.where((c) => cIds.contains(c.id)).toList();
+        if (matched.isNotEmpty && matched.every((c) => c.status == "Billed")) {
+          actuallySaved = true;
+          resolvedNo = matched.first.billedInvoiceNo;
+        }
+      }
+    }
+    if (actuallySaved) {
+      setState(() {
+        draftBills[i]['status'] = 'SAVED';
+        draftBills[i]['billNo'] = resolvedNo.isNotEmpty ? resolvedNo : "MANUAL-DONE";
+      });
+    }
   }
 
   // ===========================================================================

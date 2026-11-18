@@ -38,6 +38,7 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   DateTime batchBillDate = DateTime.now(); 
   DateTime fromDate = DateTime.now();
   DateTime toDate = DateTime.now();
+  bool _didInitFyDates = false;
   String? selectedRoute;
   List<String> selectedPartyNames = [];
   List<Map<String, dynamic>> draftBills = []; 
@@ -52,8 +53,32 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     _tabController.addListener(() { if(_tabController.indexIsChanging) _resetWizard(); });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_didInitFyDates) {
+      _didInitFyDates = true;
+      final ph = Provider.of<PharoahManager>(context, listen: false);
+      final DateTime smart = AppDateLogic.getSmartDate(ph.currentFY);
+      batchBillDate = smart;
+      fromDate = smart;
+      toDate = smart;
+    }
+  }
+
   void _resetWizard() {
-    setState(() { funnelStep = "MODE"; selectedRoute = null; selectedPartyNames.clear(); draftBills.clear(); selectionMode = "NONE"; });
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    final DateTime smart = AppDateLogic.getSmartDate(ph.currentFY);
+    setState(() {
+      funnelStep = "MODE";
+      selectedRoute = null;
+      selectedPartyNames.clear();
+      draftBills.clear();
+      selectionMode = "NONE";
+      batchBillDate = smart;
+      fromDate = smart;
+      toDate = smart;
+    });
   }
 
   // ===========================================================================
@@ -78,12 +103,14 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
       for (var b in selected) {
         String finalBillNo = "${series.prefix}$nextNum";
         final Party pRef = b['party'] as Party; // Renamed to pRef to avoid conflict
+        final DateTime safeDate = AppDateLogic.ensureDateInActiveFy(b['date'] as DateTime, ph.currentFY);
+        b['date'] = safeDate;
 
         batchToSave.add(Sale(
           id: DateTime.now().millisecondsSinceEpoch.toString() + finalBillNo,
           billNo: finalBillNo,
           partyId: pRef.id, 
-          date: b['date'],
+          date: safeDate,
           partyName: pRef.name,
           partyGstin: pRef.gst,
           partyState: pRef.state,
@@ -118,13 +145,15 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
       for (var b in selected) {
         // ✅ Har party ke liye naya sequential number banao
         String finalPurNo = "PUR-$nextPurNum";
+        final DateTime safeDate = AppDateLogic.ensureDateInActiveFy(b['date'] as DateTime, ph.currentFY);
+        b['date'] = safeDate;
 
         purBatch.add(Purchase(
             id: DateTime.now().millisecondsSinceEpoch.toString() + finalPurNo,
             internalNo: finalPurNo,
             billNo: "CH-CONV-$nextPurNum", 
             partyId: b['party'].id, // Link Added
-            date: b['date'],
+            date: safeDate,
             entryDate: DateTime.now(),
             distributorName: b['party'].name,
             items: b['items'].cast<PurchaseItem>(),
@@ -149,7 +178,11 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
         if (b['isSelected'] && b['status'] == 'DRAFT') {
           b['status'] = 'SAVED';
           try {
-            var saved = savedBatch.firstWhere((s) => (isSale ? s.partyName : s.distributorName) == b['party'].name);
+            final Party bParty = b['party'] as Party;
+            var saved = savedBatch.firstWhere((s) =>
+              (s.partyId.toString().trim().isNotEmpty && bParty.id.trim().isNotEmpty && s.partyId.toString().trim() == bParty.id.trim()) ||
+              (isSale ? s.partyName : s.distributorName).toString().trim().toUpperCase() == bParty.name.trim().toUpperCase()
+            );
             b['billNo'] = isSale ? saved.billNo : saved.internalNo;
           } catch(e) {}
         }
@@ -297,12 +330,27 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     Expanded(child: ListView.builder(itemCount: ph.routes.length, itemBuilder: (c, i) => ListTile(tileColor: Colors.white, title: Text(ph.routes[i].name, style: const TextStyle(fontWeight: FontWeight.bold)), onTap: () => setState(() { selectedRoute = ph.routes[i].name; funnelStep = "PARTY"; }))))
   ]);
 
+  bool _partyMatchesChallan(Party p, dynamic c, bool isSale) {
+    final String cPid = (c.partyId ?? '').toString().trim();
+    final String pId = p.id.trim();
+    if (cPid.isNotEmpty && pId.isNotEmpty && cPid == pId) return true;
+    final String cName = (isSale ? (c as SaleChallan).partyName : (c as PurchaseChallan).distributorName).trim().toUpperCase();
+    return cName.isNotEmpty && cName == p.name.trim().toUpperCase();
+  }
+
   bool _isChallanEligible(dynamic c, PharoahManager ph) {
     if ((c.isDeleted ?? 0) == 1) return false;
     if (c.status != "Pending") return false;
     if (selectionMode == "CARRY_ONLY") {
       final String ofy = c is SaleChallan ? c.effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
       return _isCarryForwardChallan(ofy, ph.currentFY);
+    }
+    if (selectionMode == "MONTHLY" || selectionMode == "RANDOM") {
+      final DateTime cDt = c.date as DateTime;
+      final DateTime dOnly = DateTime(cDt.year, cDt.month, cDt.day);
+      final DateTime sOnly = DateTime(fromDate.year, fromDate.month, fromDate.day);
+      final DateTime eOnly = DateTime(toDate.year, toDate.month, toDate.day);
+      if (dOnly.isBefore(sOnly) || dOnly.isAfter(eOnly)) return false;
     }
     return true;
   }
@@ -311,8 +359,8 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     bool isSale = _tabController.index == 0;
     final list = ph.parties.where((p) {
       bool hasPend = isSale
-          ? ph.saleChallans.any((c) => c.partyName == p.name && _isChallanEligible(c, ph))
-          : ph.purchaseChallans.any((c) => c.distributorName == p.name && _isChallanEligible(c, ph));
+          ? ph.saleChallans.any((c) => _partyMatchesChallan(p, c, true) && _isChallanEligible(c, ph))
+          : ph.purchaseChallans.any((c) => _partyMatchesChallan(p, c, false) && _isChallanEligible(c, ph));
       return hasPend && (selectedRoute == null || p.route == selectedRoute) && p.name.toLowerCase().contains(partySearch.toLowerCase());
     }).toList();
     return Column(children: [
@@ -324,8 +372,8 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
       Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (c, i) {
         final party = list[i];
         final pChs = isSale
-            ? ph.saleChallans.where((ch) => ch.partyName == party.name && _isChallanEligible(ch, ph)).toList()
-            : ph.purchaseChallans.where((ch) => ch.distributorName == party.name && _isChallanEligible(ch, ph)).toList();
+            ? ph.saleChallans.where((ch) => _partyMatchesChallan(party, ch, true) && _isChallanEligible(ch, ph)).toList()
+            : ph.purchaseChallans.where((ch) => _partyMatchesChallan(party, ch, false) && _isChallanEligible(ch, ph)).toList();
         final cfCount = pChs.where((ch) {
           final String ofy = isSale ? (ch as SaleChallan).effectiveOriginalFy : (ch as PurchaseChallan).effectiveOriginalFy;
           return _isCarryForwardChallan(ofy, ph.currentFY);
@@ -380,11 +428,17 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   void _generateDrafts(PharoahManager ph) {
     setState(() => isProcessing = true);
     List<Map<String, dynamic>> temp = []; bool isSale = _tabController.index == 0;
+    final DateTime alignedDate = AppDateLogic.ensureDateInActiveFy(batchBillDate, ph.currentFY);
+    batchBillDate = alignedDate;
     for (var pName in selectedPartyNames) {
-      var pObj = ph.parties.firstWhere((p) => p.name == pName);
+      final Party? pObj = ph.parties.cast<Party?>().firstWhere(
+        (p) => p != null && p.name.trim().toUpperCase() == pName.trim().toUpperCase(),
+        orElse: () => null,
+      );
+      if (pObj == null) continue;
       var chs = isSale
-          ? ph.saleChallans.where((c) => c.partyName == pName && _isChallanEligible(c, ph)).toList()
-          : ph.purchaseChallans.where((c) => c.distributorName == pName && _isChallanEligible(c, ph)).toList();
+          ? ph.saleChallans.where((c) => _partyMatchesChallan(pObj, c, true) && _isChallanEligible(c, ph)).toList()
+          : ph.purchaseChallans.where((c) => _partyMatchesChallan(pObj, c, false) && _isChallanEligible(c, ph)).toList();
       if(chs.isEmpty) continue;
       List<dynamic> items = [];
       for(var c in chs) { 
@@ -407,17 +461,20 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     var b = draftBills[i]; 
     bool isSale = _tabController.index == 0; 
     String finalNo;
+    final DateTime safeDate = AppDateLogic.ensureDateInActiveFy(b['date'] as DateTime, ph.currentFY);
+    b['date'] = safeDate;
 
     if(isSale) {
       var ser = ph.getDefaultSeries("SALE");
       finalNo = await PharoahNumberingEngine.getNextNumber(type: "SALE", companyID: ph.activeCompany!.id, prefix: ser.prefix, startFrom: ser.startNumber, currentList: ph.sales);
-      await ph.finalizeSale(billNo: finalNo, date: b['date'], party: b['party'], items: b['items'].cast<BillItem>(), total: b['total'], mode: "CREDIT", linkedIds: List<String>.from(b['challanIds']));
+      await ph.finalizeSale(billNo: finalNo, date: safeDate, party: b['party'], items: b['items'].cast<BillItem>(), total: b['total'], mode: "CREDIT", linkedIds: List<String>.from(b['challanIds']));
     } else {
       finalNo = await PharoahNumberingEngine.getNextNumber(type: "PURCHASE", companyID: ph.activeCompany!.id, prefix: "PUR-", startFrom: 1, currentList: ph.purchases);
-      ph.finalizePurchase(
+      final String purBillNo = "CH-CONV-${finalNo.replaceAll("PUR-", "")}";
+      final bool savedOk = await ph.finalizePurchase(
         internalNo: finalNo, 
-        billNo: "CH-CONV-${finalNo.replaceAll("PUR-", "")}", 
-        date: b['date'], 
+        billNo: purBillNo, 
+        date: safeDate, 
         entryDate: DateTime.now(), 
         party: b['party'], 
         items: b['items'].cast<PurchaseItem>(), 
@@ -425,19 +482,31 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
         mode: "CREDIT",
         linkedChallanIds: List<String>.from(b['challanIds'])
       );
+      if (!savedOk) {
+        if (mounted) {
+          setState(() => isProcessing = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Could not save Purchase ($purBillNo): Duplicate supplier bill already exists!"), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
     }
-    setState(() { draftBills[i]['status'] = 'SAVED'; draftBills[i]['billNo'] = finalNo; isProcessing = false; });
+    if (mounted) {
+      setState(() { draftBills[i]['status'] = 'SAVED'; draftBills[i]['billNo'] = finalNo; isProcessing = false; });
+    }
   }
 
   void _printSingle(PharoahManager ph, int i) async {
     if(draftBills[i]['status'] == 'DRAFT') await _saveSingle(ph, i);
+    if (draftBills[i]['status'] != 'SAVED') return;
     var b = draftBills[i];
     if(_tabController.index == 0) {
-      var s = ph.sales.firstWhere((s) => s.billNo == b['billNo']);
-      await SaleInvoicePdf.generate(s, b['party'], ph.activeCompany!);
+      final s = ph.sales.cast<Sale?>().firstWhere((s) => s != null && s.billNo == b['billNo'], orElse: () => null);
+      if (s != null) await SaleInvoicePdf.generate(s, b['party'], ph.activeCompany!);
     } else {
-      var p = ph.purchases.firstWhere((p) => p.internalNo == b['billNo']);
-      await PurchasePdf.generate(p, b['party'], ph.activeCompany!);
+      final p = ph.purchases.cast<Purchase?>().firstWhere((p) => p != null && p.internalNo == b['billNo'], orElse: () => null);
+      if (p != null) await PurchasePdf.generate(p, b['party'], ph.activeCompany!);
     }
   }
 
@@ -445,7 +514,32 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     bool isSale = _tabController.index == 0;
     if (isSale) await Navigator.push(context, MaterialPageRoute(builder: (c) => BillingView(party: b['party'], billNo: "DRAFT", billDate: b['date'], mode: "CREDIT", existingItems: b['items'].cast<BillItem>(), linkedChallanIds: List<String>.from(b['challanIds']))));
     else await Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseBillingView(distributor: b['party'], internalNo: "DRAFT", distBillNo: "", billDate: b['date'], entryDate: DateTime.now(), mode: "CREDIT", existingItems: b['items'].cast<PurchaseItem>(), linkedChallanIds: List<String>.from(b['challanIds']))));
-    setState(() { draftBills[i]['status'] = 'SAVED'; draftBills[i]['billNo'] = "MANUAL-DONE"; });
+    if (!mounted) return;
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    final List<String> cIds = List<String>.from(b['challanIds'] ?? const []);
+    bool actuallySaved = false;
+    String resolvedNo = "";
+    if (cIds.isNotEmpty) {
+      if (isSale) {
+        final matched = ph.saleChallans.where((c) => cIds.contains(c.id)).toList();
+        if (matched.isNotEmpty && matched.every((c) => c.status == "Billed")) {
+          actuallySaved = true;
+          resolvedNo = matched.first.billedInvoiceNo;
+        }
+      } else {
+        final matched = ph.purchaseChallans.where((c) => cIds.contains(c.id)).toList();
+        if (matched.isNotEmpty && matched.every((c) => c.status == "Billed")) {
+          actuallySaved = true;
+          resolvedNo = matched.first.billedInvoiceNo;
+        }
+      }
+    }
+    if (actuallySaved) {
+      setState(() {
+        draftBills[i]['status'] = 'SAVED';
+        draftBills[i]['billNo'] = resolvedNo.isNotEmpty ? resolvedNo : "MANUAL-DONE";
+      });
+    }
   }
 
   void _viewDraft(Map<String, dynamic> b) {
@@ -464,7 +558,7 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   }
 
   void _pickRandom(String fy) async {
-    DateTime? s = await PharoahDateController.pickDate(context: context, currentFY: fy, initialDate: DateTime.now());
+    DateTime? s = await PharoahDateController.pickDate(context: context, currentFY: fy, initialDate: AppDateLogic.getSmartDate(fy));
     if(s!=null) { DateTime? e = await PharoahDateController.pickDate(context: context, currentFY: fy, initialDate: s);
       if(e!=null) setState(() { fromDate = s; toDate = e; funnelStep = "ROUTE"; selectionMode = "RANDOM"; });
     }

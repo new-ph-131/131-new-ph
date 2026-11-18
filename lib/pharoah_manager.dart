@@ -858,11 +858,12 @@ Future<void> finalizeSale({
       onMedicineSaved: (m) => saveOrUpdateMedicine(m),
       sourceTag: "SALE",
     );
+    final DateTime safeDate = AppDateLogic.ensureDateInActiveFy(date, currentFY);
     final newFinalSale = Sale(
       id: sId, 
       billNo: billNo, 
       partyId: p.id, 
-      date: date, 
+      date: safeDate, 
       partyName: p.name, 
       partyGstin: p.gst, 
       partyState: p.state, 
@@ -1054,12 +1055,13 @@ Future<bool> finalizePurchase({
       onMedicineSaved: (m) => saveOrUpdateMedicine(m),
       sourceTag: "PURCHASE",
     );
+    final DateTime safeDate = AppDateLogic.ensureDateInActiveFy(date, currentFY);
     final newFinalPurchase = Purchase(
       id: pId, 
       internalNo: internalNo, 
       billNo: billNo, 
       partyId: party.id, 
-      date: date, 
+      date: safeDate, 
       entryDate: entryDate ?? DateTime.now(), 
       distributorName: party.name, 
       items: items, 
@@ -1283,11 +1285,21 @@ Future<bool> finalizePurchase({
   }
 
   Future<void> finalizeBatchSales(List<Sale> batch) async {
+    if (currentFY.isNotEmpty) {
+      D1SalesLedgerService.activeFinancialYear = currentFY;
+    }
+    for (final s in batch) {
+      s.date = AppDateLogic.ensureDateInActiveFy(s.date, currentFY);
+      s.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    }
     sales.addAll(batch);
     final String activeToken = activeCompany != null
         ? await WebLiveToken.getOrCreateToken(activeCompany!.id)
         : '';
+    final List<String> unmarkedIds = [];
     for (var s in batch) {
+      unmarkedIds.add(s.id);
+      if (s.billNo.trim().isNotEmpty) unmarkedIds.add(s.billNo.trim().toUpperCase());
       final links = ChallanLinkMatcher.extractLinks(
         linkedChallanIds: s.linkedChallanIds,
         items: s.items,
@@ -1302,8 +1314,13 @@ Future<bool> finalizePurchase({
             billPartyId: s.partyId,
             billFy: currentFY,
           )) {
-            if (c.status != "Billed") {
-              c.status = "Billed";
+            if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+              c.markBilled(
+                invoiceFy: currentFY,
+                invoiceId: s.id,
+                invoiceNo: s.billNo,
+                invoiceDate: s.date,
+              );
               c.version += 1;
               c.updatedAt = DateTime.now().millisecondsSinceEpoch;
               if (activeToken.isNotEmpty) {
@@ -1315,6 +1332,10 @@ Future<bool> finalizePurchase({
                 isPurchase: false,
                 customVersion: c.version,
                 customUpdatedAt: c.updatedAt,
+                billedInFy: currentFY,
+                billedInvoiceId: s.id,
+                billedInvoiceNo: s.billNo,
+                billedDate: s.date.toIso8601String(),
               );
             }
           }
@@ -1331,16 +1352,34 @@ Future<bool> finalizePurchase({
       await PharoahNumberingEngine.updateSeriesCounter(type: "SALE", companyID: activeCompany!.id, usedNumber: l, prefix: p); 
     } 
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
-    await save(); 
+    await save();
+    if (batch.isNotEmpty) {
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'SALE_ADDED',
+        entityId: batch.last.id,
+        unmarkedIds: unmarkedIds,
+      );
+    }
     notifyListeners(); 
   }
 
   Future<void> finalizeBatchPurchases(List<Purchase> batch) async {
+    if (currentFY.isNotEmpty) {
+      D1SalesLedgerService.activeFinancialYear = currentFY;
+    }
+    for (final p in batch) {
+      p.date = AppDateLogic.ensureDateInActiveFy(p.date, currentFY);
+      p.updatedAt = DateTime.now().millisecondsSinceEpoch;
+    }
     purchases.addAll(batch);
     final String activeToken = activeCompany != null
         ? await WebLiveToken.getOrCreateToken(activeCompany!.id)
         : '';
+    final List<String> unmarkedIds = [];
     for (var p in batch) {
+      unmarkedIds.add(p.id);
+      if (p.internalNo.trim().isNotEmpty) unmarkedIds.add(p.internalNo.trim().toUpperCase());
       final links = ChallanLinkMatcher.extractLinks(
         linkedChallanIds: p.linkedChallanIds,
         items: p.items,
@@ -1355,8 +1394,14 @@ Future<bool> finalizePurchase({
             billPartyId: p.partyId,
             billFy: currentFY,
           )) {
-            if (c.status != "Billed") {
-              c.status = "Billed";
+            if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+              final String invNo = p.billNo.isNotEmpty ? p.billNo : p.internalNo;
+              c.markBilled(
+                invoiceFy: currentFY,
+                invoiceId: p.id,
+                invoiceNo: invNo,
+                invoiceDate: p.date,
+              );
               c.version += 1;
               c.updatedAt = DateTime.now().millisecondsSinceEpoch;
               if (activeToken.isNotEmpty) {
@@ -1368,6 +1413,10 @@ Future<bool> finalizePurchase({
                 isPurchase: true,
                 customVersion: c.version,
                 customUpdatedAt: c.updatedAt,
+                billedInFy: currentFY,
+                billedInvoiceId: p.id,
+                billedInvoiceNo: invNo,
+                billedDate: p.date.toIso8601String(),
               );
             }
           }
@@ -1375,11 +1424,32 @@ Future<bool> finalizePurchase({
       }
       if (activeToken.isNotEmpty) {
         PurchaseSyncModule.onPurchaseSaved(p, activeToken);
-        D1SalesLedgerService.onPurchaseSaved(p, activeToken, clientSource: "APP_MOBILE");
+        D1SalesLedgerService.onPurchaseSaved(p, activeToken, clientSource: "APP_MOBILE", fy: currentFY);
+      }
+    }
+    if (batch.isNotEmpty && activeCompany != null) {
+      final String lastIntNo = batch.last.internalNo;
+      final String pfx = lastIntNo.split(RegExp(r'\d')).first;
+      if (pfx.isNotEmpty) {
+        await PharoahNumberingEngine.updateSeriesCounter(
+          type: "PURCHASE",
+          companyID: activeCompany!.id,
+          usedNumber: lastIntNo,
+          prefix: pfx,
+          targetFy: currentFY,
+        );
       }
     }
     InventoryLogicCenter.rebuildAllInventory(medicines: medicines, batchHistory: batchHistory, purchases: purchases, sales: sales, saleReturns: saleReturns, purchaseReturns: purchaseReturns); 
-    await save(); 
+    await save();
+    if (batch.isNotEmpty) {
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'PURCHASE_ADDED',
+        entityId: batch.last.id,
+        unmarkedIds: unmarkedIds,
+      );
+    }
     notifyListeners(); 
   }
 

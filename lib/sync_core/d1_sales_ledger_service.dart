@@ -1264,6 +1264,9 @@ class D1SalesLedgerService {
       if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
         continue;
       }
+      if (isBillDeleted(billId, billNo, "", effFy)) {
+        continue;
+      }
 
       if (rawData is Map &&
           (rawData["doc_type"] == "SALE_CHALLAN" ||
