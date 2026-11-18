@@ -149,10 +149,11 @@ class PurchaseChallanSyncModule {
         }
       }
 
-      // Never silently demote Billed to Pending unless version is higher
+      // Never silently demote Billed to Pending unless version is higher or equal-version has strictly newer updatedAt
       if (local.status.trim().toUpperCase() == "BILLED" &&
           incoming.status.trim().toUpperCase() != "BILLED" &&
-          incoming.version <= local.version) {
+          (incoming.version < local.version ||
+              (incoming.version == local.version && incoming.updatedAt <= local.updatedAt))) {
         return false;
       }
 

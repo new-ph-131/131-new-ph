@@ -54,7 +54,14 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
 
       if (widget.existingPurchase != null) {
         final p = widget.existingPurchase!;
-        internalNoC.text = p.internalNo;
+        final bool isDraftStub = p.id.trim().isEmpty ||
+            p.internalNo.trim().isEmpty ||
+            p.internalNo.trim().toUpperCase() == "DRAFT";
+        internalNoC.text = isDraftStub
+            ? (widget.isReadOnly
+                ? (p.internalNo.trim().isEmpty ? "DRAFT" : p.internalNo)
+                : webPh.getNextBillNumber("PURCHASE", "WPUR-", 1))
+            : p.internalNo;
         supplierBillNoC.text = p.billNo;
         selectedBillDate = p.date;
         selectedEntryDate = p.entryDate;
@@ -76,12 +83,16 @@ class _WebPurchaseEntryScreenState extends State<WebPurchaseEntryScreen> {
 
   Purchase? _checkDuplicateBill(PharoahWebManager webPh) {
     if (widget.isReadOnly || selectedSupplier == null || supplierBillNoC.text.trim().isEmpty) return null;
+    final String? realExistingId =
+        (widget.existingPurchase != null && widget.existingPurchase!.id.trim().isNotEmpty)
+            ? widget.existingPurchase!.id.trim()
+            : null;
     return findDuplicateSupplierPurchase(
       purchases: webPh.purchases,
       partyId: selectedSupplier!.id,
       billNo: supplierBillNoC.text.trim(),
-      excludeId: widget.existingPurchase?.id,
-      excludeInternalNo: widget.existingPurchase?.internalNo,
+      excludeId: realExistingId,
+      excludeInternalNo: realExistingId != null ? widget.existingPurchase?.internalNo : null,
     );
   }
 

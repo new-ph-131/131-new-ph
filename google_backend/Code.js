@@ -40,13 +40,13 @@ function challanStatusRank(status) {
 function shouldIncomingChallanWin(existingRec, incomingRec) {
   if (!existingRec) return true;
   if (!incomingRec) return false;
-  var exTs = Number(existingRec.updatedAt) || 0;
-  var inTs = Number(incomingRec.updatedAt) || 0;
-  if (inTs !== exTs) return inTs > exTs;
-
   var exVer = Number(existingRec.version) || 1;
   var inVer = Number(incomingRec.version) || 1;
   if (inVer !== exVer) return inVer > exVer;
+
+  var exTs = Number(existingRec.updatedAt) || 0;
+  var inTs = Number(incomingRec.updatedAt) || 0;
+  if (inTs !== exTs) return inTs > exTs;
 
   var exRank = challanStatusRank(existingRec.status);
   var inRank = challanStatusRank(incomingRec.status);
@@ -57,6 +57,7 @@ function shouldIncomingChallanWin(existingRec, incomingRec) {
 
 function isChallanTombstoned(rec, mergedTombMap, mergedReg, incomingTombSet, unmarkedMap, fallbackFy) {
   if (isRecordHardDeleted(rec)) return true;
+  if (challanStatusRank(rec.status) === 3) return false;
 
   var rId = (rec.id || "").toString().trim();
   var rTs = Number(rec.updatedAt) || 0;
@@ -574,22 +575,47 @@ function doPost(e) {
         try {
           var existingContent = JSON.parse(fileObj.file.getBlob().getDataAsString());
           var unmarkedMap = {};
-          var rawUnmarkedList = [];
+          var unmarkedTsMap = {};
+          function addUnmarkEntry(rawKey, tsVal) {
+            var uKey = (rawKey || "").toString().trim();
+            if (!uKey) return;
+            var uTs = (typeof tsVal === "number" && tsVal > 0) ? tsVal : (Number(tsVal) > 0 ? Number(tsVal) : 9007199254740991);
+            unmarkedMap[uKey] = true;
+            unmarkedMap[uKey.toUpperCase()] = true;
+            if (!unmarkedTsMap[uKey] || uTs > unmarkedTsMap[uKey]) unmarkedTsMap[uKey] = uTs;
+            if (!unmarkedTsMap[uKey.toUpperCase()] || uTs > unmarkedTsMap[uKey.toUpperCase()]) unmarkedTsMap[uKey.toUpperCase()] = uTs;
+          }
+          function isKeyUnmarkedAtTs(k, delTs) {
+            if (!unmarkedMap[k] && !unmarkedMap[k.toUpperCase()]) return false;
+            var uTs = unmarkedTsMap[k] || unmarkedTsMap[k.toUpperCase()] || 0;
+            return uTs >= (Number(delTs) || 0);
+          }
           if (Array.isArray(request.unmarkedTombstones)) {
-            rawUnmarkedList = rawUnmarkedList.concat(request.unmarkedTombstones);
+            for (var ua = 0; ua < request.unmarkedTombstones.length; ua++) {
+              addUnmarkEntry(request.unmarkedTombstones[ua], 0);
+            }
+          } else if (request.unmarkedTombstones && typeof request.unmarkedTombstones === "object") {
+            for (var uok in request.unmarkedTombstones) {
+              if (Object.prototype.hasOwnProperty.call(request.unmarkedTombstones, uok)) {
+                addUnmarkEntry(uok, request.unmarkedTombstones[uok]);
+              }
+            }
           }
           if (request.files["unmarked_tombstones.json"]) {
             try {
               var parsedUnm = JSON.parse(request.files["unmarked_tombstones.json"]);
-              if (Array.isArray(parsedUnm)) rawUnmarkedList = rawUnmarkedList.concat(parsedUnm);
+              if (Array.isArray(parsedUnm)) {
+                for (var ufa = 0; ufa < parsedUnm.length; ufa++) {
+                  addUnmarkEntry(parsedUnm[ufa], 0);
+                }
+              } else if (parsedUnm && typeof parsedUnm === "object") {
+                for (var ufk in parsedUnm) {
+                  if (Object.prototype.hasOwnProperty.call(parsedUnm, ufk)) {
+                    addUnmarkEntry(ufk, parsedUnm[ufk]);
+                  }
+                }
+              }
             } catch (_) {}
-          }
-          for (var uIdx = 0; uIdx < rawUnmarkedList.length; uIdx++) {
-            var uKey = (rawUnmarkedList[uIdx] || "").toString().trim();
-            if (uKey) {
-              unmarkedMap[uKey] = true;
-              unmarkedMap[uKey.toUpperCase()] = true;
-            }
           }
 
           // Collect active record keys and timestamps from incoming live files so recreated records strip stale tombstones
@@ -675,9 +701,9 @@ function doPost(e) {
             for (var i = 0; i < existingTombstones.length; i++) {
               var eKey = (existingTombstones[i] || "").toString().trim();
               if (!eKey) continue;
-              if (unmarkedMap[eKey] || unmarkedMap[eKey.toUpperCase()]) continue;
               var activeTs = activeRecordTsMap[eKey] || activeRecordTsMap[eKey.toUpperCase()] || 0;
               var delTs = Number(existingReg[eKey] || existingReg[eKey.toUpperCase()]) || 0;
+              if (isKeyUnmarkedAtTs(eKey, delTs)) continue;
               var isUuidMatch = !!(activeIdTsMap[eKey] || activeIdTsMap[eKey.toUpperCase()]);
               // For UUID tombstones with delTs === 0, never strip just from stale snapshots unless explicitly unmarked
               var canStrip = activeTs > 0 && !incomingTombSet[eKey] &&
@@ -691,12 +717,13 @@ function doPost(e) {
           for (var j = 0; j < incomingTombstones.length; j++) {
             var iKey = (incomingTombstones[j] || "").toString().trim();
             if (!iKey) continue;
-            if (unmarkedMap[iKey] || unmarkedMap[iKey.toUpperCase()]) continue;
+            var incRegTs = Number(incomingReg[iKey] || incomingReg[iKey.toUpperCase()]) || 0;
+            if (isKeyUnmarkedAtTs(iKey, incRegTs)) continue;
             mergedTombMap[iKey] = true;
           }
           for (var hdId in hardDeletedIdTsMap) {
             if (Object.prototype.hasOwnProperty.call(hardDeletedIdTsMap, hdId)) {
-              if (!unmarkedMap[hdId] && !unmarkedMap[hdId.toUpperCase()]) {
+              if (!isKeyUnmarkedAtTs(hdId, hardDeletedIdTsMap[hdId])) {
                 mergedTombMap[hdId] = true;
               }
             }
@@ -710,8 +737,8 @@ function doPost(e) {
           if (existingContent.files && (existingContent.files["tombstone_registry.json"] || request.files["tombstone_registry.json"] || Object.keys(hardDeletedIdTsMap).length > 0)) {
             for (var ek in existingReg) {
               if (Object.prototype.hasOwnProperty.call(existingReg, ek)) {
-                if (unmarkedMap[ek] || unmarkedMap[ek.toUpperCase()]) continue;
                 var prevDelTs = Number(existingReg[ek]) || 0;
+                if (isKeyUnmarkedAtTs(ek, prevDelTs)) continue;
                 var liveTs = activeRecordTsMap[ek] || activeRecordTsMap[ek.toUpperCase()] || 0;
                 if (liveTs > 0 && !Object.prototype.hasOwnProperty.call(incomingReg, ek) && liveTs > prevDelTs) {
                   continue;
@@ -721,8 +748,8 @@ function doPost(e) {
             }
             for (var ik in incomingReg) {
               if (Object.prototype.hasOwnProperty.call(incomingReg, ik)) {
-                if (unmarkedMap[ik] || unmarkedMap[ik.toUpperCase()]) continue;
                 var incTs = Number(incomingReg[ik]) || 0;
+                if (isKeyUnmarkedAtTs(ik, incTs)) continue;
                 var prevTs = Number(mergedReg[ik]) || 0;
                 if (incTs >= prevTs) {
                   mergedReg[ik] = incTs;
@@ -731,8 +758,8 @@ function doPost(e) {
             }
             for (var hdRegId in hardDeletedIdTsMap) {
               if (Object.prototype.hasOwnProperty.call(hardDeletedIdTsMap, hdRegId)) {
-                if (unmarkedMap[hdRegId] || unmarkedMap[hdRegId.toUpperCase()]) continue;
                 var hdTs = Number(hardDeletedIdTsMap[hdRegId]) || 0;
+                if (isKeyUnmarkedAtTs(hdRegId, hdTs)) continue;
                 var curRegTs = Number(mergedReg[hdRegId]) || 0;
                 if (hdTs > curRegTs) mergedReg[hdRegId] = hdTs;
               }

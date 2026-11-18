@@ -233,6 +233,11 @@ class MultiFyCloudVault {
       return false;
     }
 
+    if ((fileName == 's_challan.json' || fileName == 'p_challan.json') &&
+        (m['status'] ?? '').toString().trim().toUpperCase() == 'BILLED') {
+      return false;
+    }
+
     if (id.isNotEmpty && !D1SalesLedgerService.isUnscopedSeriesKey(id)) {
       if (checkKeyTombstone(id)) return true;
     }
@@ -243,7 +248,7 @@ class MultiFyCloudVault {
     final String effCheckFy = recOfy.isNotEmpty ? recOfy : fy;
 
     if (fileName == 's_challan.json') {
-      if ((m['status'] ?? '').toString().trim() == 'Billed') return false;
+      if ((m['status'] ?? '').toString().trim().toUpperCase() == 'BILLED') return false;
       if (id.isEmpty && sec.isNotEmpty) {
         final String scopedSec = D1SalesLedgerService.scopeSecondaryKey(sec, effCheckFy);
         if (scopedSec.isNotEmpty && checkKeyTombstone(scopedSec)) return true;
@@ -500,7 +505,11 @@ class MultiFyCloudVault {
         if (cldVer == locVer && (fileName == 's_challan.json' || fileName == 'p_challan.json')) {
           final int locRank = _challanStatusRank((locMap['status'] ?? '').toString());
           final int cldRank = _challanStatusRank((candidate['status'] ?? '').toString());
-          if (cldRank > locRank && cldUpd >= locUpd) {
+          if (cldUpd > locUpd) {
+            candidateWins = true;
+          } else if (cldUpd < locUpd) {
+            candidateWins = false;
+          } else if (cldRank > locRank) {
             candidateWins = true;
           } else if (locRank > cldRank) {
             candidateWins = false;
@@ -1059,6 +1068,12 @@ class MultiFyCloudVault {
         final List<Purchase> purcBeforeDelete = List<Purchase>.from(fyPurc);
         final List<SaleChallan> revertedSaleChallans = [];
         final List<PurchaseChallan> revertedPurChallans = [];
+        final billRes = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
+          events: fyEvents,
+          targetFy: targetFy,
+          saleChallans: fySChallans,
+          purchaseChallans: fyPChallans,
+        );
         final revRes = D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
           events: fyEvents,
           targetFy: targetFy,
@@ -1069,12 +1084,6 @@ class MultiFyCloudVault {
           onSaleChallanReverted: (ch) => revertedSaleChallans.add(ch),
           onPurchaseChallanReverted: (ch) => revertedPurChallans.add(ch),
         );
-        final billRes = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
-          events: fyEvents,
-          targetFy: targetFy,
-          saleChallans: fySChallans,
-          purchaseChallans: fyPChallans,
-        );
         final bool scDirect = D1SalesLedgerService.applyEventsToLocalSaleChallans(fySChallans, fyEvents, targetFy);
         final bool pcDirect = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(fyPChallans, fyEvents, targetFy);
         fySChallans.removeWhere((c) => isFutureFyRecord(c.effectiveOriginalFy, targetFy));
@@ -1084,9 +1093,17 @@ class MultiFyCloudVault {
 
         for (final ch in revertedSaleChallans) {
           await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.billNo, fy: targetFy);
+          final chOfy = ch.effectiveOriginalFy;
+          if (chOfy.isNotEmpty && chOfy != targetFy) {
+            await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.billNo, fy: chOfy);
+          }
         }
         for (final ch in revertedPurChallans) {
           await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.internalNo, fy: targetFy);
+          final chOfy = ch.effectiveOriginalFy;
+          if (chOfy.isNotEmpty && chOfy != targetFy) {
+            await TombstoneEngine.unmarkTombstoneWithTimestamp(comp.id, id: ch.id, secondaryKey: ch.internalNo, fy: chOfy);
+          }
         }
 
         final bool sChanged = D1SalesLedgerService.applyEventsToLocalSales(fySales, fyEvents, targetFy);

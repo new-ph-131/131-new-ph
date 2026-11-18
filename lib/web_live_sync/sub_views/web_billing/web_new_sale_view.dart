@@ -423,7 +423,9 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
       roundOff: roundOff,
       status: "Active",
       items: List.from(billItems),
-      linkedChallanIds: widget.linkedChallanIds ?? [],
+      linkedChallanIds: (widget.linkedChallanIds != null && widget.linkedChallanIds!.isNotEmpty)
+          ? widget.linkedChallanIds!
+          : (existingSale?.linkedChallanIds ?? []),
       sourceTag: "WEB-PORTAL",
       partyAddress: activeParty.address,
       partyCity: activeParty.city,
@@ -438,7 +440,7 @@ class _WebNewSaleViewState extends State<WebNewSaleView> {
     // In-place enterprise update: preserved for addSaleAndSync
     webPh.addSaleAndSync(newSale);
     
-    if (widget.linkedChallanIds != null && widget.linkedChallanIds!.isNotEmpty) {
+    if (newSale.linkedChallanIds.isNotEmpty) {
       await webPh.pushUpdatedDataToCloud();
     }
 

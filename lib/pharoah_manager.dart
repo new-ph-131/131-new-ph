@@ -939,16 +939,42 @@ Future<void> finalizeSale({
           billFy: currentFY,
         )) {
           if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+            final String chFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+            if (activeCompany != null) {
+              await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: c.id, secondaryKey: c.billNo, fy: currentFY);
+              if (chFy != currentFY) {
+                await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: c.id, secondaryKey: c.billNo, fy: chFy);
+              }
+            }
+            D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(c.id, c.billNo, currentFY);
+            if (chFy != currentFY) {
+              D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(c.id, c.billNo, chFy);
+            }
+            final int kvCh = D1SalesLedgerService.getSaleChallanIdKnownVersion(c.id, chFy);
+            final int kvCur = chFy != currentFY ? D1SalesLedgerService.getSaleChallanIdKnownVersion(c.id, currentFY) : 0;
+            final int maxK = kvCh > kvCur ? kvCh : kvCur;
+            final int baseV = c.version > maxK ? c.version : maxK;
             c.markBilled(
               invoiceFy: currentFY,
               invoiceId: newFinalSale.id,
               invoiceNo: newFinalSale.billNo,
               invoiceDate: newFinalSale.date,
             );
-            c.version += 1;
+            c.version = (baseV < 1 ? 1 : baseV) + 1;
             c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            D1SalesLedgerService.recordKnownVersion(c.id, c.billNo, c.version, chFy);
+            if (chFy != currentFY) {
+              D1SalesLedgerService.recordKnownVersion(c.id, c.billNo, c.version, currentFY);
+            }
             if (activeToken.isNotEmpty) {
               SaleChallanSyncModule.onSaleChallanSaved(c, activeToken);
+              D1SalesLedgerService.onSaleChallanSaved(
+                c,
+                activeToken,
+                isUpdate: true,
+                clientSource: "APP_MOBILE",
+                fy: chFy,
+              );
             }
             await propagateChallanStatusAcrossDiskFolders(
               challanId: c.id,
@@ -1126,6 +1152,21 @@ Future<bool> finalizePurchase({
           billFy: currentFY,
         )) {
           if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+            final String chFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+            if (activeCompany != null) {
+              await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: c.id, secondaryKey: c.internalNo, fy: currentFY);
+              if (chFy != currentFY) {
+                await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: c.id, secondaryKey: c.internalNo, fy: chFy);
+              }
+            }
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, currentFY);
+            if (chFy != currentFY) {
+              D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, chFy);
+            }
+            final int kvCh = D1SalesLedgerService.getPurchaseIdKnownVersion(c.id, chFy);
+            final int kvCur = chFy != currentFY ? D1SalesLedgerService.getPurchaseIdKnownVersion(c.id, currentFY) : 0;
+            final int maxK = kvCh > kvCur ? kvCh : kvCur;
+            final int baseV = c.version > maxK ? c.version : maxK;
             final String invNo = newFinalPurchase.billNo.isNotEmpty ? newFinalPurchase.billNo : newFinalPurchase.internalNo;
             c.markBilled(
               invoiceFy: currentFY,
@@ -1133,10 +1174,21 @@ Future<bool> finalizePurchase({
               invoiceNo: invNo,
               invoiceDate: newFinalPurchase.date,
             );
-            c.version += 1;
+            c.version = (baseV < 1 ? 1 : baseV) + 1;
             c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+            D1SalesLedgerService.recordPurchaseKnownVersion(c.id, c.partyId, c.billNo, c.version, c.internalNo, chFy);
+            if (chFy != currentFY) {
+              D1SalesLedgerService.recordPurchaseKnownVersion(c.id, c.partyId, c.billNo, c.version, c.internalNo, currentFY);
+            }
             if (activeToken.isNotEmpty) {
               PurchaseChallanSyncModule.onPurchaseChallanSaved(c, activeToken);
+              D1SalesLedgerService.onPurchaseChallanSaved(
+                c,
+                activeToken,
+                isUpdate: true,
+                clientSource: "APP_MOBILE",
+                fy: chFy,
+              );
             }
             await propagateChallanStatusAcrossDiskFolders(
               challanId: c.id,
@@ -1342,16 +1394,36 @@ Future<bool> finalizePurchase({
             billFy: currentFY,
           )) {
             if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+              final String chFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+              D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(c.id, c.billNo, currentFY);
+              if (chFy != currentFY) {
+                D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(c.id, c.billNo, chFy);
+              }
+              final int kvCh = D1SalesLedgerService.getSaleChallanIdKnownVersion(c.id, chFy);
+              final int kvCur = chFy != currentFY ? D1SalesLedgerService.getSaleChallanIdKnownVersion(c.id, currentFY) : 0;
+              final int maxK = kvCh > kvCur ? kvCh : kvCur;
+              final int baseV = c.version > maxK ? c.version : maxK;
               c.markBilled(
                 invoiceFy: currentFY,
                 invoiceId: s.id,
                 invoiceNo: s.billNo,
                 invoiceDate: s.date,
               );
-              c.version += 1;
+              c.version = (baseV < 1 ? 1 : baseV) + 1;
               c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+              D1SalesLedgerService.recordKnownVersion(c.id, c.billNo, c.version, chFy);
+              if (chFy != currentFY) {
+                D1SalesLedgerService.recordKnownVersion(c.id, c.billNo, c.version, currentFY);
+              }
               if (activeToken.isNotEmpty) {
                 SaleChallanSyncModule.onSaleChallanSaved(c, activeToken);
+                D1SalesLedgerService.onSaleChallanSaved(
+                  c,
+                  activeToken,
+                  isUpdate: true,
+                  clientSource: "APP_MOBILE",
+                  fy: chFy,
+                );
               }
               await propagateChallanStatusAcrossDiskFolders(
                 challanId: c.id,
@@ -1422,6 +1494,15 @@ Future<bool> finalizePurchase({
             billFy: currentFY,
           )) {
             if (c.status != "Billed" || c.billedInvoiceNo.isEmpty) {
+              final String chFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : currentFY;
+              D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, currentFY);
+              if (chFy != currentFY) {
+                D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, chFy);
+              }
+              final int kvCh = D1SalesLedgerService.getPurchaseIdKnownVersion(c.id, chFy);
+              final int kvCur = chFy != currentFY ? D1SalesLedgerService.getPurchaseIdKnownVersion(c.id, currentFY) : 0;
+              final int maxK = kvCh > kvCur ? kvCh : kvCur;
+              final int baseV = c.version > maxK ? c.version : maxK;
               final String invNo = p.billNo.isNotEmpty ? p.billNo : p.internalNo;
               c.markBilled(
                 invoiceFy: currentFY,
@@ -1429,10 +1510,21 @@ Future<bool> finalizePurchase({
                 invoiceNo: invNo,
                 invoiceDate: p.date,
               );
-              c.version += 1;
+              c.version = (baseV < 1 ? 1 : baseV) + 1;
               c.updatedAt = DateTime.now().millisecondsSinceEpoch;
+              D1SalesLedgerService.recordPurchaseKnownVersion(c.id, c.partyId, c.billNo, c.version, c.internalNo, chFy);
+              if (chFy != currentFY) {
+                D1SalesLedgerService.recordPurchaseKnownVersion(c.id, c.partyId, c.billNo, c.version, c.internalNo, currentFY);
+              }
               if (activeToken.isNotEmpty) {
                 PurchaseChallanSyncModule.onPurchaseChallanSaved(c, activeToken);
+                D1SalesLedgerService.onPurchaseChallanSaved(
+                  c,
+                  activeToken,
+                  isUpdate: true,
+                  clientSource: "APP_MOBILE",
+                  fy: chFy,
+                );
               }
               await propagateChallanStatusAcrossDiskFolders(
                 challanId: c.id,
@@ -3545,6 +3637,7 @@ void registerBatchActivity({
       final List<SaleChallan> revertedChallans = [];
       final List<String> revertedChallanIds = [];
       final List<String> revertedChallanBillNos = [];
+      String earliestCascadeFy = delFy;
 
       if (saleLinks.explicitIds.isNotEmpty || saleLinks.legacyNos.isNotEmpty) {
         final int revTs = DateTime.now().millisecondsSinceEpoch;
@@ -3557,16 +3650,33 @@ void registerBatchActivity({
             billPartyId: s.partyId,
             billFy: delFy,
           )) {
+            final String chFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : delFy;
+            if (chFy.isNotEmpty && compareFyStrings(chFy, earliestCascadeFy) < 0) {
+              earliestCascadeFy = chFy;
+            }
+            final int kvCh = D1SalesLedgerService.getSaleChallanIdKnownVersion(c.id, chFy);
+            final int kvDel = chFy != delFy ? D1SalesLedgerService.getSaleChallanIdKnownVersion(c.id, delFy) : 0;
+            final int maxK = kvCh > kvDel ? kvCh : kvDel;
+            final int baseV = c.version > maxK ? c.version : maxK;
+            D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, "", delFy);
+            D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(c.id, c.billNo, delFy);
+            if (chFy != delFy) {
+              D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, "", chFy);
+              D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(c.id, c.billNo, chFy);
+            }
             c.status = "Pending";
             c.clearBilledMeta();
-            c.version += 1;
+            c.version = (baseV < 1 ? 1 : baseV) + 1;
             c.updatedAt = revTs;
+            D1SalesLedgerService.recordKnownVersion(c.id, c.billNo, c.version, chFy);
+            if (chFy != delFy) {
+              D1SalesLedgerService.recordKnownVersion(c.id, c.billNo, c.version, delFy);
+            }
             revertedChallans.add(c);
             revertedChallanIds.add(c.id);
             if (c.billNo.isNotEmpty) {
               revertedChallanBillNos.add(c.billNo);
             }
-            D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, "", delFy);
           }
         }
       }
@@ -3596,7 +3706,13 @@ void registerBatchActivity({
         final String bizType = activeCompany!.businessType;
         _trackDiskMutationTask(Future<void>(() async {
           for (final ch in revertedChallans) {
+            final String chFy = ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : delFy;
             await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: ch.id, secondaryKey: ch.billNo, fy: delFy);
+            SyncTombstoneHub.unmarkDeleted(companyId: compId, id: ch.id, referenceNo: ch.billNo, fy: delFy);
+            if (chFy != delFy) {
+              await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: ch.id, secondaryKey: ch.billNo, fy: chFy);
+              SyncTombstoneHub.unmarkDeleted(companyId: compId, id: ch.id, referenceNo: ch.billNo, fy: chFy);
+            }
           }
           await TombstoneEngine.recordTombstoneWithTimestamp(compId, id: realId, secondaryKey: s.billNo, fy: delFy);
           final t = await WebLiveToken.getOrCreateToken(compId);
@@ -3614,6 +3730,14 @@ void registerBatchActivity({
                 linkedChallanIds: allLinkedForCloud,
                 fy: delFy,
               ),
+              for (final ch in revertedChallans)
+                D1SalesLedgerService.onSaleChallanSaved(
+                  ch,
+                  t,
+                  isUpdate: true,
+                  clientSource: "APP_MOBILE",
+                  fy: ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : delFy,
+                ),
               SyncQueueManager.flushOutboxAsJSONBatch(),
             ]);
           }
@@ -3644,8 +3768,8 @@ void registerBatchActivity({
               clearBilledMeta: true,
             );
           }
-          if (revertedChallans.isNotEmpty && delFy.isNotEmpty) {
-            await cascadePendingChallansOnlyFromBackYear(delFy);
+          if (revertedChallans.isNotEmpty && earliestCascadeFy.isNotEmpty) {
+            await cascadePendingChallansOnlyFromBackYear(earliestCascadeFy);
           }
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
@@ -3671,6 +3795,7 @@ void registerBatchActivity({
       final List<PurchaseChallan> revertedPChallans = [];
       final List<String> revertedPChallanIds = [];
       final List<String> revertedPChallanNos = [];
+      String earliestCascadeFy = delFy;
 
       if (purLinks.explicitIds.isNotEmpty || purLinks.legacyNos.isNotEmpty) {
         final int revTs = DateTime.now().millisecondsSinceEpoch;
@@ -3683,16 +3808,38 @@ void registerBatchActivity({
             billPartyId: p.partyId,
             billFy: delFy,
           )) {
+            final String chFy = c.effectiveOriginalFy.isNotEmpty ? c.effectiveOriginalFy : delFy;
+            if (chFy.isNotEmpty && compareFyStrings(chFy, earliestCascadeFy) < 0) {
+              earliestCascadeFy = chFy;
+            }
+            final String c2 = (c.partyId.trim().isNotEmpty && c.billNo.trim().isNotEmpty)
+                ? "${c.partyId.trim().toUpperCase()}_${c.billNo.trim()}"
+                : "";
+            final String c3 = PurchaseChallanSyncModule.makeCompositeKey(c.partyId, c.billNo, c.internalNo);
+            final int kvCh = D1SalesLedgerService.getPurchaseIdKnownVersion(c.id, chFy);
+            final int kvDel = chFy != delFy ? D1SalesLedgerService.getPurchaseIdKnownVersion(c.id, delFy) : 0;
+            final int maxK = kvCh > kvDel ? kvCh : kvDel;
+            final int baseV = c.version > maxK ? c.version : maxK;
+            D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, c.internalNo, delFy);
+            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, delFy);
+            if (chFy != delFy) {
+              D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, c.internalNo, chFy);
+              D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, chFy);
+            }
             c.status = "Pending";
             c.clearBilledMeta();
-            c.version += 1;
+            c.version = (baseV < 1 ? 1 : baseV) + 1;
             c.updatedAt = revTs;
+            D1SalesLedgerService.recordPurchaseKnownVersion(c.id, c.partyId, c.billNo, c.version, c.internalNo, chFy);
+            if (chFy != delFy) {
+              D1SalesLedgerService.recordPurchaseKnownVersion(c.id, c.partyId, c.billNo, c.version, c.internalNo, delFy);
+            }
             revertedPChallans.add(c);
             revertedPChallanIds.add(c.id);
             if (c.internalNo.isNotEmpty) revertedPChallanNos.add(c.internalNo);
             if (c.billNo.isNotEmpty) revertedPChallanNos.add(c.billNo);
-            D1SalesLedgerService.unmarkPermanentlyDeleted(c.id, c.billNo, c.internalNo, delFy);
-            D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(c.id, c.partyId, c.billNo, c.internalNo, delFy);
+            if (c2.isNotEmpty) revertedPChallanNos.add(c2);
+            if (c3.isNotEmpty) revertedPChallanNos.add(c3);
           }
         }
       }
@@ -3727,7 +3874,21 @@ void registerBatchActivity({
         D1SalesLedgerService.recordPurchaseKnownVersion(pId, partyId, bNo, 999999, intNo, delFy);
         _trackDiskMutationTask(Future<void>(() async {
           for (final ch in revertedPChallans) {
+            final String chFy = ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : delFy;
+            final String c2 = (ch.partyId.trim().isNotEmpty && ch.billNo.trim().isNotEmpty)
+                ? "${ch.partyId.trim().toUpperCase()}_${ch.billNo.trim()}"
+                : "";
+            final String c3 = PurchaseChallanSyncModule.makeCompositeKey(ch.partyId, ch.billNo, ch.internalNo);
             await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: ch.id, secondaryKey: ch.internalNo, fy: delFy);
+            if (c2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: c2, fy: delFy);
+            if (c3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: c3, fy: delFy);
+            SyncTombstoneHub.unmarkDeleted(companyId: compId, id: ch.id, referenceNo: ch.internalNo, fy: delFy);
+            if (chFy != delFy) {
+              await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: ch.id, secondaryKey: ch.internalNo, fy: chFy);
+              if (c2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: c2, fy: chFy);
+              if (c3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: c3, fy: chFy);
+              SyncTombstoneHub.unmarkDeleted(companyId: compId, id: ch.id, referenceNo: ch.internalNo, fy: chFy);
+            }
           }
           await TombstoneEngine.recordBatchTombstones(compId, delKeys, fy: delFy);
           final t = await WebLiveToken.getOrCreateToken(compId);
@@ -3747,6 +3908,14 @@ void registerBatchActivity({
                 linkedChallanIds: allLinkedForCloud,
                 fy: delFy,
               ),
+              for (final ch in revertedPChallans)
+                D1SalesLedgerService.onPurchaseChallanSaved(
+                  ch,
+                  t,
+                  isUpdate: true,
+                  clientSource: "APP_MOBILE",
+                  fy: ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : delFy,
+                ),
               SyncQueueManager.flushOutboxAsJSONBatch(),
             ]);
           }
@@ -3777,8 +3946,8 @@ void registerBatchActivity({
               clearBilledMeta: true,
             );
           }
-          if (revertedPChallans.isNotEmpty && delFy.isNotEmpty) {
-            await cascadePendingChallansOnlyFromBackYear(delFy);
+          if (revertedPChallans.isNotEmpty && earliestCascadeFy.isNotEmpty) {
+            await cascadePendingChallansOnlyFromBackYear(earliestCascadeFy);
           }
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,

@@ -141,6 +141,16 @@ class FastPullEngine {
           if (edgeEvents.isNotEmpty) {
             final List<Sale> salesBeforeD1 = List<Sale>.from(ph.sales);
             final List<Purchase> purcBeforeD1 = List<Purchase>.from(ph.purchases);
+            final List<SaleChallan> bilScList = [];
+            final List<PurchaseChallan> bilPcList = [];
+            final d1ChBill = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
+              events: edgeEvents,
+              targetFy: targetFyAtStart,
+              saleChallans: ph.saleChallans,
+              purchaseChallans: ph.purchaseChallans,
+              onSaleChallanBilled: (ch) => bilScList.add(ch),
+              onPurchaseChallanBilled: (ch) => bilPcList.add(ch),
+            );
             final List<SaleChallan> revScList = [];
             final List<PurchaseChallan> revPcList = [];
             final d1ChRev = D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
@@ -155,16 +165,6 @@ class FastPullEngine {
             );
             final bool d1ScReverted = d1ChRev.saleChallansMutated;
             final bool d1PcReverted = d1ChRev.purchaseChallansMutated;
-            final List<SaleChallan> bilScList = [];
-            final List<PurchaseChallan> bilPcList = [];
-            final d1ChBill = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
-              events: edgeEvents,
-              targetFy: targetFyAtStart,
-              saleChallans: ph.saleChallans,
-              purchaseChallans: ph.purchaseChallans,
-              onSaleChallanBilled: (ch) => bilScList.add(ch),
-              onPurchaseChallanBilled: (ch) => bilPcList.add(ch),
-            );
             final bool d1ScBilled = d1ChBill.saleChallansMutated;
             final bool d1PcBilled = d1ChBill.purchaseChallansMutated;
             final bool d1ScDirectMutated = D1SalesLedgerService.applyEventsToLocalSaleChallans(ph.saleChallans, edgeEvents, targetFyAtStart);

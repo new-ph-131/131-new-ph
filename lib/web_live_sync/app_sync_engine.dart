@@ -66,7 +66,9 @@ class AppSyncEngine {
       Map<String, int> localRegistry = await TombstoneEngine.getTombstoneRegistry(companyId);
       Map<String, String> localHashes = await SnapshotWatcher.getLocalHashes(companyId, effectiveFy);
       D1SalesLedgerService.activeFinancialYear = effectiveFy;
-      List<String> newlyDeleted = await SnapshotWatcher.detectLocalDeletions(ph);
+      List<String> newlyDeleted = (await SnapshotWatcher.detectLocalDeletions(ph))
+          .where((id) => !SnapshotWatcher.isProtectedChallanSnapshotId(id))
+          .toList();
       if (newlyDeleted.isNotEmpty) {
         final nowTs = DateTime.now().millisecondsSinceEpoch;
         for (var id in newlyDeleted) {
@@ -162,6 +164,15 @@ class AppSyncEngine {
                 if (stillInEffectiveFy) {
                   final salesBefore = List<Sale>.from(ph.sales);
                   final purcBefore = List<Purchase>.from(ph.purchases);
+                  final billRes = D1SalesLedgerService.billLinkedChallansFromSaveEvents(
+                    events: edgeEvents,
+                    targetFy: effectiveFy,
+                    saleChallans: ph.saleChallans,
+                    purchaseChallans: ph.purchaseChallans,
+                  );
+                  if (billRes.saleChallansMutated || billRes.purchaseChallansMutated) {
+                    d1HasChanges = true;
+                  }
                   D1SalesLedgerService.revertLinkedChallansFromDeleteEvents(
                     events: edgeEvents,
                     targetFy: effectiveFy,
@@ -169,8 +180,20 @@ class AppSyncEngine {
                     existingPurchasesBeforeDelete: purcBefore,
                     saleChallans: ph.saleChallans,
                     purchaseChallans: ph.purchaseChallans,
-                    onSaleChallanReverted: (ch) => d1HasChanges = true,
-                    onPurchaseChallanReverted: (ch) => d1HasChanges = true,
+                    onSaleChallanReverted: (ch) {
+                      d1HasChanges = true;
+                      localTombstones.remove(ch.id);
+                      localTombstones.remove(ch.id.toUpperCase());
+                      localRegistry.remove(ch.id);
+                      localRegistry.remove(ch.id.toUpperCase());
+                    },
+                    onPurchaseChallanReverted: (ch) {
+                      d1HasChanges = true;
+                      localTombstones.remove(ch.id);
+                      localTombstones.remove(ch.id.toUpperCase());
+                      localRegistry.remove(ch.id);
+                      localRegistry.remove(ch.id.toUpperCase());
+                    },
                   );
                   bool d1ScDirect = D1SalesLedgerService.applyEventsToLocalSaleChallans(ph.saleChallans, edgeEvents, effectiveFy);
                   bool d1PcDirect = D1SalesLedgerService.applyEventsToLocalPurchaseChallans(ph.purchaseChallans, edgeEvents, effectiveFy);

@@ -292,10 +292,18 @@ class DeltaMergeEngine {
             final String cldStatus = (cloudMap["status"] ?? "").toString().trim().toUpperCase();
             final int locRank = (locStatus == "BILLED") ? 3 : ((locStatus == "CANCELLED") ? 2 : 1);
             final int cldRank = (cldStatus == "BILLED") ? 3 : ((cldStatus == "CANCELLED") ? 2 : 1);
-            if (locRank > cldRank && cloudVersion <= localVer) {
+            if (cloudVersion < localVer && locRank > cldRank) {
               shouldAccept = false;
-            } else if (cldRank > locRank && cloudVersion == localVer && cloudTimestamp >= localTimestamp) {
-              shouldAccept = true;
+            } else if (cloudVersion == localVer) {
+              if (cloudTimestamp > localTimestamp) {
+                shouldAccept = true;
+              } else if (cloudTimestamp < localTimestamp) {
+                shouldAccept = false;
+              } else if (locRank > cldRank) {
+                shouldAccept = false;
+              } else if (cldRank > locRank) {
+                shouldAccept = true;
+              }
             }
           }
           if (shouldAccept) {

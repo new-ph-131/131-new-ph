@@ -192,13 +192,15 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
       return;
     }
 
+    final String? rawExistingId = widget.existingPurchase?.id.trim();
+    final String? realExistingId = (rawExistingId != null && rawExistingId.isNotEmpty) ? rawExistingId : null;
     if (!widget.isReadOnly) {
       final dup = findDuplicateSupplierPurchase(
         purchases: webPh.purchases,
         partyId: widget.supplier.id,
         billNo: widget.supplierBillNo,
-        excludeId: widget.existingPurchase?.id,
-        excludeInternalNo: widget.existingPurchase?.internalNo,
+        excludeId: realExistingId,
+        excludeInternalNo: realExistingId != null ? widget.existingPurchase?.internalNo : null,
       );
       if (dup != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -213,7 +215,7 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
 
     setState(() => isSaving = true);
 
-    String id = widget.existingPurchase?.id ?? "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}";
+    String id = realExistingId ?? "PUR-WEB-${DateTime.now().millisecondsSinceEpoch}";
     List<String> links = widget.existingPurchase?.linkedChallanIds ?? [];
 
     bool ok = await WebPurchaseMechanism.commitPurchase(
@@ -230,7 +232,7 @@ class _WebPurchaseBillingScreenState extends State<WebPurchaseBillingScreen> {
       extraDiscount: extraDiscount,
       roundOff: roundOff,
       linkedChallanIds: links,
-      existingId: widget.existingPurchase?.id,
+      existingId: realExistingId,
     );
 
     setState(() => isSaving = false);

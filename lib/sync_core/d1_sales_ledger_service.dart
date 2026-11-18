@@ -762,6 +762,7 @@ class D1SalesLedgerService {
             "internalNo": internalNo,
             "is_deleted": 1,
             "fy": effFy,
+            "updatedAt": DateTime.now().millisecondsSinceEpoch,
             "linkedChallanIds": linkedChallanIds,
           },
         },
@@ -1013,6 +1014,7 @@ class D1SalesLedgerService {
             "is_deleted": 1,
             "status": "Deleted",
             "fy": effFy,
+            "updatedAt": DateTime.now().millisecondsSinceEpoch,
             "linkedChallanIds": linkedChallanIds,
           },
         },
@@ -1253,6 +1255,22 @@ class D1SalesLedgerService {
     bool pcMutated = false;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
 
+    final Set<String> deletedBillIdsInBatch = {};
+    final Set<String> deletedBillNosInBatch = {};
+    for (final ev in events) {
+      final String action = (ev["action"] ?? "").toString().toUpperCase();
+      final dynamic rawData = ev["sale_data"];
+      final bool payloadDel = rawData is Map &&
+          ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
+              rawData["status"] == "Deleted");
+      if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
+        final String dId = (ev["bill_id"] ?? (rawData is Map ? (rawData["id"] ?? rawData["billId"]) : "") ?? "").toString().trim();
+        final String dNo = (ev["bill_no"] ?? (rawData is Map ? (rawData["billNo"] ?? rawData["internalNo"]) : "") ?? "").toString().trim().toUpperCase();
+        if (dId.isNotEmpty) deletedBillIdsInBatch.add(dId);
+        if (dNo.isNotEmpty) deletedBillNosInBatch.add(dNo);
+      }
+    }
+
     for (final ev in events) {
       final String action = (ev["action"] ?? "").toString().toUpperCase();
       final dynamic rawData = ev["sale_data"];
@@ -1262,6 +1280,10 @@ class D1SalesLedgerService {
           ((int.tryParse(rawData["is_deleted"]?.toString() ?? rawData["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
               rawData["status"] == "Deleted");
       if (action == "DELETE" || action.startsWith("DELETE_") || payloadDel) {
+        continue;
+      }
+      if ((billId.isNotEmpty && deletedBillIdsInBatch.contains(billId)) ||
+          (billNo.isNotEmpty && deletedBillNosInBatch.contains(billNo.toUpperCase()))) {
         continue;
       }
       if (isBillDeleted(billId, billNo, "", effFy)) {
@@ -1487,11 +1509,23 @@ class D1SalesLedgerService {
               billFy: billFy,
             );
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
+              final String chFy = ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : effFy;
+              final int knownVer = getPurchaseIdKnownVersion(ch.id, chFy);
+              final int knownVerEff = chFy != effFy ? getPurchaseIdKnownVersion(ch.id, effFy) : 0;
+              final int maxKnown = knownVer > knownVerEff ? knownVer : knownVerEff;
+              final int baseVer = ch.version > maxKnown ? ch.version : maxKnown;
+              unmarkPurchasePermanentlyDeleted(ch.id, ch.partyId, ch.billNo, ch.internalNo, effFy);
+              if (chFy != effFy) {
+                unmarkPurchasePermanentlyDeleted(ch.id, ch.partyId, ch.billNo, ch.internalNo, chFy);
+              }
               ch.status = "Pending";
               ch.clearBilledMeta();
-              ch.version = (ch.version < 1 ? 1 : ch.version) + 1;
+              ch.version = (baseVer < 1 ? 1 : baseVer) + 1;
               ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
-              unmarkPurchasePermanentlyDeleted(ch.id, ch.partyId, ch.billNo, ch.internalNo, effFy);
+              recordPurchaseKnownVersion(ch.id, ch.partyId, ch.billNo, ch.version, ch.internalNo, chFy);
+              if (chFy != effFy) {
+                recordPurchaseKnownVersion(ch.id, ch.partyId, ch.billNo, ch.version, ch.internalNo, effFy);
+              }
               onPurchaseChallanReverted?.call(ch);
               pcMutated = true;
             }
@@ -1523,11 +1557,23 @@ class D1SalesLedgerService {
               billFy: billFy,
             );
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
+              final String chFy = ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : effFy;
+              final int knownVer = getSaleChallanIdKnownVersion(ch.id, chFy);
+              final int knownVerEff = chFy != effFy ? getSaleChallanIdKnownVersion(ch.id, effFy) : 0;
+              final int maxKnown = knownVer > knownVerEff ? knownVer : knownVerEff;
+              final int baseVer = ch.version > maxKnown ? ch.version : maxKnown;
+              unmarkSaleChallanPermanentlyDeleted(ch.id, ch.billNo, effFy);
+              if (chFy != effFy) {
+                unmarkSaleChallanPermanentlyDeleted(ch.id, ch.billNo, chFy);
+              }
               ch.status = "Pending";
               ch.clearBilledMeta();
-              ch.version = (ch.version < 1 ? 1 : ch.version) + 1;
+              ch.version = (baseVer < 1 ? 1 : baseVer) + 1;
               ch.updatedAt = evTs > ch.updatedAt ? evTs : nowMs;
-              unmarkPermanentlyDeleted(ch.id, ch.billNo, "", effFy);
+              recordKnownVersion(ch.id, ch.billNo, ch.version, chFy);
+              if (chFy != effFy) {
+                recordKnownVersion(ch.id, ch.billNo, ch.version, effFy);
+              }
               onSaleChallanReverted?.call(ch);
               scMutated = true;
             }
@@ -1719,7 +1765,12 @@ class D1SalesLedgerService {
             ? challan.effectiveOriginalFy
             : (activeFinancialYear.isNotEmpty ? activeFinancialYear.trim() : inferFyFromDate(challan.date)));
     final String effFy = normalizeFyString(rawFy);
+    final int prevKnown = getSaleChallanIdKnownVersion(challan.id, effFy);
     unmarkSaleChallanPermanentlyDeleted(challan.id, challan.billNo, effFy);
+    final int keepVer = challan.version > prevKnown ? challan.version : prevKnown;
+    if (keepVer > 0) {
+      recordKnownVersion(challan.id, challan.billNo, keepVer, effFy);
+    }
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
@@ -2098,11 +2149,15 @@ class D1SalesLedgerService {
           final local = localChallans[existingIdx];
           final int localRank = SaleChallanSyncModule.statusRank(local.status);
           final int incRank = SaleChallanSyncModule.statusRank(incoming.status);
-          if (localRank > incRank && version <= local.version) {
+          if (localRank > incRank &&
+              (version < local.version ||
+                  (version == local.version && incoming.updatedAt <= local.updatedAt))) {
             continue;
           }
           if (version > local.version ||
-              (version == local.version && incoming.updatedAt >= local.updatedAt)) {
+              (version == local.version &&
+                  (incoming.updatedAt > local.updatedAt ||
+                      (incoming.updatedAt == local.updatedAt && incRank >= localRank)))) {
             if (incoming.status == "Billed" && incoming.billedInvoiceNo.isEmpty && local.billedInvoiceNo.isNotEmpty) {
               incoming.billedInFy = local.billedInFy;
               incoming.billedInvoiceId = local.billedInvoiceId;
@@ -2137,6 +2192,7 @@ class D1SalesLedgerService {
             ? challan.effectiveOriginalFy
             : (activeFinancialYear.isNotEmpty ? activeFinancialYear.trim() : inferFyFromDate(challan.date)));
     final String effFy = normalizeFyString(rawFy);
+    final int prevKnown = getPurchaseIdKnownVersion(challan.id, effFy);
     unmarkPurchasePermanentlyDeleted(
       challan.id,
       challan.partyId,
@@ -2144,6 +2200,17 @@ class D1SalesLedgerService {
       challan.internalNo,
       effFy,
     );
+    final int keepVer = challan.version > prevKnown ? challan.version : prevKnown;
+    if (keepVer > 0) {
+      recordPurchaseKnownVersion(
+        challan.id,
+        challan.partyId,
+        challan.billNo,
+        keepVer,
+        challan.internalNo,
+        effFy,
+      );
+    }
     if (!USE_D1_EDGE_LEDGER || storeToken.trim().isEmpty) return false;
 
     try {
@@ -2629,11 +2696,15 @@ class D1SalesLedgerService {
           final local = localChallans[existingIdx];
           final int localRank = PurchaseChallanSyncModule.statusRank(local.status);
           final int incRank = PurchaseChallanSyncModule.statusRank(incoming.status);
-          if (localRank > incRank && version <= local.version) {
+          if (localRank > incRank &&
+              (version < local.version ||
+                  (version == local.version && incoming.updatedAt <= local.updatedAt))) {
             continue;
           }
           if (version > local.version ||
-              (version == local.version && incoming.updatedAt >= local.updatedAt)) {
+              (version == local.version &&
+                  (incoming.updatedAt > local.updatedAt ||
+                      (incoming.updatedAt == local.updatedAt && incRank >= localRank)))) {
             if (incoming.status == "Billed" && incoming.billedInvoiceNo.isEmpty && local.billedInvoiceNo.isNotEmpty) {
               incoming.billedInFy = local.billedInFy;
               incoming.billedInvoiceId = local.billedInvoiceId;

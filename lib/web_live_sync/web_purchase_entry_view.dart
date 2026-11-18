@@ -48,14 +48,17 @@ class WebPurchaseEntryView extends StatelessWidget {
   Widget build(BuildContext context) {
     Purchase? reconstructedPurchase = existingPurchase;
     
-    // RECONSTRUCT PURCHASE OBJECT FOR STEP 1 (WITH FULL VERSION & DISCOUNT FIDELITY)
-    if (reconstructedPurchase == null && modifyPurchaseId != null && initialSupplier != null && existingItems != null) {
+    // RECONSTRUCT PURCHASE OBJECT FOR STEP 1 (WITH FULL VERSION, ITEMS & STITCHED CHALLAN LINKS)
+    if (reconstructedPurchase == null &&
+        (modifyPurchaseId != null ||
+            (existingItems != null && existingItems!.isNotEmpty) ||
+            (linkedChallanIds != null && linkedChallanIds!.isNotEmpty))) {
       reconstructedPurchase = Purchase(
-        id: modifyPurchaseId!,
-        internalNo: initialInternalNo ?? "WPUR-1",
+        id: modifyPurchaseId ?? "",
+        internalNo: initialInternalNo ?? (modifyPurchaseId != null ? "WPUR-1" : "DRAFT"),
         billNo: initialBillNo ?? "",
-        partyId: initialSupplier!.id,
-        distributorName: initialSupplier!.name,
+        partyId: initialSupplier?.id ?? "",
+        distributorName: initialSupplier?.name ?? "",
         date: initialDate ?? DateTime.now(),
         entryDate: initialEntryDate ?? DateTime.now(),
         paymentMode: initialMode ?? "CREDIT",

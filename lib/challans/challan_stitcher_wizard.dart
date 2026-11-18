@@ -22,6 +22,38 @@ import '../pdf/pdf_router_service.dart'; // Naya Central Router
 class ChallanStitcherWizard extends StatefulWidget {
   const ChallanStitcherWizard({super.key});
 
+  static bool evaluateEligibility({
+    required DateTime date,
+    required String effectiveOriginalFy,
+    required String currentFy,
+    required String selectionMode,
+    required bool includeCarryForward,
+    required DateTime fromDate,
+    required DateTime toDate,
+  }) {
+    final bool isCarry = isStrictCarryForwardFy(effectiveOriginalFy, currentFy);
+    if (selectionMode == "CARRY_ONLY") return isCarry;
+    if (isCarry) return includeCarryForward;
+    final DateTime dOnly = DateTime(date.year, date.month, date.day);
+    final DateTime sOnly = DateTime(fromDate.year, fromDate.month, fromDate.day);
+    final DateTime eOnly = DateTime(toDate.year, toDate.month, toDate.day);
+    return !dOnly.isBefore(sOnly) && !dOnly.isAfter(eOnly);
+  }
+
+  static bool partyMatchesChallan({
+    required String partyId,
+    required String partyName,
+    required String challanPartyId,
+    required String challanPartyName,
+  }) {
+    final String cPid = challanPartyId.trim();
+    final String pId = partyId.trim();
+    if (cPid.isNotEmpty && pId.isNotEmpty && cPid == pId) return true;
+    final String cName = challanPartyName.trim().toUpperCase();
+    final String pName = partyName.trim().toUpperCase();
+    return cName.isNotEmpty && pName.isNotEmpty && cName == pName;
+  }
+
   @override
   State<ChallanStitcherWizard> createState() => _ChallanStitcherWizardState();
 }
@@ -29,19 +61,21 @@ class ChallanStitcherWizard extends StatefulWidget {
 class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   
-  String funnelStep = "MODE"; 
-  String selectionMode = "NONE"; 
+  String funnelStep = "MODE";
+  String selectionMode = "NONE";
+  bool includeCarryForward = false;
   bool isProcessing = false;
   double progressValue = 0.0;
   String progressText = "";
 
-  DateTime batchBillDate = DateTime.now(); 
+  DateTime batchBillDate = DateTime.now();
   DateTime fromDate = DateTime.now();
   DateTime toDate = DateTime.now();
   bool _didInitFyDates = false;
   String? selectedRoute;
   List<String> selectedPartyNames = [];
-  List<Map<String, dynamic>> draftBills = []; 
+  Map<String, List<String>> selectedChallanIdsByParty = {};
+  List<Map<String, dynamic>> draftBills = [];
   String partySearch = "";
 
   final List<String> fyMonths = ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"];
@@ -73,8 +107,11 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
       funnelStep = "MODE";
       selectedRoute = null;
       selectedPartyNames.clear();
+      selectedChallanIdsByParty.clear();
       draftBills.clear();
       selectionMode = "NONE";
+      includeCarryForward = false;
+      partySearch = "";
       batchBillDate = smart;
       fromDate = smart;
       toDate = smart;
@@ -86,7 +123,7 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   // ===========================================================================
   
   Future<void> _handleBatchSave(PharoahManager ph) async {
-    var selected = draftBills.where((b) => b['isSelected'] && b['status'] == 'DRAFT').toList();
+    var selected = draftBills.where((b) => b['isSelected'] && b['status'] == 'DRAFT' && (b['challanIds'] as List).isNotEmpty && (b['items'] as List).isNotEmpty).toList();
     if (selected.isEmpty) return;
 
     setState(() { isProcessing = true; progressText = "Finalizing Batch..."; progressValue = 0.1; });
@@ -320,6 +357,9 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
     const SizedBox(height: 20),
     _modeCard("CARRY-FORWARD PENDING", "Stitch previous FY carried-forward pending challans", Icons.history, Colors.deepPurple, () => setState(() {
       selectionMode = "CARRY_ONLY";
+      includeCarryForward = true;
+      selectedPartyNames.clear();
+      selectedChallanIdsByParty.clear();
       funnelStep = "ROUTE";
     })),
   ])));
@@ -331,28 +371,288 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   ]);
 
   bool _partyMatchesChallan(Party p, dynamic c, bool isSale) {
-    final String cPid = (c.partyId ?? '').toString().trim();
-    final String pId = p.id.trim();
-    if (cPid.isNotEmpty && pId.isNotEmpty && cPid == pId) return true;
-    final String cName = (isSale ? (c as SaleChallan).partyName : (c as PurchaseChallan).distributorName).trim().toUpperCase();
-    return cName.isNotEmpty && cName == p.name.trim().toUpperCase();
+    return ChallanStitcherWizard.partyMatchesChallan(
+      partyId: p.id,
+      partyName: p.name,
+      challanPartyId: (c.partyId ?? '').toString(),
+      challanPartyName: isSale ? (c as SaleChallan).partyName : (c as PurchaseChallan).distributorName,
+    );
   }
 
   bool _isChallanEligible(dynamic c, PharoahManager ph) {
     if ((c.isDeleted ?? 0) == 1) return false;
     if (c.status != "Pending") return false;
-    if (selectionMode == "CARRY_ONLY") {
-      final String ofy = c is SaleChallan ? c.effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
-      return _isCarryForwardChallan(ofy, ph.currentFY);
+    final String ofy = c is SaleChallan ? c.effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
+    return ChallanStitcherWizard.evaluateEligibility(
+      date: c.date as DateTime,
+      effectiveOriginalFy: ofy,
+      currentFy: ph.currentFY,
+      selectionMode: selectionMode,
+      includeCarryForward: includeCarryForward,
+      fromDate: fromDate,
+      toDate: toDate,
+    );
+  }
+
+  String _partyPickKey(Party p) {
+    final pid = p.id.trim();
+    if (pid.isNotEmpty) return "ID:$pid";
+    return "NAME:${p.name.trim().toUpperCase()}";
+  }
+
+  List<dynamic> _getEligibleChallansForParty(PharoahManager ph, Party party, bool isSale) {
+    final List<dynamic> list = isSale
+        ? ph.saleChallans.where((ch) => _partyMatchesChallan(party, ch, true) && _isChallanEligible(ch, ph)).toList()
+        : ph.purchaseChallans.where((ch) => _partyMatchesChallan(party, ch, false) && _isChallanEligible(ch, ph)).toList();
+    list.sort((a, b) {
+      final int cmp = (a.date as DateTime).compareTo(b.date as DateTime);
+      if (cmp != 0) return cmp;
+      final String aNo = isSale ? (a as SaleChallan).billNo : (a as PurchaseChallan).internalNo;
+      final String bNo = isSale ? (b as SaleChallan).billNo : (b as PurchaseChallan).internalNo;
+      return aNo.compareTo(bNo);
+    });
+    return list;
+  }
+
+  List<String> _getSelectedChallanIdsForParty(Party party, List<dynamic> eligibleChallans, bool isSale) {
+    final key = _partyPickKey(party);
+    final eligibleIds = eligibleChallans.map((c) => isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toList();
+    if (!selectedChallanIdsByParty.containsKey(key)) {
+      return eligibleIds;
     }
-    if (selectionMode == "MONTHLY" || selectionMode == "RANDOM") {
-      final DateTime cDt = c.date as DateTime;
-      final DateTime dOnly = DateTime(cDt.year, cDt.month, cDt.day);
-      final DateTime sOnly = DateTime(fromDate.year, fromDate.month, fromDate.day);
-      final DateTime eOnly = DateTime(toDate.year, toDate.month, toDate.day);
-      if (dOnly.isBefore(sOnly) || dOnly.isAfter(eOnly)) return false;
+    final pickedSet = selectedChallanIdsByParty[key]!.toSet();
+    return eligibleIds.where((id) => pickedSet.contains(id)).toList();
+  }
+
+  Map<String, dynamic> _buildDraftPayload(
+    Party pObj,
+    List<dynamic> pickedChallans,
+    bool isSale,
+    String currentFy,
+    DateTime draftDate, {
+    String status = 'DRAFT',
+    String billNo = 'DRAFT',
+    bool isSelected = true,
+  }) {
+    final List<dynamic> items = [];
+    for (var c in pickedChallans) {
+      if (isSale) {
+        final SaleChallan act = c as SaleChallan;
+        for (var it in act.items) {
+          items.add(it.copyWith(sourceChallanNo: act.billNo, sourceChallanId: act.id));
+        }
+      } else {
+        final PurchaseChallan act = c as PurchaseChallan;
+        for (var it in act.items) {
+          items.add(it.copyWith(sourceChallanNo: act.billNo, sourceChallanId: act.id));
+        }
+      }
     }
-    return true;
+    final int cfCount = pickedChallans.where((c) {
+      final String ofy = isSale ? (c as SaleChallan).effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
+      return _isCarryForwardChallan(ofy, currentFy);
+    }).length;
+    return {
+      'party': pObj,
+      'billNo': billNo,
+      'date': draftDate,
+      'items': items,
+      'total': items.fold(0.0, (s, i) => s + (i.total as double)),
+      'status': status,
+      'isSelected': isSelected,
+      'cfCount': cfCount,
+      'challanIds': pickedChallans.map((c) => isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toList(),
+    };
+  }
+
+  Future<void> _openChallanPickerDialog(PharoahManager ph, Party party, bool isSale, {int? draftIndex}) async {
+    final eligible = _getEligibleChallansForParty(ph, party, isSale);
+    if (eligible.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("No eligible pending challans for ${party.name}.")),
+      );
+      return;
+    }
+    final key = _partyPickKey(party);
+    Set<String> tempSelected;
+    if (draftIndex != null && draftIndex >= 0 && draftIndex < draftBills.length) {
+      tempSelected = List<String>.from(draftBills[draftIndex]['challanIds'] ?? const []).toSet();
+    } else {
+      tempSelected = _getSelectedChallanIdsForParty(party, eligible, isSale).toSet();
+    }
+
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          double selTotal = 0.0;
+          for (final ch in eligible) {
+            final String chId = isSale ? (ch as SaleChallan).id : (ch as PurchaseChallan).id;
+            if (tempSelected.contains(chId)) {
+              selTotal += isSale ? (ch as SaleChallan).totalAmount : (ch as PurchaseChallan).totalAmount;
+            }
+          }
+          return AlertDialog(
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Select Challans • ${party.name}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 4),
+                Text(
+                  "Selected: ${tempSelected.length} of ${eligible.length} • ₹${selTotal.toStringAsFixed(2)}",
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.teal.shade700),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 380,
+              child: Column(
+                children: [
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => setDialogState(() {
+                          tempSelected = eligible.map((c) => isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toSet();
+                        }),
+                        child: const Text("All", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => setDialogState(() => tempSelected.clear()),
+                        child: const Text("None", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red)),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => setDialogState(() {
+                          tempSelected = eligible.where((c) {
+                            final String ofy = isSale ? (c as SaleChallan).effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
+                            return !_isCarryForwardChallan(ofy, ph.currentFY);
+                          }).map((c) => isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toSet();
+                        }),
+                        child: const Text("Only Current", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal)),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => setDialogState(() {
+                          tempSelected = eligible.where((c) {
+                            final String ofy = isSale ? (c as SaleChallan).effectiveOriginalFy : (c as PurchaseChallan).effectiveOriginalFy;
+                            return _isCarryForwardChallan(ofy, ph.currentFY);
+                          }).map((c) => isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toSet();
+                        }),
+                        child: const Text("Only Carry-Fwd", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.deepPurple)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: eligible.length,
+                      itemBuilder: (_, idx) {
+                        final ch = eligible[idx];
+                        String chId;
+                        String chNo;
+                        DateTime chDate;
+                        double chAmt;
+                        String chOfy;
+                        int itemCount;
+                        if (isSale) {
+                          final sc = ch as SaleChallan;
+                          chId = sc.id;
+                          chNo = sc.billNo;
+                          chDate = sc.date;
+                          chAmt = sc.totalAmount;
+                          chOfy = sc.effectiveOriginalFy;
+                          itemCount = sc.items.length;
+                        } else {
+                          final pc = ch as PurchaseChallan;
+                          chId = pc.id;
+                          chNo = pc.billNo.isNotEmpty ? "${pc.internalNo} (${pc.billNo})" : pc.internalNo;
+                          chDate = pc.date;
+                          chAmt = pc.totalAmount;
+                          chOfy = pc.effectiveOriginalFy;
+                          itemCount = pc.items.length;
+                        }
+                        final bool isCf = _isCarryForwardChallan(chOfy, ph.currentFY);
+                        return CheckboxListTile(
+                          dense: true,
+                          activeColor: isCf ? Colors.deepPurple : Colors.teal,
+                          value: tempSelected.contains(chId),
+                          title: Row(
+                            children: [
+                              Flexible(child: Text(chNo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: isCf ? Colors.deepPurple.withOpacity(0.12) : Colors.teal.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  isCf ? "CF • ${chOfy.isNotEmpty ? chOfy : 'PREV'}" : "CURRENT",
+                                  style: TextStyle(
+                                    color: isCf ? Colors.deepPurple : Colors.teal.shade700,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            "${DateFormat('dd/MM/yyyy').format(chDate)} • $itemCount Items • ₹${chAmt.toStringAsFixed(2)}",
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          onChanged: (v) => setDialogState(() {
+                            if (v == true) {
+                              tempSelected.add(chId);
+                            } else {
+                              tempSelected.remove(chId);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("CANCEL")),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, tempSelected.toList()),
+                child: Text("APPLY (${tempSelected.length})"),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      selectedChallanIdsByParty[key] = result;
+      if (draftIndex == null) {
+        if (result.isNotEmpty && !selectedPartyNames.contains(party.name)) {
+          selectedPartyNames.add(party.name);
+        } else if (result.isEmpty) {
+          selectedPartyNames.remove(party.name);
+        }
+      } else if (draftIndex >= 0 && draftIndex < draftBills.length) {
+        final resultSet = result.toSet();
+        final pickedChs = eligible.where((c) => resultSet.contains(isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id)).toList();
+        final oldDraft = draftBills[draftIndex];
+        draftBills[draftIndex] = _buildDraftPayload(
+          party,
+          pickedChs,
+          isSale,
+          ph.currentFY,
+          oldDraft['date'] as DateTime,
+          status: oldDraft['status'] ?? 'DRAFT',
+          billNo: oldDraft['billNo'] ?? 'DRAFT',
+          isSelected: pickedChs.isNotEmpty ? (oldDraft['isSelected'] ?? true) : false,
+        );
+      }
+    });
   }
 
   Widget _stepParty(PharoahManager ph, Color color) {
@@ -369,22 +669,47 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
         Expanded(child: TextField(decoration: const InputDecoration(hintText: "Search Party..."), onChanged: (v)=>setState(()=>partySearch=v))),
         TextButton(onPressed: () => setState(() => selectedPartyNames = list.map((e)=>e.name).toList()), child: const Text("SELECT ALL")),
       ])),
+      if (selectionMode != "CARRY_ONLY")
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: CheckboxListTile(
+            dense: true,
+            activeColor: Colors.deepPurple,
+            contentPadding: EdgeInsets.zero,
+            value: includeCarryForward,
+            title: const Text(
+              "Include Prior-FY Carry-Forward Pending Challans",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.deepPurple),
+            ),
+            onChanged: (v) => setState(() {
+              includeCarryForward = v ?? false;
+              selectedChallanIdsByParty.clear();
+            }),
+          ),
+        ),
       Expanded(child: ListView.builder(itemCount: list.length, itemBuilder: (c, i) {
         final party = list[i];
-        final pChs = isSale
-            ? ph.saleChallans.where((ch) => _partyMatchesChallan(party, ch, true) && _isChallanEligible(ch, ph)).toList()
-            : ph.purchaseChallans.where((ch) => _partyMatchesChallan(party, ch, false) && _isChallanEligible(ch, ph)).toList();
+        final pChs = _getEligibleChallansForParty(ph, party, isSale);
+        final pickedIds = _getSelectedChallanIdsForParty(party, pChs, isSale);
         final cfCount = pChs.where((ch) {
           final String ofy = isSale ? (ch as SaleChallan).effectiveOriginalFy : (ch as PurchaseChallan).effectiveOriginalFy;
           return _isCarryForwardChallan(ofy, ph.currentFY);
         }).length;
         return CheckboxListTile(
           activeColor: color,
+          controlAffinity: ListTileControlAffinity.leading,
           value: selectedPartyNames.contains(party.name),
           title: Text(party.name, style: const TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Text(
-            cfCount > 0 ? "${pChs.length} Pending ($cfCount Carry-Fwd)" : "${pChs.length} Pending",
+            cfCount > 0
+                ? "${pickedIds.length}/${pChs.length} Selected ($cfCount Carry-Fwd)"
+                : "${pickedIds.length}/${pChs.length} Pending",
             style: TextStyle(fontSize: 11, color: cfCount > 0 ? Colors.deepPurple : Colors.grey),
+          ),
+          secondary: OutlinedButton(
+            onPressed: () => _openChallanPickerDialog(ph, party, isSale),
+            child: Text("CHALLANS (${pickedIds.length}/${pChs.length})", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
           ),
           onChanged: (v) => setState(() { v! ? selectedPartyNames.add(party.name) : selectedPartyNames.remove(party.name); }),
         );
@@ -394,7 +719,7 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   }
 
   Widget _stepReview(PharoahManager ph, Color color) {
-    bool allSel = draftBills.every((b) => b['isSelected']);
+    bool allSel = draftBills.isNotEmpty && draftBills.every((b) => b['isSelected']);
     return Column(children: [
       Container(padding: const EdgeInsets.all(10), color: color.withOpacity(0.05), child: InkWell(onTap: () async {
         DateTime? p = await PharoahDateController.pickDate(context: context, currentFY: ph.currentFY, initialDate: batchBillDate);
@@ -410,10 +735,15 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
       ])),
       Expanded(child: ListView.builder(itemCount: draftBills.length, padding: const EdgeInsets.all(12), itemBuilder: (c, i) {
         final b = draftBills[i]; bool isSaved = b['status'] == 'SAVED';
+        final bool isSale = _tabController.index == 0;
+        final Party pRef = b['party'] as Party;
+        final int eligibleCount = isSaved ? (b['challanIds'] as List).length : _getEligibleChallansForParty(ph, pRef, isSale).length;
+        final int pickedCount = (b['challanIds'] as List).length;
         return Container(margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15), border: Border.all(color: isSaved ? Colors.green : Colors.grey.shade300, width: 1.5)), child: Column(children: [
-          ListTile(leading: Checkbox(value: b['isSelected'], onChanged: isSaved ? null : (v) => setState(() => b['isSelected'] = v)), title: Text(b['party'].name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)), subtitle: Text("${isSaved ? b['billNo'] : 'DRAFT'} | ${DateFormat('dd/MM/yy').format(b['date'])} | ₹${b['total'].toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)), trailing: Icon(isSaved ? Icons.check_circle : Icons.pending, color: isSaved ? Colors.green : Colors.orange)),
+          ListTile(leading: Checkbox(value: b['isSelected'], onChanged: isSaved ? null : (v) => setState(() => b['isSelected'] = v)), title: Text(b['party'].name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)), subtitle: Text("${isSaved ? b['billNo'] : 'DRAFT'} | $pickedCount Challans | ${DateFormat('dd/MM/yy').format(b['date'])} | ₹${b['total'].toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)), trailing: Icon(isSaved ? Icons.check_circle : Icons.pending, color: isSaved ? Colors.green : Colors.orange)),
           const Divider(height: 1),
-          Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Wrap(alignment: WrapAlignment.spaceAround, spacing: 12, runSpacing: 6, children: [
+            if (!isSaved) _iconAct(Icons.checklist, "CHALLANS ($pickedCount/$eligibleCount)", Colors.deepPurple, () => _openChallanPickerDialog(ph, pRef, isSale, draftIndex: i)),
             _iconAct(Icons.remove_red_eye, "VIEW", Colors.blue, () => _viewDraft(b)),
             _iconAct(Icons.edit_note, "EDIT", Colors.orange.shade800, () => _editDraft(b, i)),
             _iconAct(isSaved ? Icons.verified : Icons.save, "SAVE", isSaved ? Colors.green : Colors.grey, () => _saveSingle(ph, i)),
@@ -436,29 +766,33 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
         orElse: () => null,
       );
       if (pObj == null) continue;
-      var chs = isSale
-          ? ph.saleChallans.where((c) => _partyMatchesChallan(pObj, c, true) && _isChallanEligible(c, ph)).toList()
-          : ph.purchaseChallans.where((c) => _partyMatchesChallan(pObj, c, false) && _isChallanEligible(c, ph)).toList();
-      if(chs.isEmpty) continue;
-      List<dynamic> items = [];
-      for(var c in chs) { 
-        if (isSale) { 
-          SaleChallan act = c as SaleChallan; 
-          for(var it in act.items) { items.add(it.copyWith(sourceChallanNo: act.billNo, sourceChallanId: act.id)); } 
-        } 
-        else { 
-          PurchaseChallan act = c as PurchaseChallan; 
-          for(var it in act.items) { items.add(it.copyWith(sourceChallanNo: act.billNo, sourceChallanId: act.id)); } 
-        }
-      }
-      temp.add({'party': pObj, 'billNo': 'DRAFT', 'date': batchBillDate, 'items': items, 'total': items.fold(0.0, (s, i)=>s+i.total), 'status': 'DRAFT', 'isSelected': true, 'challanIds': chs.map((c)=> isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id).toList()});
+      final eligibleChs = _getEligibleChallansForParty(ph, pObj, isSale);
+      final selectedIds = _getSelectedChallanIdsForParty(pObj, eligibleChs, isSale).toSet();
+      final chs = eligibleChs.where((c) => selectedIds.contains(isSale ? (c as SaleChallan).id : (c as PurchaseChallan).id)).toList();
+      if (chs.isEmpty) continue;
+      temp.add(_buildDraftPayload(pObj, chs, isSale, ph.currentFY, batchBillDate));
     }
-    setState(() { draftBills = temp; funnelStep = "REVIEW"; isProcessing = false; });
+    setState(() {
+      draftBills = temp;
+      funnelStep = temp.isEmpty ? "PARTY" : "REVIEW";
+      isProcessing = false;
+    });
+    if (temp.isEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select at least 1 challan for selected parties!"), backgroundColor: Colors.orange),
+      );
+    }
   }
 
   Future<void> _saveSingle(PharoahManager ph, int i) async {
+    var b = draftBills[i];
+    if ((b['challanIds'] as List).isEmpty || (b['items'] as List).isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Select at least 1 challan for ${b['party'].name} before saving!"), backgroundColor: Colors.orange),
+      );
+      return;
+    }
     setState(() => isProcessing = true);
-    var b = draftBills[i]; 
     bool isSale = _tabController.index == 0; 
     String finalNo;
     final DateTime safeDate = AppDateLogic.ensureDateInActiveFy(b['date'] as DateTime, ph.currentFY);
@@ -554,13 +888,29 @@ class _ChallanStitcherWizardState extends State<ChallanStitcherWizard> with Sing
   void _setDt(String m, String fy) {
     int yr = int.parse(fy.split('-')[0]); if(yr < 2000) yr+=2000;
     int idx = fyMonths.indexOf(m); int tM = idx+4; if(tM>12) { tM-=12; yr++; }
-    setState(() { fromDate = DateTime(yr, tM, 1); toDate = DateTime(yr, tM+1, 0); funnelStep = "ROUTE"; selectionMode = "MONTHLY"; });
+    setState(() {
+      fromDate = DateTime(yr, tM, 1);
+      toDate = DateTime(yr, tM+1, 0);
+      funnelStep = "ROUTE";
+      selectionMode = "MONTHLY";
+      includeCarryForward = false;
+      selectedPartyNames.clear();
+      selectedChallanIdsByParty.clear();
+    });
   }
 
   void _pickRandom(String fy) async {
     DateTime? s = await PharoahDateController.pickDate(context: context, currentFY: fy, initialDate: AppDateLogic.getSmartDate(fy));
     if(s!=null) { DateTime? e = await PharoahDateController.pickDate(context: context, currentFY: fy, initialDate: s);
-      if(e!=null) setState(() { fromDate = s; toDate = e; funnelStep = "ROUTE"; selectionMode = "RANDOM"; });
+      if(e!=null) setState(() {
+        fromDate = s;
+        toDate = e;
+        funnelStep = "ROUTE";
+        selectionMode = "RANDOM";
+        includeCarryForward = false;
+        selectedPartyNames.clear();
+        selectedChallanIdsByParty.clear();
+      });
     }
   }
 
