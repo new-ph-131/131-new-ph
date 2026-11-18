@@ -780,7 +780,7 @@ void main() {
 
       // Simulate stale poisoned tombstone from an old snapshot for SCH-WEB-1 before bill delete
       webPh.deletedRecordIds.add('SCH-WEB-1');
-      webPh.deletedRecordIds.add('${oldFy}_SCH-WEB-1');
+      webPh.deletedRecordIds.add('${oldFy}::SCH-WEB-1');
       webPh.localTombstoneRegistry['SCH-WEB-1'] = 2500;
       D1SalesLedgerService.markSaleChallanPermanentlyDeleted('SCH-WEB-1', 'WSCH-1', oldFy, 2500);
 
@@ -793,7 +793,7 @@ void main() {
       expect(appCf.billedInvoiceNo, isEmpty);
       expect(webCf.billedInvoiceNo, isEmpty);
       expect(webPh.deletedRecordIds.contains('SCH-WEB-1'), isFalse);
-      expect(webPh.deletedRecordIds.contains('${oldFy}_SCH-WEB-1'), isFalse);
+      expect(webPh.deletedRecordIds.contains('${oldFy}::SCH-WEB-1'), isFalse);
       expect(D1SalesLedgerService.isSaleChallanIdDeleted('SCH-WEB-1', oldFy), isFalse);
       expect(D1SalesLedgerService.isSaleChallanIdDeleted('SCH-WEB-1', newFy), isFalse);
 
@@ -810,9 +810,9 @@ void main() {
       // while unmarked_tombstones.json (Map format) has newer timestamp 9999999999999!
       final futureUnmarkTs = DateTime.now().millisecondsSinceEpoch + 60000;
       final downloadedFiles = <String, dynamic>{
-        'tombstones.json': jsonEncode(['SCH-WEB-1', '${oldFy}_SCH-WEB-1']),
-        'tombstone_registry.json': jsonEncode({'SCH-WEB-1': 2500, '${oldFy}_SCH-WEB-1': 2500}),
-        'unmarked_tombstones.json': jsonEncode({'SCH-WEB-1': futureUnmarkTs, '${oldFy}_SCH-WEB-1': futureUnmarkTs}),
+        'tombstones.json': jsonEncode(['SCH-WEB-1', '${oldFy}::SCH-WEB-1']),
+        'tombstone_registry.json': jsonEncode({'SCH-WEB-1': 2500, '${oldFy}::SCH-WEB-1': 2500}),
+        'unmarked_tombstones.json': jsonEncode({'SCH-WEB-1': futureUnmarkTs, '${oldFy}::SCH-WEB-1': futureUnmarkTs}),
         's_challan.json': jsonEncode([appCf.toMap(), webCf.toMap()]),
         'sales.json': '[]',
       };
@@ -901,7 +901,7 @@ void main() {
 
       // Poison PCH-WEB-1 tombstone before delete
       webPh.deletedRecordIds.add('PCH-WEB-1');
-      webPh.deletedRecordIds.add('${oldFy}_PCH-WEB-1');
+      webPh.deletedRecordIds.add('${oldFy}::PCH-WEB-1');
       D1SalesLedgerService.markPurchasePermanentlyDeleted('PCH-WEB-1', 'SUP-1', 'SUP-12', 'WPCH-1', oldFy, 2500);
 
       webPh.deletePurchase('PUR-STITCH-1');
@@ -911,7 +911,7 @@ void main() {
       expect(appPch.billedInvoiceNo, isEmpty);
       expect(webPch.billedInvoiceNo, isEmpty);
       expect(webPh.deletedRecordIds.contains('PCH-WEB-1'), isFalse);
-      expect(webPh.deletedRecordIds.contains('${oldFy}_PCH-WEB-1'), isFalse);
+      expect(webPh.deletedRecordIds.contains('${oldFy}::PCH-WEB-1'), isFalse);
       expect(D1SalesLedgerService.isPurchaseIdDeleted('PCH-WEB-1', oldFy), isFalse);
       expect(D1SalesLedgerService.isPurchaseIdDeleted('PCH-WEB-1', newFy), isFalse);
 

@@ -1498,16 +1498,27 @@ class D1SalesLedgerService {
           linkedChallanIds: combinedLinked,
           items: combinedItems,
         );
-        if ((links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) && purchaseChallans != null) {
+        final bool hasBilledRef = billId.isNotEmpty || pIntNo.isNotEmpty || pBillNo.isNotEmpty;
+        if ((links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty || hasBilledRef) && purchaseChallans != null) {
           for (final ch in purchaseChallans) {
             if (ch.isDeleted == 1) continue;
-            final bool match = ChallanLinkMatcher.matchesPurchaseChallan(
-              ch,
-              explicitIds: links.explicitIds,
-              legacyNos: links.legacyNos,
-              billPartyId: billPartyId,
-              billFy: billFy,
+            final bool directLinkMatch = (links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) &&
+                ChallanLinkMatcher.matchesPurchaseChallan(
+                  ch,
+                  explicitIds: links.explicitIds,
+                  legacyNos: links.legacyNos,
+                  billPartyId: billPartyId,
+                  billFy: billFy,
+                );
+            final String chBilledFy = normalizeFyString(ch.billedInFy);
+            final bool fyOk = chBilledFy.isEmpty || chBilledFy == normEffFy;
+            final bool billedRefMatch = fyOk && (
+                (billId.isNotEmpty && ch.billedInvoiceId.trim() == billId) ||
+                (pIntNo.isNotEmpty && ch.billedInvoiceNo.trim().toUpperCase() == pIntNo) ||
+                (pBillNo.isNotEmpty && ch.billedInvoiceNo.trim().toUpperCase() == pBillNo.toUpperCase() &&
+                    (pPartyId.isEmpty || ch.partyId.trim().toUpperCase() == pPartyId))
             );
+            final bool match = directLinkMatch || billedRefMatch;
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
               final String chFy = ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : effFy;
               final int knownVer = getPurchaseIdKnownVersion(ch.id, chFy);
@@ -1546,16 +1557,25 @@ class D1SalesLedgerService {
           linkedChallanIds: combinedLinked,
           items: combinedItems,
         );
-        if ((links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) && saleChallans != null) {
+        final bool hasBilledRef = billId.isNotEmpty || cleanBNo.isNotEmpty;
+        if ((links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty || hasBilledRef) && saleChallans != null) {
           for (final ch in saleChallans) {
             if (ch.isDeleted == 1) continue;
-            final bool match = ChallanLinkMatcher.matchesSaleChallan(
-              ch,
-              explicitIds: links.explicitIds,
-              legacyNos: links.legacyNos,
-              billPartyId: billPartyId,
-              billFy: billFy,
+            final bool directLinkMatch = (links.explicitIds.isNotEmpty || links.legacyNos.isNotEmpty) &&
+                ChallanLinkMatcher.matchesSaleChallan(
+                  ch,
+                  explicitIds: links.explicitIds,
+                  legacyNos: links.legacyNos,
+                  billPartyId: billPartyId,
+                  billFy: billFy,
+                );
+            final String chBilledFy = normalizeFyString(ch.billedInFy);
+            final bool fyOk = chBilledFy.isEmpty || chBilledFy == normEffFy;
+            final bool billedRefMatch = fyOk && (
+                (billId.isNotEmpty && ch.billedInvoiceId.trim() == billId) ||
+                (cleanBNo.isNotEmpty && ch.billedInvoiceNo.trim().toUpperCase() == cleanBNo)
             );
+            final bool match = directLinkMatch || billedRefMatch;
             if (match && ch.status != "Pending" && (evTs == 0 || ch.updatedAt == 0 || evTs >= ch.updatedAt)) {
               final String chFy = ch.effectiveOriginalFy.isNotEmpty ? ch.effectiveOriginalFy : effFy;
               final int knownVer = getSaleChallanIdKnownVersion(ch.id, chFy);
