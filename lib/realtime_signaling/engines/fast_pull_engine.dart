@@ -234,9 +234,13 @@ class FastPullEngine {
                   continue;
                 }
               }
-              final bool isPurcEvt = rawPayload is Map &&
-                  (rawPayload["doc_type"] == "PURCHASE" ||
+              final String docType = rawPayload is Map ? (rawPayload["doc_type"] ?? "").toString().trim().toUpperCase() : "";
+              final bool isPurchaseChallanEvt = docType == "PURCHASE_CHALLAN" ||
+                  (rawPayload is Map && rawPayload.containsKey("internalNo") && !rawPayload.containsKey("distributorName") && !rawPayload.containsKey("supplierName"));
+              final bool isPurcEvt = !isPurchaseChallanEvt && rawPayload is Map &&
+                  (docType == "PURCHASE" ||
                    rawPayload.containsKey("distributorName") ||
+                   rawPayload.containsKey("supplierName") ||
                    rawPayload.containsKey("internalNo"));
               final bool payloadDel = rawPayload is Map &&
                   ((int.tryParse(rawPayload["is_deleted"]?.toString() ?? rawPayload["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
@@ -262,7 +266,9 @@ class FastPullEngine {
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
                   final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, targetFyAtStart);
                   if (scopedINo.isNotEmpty) {
-                    final bool hasActivePur = ph.purchases.any((p) => p.id != bId && p.internalNo.trim().toUpperCase() == iNo && p.isDeleted != 1);
+                    final bool hasActivePur = isPurchaseChallanEvt
+                        ? ph.purchaseChallans.any((c) => c.id != bId && c.internalNo.trim().toUpperCase() == iNo && c.isDeleted != 1 && (targetFyAtStart.isEmpty || c.effectiveOriginalFy == targetFyAtStart))
+                        : ph.purchases.any((p) => p.id != bId && p.internalNo.trim().toUpperCase() == iNo && p.isDeleted != 1);
                     if (!hasActivePur) {
                       newTombKeys.add(scopedINo);
                       newUnmarkKeys.remove(scopedINo);
@@ -303,7 +309,13 @@ class FastPullEngine {
                   final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                   final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                   final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
-                  if (isPurcEvt) {
+                  if (isPurchaseChallanEvt) {
+                    final bool idBlocked = bId.isNotEmpty
+                        ? D1SalesLedgerService.isPurchaseIdDeleted(bId, targetFyAtStart)
+                        : D1SalesLedgerService.isPurchaseChallanDeleted(bId, pId, pBill, iNo, targetFyAtStart);
+                    if (idBlocked) continue;
+                    D1SalesLedgerService.unmarkPurchaseChallanPermanentlyDeleted(bId, pId, pBill, iNo, targetFyAtStart);
+                  } else if (isPurcEvt) {
                     final bool idBlocked = bId.isNotEmpty
                         ? D1SalesLedgerService.isPurchaseIdDeleted(bId, targetFyAtStart)
                         : D1SalesLedgerService.isPurchaseDeleted(bId, pId, pBill, iNo, targetFyAtStart);

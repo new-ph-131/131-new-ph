@@ -118,6 +118,7 @@ class AppRealtimeCoordinator {
             D1SalesLedgerService.unmarkPermanentlyDeleted(u, "", "", targetFy);
             D1SalesLedgerService.unmarkPermanentlyDeleted(u.toUpperCase(), "", "", targetFy);
             D1SalesLedgerService.unmarkSaleChallanPermanentlyDeleted(u, u, targetFy);
+            D1SalesLedgerService.unmarkPurchaseChallanPermanentlyDeleted(u, "", "", u, targetFy);
             await TombstoneEngine.unmarkTombstoneWithTimestamp(ph.activeCompany!.id, id: u, fy: targetFy);
           }
         }
@@ -225,6 +226,8 @@ class AppRealtimeCoordinator {
       try {
         do {
           _hasPendingPush = false;
+          // Ensure any in-flight D1 challan write/delete + HWM seq stamp + config.json write finishes first
+          await ph.awaitPendingChallanSync();
           final batchDeleted = List<String>.from(_pendingDeletedIds.toSet());
           final batchUnmarked = List<String>.from(_pendingUnmarkedIds.toSet());
           final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);

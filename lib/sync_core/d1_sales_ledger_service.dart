@@ -532,6 +532,27 @@ class D1SalesLedgerService {
     return isPurchaseDeleted(id, partyId, billNo, internalNo, fy, recordUpdatedAt);
   }
 
+  static void markPurchaseChallanPermanentlyDeleted(
+    String id,
+    String partyId,
+    String billNo, [
+    String internalNo = "",
+    String? fy,
+    int? deletedAtMs,
+  ]) {
+    markPurchasePermanentlyDeleted(id, partyId, billNo, internalNo, fy, deletedAtMs);
+  }
+
+  static void unmarkPurchaseChallanPermanentlyDeleted(
+    String id,
+    String partyId,
+    String billNo, [
+    String internalNo = "",
+    String? fy,
+  ]) {
+    unmarkPurchasePermanentlyDeleted(id, partyId, billNo, internalNo, fy);
+  }
+
   static int getPurchaseIdKnownVersion(String id, [String? fy]) {
     final cleanId = id.trim();
     if (cleanId.isEmpty) return 0;
@@ -2675,7 +2696,7 @@ class D1SalesLedgerService {
           }
         }
 
-        unmarkPurchasePermanentlyDeleted(
+        unmarkPurchaseChallanPermanentlyDeleted(
           incoming.id,
           incoming.partyId,
           incoming.billNo,
@@ -3093,7 +3114,44 @@ class D1SalesLedgerService {
       hasHwmUpdate = true;
     }
 
-    for (final ev in edgeEvents) {
+    // Sort events in causal ascending server-seq order while preserving original order for ties/0-seq
+    final List<Map<String, dynamic>> sortedEvents = List<Map<String, dynamic>>.from(edgeEvents);
+    sortedEvents.sort((a, b) {
+      final int sa = int.tryParse(a["seq"]?.toString() ?? "0") ?? 0;
+      final int sb = int.tryParse(b["seq"]?.toString() ?? "0") ?? 0;
+      if (sa > 0 && sb > 0) return sa.compareTo(sb);
+      if (sa > 0 && sb <= 0) return 1;
+      if (sb > 0 && sa <= 0) return -1;
+      return 0;
+    });
+
+    // Track all deleted bill IDs (with max delete seq) so historical SAVE events for deleted
+    // challans never replay or re-inflate HWM during New FY / full-cursor resync.
+    final Map<String, int> maxDeleteSeqById = {};
+    final Set<String> deletedIdsWithoutSeq = {};
+    for (final ev in sortedEvents) {
+      final int evSeq = int.tryParse(ev["seq"]?.toString() ?? "0") ?? 0;
+      final String act = (ev["action"] ?? "").toString().trim().toUpperCase();
+      final dynamic rawD = ev["sale_data"];
+      final int isDel = rawD is Map
+          ? (int.tryParse((rawD["is_deleted"] ?? rawD["isDeleted"] ?? "0").toString()) ?? 0)
+          : 0;
+      final String st = rawD is Map ? (rawD["status"] ?? "").toString().trim().toUpperCase() : "";
+      final bool isDelEvt = act == "DELETE" || act.startsWith("DELETE_") || isDel == 1 || st == "DELETED";
+      if (!isDelEvt) continue;
+      final String bId = (ev["bill_id"] ?? (rawD is Map ? rawD["id"] : "") ?? "").toString().trim();
+      if (bId.isEmpty) continue;
+      final String upperId = bId.toUpperCase();
+      if (evSeq > 0) {
+        if (evSeq > (maxDeleteSeqById[bId] ?? 0)) maxDeleteSeqById[bId] = evSeq;
+        if (evSeq > (maxDeleteSeqById[upperId] ?? 0)) maxDeleteSeqById[upperId] = evSeq;
+      } else {
+        deletedIdsWithoutSeq.add(bId);
+        deletedIdsWithoutSeq.add(upperId);
+      }
+    }
+
+    for (final ev in sortedEvents) {
       final int evSeq = int.tryParse(ev["seq"]?.toString() ?? "0") ?? 0;
       final dynamic rawData = ev["sale_data"];
       if (rawData is! Map) continue;
@@ -3154,10 +3212,24 @@ class D1SalesLedgerService {
         final bool isDeleteEvt = act == "DELETE" || act.startsWith("DELETE_") || isDel == 1 || rawMap["status"] == "Deleted";
         if (!isDeleteEvt && (docType == "SALE_CHALLAN" || docType == "CHALLAN" || docType == "PURCHASE_CHALLAN")) {
           final bool isPur = docType == "PURCHASE_CHALLAN";
+          final String evBillId = (ev["bill_id"] ?? rawMap["id"] ?? "").toString().trim();
+          final String evFy = normalizeFyString((rawMap["originalFy"] ?? rawMap["original_fy"] ?? rawMap["fy"] ?? ev["fy"] ?? "").toString());
+          if (evBillId.isNotEmpty) {
+            final String upperEvId = evBillId.toUpperCase();
+            final int batchDelSeq = maxDeleteSeqById[evBillId] ?? maxDeleteSeqById[upperEvId] ?? 0;
+            final bool deletedInBatch = (batchDelSeq > 0 && (evSeq <= 0 || evSeq <= batchDelSeq)) ||
+                deletedIdsWithoutSeq.contains(evBillId) ||
+                deletedIdsWithoutSeq.contains(upperEvId);
+            final bool deletedInGravestone = isPur
+                ? isPurchaseIdDeleted(evBillId, evFy)
+                : isSaleChallanIdDeleted(evBillId, evFy);
+            if (deletedInBatch || deletedInGravestone) {
+              continue;
+            }
+          }
           final String numStr = (isPur ? (rawMap["internalNo"] ?? "") : (rawMap["billNo"] ?? "")).toString();
           final parsed = AppConfig.parseSeriesNumber(numStr);
           if (parsed.prefix.isNotEmpty && parsed.number != null) {
-            final String evFy = normalizeFyString((rawMap["originalFy"] ?? rawMap["original_fy"] ?? rawMap["fy"] ?? ev["fy"] ?? "").toString());
             final String env = AppConfig.inferIsWebChallanRecord(rawMap) ? "WEB" : "APP";
             final String normType = isPur ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
             final String comp = companyID.trim();

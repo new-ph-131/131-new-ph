@@ -1708,11 +1708,9 @@ Future<bool> finalizePurchase({
           }
           kept.add(item);
         }
-        final List<String> fyKeys = <String>[
-          cleanTargetId,
-          for (final k in extraTombstoneKeys)
-            if (k.trim().isNotEmpty) D1SalesLedgerService.scopeSecondaryKey(k.trim(), targetFy, k.contains('_')),
-        ];
+        // Record ONLY the immutable UUID in targetFy tombstones; never re-scope series numbers
+        // (e.g. SCH-1 / PCH-1) into a newer FY where a fresh challan may reuse that number.
+        final List<String> fyKeys = <String>[cleanTargetId];
         await TombstoneEngine.recordBatchTombstones(activeCompany!.id, fyKeys, timestamp: delTs, fy: targetFy);
         if (removedAny) {
           await file.writeAsString(jsonEncode(kept));
@@ -1976,20 +1974,37 @@ Future<bool> finalizePurchase({
     notifyListeners();
 
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: billNo, fy: effFy);
-      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      final String compId = activeCompany!.id;
+      final scPref = _extractAlphaPrefix(billNo).isNotEmpty ? _extractAlphaPrefix(billNo) : config.saleChallanPrefix;
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: cId, secondaryKey: billNo, fy: effFy);
+      final t = await WebLiveToken.getOrCreateToken(compId);
       if (t.isNotEmpty) {
         SaleChallanSyncModule.onSaleChallanSaved(newChallan, t);
-        await Future.wait([
-          D1SalesLedgerService.onSaleChallanSaved(
-            newChallan,
-            t,
-            isUpdate: existingCh != null,
-            clientSource: "APP_MOBILE",
-            fy: effFy,
-          ),
-          SyncQueueManager.flushOutboxAsJSONBatch(),
-        ]);
+        bool seqUpdated = false;
+        await D1SalesLedgerService.onSaleChallanSaved(
+          newChallan,
+          t,
+          isUpdate: existingCh != null,
+          clientSource: "APP_MOBILE",
+          fy: effFy,
+          onServerSeq: (s) {
+            PharoahNumberingEngine.updateChallanHwmServerSeq(
+              companyID: compId,
+              fy: effFy,
+              normType: "SALE_CHALLAN",
+              env: "APP",
+              prefix: scPref,
+              serverSeq: s,
+              config: config,
+            );
+            seqUpdated = true;
+          },
+        );
+        if (seqUpdated) {
+          SettingsSyncModule.onConfigSaved(config, t, fy: effFy);
+        }
+        await PharoahNumberingEngine.lastPersistFuture;
+        await SyncQueueManager.flushOutboxAsJSONBatch();
       }
     } 
     await save();
@@ -2053,7 +2068,7 @@ Future<bool> finalizePurchase({
     final compKey2 = (cleanPId.isNotEmpty && cleanBNo.isNotEmpty) ? "${cleanPId}_$cleanBNo" : "";
     final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(cleanPId, cleanBNo, cleanINo);
     if (activeCompany != null) {
-      D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(cId, partyId, billNo, internalNo, effFy);
+      D1SalesLedgerService.unmarkPurchaseChallanPermanentlyDeleted(cId, partyId, billNo, internalNo, effFy);
     }
     purchaseChallans.removeWhere((c) => c.id == cId);
     final newPChallan = PurchaseChallan(
@@ -2109,22 +2124,39 @@ Future<bool> finalizePurchase({
     notifyListeners();
 
     if (activeCompany != null) {
-      await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: cId, secondaryKey: internalNo, fy: effFy);
-      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey2, fy: effFy);
-      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: compKey3, fy: effFy);
-      final t = await WebLiveToken.getOrCreateToken(activeCompany!.id);
+      final String compId = activeCompany!.id;
+      final pcPref = _extractAlphaPrefix(internalNo).isNotEmpty ? _extractAlphaPrefix(internalNo) : "PCH-";
+      await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: cId, secondaryKey: internalNo, fy: effFy);
+      if (compKey2.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: compKey2, fy: effFy);
+      if (compKey3.isNotEmpty) await TombstoneEngine.unmarkTombstoneWithTimestamp(compId, id: compKey3, fy: effFy);
+      final t = await WebLiveToken.getOrCreateToken(compId);
       if (t.isNotEmpty) {
         PurchaseChallanSyncModule.onPurchaseChallanSaved(newPChallan, t);
-        await Future.wait([
-          D1SalesLedgerService.onPurchaseChallanSaved(
-            newPChallan,
-            t,
-            isUpdate: existingCh != null,
-            clientSource: "APP_MOBILE",
-            fy: targetOfy.isNotEmpty ? targetOfy : normCurrFy,
-          ),
-          SyncQueueManager.flushOutboxAsJSONBatch(),
-        ]);
+        bool seqUpdated = false;
+        await D1SalesLedgerService.onPurchaseChallanSaved(
+          newPChallan,
+          t,
+          isUpdate: existingCh != null,
+          clientSource: "APP_MOBILE",
+          fy: effFy,
+          onServerSeq: (s) {
+            PharoahNumberingEngine.updateChallanHwmServerSeq(
+              companyID: compId,
+              fy: effFy,
+              normType: "PURCHASE_CHALLAN",
+              env: "APP",
+              prefix: pcPref,
+              serverSeq: s,
+              config: config,
+            );
+            seqUpdated = true;
+          },
+        );
+        if (seqUpdated) {
+          SettingsSyncModule.onConfigSaved(config, t, fy: effFy);
+        }
+        await PharoahNumberingEngine.lastPersistFuture;
+        await SyncQueueManager.flushOutboxAsJSONBatch();
       }
     } 
     await save();
@@ -4227,6 +4259,33 @@ void registerBatchActivity({
 
   Future<void>? _pendingChallanSyncFuture;
 
+  /// Waits for any in-flight challan D1/tombstone sync, HWM prefs persistence, and local save queue.
+  Future<void> awaitPendingChallanSync() async {
+    while (true) {
+      final Future<void>? pending = _pendingChallanSyncFuture;
+      final Future<void>? prefsPending = PharoahNumberingEngine.lastPersistFuture;
+      final Future<void> saveSnapshot = _saveQueue;
+      if (pending != null) {
+        try {
+          await pending;
+        } catch (_) {}
+      }
+      if (prefsPending != null) {
+        try {
+          await prefsPending;
+        } catch (_) {}
+      }
+      try {
+        await saveSnapshot;
+      } catch (_) {}
+      if (identical(_pendingChallanSyncFuture, pending) &&
+          identical(PharoahNumberingEngine.lastPersistFuture, prefsPending) &&
+          identical(_saveQueue, saveSnapshot)) {
+        break;
+      }
+    }
+  }
+
   Future<bool> deleteSaleChallanAsync(String id) async {
     final ok = deleteSaleChallan(id);
     if (!ok) return false;
@@ -4375,27 +4434,36 @@ void registerBatchActivity({
           final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             SaleChallanSyncModule.onSaleChallanDeleted(c, t);
+            await D1SalesLedgerService.onSaleChallanDeleted(
+              c,
+              t,
+              billNo: bNo,
+              clientSource: "APP_MOBILE",
+              fy: effDelFy,
+              deletedAtMs: delTs,
+              hwmRollback: hwmRollbackPayload,
+              audit: auditPayload,
+              onServerSeq: (s) {
+                if (rolledState != null && s > rolledState.seq) {
+                  rolledState.seq = s;
+                }
+                if (scPrefix.isNotEmpty) {
+                  PharoahNumberingEngine.updateChallanHwmServerSeq(
+                    companyID: compId,
+                    fy: effDelFy,
+                    normType: 'SALE_CHALLAN',
+                    env: delEnv,
+                    prefix: scPrefix,
+                    serverSeq: s,
+                    config: config,
+                  );
+                }
+              },
+            );
             SettingsSyncModule.onConfigSaved(config, t, fy: effDelFy);
-            await Future.wait([
-              D1SalesLedgerService.onSaleChallanDeleted(
-                c,
-                t,
-                billNo: bNo,
-                clientSource: "APP_MOBILE",
-                fy: effDelFy,
-                deletedAtMs: delTs,
-                hwmRollback: hwmRollbackPayload,
-                audit: auditPayload,
-                onServerSeq: (s) {
-                  if (rolledState != null && s > rolledState.seq) {
-                    rolledState.seq = s;
-                    final key = '${compId.trim()}::${effDelFy}::SALE_CHALLAN::${delEnv}::$scPrefix';
-                    config.challanHwmMeta[key] = rolledState.copy();
-                  }
-                },
-              ),
-              SyncQueueManager.flushOutboxAsJSONBatch(),
-            ]);
+            await PharoahNumberingEngine.lastPersistFuture;
+            await SyncQueueManager.flushOutboxAsJSONBatch();
+            await save(triggerCloudSync: false);
           }
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,
@@ -4459,13 +4527,16 @@ void registerBatchActivity({
       final compKey2 = (pId.isNotEmpty && bNo.isNotEmpty) ? "${pId}_$bNo" : "";
       final compKey3 = PurchaseChallanSyncModule.makeCompositeKey(pId, bNo, iNo);
       final String delEnv = PharoahNumberingEngine.isWebChallanRecord(c) ? "WEB" : "APP";
+      final String scopedINo = iNo.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(iNo, effDelFy) : "";
       final String envINo = iNo.isNotEmpty ? "${normalizeFyString(effDelFy)}::$delEnv::$iNo" : "";
+      final String scopedComp2 = compKey2.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey2, effDelFy, true) : "";
+      final String scopedComp3 = compKey3.isNotEmpty ? D1SalesLedgerService.scopeSecondaryKey(compKey3, effDelFy, true) : "";
       final List<String> delKeys = [
         if (cId.isNotEmpty) cId else id,
-        if (iNo.isNotEmpty) iNo,
+        if (scopedINo.isNotEmpty) scopedINo,
         if (envINo.isNotEmpty) envINo,
-        if (compKey2.isNotEmpty) compKey2,
-        if (compKey3.isNotEmpty) compKey3,
+        if (scopedComp2.isNotEmpty) scopedComp2,
+        if (scopedComp3.isNotEmpty) scopedComp3,
       ];
       final int delTs = DateTime.now().millisecondsSinceEpoch;
 
@@ -4558,29 +4629,38 @@ void registerBatchActivity({
           final t = await WebLiveToken.getOrCreateToken(compId);
           if (t.isNotEmpty) {
             PurchaseChallanSyncModule.onPurchaseChallanDeleted(c, t);
+            await D1SalesLedgerService.onPurchaseChallanDeleted(
+              c,
+              t,
+              partyId: pId,
+              billNo: bNo,
+              internalNo: iNo,
+              clientSource: "APP_MOBILE",
+              fy: effDelFy,
+              deletedAtMs: delTs,
+              hwmRollback: hwmRollbackPayload,
+              audit: auditPayload,
+              onServerSeq: (s) {
+                if (rolledState != null && s > rolledState.seq) {
+                  rolledState.seq = s;
+                }
+                if (pcPrefix.isNotEmpty) {
+                  PharoahNumberingEngine.updateChallanHwmServerSeq(
+                    companyID: compId,
+                    fy: effDelFy,
+                    normType: 'PURCHASE_CHALLAN',
+                    env: delEnv,
+                    prefix: pcPrefix,
+                    serverSeq: s,
+                    config: config,
+                  );
+                }
+              },
+            );
             SettingsSyncModule.onConfigSaved(config, t, fy: effDelFy);
-            await Future.wait([
-              D1SalesLedgerService.onPurchaseChallanDeleted(
-                c,
-                t,
-                partyId: pId,
-                billNo: bNo,
-                internalNo: iNo,
-                clientSource: "APP_MOBILE",
-                fy: effDelFy,
-                deletedAtMs: delTs,
-                hwmRollback: hwmRollbackPayload,
-                audit: auditPayload,
-                onServerSeq: (s) {
-                  if (rolledState != null && s > rolledState.seq) {
-                    rolledState.seq = s;
-                    final key = '${compId.trim()}::${effDelFy}::PURCHASE_CHALLAN::${delEnv}::$pcPrefix';
-                    config.challanHwmMeta[key] = rolledState.copy();
-                  }
-                },
-              ),
-              SyncQueueManager.flushOutboxAsJSONBatch(),
-            ]);
+            await PharoahNumberingEngine.lastPersistFuture;
+            await SyncQueueManager.flushOutboxAsJSONBatch();
+            await save(triggerCloudSync: false);
           }
           AppRealtimeCoordinator.instance.notifyAppMutation(
             this,

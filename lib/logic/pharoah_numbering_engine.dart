@@ -140,6 +140,87 @@ class PharoahNumberingEngine {
         : _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
   }
 
+  static bool _isMetaStateNewer(ChallanHwmState candidate, ChallanHwmState? current) {
+    if (current == null) return true;
+    if (candidate.seq > 0 && current.seq > 0 && candidate.seq != current.seq) {
+      return candidate.seq > current.seq;
+    }
+    if (candidate.gen != current.gen) return candidate.gen > current.gen;
+    if (candidate.op != current.op) return candidate.op != 'ROLLBACK';
+    return candidate.value >= current.value;
+  }
+
+  /// Updates the server-authoritative D1 `seq` on an existing cached/config Challan HWM state
+  /// across both `companyID` and any active company alias scopes (e.g. `storeToken`).
+  static void updateChallanHwmServerSeq({
+    required String companyID,
+    required String fy,
+    required String normType,
+    required String env,
+    required String prefix,
+    required int serverSeq,
+    AppConfig? config,
+  }) {
+    if (serverSeq <= 0) return;
+    final cleanComp = companyID.trim();
+    final cleanFy = normalizeFyString(fy);
+    final resolvedNormType = isPurchaseChallanType(normType) ? "PURCHASE_CHALLAN" : "SALE_CHALLAN";
+    final normEnv = env.trim().toUpperCase();
+    final cleanPrefix = prefix.trim().toUpperCase();
+    if (cleanPrefix.isEmpty) return;
+
+    final configKey = _configKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
+    final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
+    final prefSuffix = '_${cleanFy}_${resolvedNormType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = '::${cleanFy}::${resolvedNormType}::${normEnv}::$cleanPrefix';
+
+    ChallanHwmState? bestMeta = _cachedMeta[configKey] ?? _cachedMeta[metaPrefKey] ?? config?.challanHwmMeta[configKey];
+    for (final entry in _cachedMeta.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        if (_isMetaStateNewer(entry.value, bestMeta)) {
+          bestMeta = entry.value;
+        }
+      }
+    }
+    if (bestMeta == null) return;
+    if (serverSeq <= bestMeta.seq) return;
+
+    final updated = bestMeta.copy()..seq = serverSeq;
+    _cachedMeta[configKey] = updated.copy();
+    _cachedMeta[metaPrefKey] = updated.copy();
+    for (final k in _cachedMeta.keys.toList()) {
+      if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        final existing = _cachedMeta[k];
+        if (existing == null || serverSeq > existing.seq || _isMetaStateNewer(updated, existing)) {
+          _cachedMeta[k] = updated.copy();
+        }
+      }
+    }
+    if (config != null) {
+      config.challanHwmMeta[configKey] = updated.copy();
+      for (final k in config.challanHwmMeta.keys.toList()) {
+        if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: '', allowedScopes: allowedScopes)) {
+          final existing = config.challanHwmMeta[k];
+          if (existing == null || serverSeq > existing.seq || _isMetaStateNewer(updated, existing)) {
+            config.challanHwmMeta[k] = updated.copy();
+          }
+        }
+      }
+    }
+
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(metaPrefKey, jsonEncode(updated.toMap()));
+      for (final k in prefs.getKeys()) {
+        if (k.startsWith('challan_hwm_meta_') &&
+            _matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+          await prefs.setString(k, jsonEncode(updated.toMap()));
+        }
+      }
+    }).catchError((_) {});
+  }
+
   static List<String> _legacyLastIdKeys(String type, String normType, String cleanPrefix, String cleanComp, String cleanFy) {
     final Set<String> aliases = {
       type.trim().toUpperCase(),
@@ -250,8 +331,9 @@ class PharoahNumberingEngine {
       }
     }
 
-    // Persist any causally resolved rollbacks/updates to SharedPreferences asynchronously
-    SharedPreferences.getInstance().then((prefs) {
+    // Persist any causally resolved rollbacks/updates to SharedPreferences serialized via lastPersistFuture
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
       for (final cfgKey in affectedKeys) {
         final parts = cfgKey.split('::');
         if (parts.length != 5) continue;
@@ -260,12 +342,12 @@ class PharoahNumberingEngine {
         final int val = resolved.hwm[cfgKey] ?? 0;
         final ChallanHwmState? st = resolved.meta[cfgKey];
         if (val > 0) {
-          prefs.setInt(prefKey, val);
+          await prefs.setInt(prefKey, val);
         } else {
-          prefs.remove(prefKey);
+          await prefs.remove(prefKey);
         }
         if (st != null) {
-          prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+          await prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
           final prefSuffix = '_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
           final keyComp = parts[0].trim().toUpperCase();
           final Set<String> keyScopes = keyComp.isNotEmpty
@@ -274,12 +356,12 @@ class PharoahNumberingEngine {
           for (final k in prefs.getKeys()) {
             if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: keyScopes)) {
               if (k.startsWith('challan_hwm_meta_')) {
-                prefs.setString(k, jsonEncode(st.toMap()));
+                await prefs.setString(k, jsonEncode(st.toMap()));
               } else if (k.startsWith('challan_hwm_')) {
                 if (val > 0) {
-                  prefs.setInt(k, val);
+                  await prefs.setInt(k, val);
                 } else {
-                  prefs.remove(k);
+                  await prefs.remove(k);
                 }
               }
             }
@@ -288,9 +370,9 @@ class PharoahNumberingEngine {
             for (final legKey in _legacyLastIdKeys(parts[2], parts[2], parts[4], parts[0], parts[1])) {
               if (val > 0) {
                 final existingLeg = prefs.getInt(legKey) ?? 0;
-                if (existingLeg > val) prefs.setInt(legKey, val);
+                if (existingLeg > val) await prefs.setInt(legKey, val);
               } else {
-                prefs.remove(legKey);
+                await prefs.remove(legKey);
               }
             }
             // Sweep legacy keys ONLY within the same company scopes
@@ -303,9 +385,9 @@ class PharoahNumberingEngine {
               )) {
                 if (val > 0) {
                   final existingLeg = prefs.getInt(k) ?? 0;
-                  if (existingLeg > val) prefs.setInt(k, val);
+                  if (existingLeg > val) await prefs.setInt(k, val);
                 } else {
-                  prefs.remove(k);
+                  await prefs.remove(k);
                 }
               }
             }
@@ -349,10 +431,14 @@ class PharoahNumberingEngine {
         final hwmK = metaK.replaceFirst('challan_hwm_meta_', 'challan_hwm_');
         final existingHwm = _cachedHwm[hwmK];
         final existingMeta = _cachedMeta[metaK];
-        if (existingMeta == null || st.gen > existingMeta.gen || (st.seq > 0 && st.seq > existingMeta.seq)) {
+        if (_isMetaStateNewer(st, existingMeta)) {
           _cachedMeta[metaK] = st.copy();
-          _cachedHwm[hwmK] = st.value;
-        } else if (existingHwm == null && st.value > 0) {
+          if (st.value > 0) {
+            _cachedHwm[hwmK] = st.value;
+          } else {
+            _cachedHwm.remove(hwmK);
+          }
+        } else if (existingHwm == null && st.value > 0 && existingMeta?.op != 'ROLLBACK') {
           _cachedHwm[hwmK] = st.value;
         }
       });
@@ -397,9 +483,7 @@ class PharoahNumberingEngine {
     ChallanHwmState? winningMeta;
     for (final entry in _cachedMeta.entries) {
       if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
-        if (winningMeta == null ||
-            entry.value.gen > winningMeta.gen ||
-            (entry.value.seq > 0 && entry.value.seq > winningMeta.seq)) {
+        if (_isMetaStateNewer(entry.value, winningMeta)) {
           winningMeta = entry.value;
         }
       }
@@ -458,12 +542,12 @@ class PharoahNumberingEngine {
       final String hwmPrefKey = _prefKey(cleanComp, currentFY, normType, normEnv, cleanPrefix);
       final String metaPrefKey = _metaPrefKey(cleanComp, currentFY, normType, normEnv, cleanPrefix);
       int savedHwm = prefs.getInt(hwmPrefKey) ?? 0;
+      ChallanHwmState? prefMeta;
       if (prefs.containsKey(metaPrefKey)) {
         try {
           final dec = jsonDecode(prefs.getString(metaPrefKey) ?? '{}');
           if (dec is Map) {
-            final st = ChallanHwmState.fromMap(dec);
-            savedHwm = st.value;
+            prefMeta = ChallanHwmState.fromMap(dec);
           }
         } catch (_) {}
       }
@@ -474,12 +558,13 @@ class PharoahNumberingEngine {
       ChallanHwmState? winningMeta;
       for (final entry in _cachedMeta.entries) {
         if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
-          if (winningMeta == null ||
-              entry.value.gen > winningMeta.gen ||
-              (entry.value.seq > 0 && entry.value.seq > winningMeta.seq)) {
+          if (_isMetaStateNewer(entry.value, winningMeta)) {
             winningMeta = entry.value;
           }
         }
+      }
+      if (prefMeta != null && _isMetaStateNewer(prefMeta, winningMeta)) {
+        winningMeta = prefMeta;
       }
 
       final int cachedVal = getCachedChallanHwm(
@@ -496,7 +581,7 @@ class PharoahNumberingEngine {
         if (winningMeta.op == 'ROLLBACK') {
           isRollbackActive = true;
           savedHwm = winningMeta.value;
-        } else if (savedHwm == 0 || winningMeta.gen > savedHwm || winningMeta.value > savedHwm) {
+        } else if (prefMeta == null || _isMetaStateNewer(winningMeta, prefMeta) || winningMeta.value > savedHwm) {
           savedHwm = winningMeta.value;
         }
       }
@@ -699,9 +784,23 @@ class PharoahNumberingEngine {
       }
     }
 
+    bool wasRollback = _cachedMeta[configKey]?.op == 'ROLLBACK' ||
+        _cachedMeta[metaPrefKey]?.op == 'ROLLBACK' ||
+        config?.challanHwmMeta[configKey]?.op == 'ROLLBACK';
+    if (!wasRollback) {
+      for (final entry in _cachedMeta.entries) {
+        if (_matchesScopedSuffix(entry.key, cfgSuffix: rCfgSuffix, prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
+          if (entry.value.op == 'ROLLBACK') {
+            wasRollback = true;
+            break;
+          }
+        }
+      }
+    }
+
     final int effVal = issuedInt > prevVal ? issuedInt : prevVal;
     final bool needsMetaUpdate = issuedInt > prevVal || !_cachedMeta.containsKey(configKey) ||
-        (_cachedMeta[configKey]?.op == 'ROLLBACK') ||
+        wasRollback ||
         (config != null && !config.challanHwmMeta.containsKey(configKey));
 
     if (issuedInt > (_cachedHwm[hwmKey] ?? 0)) {
@@ -717,7 +816,7 @@ class PharoahNumberingEngine {
     }
 
     if (needsMetaUpdate) {
-      final int nextGen = issuedInt > prevVal ? (prevGen + 1) : max(prevGen, issuedInt);
+      final int nextGen = (issuedInt > prevVal || wasRollback) ? (prevGen + 1) : max(prevGen, issuedInt);
       final st = ChallanHwmState(
         value: effVal,
         seq: prevSeq,
@@ -736,12 +835,28 @@ class PharoahNumberingEngine {
         config.challanHwm[configKey] = effVal;
         config.challanHwmMeta[configKey] = st.copy();
       }
-      final prefs = await SharedPreferences.getInstance();
-      final currentSaved = prefs.getInt(hwmKey) ?? 0;
-      if (effVal > currentSaved) {
-        await prefs.setInt(hwmKey, effVal);
-      }
-      await prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+      final Future<void> persistTask = (lastPersistFuture ?? Future.value()).then((_) async {
+        final prefs = await SharedPreferences.getInstance();
+        final currentSaved = prefs.getInt(hwmKey) ?? 0;
+        if (effVal > currentSaved || wasRollback) {
+          await prefs.setInt(hwmKey, effVal);
+        }
+        await prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+        for (final k in prefs.getKeys()) {
+          if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
+            if (k.startsWith('challan_hwm_meta_')) {
+              await prefs.setString(k, jsonEncode(st.toMap()));
+            } else if (k.startsWith('challan_hwm_')) {
+              final curK = prefs.getInt(k) ?? 0;
+              if (effVal > curK || wasRollback) {
+                await prefs.setInt(k, effVal);
+              }
+            }
+          }
+        }
+      }).catchError((_) {});
+      lastPersistFuture = persistTask;
+      await persistTask;
     } else {
       if (config != null) {
         final existingCfgHwm = config.challanHwm[configKey] ?? 0;
@@ -749,11 +864,15 @@ class PharoahNumberingEngine {
           config.challanHwm[configKey] = effVal;
         }
       }
-      final prefs = await SharedPreferences.getInstance();
-      final currentSaved = prefs.getInt(hwmKey) ?? 0;
-      if (effVal > currentSaved) {
-        await prefs.setInt(hwmKey, effVal);
-      }
+      final Future<void> persistTask = (lastPersistFuture ?? Future.value()).then((_) async {
+        final prefs = await SharedPreferences.getInstance();
+        final currentSaved = prefs.getInt(hwmKey) ?? 0;
+        if (effVal > currentSaved) {
+          await prefs.setInt(hwmKey, effVal);
+        }
+      }).catchError((_) {});
+      lastPersistFuture = persistTask;
+      await persistTask;
     }
   }
 
@@ -789,23 +908,38 @@ class PharoahNumberingEngine {
     final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
     final configKey = _configKey(cleanComp, cleanFy, resolvedNormType, normEnv, cleanPrefix);
 
-    final int prevVal = max(
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
+    final prefSuffix = '_${cleanFy}_${resolvedNormType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = '::${cleanFy}::${resolvedNormType}::${normEnv}::$cleanPrefix';
+
+    int prevVal = max(
       deletedNum,
       max(
         _cachedHwm[hwmKey] ?? 0,
         max(_cachedHwm[configKey] ?? 0, config?.challanHwm[configKey] ?? 0),
       ),
     );
-    final int prevGen = max(
+    for (final entry in _cachedHwm.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        if (entry.value > prevVal) prevVal = entry.value;
+      }
+    }
+    int prevGen = max(
       prevVal,
       max(
         _cachedMeta[configKey]?.gen ?? 0,
         max(_cachedMeta[metaPrefKey]?.gen ?? 0, config?.challanHwmMeta[configKey]?.gen ?? 0),
       ),
     );
-    final int prevSeq = d1Seq > 0
+    int prevSeq = d1Seq > 0
         ? d1Seq
         : max(_cachedMeta[configKey]?.seq ?? 0, config?.challanHwmMeta[configKey]?.seq ?? 0);
+    for (final entry in _cachedMeta.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        if (entry.value.gen > prevGen) prevGen = entry.value.gen;
+        if (d1Seq == 0 && entry.value.seq > prevSeq) prevSeq = entry.value.seq;
+      }
+    }
 
     final state = ChallanHwmState(
       value: safeTail,
@@ -816,10 +950,6 @@ class PharoahNumberingEngine {
       deletedNum: deletedNum,
       tombUuid: tombUuid.trim(),
     );
-
-    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
-    final prefSuffix = '_${cleanFy}_${resolvedNormType}_${normEnv}_$cleanPrefix';
-    final cfgSuffix = '::${cleanFy}::${resolvedNormType}::${normEnv}::$cleanPrefix';
 
     // Update exact keys and alias keys belonging ONLY to the same company scopes
     for (final k in _cachedHwm.keys.toList()) {
@@ -870,7 +1000,8 @@ class PharoahNumberingEngine {
       config.challanHwmMeta[configKey] = state.copy();
     }
 
-    lastPersistFuture = SharedPreferences.getInstance().then((prefs) async {
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
       if (safeTail > 0) {
         await prefs.setInt(hwmKey, safeTail);
       } else {

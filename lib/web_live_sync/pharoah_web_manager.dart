@@ -3742,11 +3742,9 @@ class PharoahWebManager with ChangeNotifier {
 
     for (int i = srcIdx + 1; i < years.length; i++) {
       final String targetFy = years[i];
-      final List<String> fyKeys = <String>[
-        cleanId,
-        for (final k in extraTombstoneKeys)
-          if (k.trim().isNotEmpty) D1SalesLedgerService.scopeSecondaryKey(k.trim(), targetFy, k.contains('_')),
-      ];
+      // Record ONLY the immutable UUID in targetFy tombstones; never re-scope series numbers
+      // (e.g. SCH-1 / WSCH-1 / PCH-1 / WPCH-1) into a newer FY.
+      final List<String> fyKeys = <String>[cleanId];
       for (final k in fyKeys) {
         localTombstoneRegistry[k] = delTs;
         deletedRecordIds.add(k);
@@ -3848,13 +3846,30 @@ class PharoahWebManager with ChangeNotifier {
       );
     }
     SaleChallanSyncModule.onSaleChallanSaved(challan, activeStoreToken);
+    final String scEffFy = challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear;
+    final String scEnv = WebPharoahNumberingEngine.isWebChallanRecord(challan) ? "WEB" : "APP";
     trackPendingD1Write(
       D1SalesLedgerService.onSaleChallanSaved(
         challan,
         activeStoreToken,
         isUpdate: isUpdate,
         clientSource: "WEB_PORTAL",
-        fy: challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear,
+        fy: scEffFy,
+        onServerSeq: (s) {
+          if (scPrefix.isNotEmpty) {
+            WebPharoahNumberingEngine.updateChallanHwmServerSeq(
+              companyID: activeStoreToken,
+              fy: scEffFy,
+              normType: "SALE_CHALLAN",
+              env: scEnv,
+              prefix: scPrefix,
+              serverSeq: s,
+              config: appConfig,
+            );
+            SettingsSyncModule.onConfigSaved(appConfig, activeStoreToken, fy: scEffFy);
+            _snapshotActiveFyToVault();
+          }
+        },
       ),
     );
 
@@ -3936,7 +3951,7 @@ class PharoahWebManager with ChangeNotifier {
     unmarkDeletedId(challan.id, referenceNo: challan.internalNo, fy: financialYear);
     if (compKey.isNotEmpty) unmarkDeletedId(compKey, preserveCase: true, fy: financialYear);
     if (compKey2.isNotEmpty) unmarkDeletedId(compKey2, preserveCase: true, fy: financialYear);
-    D1SalesLedgerService.unmarkPurchasePermanentlyDeleted(challan.id, challan.partyId, challan.billNo, challan.internalNo, financialYear);
+    D1SalesLedgerService.unmarkPurchaseChallanPermanentlyDeleted(challan.id, challan.partyId, challan.billNo, challan.internalNo, existingOfy);
 
         ProductIntegrityService.ensurePurchaseItemsInProductMaster(
       items: challan.items,
@@ -3979,13 +3994,30 @@ class PharoahWebManager with ChangeNotifier {
       );
     }
     PurchaseChallanSyncModule.onPurchaseChallanSaved(challan, activeStoreToken);
+    final String pcEffFy = challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear;
+    final String pcEnv = WebPharoahNumberingEngine.isWebChallanRecord(challan) ? "WEB" : "APP";
     trackPendingD1Write(
       D1SalesLedgerService.onPurchaseChallanSaved(
         challan,
         activeStoreToken,
         isUpdate: isUpdate,
         clientSource: "WEB_PORTAL",
-        fy: challan.effectiveOriginalFy.isNotEmpty ? challan.effectiveOriginalFy : financialYear,
+        fy: pcEffFy,
+        onServerSeq: (s) {
+          if (pcPrefix.isNotEmpty) {
+            WebPharoahNumberingEngine.updateChallanHwmServerSeq(
+              companyID: activeStoreToken,
+              fy: pcEffFy,
+              normType: "PURCHASE_CHALLAN",
+              env: pcEnv,
+              prefix: pcPrefix,
+              serverSeq: s,
+              config: appConfig,
+            );
+            SettingsSyncModule.onConfigSaved(appConfig, activeStoreToken, fy: pcEffFy);
+            _snapshotActiveFyToVault();
+          }
+        },
       ),
     );
 
@@ -4400,8 +4432,19 @@ class PharoahWebManager with ChangeNotifier {
         onServerSeq: (s) {
           if (rolledState != null && s > rolledState.seq) {
             rolledState.seq = s;
-            final key = '${activeStoreToken.trim()}::${cOfy}::SALE_CHALLAN::${delEnv}::$scPrefix';
-            appConfig.challanHwmMeta[key] = rolledState.copy();
+          }
+          if (scPrefix.isNotEmpty) {
+            WebPharoahNumberingEngine.updateChallanHwmServerSeq(
+              companyID: activeStoreToken,
+              fy: cOfy,
+              normType: "SALE_CHALLAN",
+              env: delEnv,
+              prefix: scPrefix,
+              serverSeq: s,
+              config: appConfig,
+            );
+            SettingsSyncModule.onConfigSaved(appConfig, activeStoreToken, fy: cOfy);
+            _snapshotActiveFyToVault();
           }
         },
       ),
@@ -4547,8 +4590,19 @@ class PharoahWebManager with ChangeNotifier {
         onServerSeq: (s) {
           if (rolledState != null && s > rolledState.seq) {
             rolledState.seq = s;
-            final key = '${activeStoreToken.trim()}::${cOfy}::PURCHASE_CHALLAN::${delEnv}::$pcPrefix';
-            appConfig.challanHwmMeta[key] = rolledState.copy();
+          }
+          if (pcPrefix.isNotEmpty) {
+            WebPharoahNumberingEngine.updateChallanHwmServerSeq(
+              companyID: activeStoreToken,
+              fy: cOfy,
+              normType: "PURCHASE_CHALLAN",
+              env: delEnv,
+              prefix: pcPrefix,
+              serverSeq: s,
+              config: appConfig,
+            );
+            SettingsSyncModule.onConfigSaved(appConfig, activeStoreToken, fy: cOfy);
+            _snapshotActiveFyToVault();
           }
         },
       ),

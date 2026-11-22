@@ -98,6 +98,92 @@ class WebPharoahNumberingEngine {
         : _prefKey(parts[0], parts[1], parts[2], parts[3], parts[4]);
   }
 
+  static Future<void>? lastPersistFuture;
+
+  static bool _isMetaStateNewer(ChallanHwmState candidate, ChallanHwmState? current) {
+    if (current == null) return true;
+    if (candidate.seq > 0 && current.seq > 0 && candidate.seq != current.seq) {
+      return candidate.seq > current.seq;
+    }
+    if (candidate.gen != current.gen) return candidate.gen > current.gen;
+    if (candidate.op != current.op) return candidate.op != 'ROLLBACK';
+    return candidate.value >= current.value;
+  }
+
+  /// Updates the server-authoritative D1 `seq` on an existing Web cached/config Challan HWM state
+  /// across both `companyID` and any active company alias scopes.
+  static void updateChallanHwmServerSeq({
+    required String companyID,
+    required String fy,
+    required String normType,
+    required String env,
+    required String prefix,
+    required int serverSeq,
+    AppConfig? config,
+  }) {
+    if (serverSeq <= 0) return;
+    final cleanComp = companyID.trim();
+    final cleanFy = normalizeFyString(fy);
+    final normEnv = env.trim().toUpperCase();
+    final cleanPrefix = prefix.trim().toUpperCase();
+    if (cleanPrefix.isEmpty) return;
+
+    final configKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
+    final prefSuffix = (cleanFy.isNotEmpty)
+        ? '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix'
+        : '_${normType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = (cleanFy.isNotEmpty)
+        ? '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
+        : '::${normType}::${normEnv}::$cleanPrefix';
+
+    ChallanHwmState? bestMeta = _cachedMeta[configKey] ?? _cachedMeta[metaPrefKey] ?? config?.challanHwmMeta[configKey];
+    for (final entry in _cachedMeta.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        if (_isMetaStateNewer(entry.value, bestMeta)) {
+          bestMeta = entry.value;
+        }
+      }
+    }
+    if (bestMeta == null) return;
+    if (serverSeq <= bestMeta.seq) return;
+
+    final updated = bestMeta.copy()..seq = serverSeq;
+    _cachedMeta[configKey] = updated.copy();
+    _cachedMeta[metaPrefKey] = updated.copy();
+    for (final k in _cachedMeta.keys.toList()) {
+      if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        final existing = _cachedMeta[k];
+        if (existing == null || serverSeq > existing.seq || _isMetaStateNewer(updated, existing)) {
+          _cachedMeta[k] = updated.copy();
+        }
+      }
+    }
+    if (config != null) {
+      config.challanHwmMeta[configKey] = updated.copy();
+      for (final k in config.challanHwmMeta.keys.toList()) {
+        if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: '', allowedScopes: allowedScopes)) {
+          final existing = config.challanHwmMeta[k];
+          if (existing == null || serverSeq > existing.seq || _isMetaStateNewer(updated, existing)) {
+            config.challanHwmMeta[k] = updated.copy();
+          }
+        }
+      }
+    }
+
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(metaPrefKey, jsonEncode(updated.toMap()));
+      for (final k in prefs.getKeys()) {
+        if (k.startsWith('challan_hwm_meta_') &&
+            _matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+          await prefs.setString(k, jsonEncode(updated.toMap()));
+        }
+      }
+    }).catchError((_) {});
+  }
+
   /// Causally absorbs incoming HWM values & metadata into the in-memory cache and SharedPreferences
   static void absorbChallanHwmState({
     required Map<String, int> hwm,
@@ -195,7 +281,8 @@ class WebPharoahNumberingEngine {
       }
     }
 
-    SharedPreferences.getInstance().then((prefs) {
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
       for (final cfgKey in affectedKeys) {
         final parts = cfgKey.split('::');
         if (parts.length != 5) continue;
@@ -204,12 +291,12 @@ class WebPharoahNumberingEngine {
         final int val = resolved.hwm[cfgKey] ?? 0;
         final ChallanHwmState? st = resolved.meta[cfgKey];
         if (val > 0) {
-          prefs.setInt(prefKey, val);
+          await prefs.setInt(prefKey, val);
         } else {
-          prefs.remove(prefKey);
+          await prefs.remove(prefKey);
         }
         if (st != null) {
-          prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
+          await prefs.setString(metaPrefKey, jsonEncode(st.toMap()));
           final prefSuffix = '_${parts[1]}_${parts[2]}_${parts[3]}_${parts[4]}';
           final keyComp = parts[0].trim().toUpperCase();
           final Set<String> keyScopes = keyComp.isNotEmpty
@@ -218,12 +305,12 @@ class WebPharoahNumberingEngine {
           for (final k in prefs.getKeys()) {
             if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: keyScopes)) {
               if (k.startsWith('challan_hwm_meta_')) {
-                prefs.setString(k, jsonEncode(st.toMap()));
+                await prefs.setString(k, jsonEncode(st.toMap()));
               } else if (k.startsWith('challan_hwm_')) {
                 if (val > 0) {
-                  prefs.setInt(k, val);
+                  await prefs.setInt(k, val);
                 } else {
-                  prefs.remove(k);
+                  await prefs.remove(k);
                 }
               }
             }
@@ -268,7 +355,7 @@ class WebPharoahNumberingEngine {
       prefMeta.forEach((metaK, st) {
         final hwmK = metaK.replaceFirst('challan_hwm_meta_', 'challan_hwm_');
         final existingMeta = _cachedMeta[metaK];
-        if (existingMeta == null || st.gen > existingMeta.gen || (st.seq > 0 && st.seq > existingMeta.seq)) {
+        if (_isMetaStateNewer(st, existingMeta)) {
           _cachedMeta[metaK] = st.copy();
           if (st.value > 0) {
             _cachedHwm[hwmK] = st.value;
@@ -328,9 +415,7 @@ class WebPharoahNumberingEngine {
     ChallanHwmState? winningMeta;
     for (final entry in _cachedMeta.entries) {
       if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
-        if (winningMeta == null ||
-            entry.value.gen > winningMeta.gen ||
-            (entry.value.seq > 0 && entry.value.seq > winningMeta.seq)) {
+        if (_isMetaStateNewer(entry.value, winningMeta)) {
           winningMeta = entry.value;
         }
       }
@@ -417,10 +502,24 @@ class WebPharoahNumberingEngine {
       }
     }
 
+    bool wasRollback = _cachedMeta[configKey]?.op == 'ROLLBACK' ||
+        _cachedMeta[metaPrefKey]?.op == 'ROLLBACK' ||
+        config?.challanHwmMeta[configKey]?.op == 'ROLLBACK';
+    if (!wasRollback) {
+      for (final entry in _cachedMeta.entries) {
+        if (_matchesScopedSuffix(entry.key, cfgSuffix: rCfgSuffix, prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
+          if (entry.value.op == 'ROLLBACK') {
+            wasRollback = true;
+            break;
+          }
+        }
+      }
+    }
+
     final int effVal = issuedInt > prevVal ? issuedInt : prevVal;
     final bool needsMetaUpdate = issuedInt > prevVal ||
         !_cachedMeta.containsKey(configKey) ||
-        (_cachedMeta[configKey]?.op == 'ROLLBACK') ||
+        wasRollback ||
         (config != null && !config.challanHwmMeta.containsKey(configKey));
 
     if (issuedInt > (_cachedHwm[cacheKey] ?? 0)) {
@@ -437,7 +536,7 @@ class WebPharoahNumberingEngine {
 
     ChallanHwmState? stToPersist;
     if (needsMetaUpdate) {
-      final int nextGen = issuedInt > prevVal ? (prevGen + 1) : max(prevGen, issuedInt);
+      final int nextGen = (issuedInt > prevVal || wasRollback) ? (prevGen + 1) : max(prevGen, issuedInt);
       stToPersist = ChallanHwmState(
         value: effVal,
         seq: prevSeq,
@@ -463,13 +562,26 @@ class WebPharoahNumberingEngine {
       }
     }
 
-    SharedPreferences.getInstance().then((prefs) {
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getInt(cacheKey) ?? 0;
-      if (effVal > saved) {
-        prefs.setInt(cacheKey, effVal);
+      if (effVal > saved || wasRollback) {
+        await prefs.setInt(cacheKey, effVal);
       }
       if (stToPersist != null) {
-        prefs.setString(metaPrefKey, jsonEncode(stToPersist.toMap()));
+        await prefs.setString(metaPrefKey, jsonEncode(stToPersist.toMap()));
+        for (final k in prefs.getKeys()) {
+          if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: rPrefSuffix, allowedScopes: allowedScopes)) {
+            if (k.startsWith('challan_hwm_meta_')) {
+              await prefs.setString(k, jsonEncode(stToPersist.toMap()));
+            } else if (k.startsWith('challan_hwm_')) {
+              final curK = prefs.getInt(k) ?? 0;
+              if (effVal > curK || wasRollback) {
+                await prefs.setInt(k, effVal);
+              }
+            }
+          }
+        }
       }
     }).catchError((_) {});
   }
@@ -500,23 +612,42 @@ class WebPharoahNumberingEngine {
     final metaPrefKey = _metaPrefKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
     final configKey = _configKey(cleanComp, cleanFy, normType, normEnv, cleanPrefix);
 
-    final int prevVal = max(
+    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
+    final prefSuffix = (cleanFy.isNotEmpty)
+        ? '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix'
+        : '_${normType}_${normEnv}_$cleanPrefix';
+    final cfgSuffix = (cleanFy.isNotEmpty)
+        ? '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
+        : '::${normType}::${normEnv}::$cleanPrefix';
+
+    int prevVal = max(
       deletedNum,
       max(
         _cachedHwm[cacheKey] ?? 0,
         max(_cachedHwm[configKey] ?? 0, config?.challanHwm[configKey] ?? 0),
       ),
     );
-    final int prevGen = max(
+    for (final entry in _cachedHwm.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        if (entry.value > prevVal) prevVal = entry.value;
+      }
+    }
+    int prevGen = max(
       prevVal,
       max(
         _cachedMeta[configKey]?.gen ?? 0,
         max(_cachedMeta[metaPrefKey]?.gen ?? 0, config?.challanHwmMeta[configKey]?.gen ?? 0),
       ),
     );
-    final int prevSeq = d1Seq > 0
+    int prevSeq = d1Seq > 0
         ? d1Seq
         : max(_cachedMeta[configKey]?.seq ?? 0, config?.challanHwmMeta[configKey]?.seq ?? 0);
+    for (final entry in _cachedMeta.entries) {
+      if (_matchesScopedSuffix(entry.key, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
+        if (entry.value.gen > prevGen) prevGen = entry.value.gen;
+        if (d1Seq == 0 && entry.value.seq > prevSeq) prevSeq = entry.value.seq;
+      }
+    }
 
     final state = ChallanHwmState(
       value: safeTail,
@@ -527,14 +658,6 @@ class WebPharoahNumberingEngine {
       deletedNum: deletedNum,
       tombUuid: tombUuid.trim(),
     );
-
-    final Set<String> allowedScopes = _resolveAllowedScopes(cleanComp);
-    final prefSuffix = (cleanFy.isNotEmpty)
-        ? '_${cleanFy}_${normType}_${normEnv}_$cleanPrefix'
-        : '_${normType}_${normEnv}_$cleanPrefix';
-    final cfgSuffix = (cleanFy.isNotEmpty)
-        ? '::${cleanFy}::${normType}::${normEnv}::$cleanPrefix'
-        : '::${normType}::${normEnv}::$cleanPrefix';
 
     for (final k in _cachedHwm.keys.toList()) {
       if (_matchesScopedSuffix(k, cfgSuffix: cfgSuffix, prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
@@ -584,23 +707,24 @@ class WebPharoahNumberingEngine {
       config.challanHwmMeta[configKey] = state.copy();
     }
 
-    SharedPreferences.getInstance().then((prefs) {
+    lastPersistFuture = (lastPersistFuture ?? Future.value()).then((_) async {
+      final prefs = await SharedPreferences.getInstance();
       if (safeTail > 0) {
-        prefs.setInt(cacheKey, safeTail);
+        await prefs.setInt(cacheKey, safeTail);
       } else {
-        prefs.remove(cacheKey);
+        await prefs.remove(cacheKey);
       }
-      prefs.setString(metaPrefKey, jsonEncode(state.toMap()));
+      await prefs.setString(metaPrefKey, jsonEncode(state.toMap()));
 
       for (final k in prefs.getKeys()) {
         if (_matchesScopedSuffix(k, cfgSuffix: '', prefSuffix: prefSuffix, allowedScopes: allowedScopes)) {
           if (k.startsWith('challan_hwm_meta_')) {
-            prefs.setString(k, jsonEncode(state.toMap()));
+            await prefs.setString(k, jsonEncode(state.toMap()));
           } else if (k.startsWith('challan_hwm_')) {
             if (safeTail > 0) {
-              prefs.setInt(k, safeTail);
+              await prefs.setInt(k, safeTail);
             } else {
-              prefs.remove(k);
+              await prefs.remove(k);
             }
           }
         }

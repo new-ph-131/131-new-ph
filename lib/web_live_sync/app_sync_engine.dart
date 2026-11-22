@@ -1,5 +1,7 @@
 import '../app_date_logic.dart';
 import '../sync_core/modules/settings_sync_module.dart';
+import '../logic/app_settings_model.dart';
+import '../logic/pharoah_numbering_engine.dart';
 import "sub_views/web_accounts/services/web_voucher_d1_sync_service.dart";
 import "../gst/gst_diary/services/gst_diary_d1_sync_service.dart";
 import "../sync_core/d1_sales_ledger_service.dart";
@@ -60,6 +62,9 @@ class AppSyncEngine {
       final prefs = await SharedPreferences.getInstance();
       final companyId = ph.activeCompany!.id;
       final storeToken = await WebLiveToken.getOrCreateToken(companyId);
+
+      // Ensure any pending challan D1 deletion, onServerSeq, or config.json flush finishes first
+      await ph.awaitPendingChallanSync();
 
       // STEP 1: SNAP & DETECT (The Spy)
       Set<String> localTombstones = await TombstoneEngine.getLocalTombstones(companyId);
@@ -203,11 +208,41 @@ class AppSyncEngine {
                   bool d1PRet = D1SalesLedgerService.applyEventsToLocalPurchaseReturns(ph.purchaseReturns, edgeEvents, effectiveFy);
                   bool d1Vouc = WebVoucherD1SyncService.applyEdgeEventsToLocalVouchers(ph.vouchers, edgeEvents);
                   bool d1Gst = GstDiaryD1SyncService.applyEdgeEventsToLocalSessions(ph.gstDiarySessions, edgeEvents);
-                  bool d1Cfg = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+                  final appHarvestFloor = AppConfig.computeChallanRecordFloor(
+                    companyID: ph.activeCompany?.id ?? '',
+                    saleChallans: ph.saleChallans,
+                    purchaseChallans: ph.purchaseChallans,
+                    targetFy: effectiveFy,
+                  );
+                  final bool d1HwmAuditMut = D1SalesLedgerService.applyEdgeHwmAndAuditFromEvents(
+                    currentConfig: ph.config,
+                    edgeEvents: edgeEvents,
+                    companyID: ph.activeCompany?.id ?? '',
+                    recordFloor: appHarvestFloor,
+                    targetLogs: ph.logs,
+                  );
+                  bool d1Cfg = SettingsSyncModule.applyEdgeEventsToLocalConfig(
                     currentConfig: ph.config,
                     edgeEvents: edgeEvents,
                     onConfigMutated: (cfg) => ph.config = cfg,
+                    recordFloor: appHarvestFloor,
                   );
+                  if (!d1Cfg) {
+                    d1Cfg = GstDiaryD1SyncService.applyEdgeEventsToLocalConfig(
+                      currentConfig: ph.config,
+                      edgeEvents: edgeEvents,
+                      onConfigMutated: (cfg) => ph.config = cfg,
+                    );
+                  }
+                  if (d1HwmAuditMut || d1Cfg) {
+                    d1Cfg = true;
+                    PharoahNumberingEngine.absorbChallanHwmState(
+                      hwm: ph.config.challanHwm,
+                      meta: ph.config.challanHwmMeta,
+                      recordFloor: appHarvestFloor,
+                      companyScopes: [companyId, storeToken],
+                    );
+                  }
                   bool d1Series = SettingsSyncModule.applyEdgeEventsToLocalSeries(
                     currentSeries: ph.numberingSeries,
                     edgeEvents: edgeEvents,
@@ -236,9 +271,13 @@ class AppSyncEngine {
                   if (evDate != null && !D1SalesLedgerService.doesEventBelongToActiveFY(rawPayload, evDate, effectiveFy)) {
                     continue;
                   }
-                  final bool isPurc = rawPayload is Map &&
-                      (rawPayload["doc_type"] == "PURCHASE" ||
+                  final String docType = rawPayload is Map ? (rawPayload["doc_type"] ?? "").toString().trim().toUpperCase() : "";
+                  final bool isPurchaseChallan = docType == "PURCHASE_CHALLAN" ||
+                      (rawPayload is Map && rawPayload.containsKey("internalNo") && !rawPayload.containsKey("distributorName") && !rawPayload.containsKey("supplierName"));
+                  final bool isPurc = !isPurchaseChallan && rawPayload is Map &&
+                      (docType == "PURCHASE" ||
                        rawPayload.containsKey("distributorName") ||
+                       rawPayload.containsKey("supplierName") ||
                        rawPayload.containsKey("internalNo"));
                   final bool payloadDel = rawPayload is Map &&
                       ((int.tryParse(rawPayload["is_deleted"]?.toString() ?? rawPayload["isDeleted"]?.toString() ?? "0") ?? 0) == 1 ||
@@ -260,8 +299,13 @@ class AppSyncEngine {
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
                       final String scopedINo = D1SalesLedgerService.scopeSecondaryKey(iNo, effectiveFy);
                       if (scopedINo.isNotEmpty) {
-                        localRegistry[scopedINo] = evTs;
-                        localTombstones.add(scopedINo);
+                        final bool hasActivePur = isPurchaseChallan
+                            ? ph.purchaseChallans.any((c) => c.id != bId && c.internalNo.trim().toUpperCase() == iNo && c.isDeleted != 1 && (effectiveFy.isEmpty || c.effectiveOriginalFy == effectiveFy))
+                            : ph.purchases.any((p) => p.id != bId && p.internalNo.trim().toUpperCase() == iNo && p.isDeleted != 1);
+                        if (!hasActivePur) {
+                          localRegistry[scopedINo] = evTs;
+                          localTombstones.add(scopedINo);
+                        }
                       }
                       if (pId.isNotEmpty && pBill.isNotEmpty) {
                         final c2 = D1SalesLedgerService.scopeSecondaryKey("${pId}_$pBill", effectiveFy, true);
@@ -277,7 +321,18 @@ class AppSyncEngine {
                   } else {
                     final bool alreadyDel = bId.isNotEmpty && D1SalesLedgerService.isBillDeleted(bId, "", "", effectiveFy);
                     if (alreadyDel) continue;
-                    if (rawPayload is Map && isPurc) {
+                    if (rawPayload is Map && isPurchaseChallan) {
+                      final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
+                      final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
+                      final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
+                      final bool blocked = bId.isNotEmpty
+                          ? D1SalesLedgerService.isPurchaseIdDeleted(bId, effectiveFy)
+                          : D1SalesLedgerService.isPurchaseChallanDeleted(bId, pId, pBill, iNo, effectiveFy);
+                      if (blocked) {
+                        continue;
+                      }
+                      D1SalesLedgerService.unmarkPurchaseChallanPermanentlyDeleted(bId, pId, pBill, iNo, effectiveFy);
+                    } else if (rawPayload is Map && isPurc) {
                       final String pId = (rawPayload["partyId"] ?? "").toString().trim().toUpperCase();
                       final String pBill = (rawPayload["billNo"] ?? "").toString().trim();
                       final String iNo = (rawPayload["internalNo"] ?? "").toString().trim().toUpperCase();
