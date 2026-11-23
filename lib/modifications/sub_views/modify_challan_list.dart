@@ -53,9 +53,18 @@ class ModifyChallanList extends StatelessWidget {
         final bool isCarry = isStrictCarryForwardFy(ofy, currFy);
         final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: !isSale);
         final String cfTag = (!hasValidDt && ofy.isEmpty) ? "CF / LEGACY" : (ofy.isNotEmpty ? "CF • $ofy" : "CF / LEGACY");
-        final String fwdTag = fwd.billedFy != null
+        final bool isSelfBilled = ch.status == "Billed";
+        final String localBillNo = isSale
+            ? (ch as SaleChallan).billedInvoiceNo.trim()
+            : (ch as PurchaseChallan).billedInvoiceNo.trim();
+        final String resolvedBillNo = localBillNo.isNotEmpty
+            ? localBillNo
+            : (ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: !isSale) ?? '');
+        final String fwdTag = (!isSelfBilled && fwd.billedFy != null)
             ? "BILLED IN ${fwd.billedFy}"
-            : (fwd.shiftedFy != null ? "SHIFTED → ${fwd.shiftedFy}" : "");
+            : (isSelfBilled && resolvedBillNo.isNotEmpty
+                ? "BILL: $resolvedBillNo"
+                : (fwd.shiftedFy != null ? "SHIFTED → ${fwd.shiftedFy}" : ""));
         final String envTag = PharoahNumberingEngine.isWebChallanRecord(ch) ? "WEB PORTAL" : "APP";
         final String extraTag = [envTag, if (isCarry) cfTag, if (fwdTag.isNotEmpty) fwdTag].join(" • ");
 

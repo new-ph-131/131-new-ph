@@ -231,11 +231,21 @@ class _WebChallanViewState extends State<WebChallanView> {
                             const SizedBox(width: 6),
                             _fyTagBadge(cfLabel, const Color(0xFFA855F7)),
                           ],
-                          if (isCarry && isBilled && item.billedInvoiceNo.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            _fyTagBadge("BILL: ${item.billedInvoiceNo}", const Color(0xFF14B8A6)),
-                          ],
-                          if (fwd.billedFy != null) ...[
+                          if (isBilled) ...[
+                            Builder(builder: (_) {
+                              final String localInv = item.billedInvoiceNo.trim().isNotEmpty
+                                  ? item.billedInvoiceNo.trim()
+                                  : (webPh.getBilledInvoiceNoForChallan(item.id, isPurchase: false) ?? '');
+                              if (localInv.isEmpty) return const SizedBox.shrink();
+                              return Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(width: 6),
+                                  _fyTagBadge("BILL: $localInv", const Color(0xFF14B8A6)),
+                                ],
+                              );
+                            }),
+                          ] else if (fwd.billedFy != null) ...[
                             const SizedBox(width: 6),
                             Builder(builder: (_) {
                               final inv = webPh.getBilledInvoiceNoForChallan(item.id, isPurchase: false, forwardFy: fwd.billedFy);
@@ -517,11 +527,21 @@ class _WebChallanViewState extends State<WebChallanView> {
                             const SizedBox(width: 6),
                             _fyTagBadge(cfLabel, const Color(0xFFA855F7)),
                           ],
-                          if (isCarry && isBilled && item.billedInvoiceNo.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            _fyTagBadge("BILL: ${item.billedInvoiceNo}", const Color(0xFF14B8A6)),
-                          ],
-                          if (fwd.billedFy != null) ...[
+                          if (isBilled) ...[
+                            Builder(builder: (_) {
+                              final String localInv = item.billedInvoiceNo.trim().isNotEmpty
+                                  ? item.billedInvoiceNo.trim()
+                                  : (webPh.getBilledInvoiceNoForChallan(item.id, isPurchase: true) ?? '');
+                              if (localInv.isEmpty) return const SizedBox.shrink();
+                              return Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(width: 6),
+                                  _fyTagBadge("BILL: $localInv", const Color(0xFF14B8A6)),
+                                ],
+                              );
+                            }),
+                          ] else if (fwd.billedFy != null) ...[
                             const SizedBox(width: 6),
                             Builder(builder: (_) {
                               final inv = webPh.getBilledInvoiceNoForChallan(item.id, isPurchase: true, forwardFy: fwd.billedFy);
