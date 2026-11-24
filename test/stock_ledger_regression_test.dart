@@ -1096,6 +1096,8 @@ void main() {
       id: 'c_p3',
       name: 'MedPlus Pharma',
       businessType: 'PHARMA_RETAIL',
+      createdAt: DateTime(2025, 4, 1),
+      password: 'admin',
       gstin: '08AABCP1234A1Z4',
       state: 'Rajasthan',
     );
