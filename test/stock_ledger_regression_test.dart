@@ -1095,6 +1095,7 @@ void main() {
     ph.activeCompany = CompanyProfile(
       id: 'c_p3',
       name: 'MedPlus Pharma',
+      businessType: 'PHARMA_RETAIL',
       gstin: '08AABCP1234A1Z4',
       state: 'Rajasthan',
     );
@@ -1152,7 +1153,7 @@ void main() {
         paymentMode: 'CASH',
         status: 'Cancelled',
         items: [
-          BillItem(id: 'bi_c', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'BAD99', exp: '01/20', mrp: 220.0, qty: 5.0, rate: 100.0, gstRate: 12.0, total: 560.0),
+          BillItem(id: 'bi_c', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'BAD99', exp: '01/20', hsn: '3004', mrp: 220.0, qty: 5.0, rate: 100.0, gstRate: 12.0, total: 560.0),
         ],
         totalAmount: 560.0,
       ),
@@ -1177,6 +1178,7 @@ void main() {
             packing: '1x10',
             batch: 'AUG01',
             exp: '09/28',
+            hsn: '3004',
             mrp: 220.0,
             qty: 20.0,
             purchaseRate: 80.0,
