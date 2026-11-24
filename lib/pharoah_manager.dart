@@ -153,14 +153,11 @@ class PharoahManager with ChangeNotifier {
               final String key = '${isPur ? 'P' : 'S'}:$cid';
               final prev = _forwardChallanStatusCache[key] ?? (shiftedFy: null, billedFy: null);
               if (st == 'Billed') {
-                // 🛡️ FY-ISOLATION: Only tag billedFy if the bill actually belongs to this forward FY
-                // (or later), never if it was billed in the origin/back FY (e.g. 2026-27).
-                final bool billedInForwardFy = actualBilledFy.isNotEmpty
-                    ? compareFyStrings(actualBilledFy, normCurr) > 0
-                    : false;
+                // 🛡️ FY-ISOLATION: Only tag billedFy if the bill was NOT generated in the current or prior FY.
+                final bool billedInPriorOrCurrentFy = actualBilledFy.isNotEmpty && compareFyStrings(actualBilledFy, normCurr) <= 0;
                 _forwardChallanStatusCache[key] = (
                   shiftedFy: prev.shiftedFy ?? fy,
-                  billedFy: billedInForwardFy
+                  billedFy: !billedInPriorOrCurrentFy
                       ? (actualBilledFy.isNotEmpty ? actualBilledFy : fy)
                       : prev.billedFy,
                 );

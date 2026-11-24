@@ -3665,12 +3665,9 @@ class PharoahWebManager with ChangeNotifier {
             if ((item['status'] ?? 'Pending').toString().trim() == 'Billed') {
               final rawBilledFy = (item['billedInFy'] ?? item['billed_in_fy'] ?? '').toString().trim();
               final actualBilledFy = rawBilledFy.isNotEmpty ? normalizeFyString(rawBilledFy) : '';
-              // 🛡️ FY-ISOLATION: Only tag billedFy if the bill actually belongs to this forward FY
-              // (or later), never if it was billed in the origin/back FY (e.g. 2026-27).
-              final bool billedInForwardFy = actualBilledFy.isNotEmpty
-                  ? compareFyStrings(actualBilledFy, normCurr) > 0
-                  : false;
-              if (billedInForwardFy) {
+              // 🛡️ FY-ISOLATION: Only tag billedFy if the bill was NOT generated in the current or prior FY.
+              final bool billedInPriorOrCurrentFy = actualBilledFy.isNotEmpty && compareFyStrings(actualBilledFy, normCurr) <= 0;
+              if (!billedInPriorOrCurrentFy) {
                 billedFy = actualBilledFy.isNotEmpty ? actualBilledFy : fy;
               }
             }
