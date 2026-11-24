@@ -1611,7 +1611,7 @@ void main() {
     expect(restoredPurItem.isManualOrigin, isFalse);
 
     // 2. Auto-resolver from Sales & Purchases history respects isManualOrigin == true
-    final pastSales = [
+    final pastSales = <Sale>[
       Sale(
         id: 'S_101',
         billNo: 'INV-101',
@@ -1650,7 +1650,7 @@ void main() {
       ),
     ];
 
-    final cnItemsInput = [
+    final cnItemsInput = <BillItem>[
       BillItem(
         id: 'RET_1',
         srNo: 1,
@@ -1728,7 +1728,7 @@ void main() {
     expect(manualOnlySummary.footerRefText, isEmpty);
 
     // Purchase auto-resolve
-    final pastPurchases = [
+    final pastPurchases = <Purchase>[
       Purchase(
         id: 'P_201',
         internalNo: 'PUR-201',
