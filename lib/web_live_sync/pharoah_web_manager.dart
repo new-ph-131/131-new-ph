@@ -3669,7 +3669,7 @@ class PharoahWebManager with ChangeNotifier {
               // (or later), never if it was billed in the origin/back FY (e.g. 2026-27).
               final bool billedInForwardFy = actualBilledFy.isNotEmpty
                   ? compareFyStrings(actualBilledFy, normCurr) > 0
-                  : true;
+                  : false;
               if (billedInForwardFy) {
                 billedFy = actualBilledFy.isNotEmpty ? actualBilledFy : fy;
               }

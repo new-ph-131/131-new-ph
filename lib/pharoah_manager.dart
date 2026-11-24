@@ -96,10 +96,24 @@ class PharoahManager with ChangeNotifier {
           return c.billedInvoiceNo.trim();
         }
       }
+      for (final p in purchases) {
+        if (p.isDeleted == 1) continue;
+        if (p.linkedChallanIds.contains(cleanId) || p.items.any((it) => it.sourceChallanId == cleanId)) {
+          final bNo = p.billNo.trim();
+          if (bNo.isNotEmpty) return bNo;
+        }
+      }
     } else {
       for (final c in saleChallans) {
         if (c.id.trim() == cleanId && c.billedInvoiceNo.trim().isNotEmpty) {
           return c.billedInvoiceNo.trim();
+        }
+      }
+      for (final s in sales) {
+        if (s.isDeleted == 1) continue;
+        if (s.linkedChallanIds.contains(cleanId) || s.items.any((it) => it.sourceChallanId == cleanId)) {
+          final bNo = s.billNo.trim();
+          if (bNo.isNotEmpty) return bNo;
         }
       }
     }
@@ -143,7 +157,7 @@ class PharoahManager with ChangeNotifier {
                 // (or later), never if it was billed in the origin/back FY (e.g. 2026-27).
                 final bool billedInForwardFy = actualBilledFy.isNotEmpty
                     ? compareFyStrings(actualBilledFy, normCurr) > 0
-                    : true;
+                    : false;
                 _forwardChallanStatusCache[key] = (
                   shiftedFy: prev.shiftedFy ?? fy,
                   billedFy: billedInForwardFy

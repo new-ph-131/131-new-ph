@@ -329,7 +329,11 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                         ),
                       ],
                     ),
-                    if (isCarry || fwd.billedFy != null || fwd.shiftedFy != null)
+                    final bool isBilled = ch.status == "Billed";
+                    final String localBillNo = ch.billedInvoiceNo.trim().isNotEmpty
+                        ? ch.billedInvoiceNo.trim()
+                        : (ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: false) ?? '');
+                    if (isCarry || isBilled || fwd.billedFy != null || fwd.shiftedFy != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Wrap(
@@ -337,11 +341,11 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                           runSpacing: 4,
                           children: [
                             if (isCarry) _fyOriginBadge(cfLabel, Colors.deepPurple),
-                            if (isCarry && ch.status == "Billed" && ch.billedInvoiceNo.isNotEmpty)
-                              _fyOriginBadge("BILL: ${ch.billedInvoiceNo}", Colors.teal),
-                            if (fwd.billedFy != null)
+                            if (isBilled && localBillNo.isNotEmpty)
+                              _fyOriginBadge("BILL: $localBillNo", Colors.teal),
+                            if (!isBilled && fwd.billedFy != null)
                               _fyOriginBadge(ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: false, forwardFy: fwd.billedFy) != null && ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: false, forwardFy: fwd.billedFy)!.isNotEmpty ? "BILLED IN ${fwd.billedFy} (${ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: false, forwardFy: fwd.billedFy)})" : "BILLED IN ${fwd.billedFy}", Colors.teal)
-                            else if (fwd.shiftedFy != null)
+                            else if (!isBilled && fwd.shiftedFy != null)
                               _fyOriginBadge("SHIFTED → ${fwd.shiftedFy}", Colors.indigo),
                           ],
                         ),
