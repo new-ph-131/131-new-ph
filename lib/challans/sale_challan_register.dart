@@ -266,9 +266,13 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
   Widget _buildChallanCard(SaleChallan ch, PharoahManager ph) {
     bool isPending = ch.status == "Pending";
     bool isCancelled = ch.status == "Cancelled";
+    bool isBilled = ch.status == "Billed";
     bool isWeb = PharoahNumberingEngine.isWebChallanRecord(ch);
     bool isCarry = _isCarryForward(ch, ph.currentFY);
     final fwd = ph.getForwardChallanStatus(ch.id, isPurchase: false);
+    final String localBillNo = ch.billedInvoiceNo.trim().isNotEmpty
+        ? ch.billedInvoiceNo.trim()
+        : (ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: false) ?? '');
     final String cfLabel = (!ch.hasValidDate && ch.effectiveOriginalFy.isEmpty)
         ? "CF / LEGACY"
         : (ch.effectiveOriginalFy.isNotEmpty ? "CF • ${ch.effectiveOriginalFy}" : "CF / LEGACY");
@@ -329,10 +333,6 @@ class _SaleChallanRegisterState extends State<SaleChallanRegister> {
                         ),
                       ],
                     ),
-                    final bool isBilled = ch.status == "Billed";
-                    final String localBillNo = ch.billedInvoiceNo.trim().isNotEmpty
-                        ? ch.billedInvoiceNo.trim()
-                        : (ph.getBilledInvoiceNoForChallan(ch.id, isPurchase: false) ?? '');
                     if (isCarry || isBilled || fwd.billedFy != null || fwd.shiftedFy != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
