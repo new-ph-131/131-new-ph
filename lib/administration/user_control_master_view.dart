@@ -31,6 +31,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
   bool userEnableBatchHistory = true;
   bool allowGstDiaryToUser = false;
   bool userEnableGstDiary = true;
+  bool allowCommercialNoteToUser = false;
+  bool userEnableCommercialNote = false;
   int _lastSyncedVersion = -1;
   int _lastSyncedUpdatedAt = -1;
 
@@ -42,6 +44,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
     userEnableBatchHistory = ph.config.userEnableBatchHistory;
     allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
     userEnableGstDiary = ph.config.userEnableGstDiary;
+    allowCommercialNoteToUser = ph.config.developerAllowCommercialNoteToUser;
+    userEnableCommercialNote = ph.config.userEnableCommercialNote;
     userPinController.text = ph.config.userMasterPin;
     _lastSyncedVersion = ph.config.version;
     _lastSyncedUpdatedAt = ph.config.updatedAt;
@@ -75,6 +79,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
         userEnableBatchHistory = ph.config.userEnableBatchHistory;
         allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
         userEnableGstDiary = ph.config.userEnableGstDiary;
+        allowCommercialNoteToUser = ph.config.developerAllowCommercialNoteToUser;
+        userEnableCommercialNote = ph.config.userEnableCommercialNote;
         userPinController.text = ph.config.userMasterPin;
       });
     } else if (input == userPin) {
@@ -85,6 +91,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
         userEnableBatchHistory = ph.config.userEnableBatchHistory;
         allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
         userEnableGstDiary = ph.config.userEnableGstDiary;
+        allowCommercialNoteToUser = ph.config.developerAllowCommercialNoteToUser;
+        userEnableCommercialNote = ph.config.userEnableCommercialNote;
         userPinController.text = ph.config.userMasterPin;
       });
     } else {
@@ -100,6 +108,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
     ph.config.userEnableGstDiary = userEnableGstDiary;
     ph.config.developerAllowGstDiaryToUser = allowGstDiaryToUser;
     ph.config.userEnableGstDiary = userEnableGstDiary;
+    ph.config.developerAllowCommercialNoteToUser = allowCommercialNoteToUser;
+    ph.config.userEnableCommercialNote = userEnableCommercialNote;
     if (userPinController.text.trim().isNotEmpty) {
       ph.config.userMasterPin = userPinController.text.trim();
     }
@@ -164,6 +174,7 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
   void _saveUserSettings(PharoahManager ph) {
     ph.config.userEnableBatchHistory = userEnableBatchHistory;
     ph.config.userEnableGstDiary = userEnableGstDiary;
+    ph.config.userEnableCommercialNote = userEnableCommercialNote;
     if (userPinController.text.trim().isNotEmpty) {
       ph.config.userMasterPin = userPinController.text.trim();
     }
@@ -187,6 +198,8 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
       userEnableBatchHistory = ph.config.userEnableBatchHistory;
       allowGstDiaryToUser = ph.config.developerAllowGstDiaryToUser;
       userEnableGstDiary = ph.config.userEnableGstDiary;
+      allowCommercialNoteToUser = ph.config.developerAllowCommercialNoteToUser;
+      userEnableCommercialNote = ph.config.userEnableCommercialNote;
       _lastSyncedVersion = ph.config.version;
       _lastSyncedUpdatedAt = ph.config.updatedAt;
     }
@@ -453,6 +466,27 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
                       onChanged: (val) {
                         setState(() => allowGstDiaryToUser = val);
                         ph.config.developerAllowGstDiaryToUser = val;
+                        ph.updateAppConfig(ph.config);
+                        _lastSyncedVersion = ph.config.version;
+                        _lastSyncedUpdatedAt = ph.config.updatedAt;
+                      },
+                    ),
+                    const Divider(height: 20),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        "Allow Commercial Credit Note to User",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      subtitle: const Text(
+                        "When enabled, authorized users can enable & issue Non-GST Commercial Notes using the isolated CCN- series.",
+                        style: TextStyle(fontSize: 11, color: Colors.black54),
+                      ),
+                      value: allowCommercialNoteToUser,
+                      activeColor: const Color(0xFF059669),
+                      onChanged: (val) {
+                        setState(() => allowCommercialNoteToUser = val);
+                        ph.config.developerAllowCommercialNoteToUser = val;
                         ph.updateAppConfig(ph.config);
                         _lastSyncedVersion = ph.config.version;
                         _lastSyncedUpdatedAt = ph.config.updatedAt;
@@ -798,19 +832,51 @@ class _UserControlMasterViewState extends State<UserControlMasterView> {
                           _lastSyncedUpdatedAt = ph.config.updatedAt;
                         },
                       ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF059669),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                        onPressed: () => _saveUserSettings(ph),
-                        icon: const Icon(Icons.check_circle_outline, size: 16),
-                        label: const Text("SAVE PREFERENCES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                      ),
                     ],
+                    const Divider(height: 24),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        "Enable Commercial Credit Note Module",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: ph.config.developerAllowCommercialNoteToUser ? Colors.black87 : Colors.grey,
+                        ),
+                      ),
+                      subtitle: Text(
+                        ph.config.developerAllowCommercialNoteToUser
+                            ? "Turn on to display the Commercial Note (Non-GST / CCN-) toggle inside Return billing screens."
+                            : "Locked by Developer. Ask your developer to grant Commercial Credit Note access first.",
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: ph.config.developerAllowCommercialNoteToUser ? Colors.black54 : Colors.grey.shade500,
+                        ),
+                      ),
+                      value: ph.config.developerAllowCommercialNoteToUser ? userEnableCommercialNote : false,
+                      activeColor: const Color(0xFF059669),
+                      onChanged: ph.config.developerAllowCommercialNoteToUser
+                          ? (val) {
+                              setState(() => userEnableCommercialNote = val);
+                              ph.config.userEnableCommercialNote = val;
+                              ph.updateAppConfig(ph.config);
+                              _lastSyncedVersion = ph.config.version;
+                              _lastSyncedUpdatedAt = ph.config.updatedAt;
+                            }
+                          : null,
+                    ),
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onPressed: () => _saveUserSettings(ph),
+                      icon: const Icon(Icons.check_circle_outline, size: 16),
+                      label: const Text("SAVE PREFERENCES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
                   ],
                 ),
               ),

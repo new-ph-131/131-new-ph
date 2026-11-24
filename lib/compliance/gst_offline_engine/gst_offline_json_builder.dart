@@ -428,11 +428,12 @@ class GstOfflineJsonBuilder {
         ],
       ));
     }
-    if (periodAllReturns.isNotEmpty) {
-      final firstCr = periodAllReturns.first.billNo;
-      final lastCr = periodAllReturns.last.billNo;
-      final totalCr = periodAllReturns.length;
-      final cancelledCr = periodAllReturns.where((r) => r.status == "Cancelled").length;
+    final periodGstReturns = periodAllReturns.where((r) => !r.isCommercial).toList();
+    if (periodGstReturns.isNotEmpty) {
+      final firstCr = periodGstReturns.first.billNo;
+      final lastCr = periodGstReturns.last.billNo;
+      final totalCr = periodGstReturns.length;
+      final cancelledCr = periodGstReturns.where((r) => r.status == "Cancelled").length;
       final netCr = totalCr - cancelledCr;
 
       docGroupList.add(GstDocGroup(

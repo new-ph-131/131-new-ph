@@ -114,6 +114,9 @@ class SettingsSyncModule {
         final bool fieldDiff =
             incoming.developerAllowGstDiaryToUser != workingConfig.developerAllowGstDiaryToUser ||
             incoming.userEnableGstDiary != workingConfig.userEnableGstDiary ||
+            incoming.developerAllowCommercialNoteToUser != workingConfig.developerAllowCommercialNoteToUser ||
+            incoming.userEnableCommercialNote != workingConfig.userEnableCommercialNote ||
+            incoming.commercialNotePrefix != workingConfig.commercialNotePrefix ||
             incoming.developerAllowBatchHistoryToUser != workingConfig.developerAllowBatchHistoryToUser ||
             incoming.userEnableBatchHistory != workingConfig.userEnableBatchHistory ||
             incoming.showLogo != workingConfig.showLogo ||

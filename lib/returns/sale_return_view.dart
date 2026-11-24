@@ -29,9 +29,10 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   final medSearchC = TextEditingController();
   final origBillNoC = TextEditingController();
   final reasonC = TextEditingController();
+  String selectedReason = GstComplianceHelper.standardReasons.first;
   DateTime? origBillDate;
   String paymentMode = "CREDIT";
-  bool isCommercial = false; 
+  bool isCommercial = false;
   
   DateTime selectedDate = DateTime.now();
   Party? selectedParty;
@@ -69,7 +70,9 @@ class _SaleReturnViewState extends State<SaleReturnView> {
       paymentMode = ex.paymentMode.isNotEmpty ? ex.paymentMode : "CREDIT";
       origBillNoC.text = ex.origBillNo;
       origBillDate = ex.origBillDate;
-      reasonC.text = ex.reason;
+      final parsedReason = GstComplianceHelper.parseReason(ex.reason);
+      selectedReason = parsedReason.selectedReason;
+      reasonC.text = parsedReason.customRemark;
       isCommercial = ex.isCommercial;
       isBreakageMode = ex.returnType.toLowerCase().contains("breakage") || ex.returnType.toLowerCase().contains("expiry");
       selectedParty = ph.parties.firstWhere(
@@ -100,6 +103,41 @@ class _SaleReturnViewState extends State<SaleReturnView> {
           isLoading = false;
         });
       }
+    }
+  }
+
+  String get _effectiveReason => GstComplianceHelper.formatReason(selectedReason, reasonC.text);
+
+  Future<void> _refreshNumberForCommercialMode(PharoahManager ph, bool commercial) async {
+    if (widget.existingRecord != null || ph.activeCompany == null) return;
+    if (commercial) {
+      var series = ph.getDefaultSeries("COMMERCIAL_NOTE");
+      final pref = series.prefix.isNotEmpty
+          ? series.prefix
+          : (ph.config.commercialNotePrefix.isNotEmpty ? ph.config.commercialNotePrefix : "CCN-");
+      final startNo = series.startNumber > 0 ? series.startNumber : 1;
+      final nextNo = await PharoahNumberingEngine.getNextNumber(
+        type: "COMMERCIAL_NOTE",
+        companyID: ph.activeCompany!.id,
+        prefix: pref,
+        startFrom: startNo,
+        currentList: [...ph.saleReturns, ...ph.purchaseReturns],
+      );
+      if (mounted) setState(() => returnNoC.text = nextNo);
+    } else {
+      var series = ph.getDefaultSeries("RETURN");
+      final pref = (series.prefix.isNotEmpty && series.prefix != "SR-" && series.prefix != "CN-")
+          ? series.prefix
+          : "TXN-";
+      final startNo = series.startNumber > 0 ? series.startNumber : 1;
+      final nextNo = await PharoahNumberingEngine.getNextNumber(
+        type: "RETURN",
+        companyID: ph.activeCompany!.id,
+        prefix: pref,
+        startFrom: startNo,
+        currentList: ph.saleReturns,
+      );
+      if (mounted) setState(() => returnNoC.text = nextNo);
     }
   }
 
@@ -360,7 +398,19 @@ class _SaleReturnViewState extends State<SaleReturnView> {
                   currentFY: ph.currentFY,
                   initialDate: selectedDate,
                 );
-                if (p != null) setState(() => selectedDate = p);
+                if (p != null) {
+                  final canComm = GstComplianceHelper.isCommercialNoteAllowed(ph.config);
+                  final expired = GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: p);
+                  setState(() {
+                    selectedDate = p;
+                    if (expired && canComm && !isCommercial) {
+                      isCommercial = true;
+                    }
+                  });
+                  if (expired && canComm) {
+                    await _refreshNumberForCommercialMode(ph, true);
+                  }
+                }
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -477,12 +527,17 @@ class _SaleReturnViewState extends State<SaleReturnView> {
                   lastDate: selectedDate,
                 );
                 if (picked != null) {
+                  final canComm = GstComplianceHelper.isCommercialNoteAllowed(ph.config);
+                  final expired = GstComplianceHelper.isSection34Expired(origInvoiceDate: picked, noteDate: selectedDate);
                   setState(() {
                     origBillDate = picked;
-                    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: picked, noteDate: selectedDate)) {
+                    if (expired && canComm) {
                       isCommercial = true;
                     }
                   });
+                  if (expired && canComm) {
+                    await _refreshNumberForCommercialMode(ph, true);
+                  }
                 }
               },
               child: Container(
@@ -495,20 +550,54 @@ class _SaleReturnViewState extends State<SaleReturnView> {
               ),
             ),
           ),
-          const SizedBox(width: 6),
-          InkWell(
-            onTap: effectiveReadOnly ? null : () => setState(() => isCommercial = !isCommercial),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-              decoration: BoxDecoration(
-                color: isCommercial ? Colors.amber.shade100 : Colors.grey.shade100,
-                border: Border.all(color: isCommercial ? Colors.amber.shade800 : Colors.grey.shade400),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(isCommercial ? "NO-GST" : "GST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: isCommercial ? Colors.amber.shade900 : Colors.black54)),
+        ]),
+        if (GstComplianceHelper.isCommercialNoteAllowed(ph.config) || isCommercial) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: isCommercial ? Colors.amber.shade50 : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: isCommercial ? Colors.amber.shade700 : Colors.grey.shade300),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Commercial Note (Non-GST)",
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: isCommercial ? Colors.amber.shade900 : Colors.black87,
+                        ),
+                      ),
+                      Text(
+                        isCommercial
+                            ? "Active: Tax 0% • Excluded from GSTR-1/3B • CCN- Series"
+                            : "Toggle ON to issue a Non-GST Commercial Credit Note (CCN-)",
+                        style: TextStyle(fontSize: 9.5, color: isCommercial ? Colors.amber.shade800 : Colors.black54),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch.adaptive(
+                  value: isCommercial,
+                  activeColor: Colors.amber.shade800,
+                  onChanged: (effectiveReadOnly || !GstComplianceHelper.isCommercialNoteAllowed(ph.config))
+                      ? null
+                      : (val) async {
+                          setState(() => isCommercial = val);
+                          await _refreshNumberForCommercialMode(ph, val);
+                        },
+                ),
+              ],
             ),
           ),
-        ]),
+        ],
         if (isSec34Expired) ...[
           const SizedBox(height: 6),
           Container(
@@ -564,11 +653,41 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   Widget _buildAdvancedFooter() => Container(
     padding: const EdgeInsets.all(15), color: Colors.white,
     child: Column(children: [
-        TextField(
-          controller: reasonC,
-          readOnly: widget.isReadOnly,
-          style: const TextStyle(fontSize: 11),
-          decoration: const InputDecoration(labelText: "Reason / Remarks (Rule 53(1A))", isDense: true, border: OutlineInputBorder()),
+        DropdownButtonFormField<String>(
+          value: selectedReason,
+          isExpanded: true,
+          style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+          decoration: const InputDecoration(
+            labelText: "Return Reason (GST Rule 53(1A))",
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: GstComplianceHelper.standardReasons
+              .map((r) => DropdownMenuItem<String>(value: r, child: Text(r, overflow: TextOverflow.ellipsis)))
+              .toList(),
+          onChanged: effectiveReadOnly
+              ? null
+              : (val) {
+                  if (val != null) setState(() => selectedReason = val);
+                },
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          child: GstComplianceHelper.isOtherReason(selectedReason)
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextField(
+                    controller: reasonC,
+                    readOnly: effectiveReadOnly,
+                    style: const TextStyle(fontSize: 11),
+                    decoration: const InputDecoration(
+                      labelText: "Custom Remarks / Expiry / Damage Details",
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
         const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
@@ -641,26 +760,39 @@ class _SaleReturnViewState extends State<SaleReturnView> {
         id: widget.existingRecord!.id, billNo: usedNo, date: selectedDate, party: selectedParty!,
         items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
         paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(), origBillDate: origBillDate,
-        reason: reasonC.text.trim(), isCommercial: isCommercial,
+        reason: _effectiveReason, isCommercial: isCommercial,
       );
     } else {
       ph.finalizeSaleReturn(
         billNo: usedNo, date: selectedDate, party: selectedParty!,
         items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
         type: rType, paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(),
-        origBillDate: origBillDate, reason: reasonC.text.trim(), isCommercial: isCommercial,
+        origBillDate: origBillDate, reason: _effectiveReason, isCommercial: isCommercial,
       );
       if (ph.activeCompany != null) {
-        var series = ph.getDefaultSeries("RETURN");
-        final pref = (series.prefix.isNotEmpty && series.prefix != "SR-" && series.prefix != "CN-")
-            ? series.prefix
-            : "TXN-";
-        PharoahNumberingEngine.updateSeriesCounter(
-          type: "RETURN",
-          companyID: ph.activeCompany!.id,
-          usedNumber: usedNo,
-          prefix: pref,
-        );
+        if (isCommercial) {
+          var ccnSeries = ph.getDefaultSeries("COMMERCIAL_NOTE");
+          final ccnPref = ccnSeries.prefix.isNotEmpty
+              ? ccnSeries.prefix
+              : (ph.config.commercialNotePrefix.isNotEmpty ? ph.config.commercialNotePrefix : "CCN-");
+          PharoahNumberingEngine.updateSeriesCounter(
+            type: "COMMERCIAL_NOTE",
+            companyID: ph.activeCompany!.id,
+            usedNumber: usedNo,
+            prefix: ccnPref,
+          );
+        } else {
+          var series = ph.getDefaultSeries("RETURN");
+          final pref = (series.prefix.isNotEmpty && series.prefix != "SR-" && series.prefix != "CN-")
+              ? series.prefix
+              : "TXN-";
+          PharoahNumberingEngine.updateSeriesCounter(
+            type: "RETURN",
+            companyID: ph.activeCompany!.id,
+            usedNumber: usedNo,
+            prefix: pref,
+          );
+        }
       }
     }
     Navigator.pop(context);
@@ -674,7 +806,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
       partyGstin: selectedParty!.gst, partyState: selectedParty!.state,
       items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
       paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(), origBillDate: origBillDate,
-      reason: reasonC.text.trim(), isCommercial: isCommercial,
+      reason: _effectiveReason, isCommercial: isCommercial,
     );
     await PdfRouterService.printCreditNote(returnObj: returnObj, party: selectedParty!, ph: ph);
   }

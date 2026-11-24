@@ -329,7 +329,7 @@ class _WebSeriesManagerDialog extends StatefulWidget {
 
 class _WebSeriesManagerDialogState extends State<_WebSeriesManagerDialog> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> types = ["SALE", "PURCHASE", "CHALLAN", "RETURN"];
+  final List<String> types = ["SALE", "PURCHASE", "CHALLAN", "RETURN", "COMMERCIAL_NOTE"];
   bool isSaving = false;
 
   @override
@@ -431,6 +431,22 @@ class _WebSeriesManagerDialogState extends State<_WebSeriesManagerDialog> with S
       modified = true;
     }
 
+    bool hasCcn = current.any((s) => s.type.toUpperCase() == "COMMERCIAL_NOTE");
+    if (!hasCcn) {
+      current.add(NumberingSeries(
+        id: 'commercial_note_default',
+        name: 'Commercial Credit Note (Non-GST)',
+        type: 'COMMERCIAL_NOTE',
+        prefix: widget.webPh.appConfig.commercialNotePrefix.trim().isNotEmpty
+            ? widget.webPh.appConfig.commercialNotePrefix.trim()
+            : 'CCN-',
+        startNumber: 1,
+        isDefault: true,
+        isActive: true,
+      ));
+      modified = true;
+    }
+
     if (modified) {
       widget.webPh.numberingSeries = current;
       WebSettingsSyncCoordinator.saveAndBroadcastSeries(
@@ -448,7 +464,7 @@ class _WebSeriesManagerDialogState extends State<_WebSeriesManagerDialog> with S
 
   void _showSeriesForm({NumberingSeries? existing, String? defaultType}) {
     final nameC = TextEditingController(text: existing?.name ?? "");
-    final prefixC = TextEditingController(text: existing?.prefix ?? (defaultType == "PURCHASE" ? "WPUR-" : "W-"));
+    final prefixC = TextEditingController(text: existing?.prefix ?? (defaultType == "PURCHASE" ? "WPUR-" : (defaultType == "COMMERCIAL_NOTE" ? "CCN-" : "W-")));
     final startNoC = TextEditingController(text: (existing?.startNumber ?? 1).toString());
     String selType = existing?.type ?? defaultType ?? types[_tabController.index];
     bool isDef = existing?.isDefault ?? false;

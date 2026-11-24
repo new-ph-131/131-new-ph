@@ -22,7 +22,8 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
   final returnNoC = TextEditingController();
   final discountC = TextEditingController(text: "0");
   final origBillNoC = TextEditingController();
-  final reasonC = TextEditingController(text: "07-Expiry / Breakage");
+  final reasonC = TextEditingController();
+  String selectedReason = GstComplianceHelper.otherReasonCode;
   DateTime selectedDate = DateTime.now();
   DateTime? origBillDate;
   String paymentMode = "CREDIT";
@@ -324,19 +325,55 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              InkWell(
-                onTap: () => setState(() => isCommercial = !isCommercial),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isCommercial ? Colors.amber.shade100 : Colors.grey.shade200,
-                    border: Border.all(color: isCommercial ? Colors.amber.shade800 : Colors.grey.shade400),
-                    borderRadius: BorderRadius.circular(6),
+              if (GstComplianceHelper.isCommercialNoteAllowed(ph.config) || isCommercial) ...[
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: !GstComplianceHelper.isCommercialNoteAllowed(ph.config)
+                      ? null
+                      : () async {
+                          final nextVal = !isCommercial;
+                          setState(() => isCommercial = nextVal);
+                          if (ph.activeCompany != null) {
+                            if (nextVal) {
+                              var ccnSer = ph.getDefaultSeries("COMMERCIAL_NOTE");
+                              final ccnPref = ccnSer.prefix.isNotEmpty
+                                  ? ccnSer.prefix
+                                  : (ph.config.commercialNotePrefix.isNotEmpty ? ph.config.commercialNotePrefix : "CCN-");
+                              final n = await PharoahNumberingEngine.getNextNumber(
+                                type: "COMMERCIAL_NOTE",
+                                companyID: ph.activeCompany!.id,
+                                prefix: ccnPref,
+                                startFrom: ccnSer.startNumber > 0 ? ccnSer.startNumber : 1,
+                                currentList: [...ph.saleReturns, ...ph.purchaseReturns],
+                              );
+                              if (mounted) setState(() => returnNoC.text = n);
+                            } else {
+                              var defaultRetSeries = ph.getDefaultSeries("RETURN");
+                              final pref = (defaultRetSeries.prefix.isNotEmpty && defaultRetSeries.prefix != "SR-" && defaultRetSeries.prefix != "CN-")
+                                  ? defaultRetSeries.prefix
+                                  : "TXN-";
+                              final n = await PharoahNumberingEngine.getNextNumber(
+                                type: "RETURN",
+                                companyID: ph.activeCompany!.id,
+                                prefix: pref,
+                                startFrom: defaultRetSeries.startNumber > 0 ? defaultRetSeries.startNumber : 1,
+                                currentList: ph.saleReturns,
+                              );
+                              if (mounted) setState(() => returnNoC.text = n);
+                            }
+                          }
+                        },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isCommercial ? Colors.amber.shade100 : Colors.grey.shade200,
+                      border: Border.all(color: isCommercial ? Colors.amber.shade800 : Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(isCommercial ? "CCN (NO-GST)" : "GST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: isCommercial ? Colors.amber.shade900 : Colors.black54)),
                   ),
-                  child: Text(isCommercial ? "NO-GST" : "GST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: isCommercial ? Colors.amber.shade900 : Colors.black54)),
                 ),
-              ),
+              ],
             ]),
             const SizedBox(height: 6),
             Row(children: [
@@ -360,12 +397,28 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
                       lastDate: selectedDate,
                     );
                     if (picked != null) {
+                      final canComm = GstComplianceHelper.isCommercialNoteAllowed(ph.config);
+                      final expired = GstComplianceHelper.isSection34Expired(origInvoiceDate: picked, noteDate: selectedDate);
                       setState(() {
                         origBillDate = picked;
-                        if (GstComplianceHelper.isSection34Expired(origInvoiceDate: picked, noteDate: selectedDate)) {
+                        if (expired && canComm) {
                           isCommercial = true;
                         }
                       });
+                      if (expired && canComm && ph.activeCompany != null) {
+                        var ccnSer = ph.getDefaultSeries("COMMERCIAL_NOTE");
+                        final ccnPref = ccnSer.prefix.isNotEmpty
+                            ? ccnSer.prefix
+                            : (ph.config.commercialNotePrefix.isNotEmpty ? ph.config.commercialNotePrefix : "CCN-");
+                        final n = await PharoahNumberingEngine.getNextNumber(
+                          type: "COMMERCIAL_NOTE",
+                          companyID: ph.activeCompany!.id,
+                          prefix: ccnPref,
+                          startFrom: ccnSer.startNumber > 0 ? ccnSer.startNumber : 1,
+                          currentList: [...ph.saleReturns, ...ph.purchaseReturns],
+                        );
+                        if (mounted) setState(() => returnNoC.text = n);
+                      }
                     }
                   },
                   child: Container(
@@ -471,10 +524,38 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
       color: Colors.white,
       child: Column(
         children: [
-          TextField(
-            controller: reasonC,
-            style: const TextStyle(fontSize: 11),
-            decoration: const InputDecoration(labelText: "Reason / Remarks (Rule 53(1A))", isDense: true, border: OutlineInputBorder()),
+          DropdownButtonFormField<String>(
+            value: selectedReason,
+            isExpanded: true,
+            style: const TextStyle(fontSize: 11.5, color: Colors.black87),
+            decoration: const InputDecoration(
+              labelText: "Return Reason (GST Rule 53(1A))",
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            items: GstComplianceHelper.standardReasons
+                .map((r) => DropdownMenuItem<String>(value: r, child: Text(r, overflow: TextOverflow.ellipsis)))
+                .toList(),
+            onChanged: (val) {
+              if (val != null) setState(() => selectedReason = val);
+            },
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            child: GstComplianceHelper.isOtherReason(selectedReason)
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: TextField(
+                      controller: reasonC,
+                      style: const TextStyle(fontSize: 11),
+                      decoration: const InputDecoration(
+                        labelText: "Custom Remarks / Expiry / Damage Details",
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
           const SizedBox(height: 8),
           Row(
@@ -574,21 +655,34 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
       paymentMode: paymentMode,
       origBillNo: origBillNoC.text.trim(),
       origBillDate: origBillDate,
-      reason: reasonC.text.trim(),
+      reason: GstComplianceHelper.formatReason(selectedReason, reasonC.text),
       isCommercial: isCommercial,
     );
     
     if (ph.activeCompany != null) {
-      var defaultRetSeries = ph.getDefaultSeries("RETURN");
-      final pref = (defaultRetSeries.prefix.isNotEmpty && defaultRetSeries.prefix != "SR-" && defaultRetSeries.prefix != "CN-")
-          ? defaultRetSeries.prefix
-          : "TXN-";
-      PharoahNumberingEngine.updateSeriesCounter(
-        type: "RETURN", 
-        companyID: ph.activeCompany!.id, 
-        usedNumber: returnNoC.text.trim(), 
-        prefix: pref,
-      );
+      if (isCommercial) {
+        var ccnSer = ph.getDefaultSeries("COMMERCIAL_NOTE");
+        final ccnPref = ccnSer.prefix.isNotEmpty
+            ? ccnSer.prefix
+            : (ph.config.commercialNotePrefix.isNotEmpty ? ph.config.commercialNotePrefix : "CCN-");
+        PharoahNumberingEngine.updateSeriesCounter(
+          type: "COMMERCIAL_NOTE",
+          companyID: ph.activeCompany!.id,
+          usedNumber: returnNoC.text.trim(),
+          prefix: ccnPref,
+        );
+      } else {
+        var defaultRetSeries = ph.getDefaultSeries("RETURN");
+        final pref = (defaultRetSeries.prefix.isNotEmpty && defaultRetSeries.prefix != "SR-" && defaultRetSeries.prefix != "CN-")
+            ? defaultRetSeries.prefix
+            : "TXN-";
+        PharoahNumberingEngine.updateSeriesCounter(
+          type: "RETURN", 
+          companyID: ph.activeCompany!.id, 
+          usedNumber: returnNoC.text.trim(), 
+          prefix: pref,
+        );
+      }
     }
 
     Navigator.pop(context);

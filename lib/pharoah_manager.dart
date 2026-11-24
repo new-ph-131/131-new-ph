@@ -5367,10 +5367,16 @@ void registerBatchActivity({
           prefix = "TXN-";
         } else if (searchType == "PURCHASE_RETURN" || searchType == "DEBIT_NOTE" || searchType == "DN") {
           prefix = "DN-";
+        } else if (searchType == "COMMERCIAL_NOTE" || searchType == "CCN" || searchType == "COMMERCIAL") {
+          prefix = config.commercialNotePrefix.trim().isNotEmpty ? config.commercialNotePrefix.trim() : "CCN-";
         } else {
           prefix = "TXN-";
         }
-        final String defaultName = (searchType == "PURCHASE_RETURN" || searchType == "DEBIT_NOTE" || searchType == "DN") ? 'Debit Note Default' : 'Credit Note Default';
+        final String defaultName = (searchType == "PURCHASE_RETURN" || searchType == "DEBIT_NOTE" || searchType == "DN")
+            ? 'Debit Note Default'
+            : ((searchType == "COMMERCIAL_NOTE" || searchType == "CCN" || searchType == "COMMERCIAL")
+                ? 'Commercial Credit Note Default'
+                : 'Credit Note Default');
         return NumberingSeries(id: 'sys_$searchType', name: defaultName, type: searchType, prefix: prefix, isDefault: true, startNumber: 1);
       }
     }

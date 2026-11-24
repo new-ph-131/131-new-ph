@@ -29,6 +29,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
   bool userEnableBatchHistory = true;
   bool allowGstDiaryToUser = false;
   bool userEnableGstDiary = true;
+  bool allowCommercialNoteToUser = false;
+  bool userEnableCommercialNote = false;
   int _lastSyncedVersion = -1;
   int _lastSyncedUpdatedAt = -1;
 
@@ -40,6 +42,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
     allowGstDiaryToUser = webPh.appConfig.developerAllowGstDiaryToUser;
     userEnableGstDiary = webPh.appConfig.userEnableGstDiary;
+    allowCommercialNoteToUser = webPh.appConfig.developerAllowCommercialNoteToUser;
+    userEnableCommercialNote = webPh.appConfig.userEnableCommercialNote;
     userPinController.text = webPh.appConfig.userMasterPin;
     _lastSyncedVersion = webPh.appConfig.version;
     _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
@@ -71,6 +75,10 @@ class _WebUserControlViewState extends State<WebUserControlView> {
         authErrorMessage = null;
         allowBatchHistoryToUser = webPh.appConfig.developerAllowBatchHistoryToUser;
         userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
+        allowGstDiaryToUser = webPh.appConfig.developerAllowGstDiaryToUser;
+        userEnableGstDiary = webPh.appConfig.userEnableGstDiary;
+        allowCommercialNoteToUser = webPh.appConfig.developerAllowCommercialNoteToUser;
+        userEnableCommercialNote = webPh.appConfig.userEnableCommercialNote;
         userPinController.text = webPh.appConfig.userMasterPin;
       });
     } else if (input == userPin) {
@@ -79,6 +87,10 @@ class _WebUserControlViewState extends State<WebUserControlView> {
         authErrorMessage = null;
         allowBatchHistoryToUser = webPh.appConfig.developerAllowBatchHistoryToUser;
         userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
+        allowGstDiaryToUser = webPh.appConfig.developerAllowGstDiaryToUser;
+        userEnableGstDiary = webPh.appConfig.userEnableGstDiary;
+        allowCommercialNoteToUser = webPh.appConfig.developerAllowCommercialNoteToUser;
+        userEnableCommercialNote = webPh.appConfig.userEnableCommercialNote;
         userPinController.text = webPh.appConfig.userMasterPin;
       });
     } else {
@@ -94,6 +106,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     webPh.appConfig.userEnableGstDiary = userEnableGstDiary;
     webPh.appConfig.developerAllowGstDiaryToUser = allowGstDiaryToUser;
     webPh.appConfig.userEnableGstDiary = userEnableGstDiary;
+    webPh.appConfig.developerAllowCommercialNoteToUser = allowCommercialNoteToUser;
+    webPh.appConfig.userEnableCommercialNote = userEnableCommercialNote;
     if (userPinController.text.trim().isNotEmpty) {
       webPh.appConfig.userMasterPin = userPinController.text.trim();
     }
@@ -157,6 +171,8 @@ class _WebUserControlViewState extends State<WebUserControlView> {
 
   void _saveUserSettings(PharoahWebManager webPh) {
     webPh.appConfig.userEnableBatchHistory = userEnableBatchHistory;
+    webPh.appConfig.userEnableGstDiary = userEnableGstDiary;
+    webPh.appConfig.userEnableCommercialNote = userEnableCommercialNote;
     if (userPinController.text.trim().isNotEmpty) {
       webPh.appConfig.userMasterPin = userPinController.text.trim();
     }
@@ -178,6 +194,10 @@ class _WebUserControlViewState extends State<WebUserControlView> {
     if (webPh.appConfig.version != _lastSyncedVersion || webPh.appConfig.updatedAt != _lastSyncedUpdatedAt) {
       allowBatchHistoryToUser = webPh.appConfig.developerAllowBatchHistoryToUser;
       userEnableBatchHistory = webPh.appConfig.userEnableBatchHistory;
+      allowGstDiaryToUser = webPh.appConfig.developerAllowGstDiaryToUser;
+      userEnableGstDiary = webPh.appConfig.userEnableGstDiary;
+      allowCommercialNoteToUser = webPh.appConfig.developerAllowCommercialNoteToUser;
+      userEnableCommercialNote = webPh.appConfig.userEnableCommercialNote;
       _lastSyncedVersion = webPh.appConfig.version;
       _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
     }
@@ -525,6 +545,27 @@ class _WebUserControlViewState extends State<WebUserControlView> {
                     onChanged: (val) {
                       setState(() => allowGstDiaryToUser = val);
                       webPh.appConfig.developerAllowGstDiaryToUser = val;
+                      webPh.updateAppConfig(webPh.appConfig);
+                      _lastSyncedVersion = webPh.appConfig.version;
+                      _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+                    },
+                  ),
+                  const Divider(color: Colors.white10, height: 24),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      "Allow Commercial Credit Note to User",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    subtitle: const Text(
+                      "When toggled ON, authorized users can enable & issue Non-GST Commercial Notes using the isolated CCN- series.",
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                    value: allowCommercialNoteToUser,
+                    activeColor: const Color(0xFF10B981),
+                    onChanged: (val) {
+                      setState(() => allowCommercialNoteToUser = val);
+                      webPh.appConfig.developerAllowCommercialNoteToUser = val;
                       webPh.updateAppConfig(webPh.appConfig);
                       _lastSyncedVersion = webPh.appConfig.version;
                       _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
@@ -889,19 +930,51 @@ class _WebUserControlViewState extends State<WebUserControlView> {
                         _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
                       },
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF059669),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      onPressed: () => _saveUserSettings(webPh),
-                      icon: const Icon(Icons.check_circle_outline, size: 16),
-                      label: const Text("SAVE PREFERENCES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                    ),
                   ],
+                  const Divider(color: Colors.white10, height: 32),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      "Enable Commercial Credit Note Module",
+                      style: TextStyle(
+                        color: webPh.appConfig.developerAllowCommercialNoteToUser ? Colors.white : Colors.white38,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      webPh.appConfig.developerAllowCommercialNoteToUser
+                          ? "Keep this toggled ON to display the Commercial Note (Non-GST / CCN-) switch in Web Return screens."
+                          : "Locked by Developer. Ask your developer to grant Commercial Credit Note access first.",
+                      style: TextStyle(
+                        color: webPh.appConfig.developerAllowCommercialNoteToUser ? Colors.white54 : Colors.white30,
+                        fontSize: 12,
+                      ),
+                    ),
+                    value: webPh.appConfig.developerAllowCommercialNoteToUser ? userEnableCommercialNote : false,
+                    activeColor: const Color(0xFF10B981),
+                    onChanged: webPh.appConfig.developerAllowCommercialNoteToUser
+                        ? (val) {
+                            setState(() => userEnableCommercialNote = val);
+                            webPh.appConfig.userEnableCommercialNote = val;
+                            webPh.updateAppConfig(webPh.appConfig);
+                            _lastSyncedVersion = webPh.appConfig.version;
+                            _lastSyncedUpdatedAt = webPh.appConfig.updatedAt;
+                          }
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF059669),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () => _saveUserSettings(webPh),
+                    icon: const Icon(Icons.check_circle_outline, size: 16),
+                    label: const Text("SAVE PREFERENCES", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
                 ],
               ),
             ),

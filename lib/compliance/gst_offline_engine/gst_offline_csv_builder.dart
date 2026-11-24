@@ -366,7 +366,7 @@ class GstOfflineCsvBuilder {
       ]);
     }
 
-    final periodCr = returns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1).toList();
+    final periodCr = returns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1 && !r.isCommercial).toList();
     if (periodCr.isNotEmpty) {
       rows.add([
         "Credit Note",
@@ -377,7 +377,7 @@ class GstOfflineCsvBuilder {
       ]);
     }
 
-    final periodDr = purchaseReturns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1).toList();
+    final periodDr = purchaseReturns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1 && !r.isCommercial).toList();
     if (periodDr.isNotEmpty) {
       rows.add([
         "Debit Note",

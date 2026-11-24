@@ -479,6 +479,9 @@ class DeltaMergeEngine {
               incomingCfg.userEnableBatchHistory != localCfg.userEnableBatchHistory ||
               incomingCfg.developerAllowGstDiaryToUser != localCfg.developerAllowGstDiaryToUser ||
               incomingCfg.userEnableGstDiary != localCfg.userEnableGstDiary ||
+              incomingCfg.developerAllowCommercialNoteToUser != localCfg.developerAllowCommercialNoteToUser ||
+              incomingCfg.userEnableCommercialNote != localCfg.userEnableCommercialNote ||
+              incomingCfg.commercialNotePrefix != localCfg.commercialNotePrefix ||
               incomingCfg.printFormat != localCfg.printFormat ||
               incomingCfg.isArchitectMode != localCfg.isArchitectMode ||
               incomingCfg.termsAndConditions != localCfg.termsAndConditions ||

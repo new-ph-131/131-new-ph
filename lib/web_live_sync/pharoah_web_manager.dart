@@ -4807,6 +4807,59 @@ class PharoahWebManager with ChangeNotifier {
     );
   }
 
+  void cancelReturn(String returnId, bool isSaleReturn) {
+    final nowTs = DateTime.now().millisecondsSinceEpoch;
+    if (isSaleReturn) {
+      int i = saleReturns.indexWhere((r) => r.id == returnId || r.billNo == returnId);
+      if (i == -1) return;
+      final ret = saleReturns[i];
+      if (ret.status == "Cancelled") return;
+      ret.status = "Cancelled";
+      ret.version += 1;
+      ret.updatedAt = nowTs;
+      rebuildInventory();
+      _snapshotActiveFyToVault();
+      notifyListeners();
+      CreditNoteSyncModule.onCreditNoteSaved(ret, activeStoreToken);
+      D1SalesLedgerService.onSaleReturnSaved(
+        ret,
+        activeStoreToken,
+        isUpdate: true,
+        clientSource: "WEB_PORTAL",
+        fyOverride: financialYear,
+      );
+      _autoSyncService.triggerAutoSync(
+        action: 'SALE_RETURN_SAVED',
+        entityId: ret.id,
+        fy: financialYear,
+      );
+    } else {
+      int i = purchaseReturns.indexWhere((r) => r.id == returnId || r.billNo == returnId);
+      if (i == -1) return;
+      final ret = purchaseReturns[i];
+      if (ret.status == "Cancelled") return;
+      ret.status = "Cancelled";
+      ret.version += 1;
+      ret.updatedAt = nowTs;
+      rebuildInventory();
+      _snapshotActiveFyToVault();
+      notifyListeners();
+      DebitNoteSyncModule.onDebitNoteSaved(ret, activeStoreToken);
+      D1SalesLedgerService.onPurchaseReturnSaved(
+        ret,
+        activeStoreToken,
+        isUpdate: true,
+        clientSource: "WEB_PORTAL",
+        fyOverride: financialYear,
+      );
+      _autoSyncService.triggerAutoSync(
+        action: 'PURCHASE_RETURN_SAVED',
+        entityId: ret.id,
+        fy: financialYear,
+      );
+    }
+  }
+
   void deleteSaleReturn(String returnId) {
     String bNo = "";
     try {
@@ -5705,6 +5758,8 @@ class PharoahWebManager with ChangeNotifier {
       targetList = saleChallans;
     } else if (type == "PURCHASE_CHALLAN" || type == "CHALLAN_PUR") {
       targetList = purchaseChallans;
+    } else if (type == "COMMERCIAL_NOTE" || type == "CCN" || type == "COMMERCIAL") {
+      targetList = [...saleReturns, ...purchaseReturns];
     } else if (type == "RETURN" || type == "SALE_RETURN" || type == "CREDIT_NOTE") {
       targetList = saleReturns;
     } else if (type == "PURCHASE_RETURN" || type == "DEBIT_NOTE") {
@@ -6675,6 +6730,20 @@ class PharoahWebManager with ChangeNotifier {
       try {
         return numberingSeries.firstWhere((s) => s.type.toUpperCase() == searchType && s.isActive);
       } catch (_) {
+        if (searchType == "COMMERCIAL_NOTE" || searchType == "CCN" || searchType == "COMMERCIAL") {
+          final pref = appConfig.commercialNotePrefix.trim().isNotEmpty
+              ? appConfig.commercialNotePrefix.trim()
+              : "CCN-";
+          return NumberingSeries(
+            id: 'sys_COMMERCIAL_NOTE',
+            name: 'Commercial Credit Note Default',
+            type: 'COMMERCIAL_NOTE',
+            prefix: pref,
+            startNumber: 1,
+            isDefault: true,
+            isActive: true,
+          );
+        }
         return null;
       }
     }

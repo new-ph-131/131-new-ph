@@ -1177,7 +1177,8 @@ class D1SalesLedgerService {
            rawSale.containsKey("depositedIn") ||
            rawSale.containsKey("includedBillIds") ||
            rawSale.containsKey("deductedAmount") ||
-           rawSale.containsKey("developerAllowGstDiaryToUser"))) {
+           rawSale.containsKey("developerAllowGstDiaryToUser") ||
+           rawSale.containsKey("developerAllowCommercialNoteToUser"))) {
         continue;
       }
 

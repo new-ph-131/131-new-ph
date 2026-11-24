@@ -13,6 +13,7 @@ import 'package:pharoah_erp/compliance/gst_offline_engine/gst_state_codes.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_offline_json_builder.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_offline_csv_builder.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_preflight_validator.dart';
+import 'package:pharoah_erp/logic/app_settings_model.dart';
 import 'package:pharoah_erp/logic/gst_compliance_helper.dart';
 import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
 import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
@@ -1332,4 +1333,196 @@ void main() {
     expect(audit.issues.any((i) => i.title.contains('Sec 34(2)')), isTrue);
   });
 
+
+  test('Phase 4: Cancellation reversal, Rule 53(1A) 7 reasons, Commercial Note User Control & CCN- isolation', () {
+    // 1. AppConfig Commercial Note defaults, serialization & 2-tier User Control gate
+    final cfgDefault = AppConfig();
+    expect(cfgDefault.developerAllowCommercialNoteToUser, isFalse);
+    expect(cfgDefault.userEnableCommercialNote, isFalse);
+    expect(cfgDefault.commercialNotePrefix, equals('CCN-'));
+    expect(GstComplianceHelper.isCommercialNoteAllowed(cfgDefault), isFalse);
+
+    final cfgDevOnly = AppConfig(developerAllowCommercialNoteToUser: true, userEnableCommercialNote: false);
+    expect(GstComplianceHelper.isCommercialNoteAllowed(cfgDevOnly), isFalse);
+
+    final cfgAllowed = AppConfig.fromMap(
+      AppConfig(
+        developerAllowCommercialNoteToUser: true,
+        userEnableCommercialNote: true,
+        commercialNotePrefix: 'CCN-',
+      ).toMap(),
+    );
+    expect(cfgAllowed.developerAllowCommercialNoteToUser, isTrue);
+    expect(cfgAllowed.userEnableCommercialNote, isTrue);
+    expect(cfgAllowed.commercialNotePrefix, equals('CCN-'));
+    expect(GstComplianceHelper.isCommercialNoteAllowed(cfgAllowed), isTrue);
+
+    // 2. GST Rule 53(1A) 7 standard reasons & custom remark parsing/formatting
+    expect(GstComplianceHelper.standardReasons.length, equals(7));
+    expect(GstComplianceHelper.standardReasons.first, equals('01-Sales Return'));
+    expect(GstComplianceHelper.standardReasons.last, equals('07-Other / Expired / Damaged'));
+
+    final parsedStd = GstComplianceHelper.parseReason('02-Post Sale Discount');
+    expect(parsedStd.selectedReason, equals('02-Post Sale Discount'));
+    expect(parsedStd.customRemark, isEmpty);
+
+    final formattedCustom = GstComplianceHelper.formatReason('07-Other / Expired / Damaged', 'Transit breakage');
+    expect(formattedCustom, equals('07-Other / Expired / Damaged: Transit breakage'));
+    final parsedCustom = GstComplianceHelper.parseReason(formattedCustom);
+    expect(parsedCustom.selectedReason, equals('07-Other / Expired / Damaged'));
+    expect(parsedCustom.customRemark, equals('Transit breakage'));
+
+    // 3. Dedicated COMMERCIAL_NOTE (CCN-) series fallback & Web numbering isolation
+    final ph = PharoahManager();
+    expect(ph.getDefaultSeries('COMMERCIAL_NOTE').prefix, equals('CCN-'));
+
+    final webPh = PharoahWebManager();
+    webPh.financialYear = '2025-26';
+    expect(webPh.getDefaultSeries('COMMERCIAL_NOTE')?.prefix, equals('CCN-'));
+
+    final med = Medicine(id: 'M_P4', systemId: 'SYS_P4', name: 'Paracetamol 650', packing: '1x10', mrp: 40, rateA: 30, purRate: 20);
+    webPh.medicines = [med];
+    final cust = Party(id: 'C_P4', name: 'Apollo Pharmacy', gst: '08AABCA1111B1Z2', state: 'Rajasthan');
+    webPh.parties = [cust];
+    webPh.purchases = [
+      Purchase(
+        id: 'P_P4',
+        internalNo: 'WPUR-1',
+        billNo: 'SUP-P4',
+        partyId: cust.id,
+        date: DateTime(2025, 5, 1),
+        entryDate: DateTime(2025, 5, 1),
+        distributorName: cust.name,
+        items: [
+          PurchaseItem(
+            id: 'PI_P4',
+            srNo: 1,
+            medicineID: med.id,
+            name: med.name,
+            packing: med.packing,
+            batch: 'B_P4',
+            exp: '12/27',
+            hsn: '3004',
+            mrp: 40,
+            qty: 10,
+            purchaseRate: 20,
+            gstRate: 12,
+            total: 224,
+          ),
+        ],
+        totalAmount: 224,
+        paymentMode: 'CREDIT',
+      ),
+    ];
+
+    final nextCcn1 = webPh.getNextBillNumber('COMMERCIAL_NOTE', 'CCN-', 1);
+    expect(nextCcn1, equals('CCN-1'));
+
+    final ccnReturn = SaleReturn(
+      id: 'sr_ccn1',
+      billNo: nextCcn1,
+      partyId: cust.id,
+      partyName: cust.name,
+      partyGstin: cust.gst,
+      partyState: cust.state,
+      date: DateTime(2025, 6, 15),
+      items: [
+        BillItem(
+          id: 'r_ccn1',
+          srNo: 1,
+          medicineID: med.id,
+          name: med.name,
+          packing: med.packing,
+          batch: 'B_P4',
+          exp: '12/27',
+          hsn: '3004',
+          mrp: 40,
+          qty: 3,
+          rate: 30,
+          gstRate: 0,
+          total: 90,
+        ),
+      ],
+      totalAmount: 90,
+      paymentMode: 'CREDIT',
+      reason: formattedCustom,
+      isCommercial: true,
+      status: 'Active',
+    );
+    final gstReturn = SaleReturn(
+      id: 'sr_gst1',
+      billNo: 'WCN-1',
+      partyId: cust.id,
+      partyName: cust.name,
+      partyGstin: cust.gst,
+      partyState: cust.state,
+      date: DateTime(2025, 6, 16),
+      items: [
+        BillItem(
+          id: 'r_gst1',
+          srNo: 1,
+          medicineID: med.id,
+          name: med.name,
+          packing: med.packing,
+          batch: 'B_P4',
+          exp: '12/27',
+          hsn: '3004',
+          mrp: 40,
+          qty: 2,
+          rate: 30,
+          gstRate: 12,
+          total: 67.2,
+        ),
+      ],
+      totalAmount: 67.2,
+      paymentMode: 'CREDIT',
+      reason: '01-Sales Return',
+      isCommercial: false,
+      status: 'Active',
+    );
+
+    webPh.saleReturns = [ccnReturn, gstReturn];
+    webPh.rebuildInventory();
+    // 10 purchased + 3 (CCN-1) + 2 (WCN-1) = 15
+    expect(med.stock, equals(15.0));
+    expect(webPh.getNextBillNumber('COMMERCIAL_NOTE', 'CCN-', 1), equals('CCN-2'));
+    expect(webPh.getNextBillNumber('RETURN', 'WCN-', 1), equals('WCN-2'));
+
+    // 4. Web cancelReturn reverses stock & sets status = 'Cancelled'
+    webPh.cancelReturn('sr_gst1', true);
+    expect(gstReturn.status, equals('Cancelled'));
+    // 10 purchased + 3 (CCN-1) = 13 (WCN-1 stock reversed)
+    expect(med.stock, equals(13.0));
+
+    // 5. GSTR-1 Payload & DOCS CSV exclude both CCN- (isCommercial) and Cancelled returns
+    final shop = CompanyProfile(
+      id: 'c_p4',
+      name: 'MedPlus Pharma',
+      businessType: 'PHARMA_RETAIL',
+      createdAt: DateTime(2025, 4, 1),
+      password: 'admin',
+      gstin: '08AABCP1234A1Z4',
+      state: 'Rajasthan',
+    );
+    final gstr1 = GstOfflineJsonBuilder.buildGstr1Payload(
+      sales: const [],
+      returns: webPh.saleReturns,
+      parties: webPh.parties,
+      shop: shop,
+      fromDate: DateTime(2025, 6, 1),
+      toDate: DateTime(2025, 6, 30),
+    );
+    expect(gstr1.cdnr, isEmpty);
+    expect(gstr1.docIssue.first.docs.first.from, equals('WCN-1'));
+    expect(gstr1.docIssue.first.docs.first.canc, equals(1));
+
+    final docsCsv = GstOfflineCsvBuilder.buildDocsCsv(
+      sales: const [],
+      returns: webPh.saleReturns,
+      fromDate: DateTime(2025, 6, 1),
+      toDate: DateTime(2025, 6, 30),
+    );
+    expect(docsCsv.contains('CCN-1'), isFalse);
+    expect(docsCsv.contains('WCN-1'), isTrue);
+  });
 }

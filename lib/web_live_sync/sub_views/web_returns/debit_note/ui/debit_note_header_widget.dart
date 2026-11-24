@@ -92,7 +92,7 @@ class DebitNoteHeaderWidget extends StatelessWidget {
                             firstDate: fyStart,
                             lastDate: fyEnd,
                           );
-                          if (picked != null) controller.setDate(picked);
+                          if (picked != null) controller.setDate(picked, webPh: webPh);
                         },
                   child: Container(
                     height: 46,
@@ -282,7 +282,7 @@ class DebitNoteHeaderWidget extends StatelessWidget {
                             firstDate: DateTime(2017, 7, 1),
                             lastDate: controller.selectedDate,
                           );
-                          if (picked != null) controller.setOrigBillDate(picked);
+                          if (picked != null) controller.setOrigBillDate(picked, webPh: webPh);
                         },
                   child: Container(
                     height: 38,
@@ -303,22 +303,38 @@ class DebitNoteHeaderWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              InkWell(
-                onTap: controller.isReadOnly ? null : () => controller.toggleCommercial(!controller.isCommercial),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              if (GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig) || controller.isCommercial) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                   decoration: BoxDecoration(
                     color: controller.isCommercial ? const Color(0x44F59E0B) : Colors.black26,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: controller.isCommercial ? const Color(0xFFF59E0B) : Colors.white12),
                   ),
-                  child: Text(
-                    controller.isCommercial ? "COMMERCIAL (NO GST)" : "GST NOTE",
-                    style: TextStyle(color: controller.isCommercial ? const Color(0xFFFBBF24) : Colors.white70, fontSize: 9.5, fontWeight: FontWeight.w900),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        controller.isCommercial ? "COMMERCIAL (CCN-)" : "GST NOTE",
+                        style: TextStyle(
+                          color: controller.isCommercial ? const Color(0xFFFBBF24) : Colors.white70,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Switch.adaptive(
+                        value: controller.isCommercial,
+                        activeColor: const Color(0xFFF59E0B),
+                        onChanged: (controller.isReadOnly || !GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig))
+                            ? null
+                            : (val) => controller.toggleCommercial(val, webPh: webPh),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+              ],
             ],
           ),
           if (controller.isSection34Expired) ...[

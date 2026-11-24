@@ -18,6 +18,7 @@ class DebitNoteController extends ChangeNotifier {
   DateTime? origBillDate;
   String paymentMode = "CREDIT";
   bool isCommercial = false;
+  String selectedReason = GstComplianceHelper.standardReasons.first;
   final TextEditingController productSearchC = TextEditingController();
   final TextEditingController supplierSearchC = TextEditingController();
 
@@ -47,7 +48,9 @@ class DebitNoteController extends ChangeNotifier {
       paymentMode = existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
       origBillNoC.text = existingRecord.origBillNo;
       origBillDate = existingRecord.origBillDate;
-      remarksC.text = existingRecord.reason;
+      final parsedReason = GstComplianceHelper.parseReason(existingRecord.reason);
+      selectedReason = parsedReason.selectedReason;
+      remarksC.text = parsedReason.customRemark;
       isCommercial = existingRecord.isCommercial;
       isBreakageMode = existingRecord.returnType.toLowerCase().contains("breakage") ||
           existingRecord.returnType.toLowerCase().contains("expiry");
@@ -67,6 +70,8 @@ class DebitNoteController extends ChangeNotifier {
         );
       }
     } else {
+      selectedReason = GstComplianceHelper.standardReasons.first;
+      remarksC.clear();
       noteNoC.text = webPh.getNextBillNumber("DEBIT_NOTE", "WDN-", 1);
       selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
     }
@@ -93,10 +98,31 @@ class DebitNoteController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setDate(DateTime date) {
+  void setReason(String reason) {
+    selectedReason = reason;
+    notifyListeners();
+  }
+
+  String get effectiveReason => GstComplianceHelper.formatReason(selectedReason, remarksC.text);
+
+  void _refreshNumberForCommercial(PharoahWebManager webPh, bool commercial) {
+    if (existingRecordId != null) return;
+    if (commercial) {
+      final pref = webPh.appConfig.commercialNotePrefix.trim().isNotEmpty
+          ? webPh.appConfig.commercialNotePrefix.trim()
+          : "CCN-";
+      noteNoC.text = webPh.getNextBillNumber("COMMERCIAL_NOTE", pref, 1);
+    } else {
+      noteNoC.text = webPh.getNextBillNumber("DEBIT_NOTE", "WDN-", 1);
+    }
+  }
+
+  void setDate(DateTime date, {PharoahWebManager? webPh}) {
     selectedDate = date;
-    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    if (canComm && GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
       isCommercial = true;
+      if (webPh != null) _refreshNumberForCommercial(webPh, true);
     }
     notifyListeners();
   }
@@ -106,16 +132,19 @@ class DebitNoteController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setOrigBillDate(DateTime? date) {
+  void setOrigBillDate(DateTime? date, {PharoahWebManager? webPh}) {
     origBillDate = date;
-    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    if (canComm && GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
       isCommercial = true;
+      if (webPh != null) _refreshNumberForCommercial(webPh, true);
     }
     notifyListeners();
   }
 
-  void toggleCommercial(bool val) {
+  void toggleCommercial(bool val, {PharoahWebManager? webPh}) {
     isCommercial = val;
+    if (webPh != null) _refreshNumberForCommercial(webPh, val);
     notifyListeners();
   }
 
@@ -221,7 +250,7 @@ class DebitNoteController extends ChangeNotifier {
       paymentMode: paymentMode,
       origBillNo: origBillNoC.text.trim(),
       origBillDate: origBillDate,
-      reason: remarksC.text.trim(),
+      reason: effectiveReason,
       isCommercial: isCommercial,
       existingId: existingRecordId,
     );
@@ -243,7 +272,7 @@ class DebitNoteController extends ChangeNotifier {
         paymentMode: paymentMode,
         origBillNo: origBillNoC.text.trim(),
         origBillDate: origBillDate,
-        reason: remarksC.text.trim(),
+        reason: effectiveReason,
         isCommercial: isCommercial,
         status: "Active",
       );

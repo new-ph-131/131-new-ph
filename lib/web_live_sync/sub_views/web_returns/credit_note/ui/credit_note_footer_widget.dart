@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import '../../../../pharoah_web_manager.dart';
 import '../logic/credit_note_controller.dart';
+import '../../../../../logic/gst_compliance_helper.dart';
 
 class CreditNoteFooterWidget extends StatelessWidget {
   final CreditNoteController controller;
@@ -31,19 +32,55 @@ class CreditNoteFooterWidget extends StatelessWidget {
             children: [
               Expanded(
                 flex: 4,
-                child: TextField(
-                  controller: controller.remarksC,
-                  readOnly: controller.isReadOnly,
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                  decoration: InputDecoration(
-                    labelText: "RETURN REMARKS / REASON",
-                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
-                    prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 16),
-                    filled: true,
-                    fillColor: Colors.black26,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: controller.selectedReason,
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF0F172A),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      decoration: InputDecoration(
+                        labelText: "RETURN REASON (GST RULE 53(1A))",
+                        labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
+                        prefixIcon: const Icon(Icons.gavel_rounded, color: Colors.white54, size: 16),
+                        filled: true,
+                        fillColor: Colors.black26,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      ),
+                      items: GstComplianceHelper.standardReasons
+                          .map((r) => DropdownMenuItem<String>(value: r, child: Text(r, overflow: TextOverflow.ellipsis)))
+                          .toList(),
+                      onChanged: controller.isReadOnly
+                          ? null
+                          : (val) {
+                              if (val != null) controller.setReason(val);
+                            },
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 200),
+                      child: GstComplianceHelper.isOtherReason(controller.selectedReason)
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: TextField(
+                                controller: controller.remarksC,
+                                readOnly: controller.isReadOnly,
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                                decoration: InputDecoration(
+                                  labelText: "CUSTOM REMARKS / EXPIRY / DAMAGE DETAILS",
+                                  labelStyle: const TextStyle(color: Colors.white54, fontSize: 9),
+                                  prefixIcon: const Icon(Icons.note_alt_outlined, color: Colors.white54, size: 16),
+                                  filled: true,
+                                  fillColor: Colors.black26,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 15),

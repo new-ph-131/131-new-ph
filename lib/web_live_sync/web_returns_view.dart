@@ -34,6 +34,7 @@ class _WebReturnsViewState extends State<WebReturnsView> {
   late String activeSubView; // "HUB", "CN", "DN", "REGISTER"
   dynamic recordToEdit;
   bool isReadOnlyMode = false;
+  bool showCancelled = false;
 
   DateTime regFromDate = DateTime.now();
   DateTime regToDate = DateTime.now();
@@ -99,6 +100,24 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     if (r is SaleReturn) return r.partyName;
     if (r is PurchaseReturn) return r.distributorName;
     return "";
+  }
+
+  bool _isReturnCancelled(dynamic r) {
+    if (r is SaleReturn) return r.status == "Cancelled";
+    if (r is PurchaseReturn) return r.status == "Cancelled";
+    return false;
+  }
+
+  bool _isReturnDeleted(dynamic r) {
+    if (r is SaleReturn) return r.isDeleted == 1;
+    if (r is PurchaseReturn) return r.isDeleted == 1;
+    return false;
+  }
+
+  bool _isReturnCommercial(dynamic r) {
+    if (r is SaleReturn) return r.isCommercial;
+    if (r is PurchaseReturn) return r.isCommercial;
+    return false;
   }
 
   String _getReturnBillNo(dynamic r) {
@@ -332,7 +351,8 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     List<dynamic> allReturns = [...webPh.saleReturns, ...webPh.purchaseReturns];
     allReturns.sort((a, b) => _getReturnDate(b).compareTo(_getReturnDate(a)));
 
-    final filtered = allReturns.where((r) {
+    final baseFiltered = allReturns.where((r) {
+      if (_isReturnDeleted(r)) return false;
       final rDateOnly = _dateOnly(_getReturnDate(r));
       bool dateMatch = !rDateOnly.isBefore(fDateOnly) && !rDateOnly.isAfter(tDateOnly);
       String name = _getReturnParty(r);
@@ -342,6 +362,10 @@ class _WebReturnsViewState extends State<WebReturnsView> {
           billNo.toLowerCase().contains(registerSearch.toLowerCase());
       return dateMatch && searchMatch;
     }).toList();
+    final int cancelledCount = baseFiltered.where(_isReturnCancelled).length;
+    final filtered = showCancelled
+        ? baseFiltered
+        : baseFiltered.where((r) => !_isReturnCancelled(r)).toList();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -370,9 +394,26 @@ class _WebReturnsViewState extends State<WebReturnsView> {
               const SizedBox(width: 15),
               const Icon(Icons.format_list_bulleted_rounded, color: Color(0xFFF87171), size: 22),
               const SizedBox(width: 10),
-              const Text(
-                "COMBINED RETURNS REGISTER (CN & DN)",
-                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+              const Expanded(
+                child: Text(
+                  "COMBINED RETURNS REGISTER (CN & DN)",
+                  style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+                ),
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: showCancelled ? const Color(0xFFFCA5A5) : Colors.white70,
+                  backgroundColor: showCancelled ? const Color(0x33EF4444) : Colors.white10,
+                  side: BorderSide(color: showCancelled ? const Color(0xFFEF4444) : Colors.white24),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => setState(() => showCancelled = !showCancelled),
+                icon: Icon(showCancelled ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 15),
+                label: Text(
+                  showCancelled ? "Hide Cancelled ($cancelledCount)" : "Show Cancelled ($cancelledCount)",
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
@@ -411,6 +452,8 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                   itemBuilder: (c, i) {
                     final item = filtered[i];
                     bool isCn = item is SaleReturn;
+                    bool isCancelled = _isReturnCancelled(item);
+                    bool isComm = _isReturnCommercial(item);
                     String party = _getReturnParty(item);
                     String billNo = _getReturnBillNo(item);
                     double total = _getReturnTotal(item);
@@ -418,9 +461,11 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
+                        color: isCancelled ? const Color(0xFF1E293B).withOpacity(0.5) : const Color(0xFF1E293B),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white10),
+                        border: Border.all(
+                          color: isCancelled ? const Color(0x66EF4444) : Colors.white10,
+                        ),
                       ),
                       child: ListTile(
                         dense: true,
@@ -440,10 +485,58 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                             ),
                           ),
                         ),
-                        title: Text(party, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        title: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                party,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isCancelled ? Colors.white54 : Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (isComm) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x33F59E0B),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFF59E0B), width: 0.6),
+                                ),
+                                child: const Text(
+                                  "COMMERCIAL",
+                                  style: TextStyle(color: Color(0xFFFBBF24), fontSize: 8.5, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                            if (isCancelled) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x33EF4444),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFEF4444), width: 0.7),
+                                ),
+                                child: const Text(
+                                  "CANCELLED",
+                                  style: TextStyle(color: Color(0xFFFCA5A5), fontSize: 8.5, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                         subtitle: Text(
                           "No: $billNo • Date: ${DateFormat('dd/MM/yyyy').format(_getReturnDate(item))} • Type: ${item.returnType}",
-                          style: const TextStyle(color: Colors.white54, fontSize: 10.5),
+                          style: TextStyle(
+                            color: isCancelled ? Colors.white38 : Colors.white54,
+                            fontSize: 10.5,
+                            decoration: isCancelled ? TextDecoration.lineThrough : null,
+                          ),
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -451,9 +544,12 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                             Text(
                               "₹${total.toStringAsFixed(2)}",
                               style: TextStyle(
-                                color: isCn ? const Color(0xFFF87171) : const Color(0xFFFBBF24),
+                                color: isCancelled
+                                    ? Colors.white38
+                                    : (isCn ? const Color(0xFFF87171) : const Color(0xFFFBBF24)),
                                 fontWeight: FontWeight.w900,
                                 fontSize: 14,
+                                decoration: isCancelled ? TextDecoration.lineThrough : null,
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -489,17 +585,24 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                                 }
                               },
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent, size: 20),
-                              tooltip: "Modify Return",
-                              onPressed: () {
-                                setState(() {
-                                  recordToEdit = item;
-                                  isReadOnlyMode = false;
-                                  activeSubView = isCn ? "CN" : "DN";
-                                });
-                              },
-                            ),
+                            if (!isCancelled)
+                              IconButton(
+                                icon: const Icon(Icons.edit_note_rounded, color: Colors.orangeAccent, size: 20),
+                                tooltip: "Modify Return",
+                                onPressed: () {
+                                  setState(() {
+                                    recordToEdit = item;
+                                    isReadOnlyMode = false;
+                                    activeSubView = isCn ? "CN" : "DN";
+                                  });
+                                },
+                              ),
+                            if (!isCancelled)
+                              IconButton(
+                                icon: const Icon(Icons.block_rounded, color: Color(0xFFFBBF24), size: 18),
+                                tooltip: "Cancel Return (Reverse Stock)",
+                                onPressed: () => _confirmCancelReturn(context, webPh, item, isCn, billNo),
+                              ),
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
                               tooltip: "Delete Return Record",
@@ -520,6 +623,41 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     );
                   },
                 ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmCancelReturn(
+    BuildContext context,
+    PharoahWebManager webPh,
+    dynamic item,
+    bool isCn,
+    String billNo,
+  ) {
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Colors.white12)),
+        title: const Text("Cancel Return & Reverse Stock?", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+        content: Text(
+          "This will mark ${isCn ? 'Credit Note' : 'Debit Note'} $billNo as CANCELLED, reverse all stock adjustments, and neutralize ledger balances while preserving the voucher audit trail.",
+          style: const TextStyle(color: Colors.white70, fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text("KEEP ACTIVE", style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706), foregroundColor: Colors.white),
+            onPressed: () {
+              webPh.cancelReturn(item.id, isCn);
+              Navigator.pop(c);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("🚫 Return $billNo Cancelled & Stock Reversed!"), backgroundColor: Colors.orange.shade800),
+              );
+            },
+            child: const Text("YES, CANCEL RETURN", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );

@@ -112,6 +112,9 @@ class AppConfig {
   bool userEnableBatchHistory;
   bool developerAllowGstDiaryToUser;
   bool userEnableGstDiary;
+  bool developerAllowCommercialNoteToUser;
+  bool userEnableCommercialNote;
+  String commercialNotePrefix;
   int version;
   int updatedAt;
   Map<String, int> challanHwm;
@@ -162,6 +165,9 @@ class AppConfig {
     this.userEnableBatchHistory = true,
     this.developerAllowGstDiaryToUser = true,
     this.userEnableGstDiary = true,
+    this.developerAllowCommercialNoteToUser = false,
+    this.userEnableCommercialNote = false,
+    this.commercialNotePrefix = "CCN-",
     this.version = 1,
     this.updatedAt = 0,
     Map<String, int>? challanHwm,
@@ -214,6 +220,9 @@ class AppConfig {
       'userEnableBatchHistory': userEnableBatchHistory,
       'developerAllowGstDiaryToUser': developerAllowGstDiaryToUser,
       'userEnableGstDiary': userEnableGstDiary,
+      'developerAllowCommercialNoteToUser': developerAllowCommercialNoteToUser,
+      'userEnableCommercialNote': userEnableCommercialNote,
+      'commercialNotePrefix': commercialNotePrefix,
       'version': version,
       'updatedAt': updatedAt,
       'challanHwm': Map<String, int>.from(challanHwm),
@@ -273,6 +282,11 @@ class AppConfig {
       userEnableGstDiary: (int.tryParse(map['updatedAt']?.toString() ?? '0') ?? 0) == 0
           ? true
           : (map['userEnableGstDiary'] ?? true),
+      developerAllowCommercialNoteToUser: map['developerAllowCommercialNoteToUser'] == true,
+      userEnableCommercialNote: map['userEnableCommercialNote'] == true,
+      commercialNotePrefix: (map['commercialNotePrefix'] ?? "CCN-").toString().trim().isNotEmpty
+          ? (map['commercialNotePrefix'] ?? "CCN-").toString()
+          : "CCN-",
       version: int.tryParse(map['version']?.toString() ?? '1') ?? 1,
       updatedAt: int.tryParse(map['updatedAt']?.toString() ?? '0') ?? 0,
       challanHwm: parseHwmMap(map['challanHwm'] ?? map['challan_hwm']),

@@ -26,6 +26,7 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
   DateTime toDate = DateTime.now();
   bool _isInit = false;
   String _boundFy = "";
+  bool showCancelled = false;
 
   @override
   void didChangeDependencies() {
@@ -48,7 +49,7 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
     final tOnly = dOnly(toDate);
 
     // LOGIC: Filter Purchase Returns
-    final list = ph.purchaseReturns.reversed.where((ret) {
+    final baseList = ph.purchaseReturns.reversed.where((ret) {
       if (ret.isDeleted == 1) return false;
       bool matchesSearch = ret.distributorName.toLowerCase().contains(searchQuery.toLowerCase()) || 
                            ret.billNo.toLowerCase().contains(searchQuery.toLowerCase());
@@ -56,6 +57,10 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
       bool matchesDate = !rOnly.isBefore(fOnly) && !rOnly.isAfter(tOnly);
       return matchesSearch && matchesDate;
     }).toList();
+    final int cancelledCount = baseList.where((r) => r.status == "Cancelled").length;
+    final list = showCancelled
+        ? baseList
+        : baseList.where((r) => r.status != "Cancelled").toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFFBF7F3), // Light Brownish tint
@@ -73,7 +78,7 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
       ),
       body: Column(
         children: [
-          _buildFilterPanel(ph),
+          _buildFilterPanel(ph, cancelledCount),
           Expanded(
             child: list.isEmpty 
               ? const Center(child: Text("No Debit Notes found."))
@@ -88,7 +93,7 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
     );
   }
 
-  Widget _buildFilterPanel(PharoahManager ph) {
+  Widget _buildFilterPanel(PharoahManager ph, int cancelledCount) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -122,7 +127,42 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
                 if(p != null) setState(() => toDate = p);
               }),
             ],
-          )
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: InkWell(
+              onTap: () => setState(() => showCancelled = !showCancelled),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: showCancelled ? Colors.white : Colors.white.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white30),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      showCancelled ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                      size: 14,
+                      color: showCancelled ? Colors.brown.shade900 : Colors.white,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      "Show Cancelled Returns ($cancelledCount)",
+                      style: TextStyle(
+                        color: showCancelled ? Colors.brown.shade900 : Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -150,10 +190,15 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
 
   Widget _buildReturnCard(PurchaseReturn ret, PharoahManager ph) {
     bool isBreakage = ret.returnType == "Breakage";
+    bool isCancelled = ret.status == "Cancelled";
     return Card(
-      elevation: 2,
+      elevation: isCancelled ? 0.5 : 2,
+      color: isCancelled ? Colors.red.shade50.withOpacity(0.55) : Colors.white,
       margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: isCancelled ? BorderSide(color: Colors.red.shade200) : BorderSide.none,
+      ),
       child: InkWell(
         onTap: () => _showActionMenu(ret, ph),
         borderRadius: BorderRadius.circular(18),
@@ -163,22 +208,67 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.brown.shade50, borderRadius: BorderRadius.circular(12)),
-                child: Icon(Icons.remove_shopping_cart_rounded, color: Colors.brown.shade800),
+                decoration: BoxDecoration(
+                  color: isCancelled ? Colors.red.shade100 : Colors.brown.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  isCancelled ? Icons.block_rounded : Icons.remove_shopping_cart_rounded,
+                  color: isCancelled ? Colors.red.shade700 : Colors.brown.shade800,
+                ),
               ),
               const SizedBox(width: 15),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(ret.distributorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    Text("DN No: ${ret.billNo} • ${DateFormat('dd/MM/yy').format(ret.date)}", style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                    Text(
+                      ret.distributorName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: isCancelled ? Colors.black54 : Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      "DN No: ${ret.billNo} • ${DateFormat('dd/MM/yy').format(ret.date)}",
+                      style: TextStyle(
+                        color: isCancelled ? Colors.red.shade400 : Colors.grey,
+                        fontSize: 11,
+                        decoration: isCancelled ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    _typeBadge(ret.returnType, isBreakage),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        _typeBadge(ret.returnType, isBreakage),
+                        if (ret.isCommercial)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(5)),
+                            child: Text("COMMERCIAL", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                          ),
+                        if (isCancelled)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(5), border: Border.all(color: Colors.red.shade300)),
+                            child: Text("CANCELLED", style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.red.shade900)),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              Text("₹${ret.totalAmount.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: Colors.brown.shade900)),
+              Text(
+                "₹${ret.totalAmount.toStringAsFixed(2)}",
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: isCancelled ? Colors.grey : Colors.brown.shade900,
+                  decoration: isCancelled ? TextDecoration.lineThrough : null,
+                ),
+              ),
             ],
           ),
         ),
@@ -198,6 +288,7 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
   }
 
   void _showActionMenu(PurchaseReturn ret, PharoahManager ph) {
+    final bool isCancelled = ret.status == "Cancelled";
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
@@ -208,10 +299,11 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
           children: [
             Text(ret.distributorName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const Divider(),
-            _menuTile(Icons.edit_rounded, "Modify Debit Note", Colors.amber.shade900, () {
-              Navigator.pop(c);
-              Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: ret)));
-            }),
+            if (!isCancelled)
+              _menuTile(Icons.edit_rounded, "Modify Debit Note", Colors.amber.shade900, () {
+                Navigator.pop(c);
+                Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: ret)));
+              }),
             _menuTile(Icons.visibility_outlined, "View DN Items", Colors.blue, () {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: ret, isReadOnly: true)));
@@ -230,6 +322,11 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
               );
               await PdfRouterService.printDebitNote(returnObj: ret, supplier: supplier, ph: ph);
             }),
+            if (!isCancelled)
+              _menuTile(Icons.block_rounded, "Cancel Return (Reverse Stock)", Colors.orange.shade900, () {
+                Navigator.pop(c);
+                _confirmCancel(ret, ph);
+              }),
             _menuTile(Icons.delete_forever_rounded, "Delete Permanently", Colors.red, () {
               Navigator.pop(c);
               _confirmDelete(ret, ph);
@@ -289,6 +386,32 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
       ],
     ));
     await Printing.layoutPdf(onLayout: (f) async => pdf.save(), name: 'Debit_Note_Register');
+  }
+
+  void _confirmCancel(PurchaseReturn ret, PharoahManager ph) {
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text("Cancel Debit Note?"),
+        content: Text(
+          "This will mark Debit Note ${ret.billNo} as CANCELLED, reverse any stock deducted by this return, and neutralize the supplier ledger balance while keeping the voucher in your audit trail.",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text("KEEP ACTIVE")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade800),
+            onPressed: () {
+              ph.cancelReturn(ret.id, false);
+              Navigator.pop(c);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("🚫 Debit Note ${ret.billNo} Cancelled & Stock Reversed!"), backgroundColor: Colors.orange.shade900),
+              );
+            },
+            child: const Text("YES, CANCEL RETURN", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _confirmDelete(PurchaseReturn ret, PharoahManager ph) {

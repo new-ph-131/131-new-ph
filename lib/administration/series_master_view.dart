@@ -14,7 +14,7 @@ class SeriesMasterView extends StatefulWidget {
 
 class _SeriesMasterViewState extends State<SeriesMasterView> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> types = ["SALE", "PURCHASE", "CHALLAN", "RETURN",  'RECEIPT', 'PAYMENT'];
+  final List<String> types = ["SALE", "PURCHASE", "CHALLAN", "RETURN", "COMMERCIAL_NOTE", 'RECEIPT', 'PAYMENT'];
 
   @override
   void initState() {
@@ -31,6 +31,7 @@ class _SeriesMasterViewState extends State<SeriesMasterView> with SingleTickerPr
       case "PURCHASE": targetList = ph.purchases; break;
       case "CHALLAN": targetList = [...ph.saleChallans, ...ph.purchaseChallans]; break;
       case "RETURN": targetList = [...ph.saleReturns, ...ph.purchaseReturns]; break;
+      case "COMMERCIAL_NOTE": targetList = [...ph.saleReturns, ...ph.purchaseReturns]; break;
       default: targetList = [];
     }
 
