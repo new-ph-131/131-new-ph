@@ -77,6 +77,7 @@ class _UniversalReturnHubState extends State<UniversalReturnHub> {
     List<dynamic> allReturns = [...ph.saleReturns, ...ph.purchaseReturns];
     
     final filtered = allReturns.where((r) {
+      if (r.isDeleted == 1) return false;
       bool isSR = r is SaleReturn;
       String name = isSR ? r.partyName : (r as PurchaseReturn).distributorName;
       return name.toLowerCase().contains(query.toLowerCase()) || 
@@ -224,9 +225,18 @@ class _UniversalReturnHubState extends State<UniversalReturnHub> {
                 ),
                 tooltip: ph.config.isAuditMode ? "Forward to CA (Auditor)" : "Send to Party Mail",
                 onPressed: () {
+                  final String rPartyId = isSR ? (ret as SaleReturn).partyId : (ret as PurchaseReturn).partyId;
+                  final String rGstin = isSR ? (ret as SaleReturn).partyGstin : (ret as PurchaseReturn).partyGstin;
+                  final String rState = isSR ? (ret as SaleReturn).partyState : (ret as PurchaseReturn).partyState;
                   final partyObj = ph.parties.firstWhere(
-                    (p) => p.name == name, 
-                    orElse: () => Party(id: 'temp', name: name)
+                    (p) => (rPartyId.isNotEmpty && p.id == rPartyId) ||
+                           p.name.trim().toLowerCase() == name.trim().toLowerCase(),
+                    orElse: () => Party(
+                      id: rPartyId.isNotEmpty ? rPartyId : 'temp',
+                      name: name,
+                      gst: rGstin,
+                      state: rState.isNotEmpty ? rState : (ph.activeCompany?.state ?? "Rajasthan"),
+                    ),
                   );
                   PdfRouterService.emailDocument(
                     context: context, 
@@ -278,9 +288,31 @@ class _UniversalReturnHubState extends State<UniversalReturnHub> {
             _menuTile(Icons.print_rounded, "Print / Share PDF", Colors.teal, () {
               Navigator.pop(c);
               if (isSR) {
-                PdfRouterService.printCreditNote(returnObj: ret, party: ph.parties.firstWhere((p) => p.name == ret.partyName), ph: ph);
+                final sr = ret as SaleReturn;
+                final party = ph.parties.firstWhere(
+                  (p) => (sr.partyId.isNotEmpty && p.id == sr.partyId) ||
+                         p.name.trim().toLowerCase() == sr.partyName.trim().toLowerCase(),
+                  orElse: () => Party(
+                    id: sr.partyId.isNotEmpty ? sr.partyId : "0",
+                    name: sr.partyName,
+                    gst: sr.partyGstin,
+                    state: sr.partyState.isNotEmpty ? sr.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+                  ),
+                );
+                PdfRouterService.printCreditNote(returnObj: sr, party: party, ph: ph);
               } else {
-                PdfRouterService.printDebitNote(returnObj: ret, supplier: ph.parties.firstWhere((p) => p.name == ret.distributorName), ph: ph);
+                final pr = ret as PurchaseReturn;
+                final supplier = ph.parties.firstWhere(
+                  (p) => (pr.partyId.isNotEmpty && p.id == pr.partyId) ||
+                         p.name.trim().toLowerCase() == pr.distributorName.trim().toLowerCase(),
+                  orElse: () => Party(
+                    id: pr.partyId.isNotEmpty ? pr.partyId : "0",
+                    name: pr.distributorName,
+                    gst: pr.partyGstin,
+                    state: pr.partyState.isNotEmpty ? pr.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+                  ),
+                );
+                PdfRouterService.printDebitNote(returnObj: pr, supplier: supplier, ph: ph);
               }
             }),
             if (canDelete)

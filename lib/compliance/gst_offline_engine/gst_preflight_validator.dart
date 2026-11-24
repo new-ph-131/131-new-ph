@@ -1,6 +1,7 @@
 // FILE: lib/compliance/gst_offline_engine/gst_preflight_validator.dart
 import '../../models.dart';
 import '../../gateway/company_registry_model.dart';
+import '../../logic/gst_compliance_helper.dart';
 import 'gst_state_codes.dart';
 
 enum GstIssueSeverity { error, warning, info }
@@ -54,6 +55,9 @@ class GstPreflightValidator {
 
   static GstAuditReport audit({
     required List<Sale> sales,
+    List<SaleReturn> returns = const [],
+    List<PurchaseReturn> purchaseReturns = const [],
+    List<Party> parties = const [],
     required CompanyProfile shop,
     required DateTime fromDate,
     required DateTime toDate,
@@ -139,6 +143,77 @@ class GstPreflightValidator {
             billNo: s.billNo,
           ));
         }
+      }
+    }
+
+    final periodReturns = returns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1 && r.status == "Active").toList();
+    for (final ret in periodReturns) {
+      if (ret.origBillDate != null &&
+          !ret.isCommercial &&
+          GstComplianceHelper.isSection34Expired(origInvoiceDate: ret.origBillDate, noteDate: ret.date)) {
+        issues.add(GstAuditIssue(
+          severity: GstIssueSeverity.warning,
+          title: "Sec 34(2) Time-Limit Crossed",
+          message: "Credit Note '${ret.billNo}' references invoice dated ${ret.origBillDate!.toString().substring(0, 10)} past 30 Nov cutoff — mark as Commercial Note.",
+          billNo: ret.billNo,
+        ));
+      }
+      if (ret.isCommercial) continue;
+
+      final match = parties.firstWhere(
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.partyName, gst: ret.partyGstin, state: ret.partyState),
+      );
+      final rGst = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
+      final rState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final bool hasGst = rGst.isNotEmpty && rGst != "N/A";
+      if (hasGst && !_gstinRegex.hasMatch(rGst)) {
+        issues.add(GstAuditIssue(
+          severity: GstIssueSeverity.warning,
+          title: "Invalid CN Party GSTIN",
+          message: "Credit Note party '${ret.partyName}' has invalid GSTIN '$rGst'.",
+          billNo: ret.billNo,
+        ));
+      }
+
+      sumVal -= ret.totalAmount;
+      final pos = GstStateCodes.resolvePos(hasGst ? rGst : null, rState, defaultCode: companyPos);
+      final isIntra = (pos == companyPos);
+      double gross = 0.0;
+      for (var it in ret.items) gross += ((it.qty * it.rate) - it.discountRupees);
+      final discRatio = (ret.extraDiscount > 0 && gross > 0) ? (ret.extraDiscount / gross) : 0.0;
+      for (final it in ret.items) {
+        final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        sumTaxable -= tx;
+        if (isIntra) {
+          sumCgst -= (tax / 2.0);
+          sumSgst -= (tax / 2.0);
+        } else {
+          sumIgst -= tax;
+        }
+        if (it.hsn.trim().replaceAll(RegExp(r'[^0-9]'), '').isEmpty) {
+          issues.add(GstAuditIssue(
+            severity: GstIssueSeverity.warning,
+            title: "Missing Return Item HSN",
+            message: "Item '${it.name}' in CN #${ret.billNo} has no HSN code (defaulting to 3004).",
+            billNo: ret.billNo,
+          ));
+        }
+      }
+    }
+
+    for (final pr in purchaseReturns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1 && r.status == "Active")) {
+      if (pr.origBillDate != null &&
+          !pr.isCommercial &&
+          GstComplianceHelper.isSection34Expired(origInvoiceDate: pr.origBillDate, noteDate: pr.date)) {
+        issues.add(GstAuditIssue(
+          severity: GstIssueSeverity.warning,
+          title: "Sec 34(2) Time-Limit Crossed (DN)",
+          message: "Debit Note '${pr.billNo}' crossed 30 Nov Sec 34(2) cutoff — review ITC reversal / Commercial flag.",
+          billNo: pr.billNo,
+        ));
       }
     }
 

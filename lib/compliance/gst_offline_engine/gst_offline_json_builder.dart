@@ -149,22 +149,19 @@ class GstOfflineJsonBuilder {
       return GstB2clGroup(pos: e.key, inv: e.value);
     }).toList();
 
-    final List<GstB2csItem> b2csList = b2csAggregated.values.toList();
-
     // -------------------------------------------------------------------------
-    // 2. PROCESS CDNR & CDNUR (CREDIT NOTES FROM SALE RETURNS)
+    // 2. PROCESS CDNR, CDNUR (B2CL ONLY) & B2CS NET-OFF (CREDIT NOTES)
     // -------------------------------------------------------------------------
     final Map<String, List<GstCreditNote>> cdnrGrouped = {};
     final List<GstCdnurItem> cdnurList = [];
 
-    // Section 34 Commercial Notes (isCommercial == true) carry no GST adjustment & are excluded from GSTR-1 CDNR/CDNUR
-    final periodReturns = returns.where((r) {
-      return !r.date.isBefore(fDate) &&
-             !r.date.isAfter(tDate) &&
-             r.status == "Active" &&
-             r.isDeleted != 1 &&
-             !r.isCommercial;
+    // All returns in window (used for DOCS Table 13 serial summary)
+    final periodAllReturns = returns.where((r) {
+      return !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1;
     }).toList();
+
+    // Section 34 Commercial Notes (isCommercial == true) carry no GST adjustment & are excluded from GSTR-1 CDNR/CDNUR/B2CS/HSN
+    final periodReturns = periodAllReturns.where((r) => r.status == "Active" && !r.isCommercial).toList();
 
     for (final ret in periodReturns) {
       // Find party details
@@ -207,25 +204,65 @@ class GstOfflineJsonBuilder {
         ));
       }
 
+      final String safeNtNum = ret.billNo.isNotEmpty
+          ? ret.billNo
+          : "CR-${ret.id.length >= 6 ? ret.id.substring(0, 6) : ret.id}";
+
       if (gstin.length == 15) {
         final note = GstCreditNote(
-          ntNum: ret.billNo.isNotEmpty ? ret.billNo : "CR-${ret.id.substring(0, 6)}",
+          ntNum: safeNtNum,
           ntDt: idt,
           val: _round(ret.totalAmount),
           pos: pos,
           itms: taxItems,
         );
         cdnrGrouped.putIfAbsent(gstin, () => []).add(note);
-      } else {
+      } else if (!isIntra && ret.totalAmount > 100000.0) {
+        // Table 9B CDNUR: Unregistered Large Inter-State (B2CL) only
         cdnurList.add(GstCdnurItem(
-          ntNum: ret.billNo.isNotEmpty ? ret.billNo : "CR-${ret.id.substring(0, 6)}",
+          typ: "B2CL",
+          ntNum: safeNtNum,
           ntDt: idt,
           val: _round(ret.totalAmount),
           pos: pos,
           itms: taxItems,
         ));
+      } else {
+        // Table 7 B2CS: Unregistered small retail returns net off against B2CS summary
+        final splyTy = isIntra ? "INTRA" : "INTER";
+        for (final taxItm in taxItems) {
+          final key = "${splyTy}_${pos}_${taxItm.rt}";
+          if (b2csAggregated.containsKey(key)) {
+            final existing = b2csAggregated[key]!;
+            b2csAggregated[key] = GstB2csItem(
+              splyTy: splyTy,
+              rt: taxItm.rt,
+              pos: pos,
+              txval: _round(existing.txval - taxItm.txval),
+              iamt: _round(existing.iamt - taxItm.iamt),
+              camt: _round(existing.camt - taxItm.camt),
+              samt: _round(existing.samt - taxItm.samt),
+              csamt: 0.0,
+            );
+          } else {
+            b2csAggregated[key] = GstB2csItem(
+              splyTy: splyTy,
+              rt: taxItm.rt,
+              pos: pos,
+              txval: _round(-taxItm.txval),
+              iamt: _round(-taxItm.iamt),
+              camt: _round(-taxItm.camt),
+              samt: _round(-taxItm.samt),
+              csamt: 0.0,
+            );
+          }
+        }
       }
     }
+
+    final List<GstB2csItem> b2csList = b2csAggregated.values
+        .where((it) => it.txval.abs() >= 0.01 || it.iamt.abs() >= 0.01 || it.camt.abs() >= 0.01 || it.samt.abs() >= 0.01)
+        .toList();
 
     final List<GstCdnrGroup> cdnrList = cdnrGrouped.entries.map((e) {
       return GstCdnrGroup(ctin: e.key, nt: e.value);
@@ -287,8 +324,68 @@ class GstOfflineJsonBuilder {
       }
     }
 
+    for (final ret in periodReturns) {
+      final match = parties.firstWhere(
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.partyName, gst: ret.partyGstin, state: ret.partyState),
+      );
+      final rGstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
+      final rState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final pos = GstStateCodes.resolvePos(rGstin.isNotEmpty ? rGstin : null, rState, defaultCode: companyPos);
+      final isIntra = (pos == companyPos);
+
+      double billGross = 0.0;
+      for (var it in ret.items) {
+        billGross += ((it.qty * it.rate) - it.discountRupees);
+      }
+      final double discRatio = (ret.extraDiscount > 0 && billGross > 0)
+          ? (ret.extraDiscount / billGross)
+          : 0.0;
+
+      for (final it in ret.items) {
+        String cleanHsn = it.hsn.trim().replaceAll(RegExp(r'[^0-9]'), '');
+        if (cleanHsn.isEmpty) cleanHsn = "3004";
+        final double rate = it.gstRate;
+        final key = "${cleanHsn}_$rate";
+
+        final gross = (it.qty * it.rate) - it.discountRupees;
+        final txval = gross * (1.0 - discRatio);
+        final tax = txval * (rate / 100.0);
+        final totalLineVal = txval + tax;
+
+        final iamt = isIntra ? 0.0 : tax;
+        final camt = isIntra ? (tax / 2.0) : 0.0;
+        final samt = isIntra ? (tax / 2.0) : 0.0;
+
+        if (hsnGrouped.containsKey(key)) {
+          final acc = hsnGrouped[key]!;
+          acc.qty -= (it.qty + it.freeQty);
+          acc.val -= totalLineVal;
+          acc.txval -= txval;
+          acc.iamt -= iamt;
+          acc.camt -= camt;
+          acc.samt -= samt;
+        } else {
+          hsnGrouped[key] = _HsnAcc(
+            hsn: cleanHsn,
+            rate: rate,
+            desc: it.name.isNotEmpty ? it.name : "Pharmaceutical Medicament",
+            qty: -(it.qty + it.freeQty),
+            val: -totalLineVal,
+            txval: -txval,
+            iamt: -iamt,
+            camt: -camt,
+            samt: -samt,
+          );
+        }
+      }
+    }
+
     int hsnIndex = 1;
-    final List<GstHsnItem> hsnList = hsnGrouped.values.map((acc) {
+    final List<GstHsnItem> hsnList = hsnGrouped.values
+        .where((acc) => acc.qty.abs() >= 0.001 || acc.txval.abs() >= 0.01)
+        .map((acc) {
       return GstHsnItem(
         num: hsnIndex++,
         hsnSc: acc.hsn,
@@ -327,6 +424,28 @@ class GstOfflineJsonBuilder {
             totnum: total,
             canc: cancelled,
             netIssue: net,
+          ),
+        ],
+      ));
+    }
+    if (periodAllReturns.isNotEmpty) {
+      final firstCr = periodAllReturns.first.billNo;
+      final lastCr = periodAllReturns.last.billNo;
+      final totalCr = periodAllReturns.length;
+      final cancelledCr = periodAllReturns.where((r) => r.status == "Cancelled").length;
+      final netCr = totalCr - cancelledCr;
+
+      docGroupList.add(GstDocGroup(
+        docNum: 5,
+        docTyp: "Credit Note",
+        docs: [
+          GstDocSerial(
+            num: 1,
+            from: firstCr,
+            to: lastCr,
+            totnum: totalCr,
+            canc: cancelledCr,
+            netIssue: netCr,
           ),
         ],
       ));

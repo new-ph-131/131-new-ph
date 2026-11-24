@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'models.dart';
 import 'gateway/company_registry_model.dart';
+import 'logic/gst_compliance_helper.dart';
 
 class GstReportService {
   
@@ -61,41 +62,152 @@ class GstReportService {
   // ===========================================================================
   // 3. GSTR-3B (MONTHLY SUMMARY)
   // ===========================================================================
-  static Future<void> generateGstr3bPdf(List<Sale> sales, List<Purchase> purchases, String period, CompanyProfile shop) async {
-    final bytes = await generateGstr3bBytes(sales, purchases, shop);
+  static Future<void> generateGstr3bPdf(
+    List<Sale> sales,
+    List<Purchase> purchases,
+    String period,
+    CompanyProfile shop, {
+    List<SaleReturn> saleReturns = const [],
+    List<PurchaseReturn> purchaseReturns = const [],
+    List<Party> parties = const [],
+  }) async {
+    final bytes = await generateGstr3bBytes(
+      sales,
+      purchases,
+      shop,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
+      parties: parties,
+    );
     await Printing.layoutPdf(onLayout: (format) async => bytes, name: "GSTR3B_${shop.name}");
   }
 
-  static Future<Uint8List> generateGstr3bBytes(List<Sale> sales, List<Purchase> purchases, CompanyProfile shop) async {
+  static Future<Uint8List> generateGstr3bBytes(
+    List<Sale> sales,
+    List<Purchase> purchases,
+    CompanyProfile shop, {
+    List<SaleReturn> saleReturns = const [],
+    List<PurchaseReturn> purchaseReturns = const [],
+    List<Party> parties = const [],
+  }) async {
     final pdf = pw.Document();
-    double sTaxVal = 0, sTax = 0, pTaxVal = 0, pTax = 0;
+    double sTaxVal = 0, sCgst = 0, sSgst = 0, sIgst = 0;
+    double pTaxVal = 0, pCgst = 0, pSgst = 0, pIgst = 0;
+    double dnTaxVal = 0, dnCgst = 0, dnSgst = 0, dnIgst = 0;
 
-    for (var s in sales.where((s) => s.status == "Active")) {
-      for (var it in s.items) { 
-        sTaxVal += (it.rate * it.qty); 
-        sTax += (it.cgst + it.sgst + it.igst); 
+    for (var s in sales.where((s) => s.status == "Active" && s.isDeleted != 1)) {
+      double t = s.items.fold(0.0, (sum, it) => sum + (it.cgst + it.sgst + it.igst));
+      sTaxVal += (s.totalAmount - s.roundOff - t);
+      for (var it in s.items) {
+        sCgst += it.cgst;
+        sSgst += it.sgst;
+        sIgst += it.igst;
       }
     }
-    for (var p in purchases) {
-      for (var it in p.items) { 
-        pTaxVal += (it.purchaseRate * it.qty); 
-        pTax += (it.total - (it.purchaseRate * it.qty)); 
+    for (var sr in saleReturns.where((r) => r.status == "Active" && r.isDeleted != 1 && !r.isCommercial)) {
+      final match = parties.firstWhere(
+        (pt) => (sr.partyId.isNotEmpty && pt.id == sr.partyId) || pt.name.trim().toLowerCase() == sr.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: sr.partyName, gst: sr.partyGstin, state: sr.partyState),
+      );
+      final isIntra = GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shop.gstin,
+        shopState: shop.state,
+        partyGstin: match.gst.isNotEmpty ? match.gst : sr.partyGstin,
+        partyState: match.state.isNotEmpty ? match.state : sr.partyState,
+      );
+      double gross = 0.0;
+      for (var it in sr.items) gross += ((it.qty * it.rate) - it.discountRupees);
+      final discRatio = (sr.extraDiscount > 0 && gross > 0) ? (sr.extraDiscount / gross) : 0.0;
+      for (var it in sr.items) {
+        final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        sTaxVal -= tx;
+        if (isIntra) {
+          sCgst -= (tax / 2.0);
+          sSgst -= (tax / 2.0);
+        } else {
+          sIgst -= tax;
+        }
       }
     }
+
+    for (var p in purchases.where((p) => p.isDeleted != 1 && p.gstStatus != "Cancelled" && p.gstStatus != "Deleted")) {
+      final match = parties.firstWhere(
+        (pt) => (p.partyId.isNotEmpty && pt.id == p.partyId) || pt.name.trim().toLowerCase() == p.distributorName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: p.distributorName),
+      );
+      final isIntra = GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shop.gstin,
+        shopState: shop.state,
+        partyGstin: match.gst,
+        partyState: match.state,
+      );
+      double gross = 0.0;
+      for (var it in p.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+      final discRatio = (p.extraDiscount > 0 && gross > 0) ? (p.extraDiscount / gross) : 0.0;
+      for (var it in p.items) {
+        final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        pTaxVal += tx;
+        if (isIntra) {
+          pCgst += (tax / 2.0);
+          pSgst += (tax / 2.0);
+        } else {
+          pIgst += tax;
+        }
+      }
+    }
+
+    for (var pr in purchaseReturns.where((r) => r.status == "Active" && r.isDeleted != 1 && !r.isCommercial)) {
+      final match = parties.firstWhere(
+        (pt) => (pr.partyId.isNotEmpty && pt.id == pr.partyId) || pt.name.trim().toLowerCase() == pr.distributorName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: pr.distributorName, gst: pr.partyGstin, state: pr.partyState),
+      );
+      final isIntra = GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shop.gstin,
+        shopState: shop.state,
+        partyGstin: match.gst.isNotEmpty ? match.gst : pr.partyGstin,
+        partyState: match.state.isNotEmpty ? match.state : pr.partyState,
+      );
+      double gross = 0.0;
+      for (var it in pr.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+      final discRatio = (pr.extraDiscount > 0 && gross > 0) ? (pr.extraDiscount / gross) : 0.0;
+      for (var it in pr.items) {
+        final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        dnTaxVal += tx;
+        if (isIntra) {
+          dnCgst += (tax / 2.0);
+          dnSgst += (tax / 2.0);
+        } else {
+          dnIgst += tax;
+        }
+      }
+    }
+
+    final netPurTaxVal = pTaxVal - dnTaxVal;
+    final netPurCgst = pCgst - dnCgst;
+    final netPurSgst = pSgst - dnSgst;
+    final netPurIgst = pIgst - dnIgst;
+    final sTaxTotal = sCgst + sSgst + sIgst;
+    final pTaxTotal = pCgst + pSgst + pIgst;
+    final dnTaxTotal = dnCgst + dnSgst + dnIgst;
+    final netItcTotal = pTaxTotal - dnTaxTotal;
 
     pdf.addPage(pw.Page(
-      pageFormat: PdfPageFormat.a4.landscape, 
+      pageFormat: PdfPageFormat.a4.landscape,
       build: (context) => pw.Column(children: [
-        _header(shop.name, "GSTR-3B MONTHLY RETURN", "Computation for Filing"),
+        _header(shop.name, "GSTR-3B MONTHLY RETURN", "Net of Credit/Debit Notes"),
         pw.SizedBox(height: 20),
         pw.TableHelper.fromTextArray(
-          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white), 
+          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
           headerDecoration: const pw.BoxDecoration(color: PdfColors.indigo900),
-          headers: ['DESCRIPTION', 'TAXABLE VALUE', 'CENTRAL TAX', 'STATE TAX', 'TOTAL TAX'],
+          headers: ['DESCRIPTION', 'TAXABLE VALUE', 'IGST', 'CENTRAL TAX', 'STATE TAX', 'TOTAL TAX'],
           data: [
-            ['(A) Outward Supplies (Sales)', sTaxVal.toStringAsFixed(2), (sTax/2).toStringAsFixed(2), (sTax/2).toStringAsFixed(2), sTax.toStringAsFixed(2)],
-            ['(B) Eligible ITC (Purchases)', pTaxVal.toStringAsFixed(2), (pTax/2).toStringAsFixed(2), (pTax/2).toStringAsFixed(2), pTax.toStringAsFixed(2)],
-            ['NET GST PAYABLE / REFUND', (sTaxVal - pTaxVal).toStringAsFixed(2), ((sTax - pTax)/2).toStringAsFixed(2), ((sTax - pTax)/2).toStringAsFixed(2), (sTax - pTax).toStringAsFixed(2)],
+            ['3.1(a) Net Outward Supplies (Sales - CN)', sTaxVal.toStringAsFixed(2), sIgst.toStringAsFixed(2), sCgst.toStringAsFixed(2), sSgst.toStringAsFixed(2), sTaxTotal.toStringAsFixed(2)],
+            ['4(A) Gross Eligible ITC (Purchases)', pTaxVal.toStringAsFixed(2), pIgst.toStringAsFixed(2), pCgst.toStringAsFixed(2), pSgst.toStringAsFixed(2), pTaxTotal.toStringAsFixed(2)],
+            ['4(B)(2) ITC Reversal (Debit Notes)', dnTaxVal.toStringAsFixed(2), dnIgst.toStringAsFixed(2), dnCgst.toStringAsFixed(2), dnSgst.toStringAsFixed(2), dnTaxTotal.toStringAsFixed(2)],
+            ['NET GST PAYABLE / REFUND', (sTaxVal - netPurTaxVal).toStringAsFixed(2), (sIgst - netPurIgst).toStringAsFixed(2), (sCgst - netPurCgst).toStringAsFixed(2), (sSgst - netPurSgst).toStringAsFixed(2), (sTaxTotal - netItcTotal).toStringAsFixed(2)],
           ]),
       ])
     ));

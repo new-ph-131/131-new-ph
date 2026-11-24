@@ -76,7 +76,23 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
         GstReportService.generateGstr1Pdf(allSales, rangeLabel, activeShop);
       } 
       else if (widget.reportType.contains("GSTR-3B")) {
-        GstReportService.generateGstr3bPdf(activeSales, monthlyPur, rangeLabel, activeShop);
+        final monthlyCr = ph.saleReturns.where((r) =>
+          !r.date.isBefore(DateTime(fromDate.year, fromDate.month, fromDate.day)) &&
+          !r.date.isAfter(DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59))
+        ).toList();
+        final monthlyDr = ph.purchaseReturns.where((r) =>
+          !r.date.isBefore(DateTime(fromDate.year, fromDate.month, fromDate.day)) &&
+          !r.date.isAfter(DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59))
+        ).toList();
+        GstReportService.generateGstr3bPdf(
+          activeSales,
+          monthlyPur,
+          rangeLabel,
+          activeShop,
+          saleReturns: monthlyCr,
+          purchaseReturns: monthlyDr,
+          parties: ph.parties,
+        );
       }
       else if (widget.reportType.contains("GSTR-2")) {
         GstReportService.generateGstr2Pdf(monthlyPur, ph.vouchers, ph.parties, rangeLabel, activeShop);
@@ -128,6 +144,7 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
           context: ctx,
           section: "B2CS",
           sales: ph.sales,
+          returns: ph.saleReturns,
           parties: ph.parties,
           shop: activeShop,
           fromDate: fromDate,
@@ -139,6 +156,7 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
           context: ctx,
           section: "HSN",
           sales: ph.sales,
+          returns: ph.saleReturns,
           parties: ph.parties,
           shop: activeShop,
           fromDate: fromDate,
@@ -150,6 +168,8 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
           context: ctx,
           section: "DOCS",
           sales: ph.sales,
+          returns: ph.saleReturns,
+          purchaseReturns: ph.purchaseReturns,
           parties: ph.parties,
           shop: activeShop,
           fromDate: fromDate,
@@ -268,7 +288,7 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
           else if (widget.reportType.contains("GSTR-2")) 
             _buildGstr2Preview(monthlyPurchases)
           else 
-            _build3bPreview(activeSales, monthlyPurchases)
+            _build3bPreview(ph, activeSales, monthlyPurchases)
         ],
       ),
     );
@@ -415,14 +435,24 @@ class _GSTReportDetailViewState extends State<GSTReportDetailView> {
     );
   }
 
-  Widget _build3bPreview(List<Sale> sales, List<Purchase> purchases) {
+  Widget _build3bPreview(PharoahManager ph, List<Sale> sales, List<Purchase> purchases) {
+    final fDate = DateTime(fromDate.year, fromDate.month, fromDate.day);
+    final tDate = DateTime(toDate.year, toDate.month, toDate.day, 23, 59, 59);
+    final netCn = ph.saleReturns
+        .where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.status == "Active" && r.isDeleted != 1 && !r.isCommercial)
+        .fold(0.0, (sum, r) => sum + r.totalAmount);
+    final netDn = ph.purchaseReturns
+        .where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.status == "Active" && r.isDeleted != 1 && !r.isCommercial)
+        .fold(0.0, (sum, r) => sum + r.totalAmount);
+    final netOutward = sales.fold(0.0, (sum, s) => sum + s.totalAmount) - netCn;
+    final netInward = purchases.fold(0.0, (sum, p) => sum + p.totalAmount) - netDn;
     return Expanded(
       child: ListView(
         padding: const EdgeInsets.all(15),
         children: [
-          _summaryCard("Taxable Outward (Sales)", sales.fold(0.0, (sum, s) => sum + s.totalAmount), Colors.green),
+          _summaryCard("Net Outward (Sales - Credit Notes)", netOutward, Colors.green),
           const SizedBox(height: 10),
-          _summaryCard("Eligible ITC (Purchases)", purchases.fold(0.0, (sum, p) => sum + p.totalAmount), Colors.orange),
+          _summaryCard("Net Inward (Purchases - Debit Notes)", netInward, Colors.orange),
           const Divider(height: 40),
           const Center(child: Text("Use PDF icon for full 3B computation", style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey))),
         ],

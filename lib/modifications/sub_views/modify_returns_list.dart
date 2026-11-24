@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../pharoah_manager.dart';
 import '../../../models.dart';
 import '../../../returns/sale_return_view.dart';
+import '../../../returns/purchase_return_view.dart';
 import '../../../pdf/pdf_router_service.dart'; // NAYA IMPORT
 
 class ModifyReturnsList extends StatelessWidget {
@@ -20,6 +21,7 @@ class ModifyReturnsList extends StatelessWidget {
     List<dynamic> allReturns = [...ph.saleReturns, ...ph.purchaseReturns];
 
     final filtered = allReturns.where((r) {
+      if (r.isDeleted == 1) return false;
       String name = (r is SaleReturn) ? r.partyName : (r as PurchaseReturn).distributorName;
       return r.billNo.toLowerCase().contains(searchQuery.toLowerCase()) || 
              name.toLowerCase().contains(searchQuery.toLowerCase());
@@ -78,14 +80,16 @@ class ModifyReturnsList extends StatelessWidget {
           ),
           const Divider(),
           
-          if (canEdit && isSaleRet)
+          if (canEdit)
             ListTile(
-              leading: const Icon(Icons.edit, color: Colors.blue),
-              title: const Text("Edit / Modify Return"),
+              leading: Icon(returnObj.status == "Cancelled" ? Icons.visibility_outlined : Icons.edit, color: Colors.blue),
+              title: Text(returnObj.status == "Cancelled" ? "View Cancelled Return (Read-Only)" : "Edit / Modify Return"),
               onTap: () {
                 Navigator.pop(c);
                 Navigator.push(context, MaterialPageRoute(
-                  builder: (c) => SaleReturnView(existingRecord: returnObj as SaleReturn)
+                  builder: (c) => isSaleRet
+                      ? SaleReturnView(existingRecord: returnObj as SaleReturn)
+                      : PurchaseReturnView(existingRecord: returnObj as PurchaseReturn),
                 ));
               },
             ),
@@ -96,10 +100,33 @@ class ModifyReturnsList extends StatelessWidget {
             title: const Text("Print / Share Return PDF"),
             onTap: () async {
               Navigator.pop(c);
-              // Router call is omitted here as specific Return PDFs are 
-              // currently handled via internal logic or future updates.
-              // But the menu is now ready.
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Return PDF Generation starting...")));
+              if (isSaleRet) {
+                final sr = returnObj as SaleReturn;
+                final party = ph.parties.firstWhere(
+                  (p) => (sr.partyId.isNotEmpty && p.id == sr.partyId) ||
+                         p.name.trim().toLowerCase() == sr.partyName.trim().toLowerCase(),
+                  orElse: () => Party(
+                    id: sr.partyId.isNotEmpty ? sr.partyId : "0",
+                    name: sr.partyName,
+                    gst: sr.partyGstin,
+                    state: sr.partyState.isNotEmpty ? sr.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+                  ),
+                );
+                await PdfRouterService.printCreditNote(returnObj: sr, party: party, ph: ph);
+              } else {
+                final pr = returnObj as PurchaseReturn;
+                final supplier = ph.parties.firstWhere(
+                  (p) => (pr.partyId.isNotEmpty && p.id == pr.partyId) ||
+                         p.name.trim().toLowerCase() == pr.distributorName.trim().toLowerCase(),
+                  orElse: () => Party(
+                    id: pr.partyId.isNotEmpty ? pr.partyId : "0",
+                    name: pr.distributorName,
+                    gst: pr.partyGstin,
+                    state: pr.partyState.isNotEmpty ? pr.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+                  ),
+                );
+                await PdfRouterService.printDebitNote(returnObj: pr, supplier: supplier, ph: ph);
+              }
             },
           ),
 

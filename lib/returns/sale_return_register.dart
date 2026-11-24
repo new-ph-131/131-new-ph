@@ -8,6 +8,7 @@ import '../models.dart';
 import '../pharoah_date_controller.dart';
 import '../app_date_logic.dart';
 import 'sale_return_view.dart';
+import '../pdf/pdf_router_service.dart';
 // Note: Iske liye humein SaleReturnPdf ki zaroorat padegi aage
 
 class SaleReturnRegister extends StatefulWidget {
@@ -200,11 +201,21 @@ class _SaleReturnRegisterState extends State<SaleReturnRegister> {
             const Divider(),
             _menuTile(Icons.visibility_outlined, "View Return Items", Colors.blue, () {
               Navigator.pop(c);
-              Navigator.push(context, MaterialPageRoute(builder: (c) => SaleReturnView(existingRecord: ret))); // Assuming readOnly added soon
+              Navigator.push(context, MaterialPageRoute(builder: (c) => SaleReturnView(existingRecord: ret, isReadOnly: true)));
             }),
-            _menuTile(Icons.print_rounded, "Print Credit Note", Colors.teal, () {
+            _menuTile(Icons.print_rounded, "Print Credit Note", Colors.teal, () async {
               Navigator.pop(c);
-              // Future PDF Logic
+              final party = ph.parties.firstWhere(
+                (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+                       p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+                orElse: () => Party(
+                  id: ret.partyId.isNotEmpty ? ret.partyId : "0",
+                  name: ret.partyName,
+                  gst: ret.partyGstin,
+                  state: ret.partyState.isNotEmpty ? ret.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+                ),
+              );
+              await PdfRouterService.printCreditNote(returnObj: ret, party: party, ph: ph);
             }),
             _menuTile(Icons.delete_forever_rounded, "Delete Permanently", Colors.red, () {
               Navigator.pop(c);

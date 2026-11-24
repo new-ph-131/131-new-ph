@@ -7,6 +7,10 @@ import '../pharoah_manager.dart';
 import '../models.dart';
 import '../pharoah_date_controller.dart';
 import '../app_date_logic.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import '../pdf/pdf_router_service.dart';
 import 'purchase_return_view.dart';
 
 class PurchaseReturnRegister extends StatefulWidget {
@@ -60,9 +64,11 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
         backgroundColor: Colors.brown.shade800,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(icon: const Icon(Icons.picture_as_pdf_outlined), onPressed: () {
-            // Future PDF Report Logic
-          }),
+          IconButton(
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            tooltip: "Export Register Summary PDF",
+            onPressed: list.isEmpty ? null : () => _printRegisterSummary(list, ph),
+          ),
         ],
       ),
       body: Column(
@@ -210,9 +216,19 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: ret, isReadOnly: true)));
             }),
-            _menuTile(Icons.print_rounded, "Print Debit Note", Colors.teal, () {
+            _menuTile(Icons.print_rounded, "Print Debit Note", Colors.teal, () async {
               Navigator.pop(c);
-              // Future PDF Logic
+              final supplier = ph.parties.firstWhere(
+                (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+                       p.name.trim().toLowerCase() == ret.distributorName.trim().toLowerCase(),
+                orElse: () => Party(
+                  id: ret.partyId.isNotEmpty ? ret.partyId : "0",
+                  name: ret.distributorName,
+                  gst: ret.partyGstin,
+                  state: ret.partyState.isNotEmpty ? ret.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+                ),
+              );
+              await PdfRouterService.printDebitNote(returnObj: ret, supplier: supplier, ph: ph);
             }),
             _menuTile(Icons.delete_forever_rounded, "Delete Permanently", Colors.red, () {
               Navigator.pop(c);
@@ -227,6 +243,53 @@ class _PurchaseReturnRegisterState extends State<PurchaseReturnRegister> {
 
   Widget _menuTile(IconData icon, String t, Color c, VoidCallback onTap) => 
       ListTile(leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: c.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: c, size: 20)), title: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), onTap: onTap);
+
+  Future<void> _printRegisterSummary(List<PurchaseReturn> list, PharoahManager ph) async {
+    final shopName = (ph.activeCompany?.name ?? "PHAROAH MEDICAL").toUpperCase();
+    final pdf = pw.Document();
+    final totalAmt = list.where((r) => r.status != "Cancelled").fold(0.0, (s, r) => s + r.totalAmount);
+    pdf.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(20),
+      header: (ctx) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(shopName, style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+              pw.Text("Period: ${DateFormat('dd/MM/yy').format(fromDate)} to ${DateFormat('dd/MM/yy').format(toDate)}", style: const pw.TextStyle(fontSize: 9)),
+            ],
+          ),
+          pw.Text("PURCHASE RETURN / DEBIT NOTE REGISTER", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+          pw.Divider(color: PdfColors.brown800),
+        ],
+      ),
+      build: (ctx) => [
+        pw.TableHelper.fromTextArray(
+          headerStyle: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+          headerDecoration: const pw.BoxDecoration(color: PdfColors.brown800),
+          cellStyle: const pw.TextStyle(fontSize: 8.5),
+          headers: ['DATE', 'DN NO', 'SUPPLIER NAME', 'TYPE', 'MODE', 'STATUS', 'AMOUNT'],
+          data: list.map((r) => [
+            DateFormat('dd/MM/yy').format(r.date),
+            r.billNo,
+            r.distributorName,
+            r.returnType,
+            r.paymentMode,
+            r.status,
+            r.totalAmount.toStringAsFixed(2),
+          ]).toList(),
+        ),
+        pw.SizedBox(height: 12),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text("TOTAL ACTIVE DEBIT NOTES: Rs. ${totalAmt.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+        ),
+      ],
+    ));
+    await Printing.layoutPdf(onLayout: (f) async => pdf.save(), name: 'Debit_Note_Register');
+  }
 
   void _confirmDelete(PurchaseReturn ret, PharoahManager ph) {
     showDialog(

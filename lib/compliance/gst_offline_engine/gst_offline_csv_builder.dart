@@ -81,9 +81,11 @@ class GstOfflineCsvBuilder {
     return const ListToCsvConverter().convert(rows);
   }
 
-  /// Builds official b2cs.csv
+  /// Builds official b2cs.csv (net of unregistered retail Credit Notes)
   static String buildB2csCsv({
     required List<Sale> sales,
+    List<SaleReturn> returns = const [],
+    List<Party> parties = const [],
     required CompanyProfile shop,
     required DateTime fromDate,
     required DateTime toDate,
@@ -125,7 +127,40 @@ class GstOfflineCsvBuilder {
       }
     }
 
+    // Net off unregistered non-B2CL active non-commercial Credit Notes
+    for (final ret in returns) {
+      final inWindow = !ret.date.isBefore(fDate) && !ret.date.isAfter(tDate);
+      if (!inWindow || ret.status != "Active" || ret.isDeleted == 1 || ret.isCommercial) continue;
+      final match = parties.firstWhere(
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.partyName, gst: ret.partyGstin, state: ret.partyState),
+      );
+      final gstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
+      if (gstin.length == 15) continue;
+      final pState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final pos = GstStateCodes.resolvePos(null, pState, defaultCode: companyPos);
+      final isIntra = (pos == companyPos);
+      if (!isIntra && ret.totalAmount > 100000.0) continue;
+
+      if (ret.items.isNotEmpty) {
+        double gross = 0.0;
+        for (var it in ret.items) gross += ((it.qty * it.rate) - it.discountRupees);
+        final discRatio = (ret.extraDiscount > 0 && gross > 0) ? (ret.extraDiscount / gross) : 0.0;
+        for (var it in ret.items) {
+          final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+          final key = "${pos}_${it.gstRate}";
+          grouped[key] = (grouped[key] ?? 0.0) - tx;
+        }
+      } else {
+        final key = "${pos}_12.0";
+        final tx = ret.totalAmount / 1.12;
+        grouped[key] = (grouped[key] ?? 0.0) - tx;
+      }
+    }
+
     for (final entry in grouped.entries) {
+      if (entry.value.abs() < 0.01) continue;
       final parts = entry.key.split('_');
       final pos = parts[0];
       final rate = double.tryParse(parts[1]) ?? 12.0;
@@ -143,9 +178,11 @@ class GstOfflineCsvBuilder {
     return const ListToCsvConverter().convert(rows);
   }
 
-  /// Builds official hsn.csv (Release 3.2 with Rate column)
+  /// Builds official hsn.csv (Release 3.2 with Rate column, net of Credit Notes)
   static String buildHsnCsv({
     required List<Sale> sales,
+    List<SaleReturn> returns = const [],
+    List<Party> parties = const [],
     required CompanyProfile shop,
     required DateTime fromDate,
     required DateTime toDate,
@@ -221,7 +258,62 @@ class GstOfflineCsvBuilder {
       }
     }
 
+    for (final ret in returns) {
+      final inWindow = !ret.date.isBefore(fDate) && !ret.date.isAfter(tDate);
+      if (!inWindow || ret.status != "Active" || ret.isDeleted == 1 || ret.isCommercial) continue;
+      final match = parties.firstWhere(
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.partyName, gst: ret.partyGstin, state: ret.partyState),
+      );
+      final rGstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
+      final rState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final pos = GstStateCodes.resolvePos(rGstin.isNotEmpty ? rGstin : null, rState, defaultCode: companyPos);
+      final isIntra = (pos == companyPos);
+
+      double gross = 0.0;
+      for (var it in ret.items) gross += ((it.qty * it.rate) - it.discountRupees);
+      final discRatio = (ret.extraDiscount > 0 && gross > 0) ? (ret.extraDiscount / gross) : 0.0;
+
+      for (var it in ret.items) {
+        String cleanHsn = it.hsn.trim().replaceAll(RegExp(r'[^0-9]'), '');
+        if (cleanHsn.isEmpty) cleanHsn = "3004";
+        final rate = it.gstRate;
+        final key = "${cleanHsn}_$rate";
+
+        final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (rate / 100.0);
+        final val = tx + tax;
+        final iamt = isIntra ? 0.0 : tax;
+        final camt = isIntra ? (tax / 2.0) : 0.0;
+        final samt = isIntra ? (tax / 2.0) : 0.0;
+
+        if (grouped.containsKey(key)) {
+          final acc = grouped[key]!;
+          acc.qty -= (it.qty + it.freeQty);
+          acc.val -= val;
+          acc.txval -= tx;
+          acc.iamt -= iamt;
+          acc.camt -= camt;
+          acc.samt -= samt;
+        } else {
+          grouped[key] = _HsnCsvAcc(
+            hsn: cleanHsn,
+            desc: it.name.isNotEmpty ? it.name : "Pharmaceutical Medicament",
+            qty: -(it.qty + it.freeQty),
+            val: -val,
+            txval: -tx,
+            iamt: -iamt,
+            camt: -camt,
+            samt: -samt,
+            rate: rate,
+          );
+        }
+      }
+    }
+
     for (final acc in grouped.values) {
+      if (acc.qty.abs() < 0.001 && acc.txval.abs() < 0.01) continue;
       rows.add([
         acc.hsn,
         acc.desc,
@@ -240,9 +332,11 @@ class GstOfflineCsvBuilder {
     return const ListToCsvConverter().convert(rows);
   }
 
-  /// Builds official docs.csv
+  /// Builds official docs.csv (Sales + Credit Notes + Debit Notes)
   static String buildDocsCsv({
     required List<Sale> sales,
+    List<SaleReturn> returns = const [],
+    List<PurchaseReturn> purchaseReturns = const [],
     required DateTime fromDate,
     required DateTime toDate,
   }) {
@@ -269,6 +363,28 @@ class GstOfflineCsvBuilder {
         to,
         total,
         cancelled
+      ]);
+    }
+
+    final periodCr = returns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1).toList();
+    if (periodCr.isNotEmpty) {
+      rows.add([
+        "Credit Note",
+        periodCr.first.billNo,
+        periodCr.last.billNo,
+        periodCr.length,
+        periodCr.where((r) => r.status == "Cancelled").length,
+      ]);
+    }
+
+    final periodDr = purchaseReturns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1).toList();
+    if (periodDr.isNotEmpty) {
+      rows.add([
+        "Debit Note",
+        periodDr.first.billNo,
+        periodDr.last.billNo,
+        periodDr.length,
+        periodDr.where((r) => r.status == "Cancelled").length,
       ]);
     }
 
@@ -524,15 +640,15 @@ class GstOfflineCsvBuilder {
         orElse: () => Party(id: '', name: ret.distributorName, gst: ret.partyGstin, state: ret.partyState),
       );
       String gstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
-      if (gstin.isEmpty || gstin == "N/A") gstin = "08AAACG1395D1ZU";
+      if (gstin == "N/A") gstin = "";
 
       final pState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
-      final pos = GstStateCodes.resolvePos(gstin, pState, defaultCode: companyPos);
+      final pos = GstStateCodes.resolvePos(gstin.isNotEmpty ? gstin : null, pState, defaultCode: companyPos);
       final isIntra = (pos == companyPos);
       final idt = DateFormat('dd-MMM-yy').format(ret.date);
-      final origNo = ret.origBillNo.isNotEmpty ? ret.origBillNo : "INV-REF";
-      final origDt = ret.origBillDate != null ? DateFormat('dd-MMM-yy').format(ret.origBillDate!) : idt;
-      final reason = ret.reason.isNotEmpty ? ret.reason : "01-Sales Return";
+      final origNo = ret.origBillNo.isNotEmpty ? ret.origBillNo : "";
+      final origDt = ret.origBillDate != null ? DateFormat('dd-MMM-yy').format(ret.origBillDate!) : "";
+      final reason = ret.reason.isNotEmpty ? ret.reason : "07-Others";
 
       if (ret.items.isNotEmpty) {
         double gross = 0.0;

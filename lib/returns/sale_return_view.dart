@@ -72,11 +72,16 @@ class _SaleReturnViewState extends State<SaleReturnView> {
       reasonC.text = ex.reason;
       isCommercial = ex.isCommercial;
       isBreakageMode = ex.returnType.toLowerCase().contains("breakage") || ex.returnType.toLowerCase().contains("expiry");
-      try {
-        selectedParty = ph.parties.firstWhere((p) => p.name == ex.partyName);
-      } catch (e) {
-        selectedParty = Party(id: "0", name: ex.partyName);
-      }
+      selectedParty = ph.parties.firstWhere(
+        (p) => (ex.partyId.isNotEmpty && p.id == ex.partyId) ||
+               p.name.trim().toLowerCase() == ex.partyName.trim().toLowerCase(),
+        orElse: () => Party(
+          id: ex.partyId.isNotEmpty ? ex.partyId : "0",
+          name: ex.partyName,
+          gst: ex.partyGstin,
+          state: ex.partyState.isNotEmpty ? ex.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+        ),
+      );
       setState(() => isLoading = false);
     } else {
       if (ph.activeCompany != null) {
@@ -121,13 +126,21 @@ class _SaleReturnViewState extends State<SaleReturnView> {
     isCommercial: isCommercial,
   );
 
+  bool get isCancelledRecord => widget.existingRecord?.status == "Cancelled";
+  bool get effectiveReadOnly => widget.isReadOnly || isCancelledRecord;
   double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
   double get grandTotal => gstSummary.finalGrandTotal;
   double get roundOff => gstSummary.roundOff;
 
   void _showMagicHistoryBox(Medicine med, PharoahManager ph) {
     if (selectedParty == null) return;
-    final history = ph.getMedicineHistory(partyId: selectedParty!.id, medicineId: med.id, isSale: true);
+    final history = ph.getMedicineHistory(
+      partyId: selectedParty!.id,
+      medicineId: med.id,
+      partyName: selectedParty!.name,
+      medicineName: med.name,
+      isSale: true,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -157,7 +170,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
                       margin: const EdgeInsets.only(bottom: 10),
                       elevation: 1,
                       child: ListTile(
-                        onTap: widget.isReadOnly ? null : () { Navigator.pop(c); _showEntryCard(med, existingItem: null, historyData: h); },
+                        onTap: effectiveReadOnly ? null : () { Navigator.pop(c); _showEntryCard(med, existingItem: null, historyData: h); },
                         title: Text("Bill: ${h['billNo']} | ${DateFormat('dd/MM/yy').format(h['date'])}"),
                         subtitle: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                           _miniInfo("BATCH", h['batch']),
@@ -193,10 +206,28 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   void _showEntryCard(Medicine med, {BillItem? existingItem, Map<String, dynamic>? historyData}) {
     BillItem? preFilled = existingItem;
     if (historyData != null && existingItem == null) {
+      final histPacking = (historyData['packing'] ?? '').toString().trim();
+      final histHsn = (historyData['hsn'] ?? '').toString().trim();
+      final histExp = (historyData['exp'] ?? '').toString().trim();
+      final histRateType = (historyData['appliedRateType'] ?? '').toString().trim();
       preFilled = BillItem(
-        id: "temp", srNo: items.length + 1, medicineID: med.id, name: med.name, packing: med.packing,
-        batch: historyData['batch'], exp: "12/26", hsn: med.hsnCode, mrp: (historyData['mrp'] as num).toDouble(),
-        rate: (historyData['rate'] as num).toDouble(), gstRate: (historyData['gst'] as num).toDouble(), qty: 0, total: 0,
+        id: "temp",
+        srNo: items.length + 1,
+        medicineID: med.id,
+        name: med.name,
+        packing: histPacking.isNotEmpty ? histPacking : med.packing,
+        batch: (historyData['batch'] ?? '').toString(),
+        exp: histExp,
+        hsn: histHsn.isNotEmpty ? histHsn : med.hsnCode,
+        mrp: ((historyData['mrp'] ?? med.mrp) as num).toDouble(),
+        rate: ((historyData['rate'] ?? med.rateA) as num).toDouble(),
+        gstRate: ((historyData['gst'] ?? med.gst) as num).toDouble(),
+        discountPer: ((historyData['discountPer'] ?? 0.0) as num).toDouble(),
+        discountRupees: 0.0,
+        appliedRateType: histRateType.isNotEmpty ? histRateType : "A",
+        rateCFormula: ((historyData['rateCFormula'] ?? 0.0) as num).toDouble(),
+        qty: 0,
+        total: 0,
       );
     }
     showDialog(
@@ -231,18 +262,29 @@ class _SaleReturnViewState extends State<SaleReturnView> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
-        title: Text(widget.isReadOnly ? "Audit Credit Note" : (widget.existingRecord != null ? "Modify Credit Note" : "New Credit Note")),
+        title: Text(isCancelledRecord ? "Cancelled Credit Note (Read-Only)" : (effectiveReadOnly ? "Audit Credit Note" : (widget.existingRecord != null ? "Modify Credit Note" : "New Credit Note"))),
         backgroundColor: const Color(0xFFB71C1C),
         foregroundColor: Colors.white,
         actions: [
           IconButton(icon: const Icon(Icons.print_rounded), onPressed: items.isEmpty ? null : () => _handlePrint(ph)),
-          if (!widget.isReadOnly && items.isNotEmpty) 
+          if (!effectiveReadOnly && items.isNotEmpty) 
             IconButton(icon: const Icon(Icons.check_circle_rounded, size: 28), onPressed: () => _handleSave(ph)),
         ],
       ),
       body: IgnorePointer(
-        ignoring: widget.isReadOnly,
+        ignoring: effectiveReadOnly,
         child: Column(children: [
+          if (isCancelledRecord)
+            Container(
+              width: double.infinity,
+              color: Colors.red.shade100,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                "CANCELLED CREDIT NOTE — READ ONLY AUDIT LOCK",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.red.shade900),
+              ),
+            ),
           _buildHeader(ph),
           if (selectedParty != null) ...[
             _buildQuickModeToggle(),
@@ -271,7 +313,19 @@ class _SaleReturnViewState extends State<SaleReturnView> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: themeColor.withOpacity(0.2))),
       child: ListTile(
         onTap: () {
-          final med = ph.medicines.firstWhere((m) => m.id == it.medicineID);
+          final med = ph.medicines.firstWhere(
+            (m) => (it.medicineID.isNotEmpty && m.id == it.medicineID) ||
+                   m.name.trim().toUpperCase() == it.name.trim().toUpperCase(),
+            orElse: () => Medicine(
+              id: it.medicineID,
+              name: it.name,
+              packing: it.packing,
+              mrp: it.mrp,
+              gst: it.gstRate,
+              hsnCode: it.hsn,
+              rateA: it.rate,
+            ),
+          );
           _showEntryCard(med, existingItem: it);
         },
         tileColor: bgColor,
@@ -300,7 +354,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
               Text("CREDIT NOTE #${returnNoC.text}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFFB71C1C))),
             ]),
             InkWell(
-              onTap: widget.isReadOnly ? null : () async {
+              onTap: effectiveReadOnly ? null : () async {
                 DateTime? p = await PharoahDateController.pickDate(
                   context: context,
                   currentFY: ph.currentFY,
@@ -374,7 +428,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
         Row(children: [
           Expanded(
             child: InkWell(
-              onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CREDIT"),
+              onTap: effectiveReadOnly ? null : () => setState(() => paymentMode = "CREDIT"),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 7),
                 decoration: BoxDecoration(
@@ -388,7 +442,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
           const SizedBox(width: 8),
           Expanded(
             child: InkWell(
-              onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CASH"),
+              onTap: effectiveReadOnly ? null : () => setState(() => paymentMode = "CASH"),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 7),
                 decoration: BoxDecoration(
@@ -415,7 +469,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
           Expanded(
             flex: 2,
             child: InkWell(
-              onTap: widget.isReadOnly ? null : () async {
+              onTap: effectiveReadOnly ? null : () async {
                 final picked = await showDatePicker(
                   context: context,
                   initialDate: GstComplianceHelper.clampPickerDate(origBillDate ?? selectedDate, DateTime(2017, 7, 1), selectedDate),
@@ -443,7 +497,7 @@ class _SaleReturnViewState extends State<SaleReturnView> {
           ),
           const SizedBox(width: 6),
           InkWell(
-            onTap: widget.isReadOnly ? null : () => setState(() => isCommercial = !isCommercial),
+            onTap: effectiveReadOnly ? null : () => setState(() => isCommercial = !isCommercial),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
               decoration: BoxDecoration(
@@ -569,7 +623,15 @@ class _SaleReturnViewState extends State<SaleReturnView> {
   );
 
   void _handleSave(PharoahManager ph) {
-    if (selectedParty == null) return;
+    if (effectiveReadOnly) return;
+    if (selectedParty == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a Customer first."), backgroundColor: Colors.red));
+      return;
+    }
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add at least one item before saving."), backgroundColor: Colors.orange));
+      return;
+    }
     final usedNo = returnNoC.text.trim();
     final String rType = items.isNotEmpty && items.every((it) => it.isBreakage)
         ? "Breakage"

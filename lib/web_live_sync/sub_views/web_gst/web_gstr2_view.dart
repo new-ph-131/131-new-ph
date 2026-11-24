@@ -67,12 +67,12 @@ class _WebGstr2ViewState extends State<WebGstr2View> with SingleTickerProviderSt
 
     final purchases = widget.webPh.purchases.where((p) {
       final d = _dateOnly(p.date);
-      return !d.isBefore(fDate) && !d.isAfter(tDate);
+      return p.isDeleted != 1 && p.gstStatus != "Cancelled" && p.gstStatus != "Deleted" && !d.isBefore(fDate) && !d.isAfter(tDate);
     }).toList();
 
     final purchaseReturns = widget.webPh.purchaseReturns.where((pr) {
       final d = _dateOnly(pr.date);
-      return !d.isBefore(fDate) && !d.isAfter(tDate);
+      return pr.isDeleted != 1 && !d.isBefore(fDate) && !d.isAfter(tDate);
     }).toList();
 
     double totalTaxable = 0.0;
@@ -80,10 +80,27 @@ class _WebGstr2ViewState extends State<WebGstr2View> with SingleTickerProviderSt
     double totalGrand = 0.0;
 
     for (var p in purchases) {
-      double t = p.items.fold(0.0, (s, i) => s + (i.purchaseRate * i.qty));
-      totalTaxable += t;
-      totalItc += (p.totalAmount - t);
+      double gross = 0.0;
+      for (var it in p.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+      final discRatio = (p.extraDiscount > 0 && gross > 0) ? (p.extraDiscount / gross) : 0.0;
+      for (var it in p.items) {
+        final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+        totalTaxable += tx;
+        totalItc += tx * (it.gstRate / 100.0);
+      }
       totalGrand += p.totalAmount;
+    }
+
+    for (var pr in purchaseReturns.where((r) => r.status == "Active" && !r.isCommercial)) {
+      double gross = 0.0;
+      for (var it in pr.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+      final discRatio = (pr.extraDiscount > 0 && gross > 0) ? (pr.extraDiscount / gross) : 0.0;
+      for (var it in pr.items) {
+        final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+        totalTaxable -= tx;
+        totalItc -= tx * (it.gstRate / 100.0);
+      }
+      totalGrand -= pr.totalAmount;
     }
 
     final shopProfile = _getShopProfile();

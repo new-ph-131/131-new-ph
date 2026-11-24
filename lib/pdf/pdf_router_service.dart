@@ -221,7 +221,7 @@ class PdfRouterService {
           pdfBytes = await GstReportService.generateGstr1Bytes(doc, ph.activeCompany!);
         } 
         else if (party.name.contains("GSTR-3B") && doc is List<Sale>) {
-          pdfBytes = await GstReportService.generateGstr3bBytes(doc, ph.purchases, ph.activeCompany!);
+          pdfBytes = await GstReportService.generateGstr3bBytes(doc, ph.purchases, ph.activeCompany!, saleReturns: ph.saleReturns, purchaseReturns: ph.purchaseReturns, parties: ph.parties);
         } 
         else if (party.name.contains("CA Summary")) {
           if (doc is List<Sale>) {

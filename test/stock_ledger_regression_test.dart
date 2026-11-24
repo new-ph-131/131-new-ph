@@ -12,6 +12,7 @@ import 'package:pharoah_erp/logic/app_accounts_calculator.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_state_codes.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_offline_json_builder.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_offline_csv_builder.dart';
+import 'package:pharoah_erp/compliance/gst_offline_engine/gst_preflight_validator.dart';
 import 'package:pharoah_erp/logic/gst_compliance_helper.dart';
 import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
 import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
@@ -1088,4 +1089,243 @@ void main() {
     expect(cdnrCsv.contains('CC-1'), isTrue);
     expect(cdnrCsv.contains('CN-2'), isFalse);
   });
+
+  test('Phase 3: getMedicineHistory real exp/discount, updateSaleReturn/updatePurchaseReturn, DEBIT_NOTE series, B2CS vs CDNUR & HSN/DOCS returns', () async {
+    final ph = PharoahManager();
+    ph.activeCompany = CompanyProfile(
+      id: 'c_p3',
+      name: 'MedPlus Pharma',
+      gstin: '08AABCP1234A1Z4',
+      state: 'Rajasthan',
+    );
+
+    final custUnreg = Party(id: 'p_b2c', name: 'Retail Walkin', gst: '', state: 'Rajasthan');
+    final custB2cl = Party(id: 'p_b2cl', name: 'MP Unreg', gst: '', state: 'Madhya Pradesh');
+    final supp = Party(id: 's_1', name: 'Apex Distributors', gst: '27AABCA1111B1Z2', state: 'Maharashtra');
+    ph.parties = [custUnreg, custB2cl, supp];
+
+    final med = Medicine(id: 'm_p3', systemId: 'PH-999', name: 'Augmentin 625', packing: '1x10', hsnCode: '3004', gst: 12.0, mrp: 220.0, rateA: 150.0, purRate: 100.0);
+    ph.medicines = [med];
+
+    ph.sales = [
+      Sale(
+        id: 'sal_1',
+        billNo: 'INV-100',
+        partyId: custUnreg.id,
+        partyName: custUnreg.name,
+        partyGstin: '',
+        partyState: 'Rajasthan',
+        date: DateTime(2025, 6, 10),
+        paymentMode: 'CASH',
+        status: 'Active',
+        items: [
+          BillItem(
+            id: 'bi_1',
+            srNo: 1,
+            medicineID: med.id,
+            name: med.name,
+            packing: '1x10',
+            batch: 'AUG01',
+            exp: '09/28',
+            hsn: '3004',
+            mrp: 220.0,
+            qty: 10.0,
+            rate: 100.0,
+            discountPer: 10.0,
+            discountRupees: 100.0,
+            gstRate: 12.0,
+            appliedRateType: 'B',
+            total: 1008.0,
+          ),
+        ],
+        totalAmount: 1008.0,
+      ),
+      // Cancelled bill should NOT show in Magic History
+      Sale(
+        id: 'sal_canc',
+        billNo: 'INV-CANC',
+        partyId: custUnreg.id,
+        partyName: custUnreg.name,
+        partyGstin: '',
+        partyState: 'Rajasthan',
+        date: DateTime(2025, 6, 11),
+        paymentMode: 'CASH',
+        status: 'Cancelled',
+        items: [
+          BillItem(id: 'bi_c', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'BAD99', exp: '01/20', mrp: 220.0, qty: 5.0, rate: 100.0, gstRate: 12.0, total: 560.0),
+        ],
+        totalAmount: 560.0,
+      ),
+    ];
+
+    ph.purchases = [
+      Purchase(
+        id: 'pur_1',
+        internalNo: 'PUR-100',
+        billNo: 'SUP-900',
+        partyId: supp.id,
+        distributorName: supp.name,
+        date: DateTime(2025, 6, 5),
+        entryDate: DateTime(2025, 6, 5),
+        paymentMode: 'CREDIT',
+        items: [
+          PurchaseItem(
+            id: 'pi_1',
+            srNo: 1,
+            medicineID: med.id,
+            name: med.name,
+            packing: '1x10',
+            batch: 'AUG01',
+            exp: '09/28',
+            mrp: 220.0,
+            qty: 20.0,
+            purchaseRate: 80.0,
+            discountPer: 5.0,
+            discountRupees: 80.0,
+            gstRate: 12.0,
+            appliedRateType: 'C',
+            total: 1702.4,
+          ),
+        ],
+        totalAmount: 1702.4,
+      ),
+    ];
+
+    // 1. Magic History preserves real expiry, discountPer, appliedRateType & excludes cancelled
+    final saleHist = ph.getMedicineHistory(partyId: custUnreg.id, medicineId: med.id, isSale: true);
+    expect(saleHist.length, equals(1));
+    expect(saleHist.first['exp'], equals('09/28'));
+    expect(saleHist.first['discountPer'], equals(10.0));
+    expect(saleHist.first['appliedRateType'], equals('B'));
+
+    final purHist = ph.getMedicineHistory(partyId: '', partyName: 'apex distributors', medicineId: '', medicineName: 'augmentin 625', isSale: false);
+    expect(purHist.length, equals(1));
+    expect(purHist.first['exp'], equals('09/28'));
+    expect(purHist.first['discountPer'], equals(5.0));
+    expect(purHist.first['appliedRateType'], equals('C'));
+
+    // 2. DEBIT_NOTE numbering series fallback
+    expect(ph.getDefaultSeries('DEBIT_NOTE').prefix, equals('DN-'));
+
+    // 3. updateSaleReturn & updatePurchaseReturn dynamically compute returnType and bump version
+    ph.saleReturns = [
+      SaleReturn(
+        id: 'sr_u1',
+        billNo: 'TXN-1',
+        partyId: custUnreg.id,
+        partyName: custUnreg.name,
+        partyGstin: '',
+        partyState: 'Rajasthan',
+        date: DateTime(2025, 6, 15),
+        items: [
+          BillItem(id: 'r1', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'AUG01', exp: '09/28', hsn: '3004', mrp: 220.0, qty: 2.0, rate: 100.0, discountPer: 10.0, discountRupees: 20.0, gstRate: 12.0, isBreakage: false, total: 201.6),
+        ],
+        totalAmount: 201.6,
+        returnType: 'Sellable',
+        version: 1,
+      ),
+    ];
+    await ph.updateSaleReturn(
+      id: 'sr_u1',
+      billNo: 'TXN-1',
+      date: DateTime(2025, 6, 15),
+      party: custUnreg,
+      items: [
+        BillItem(id: 'r1', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'AUG01', exp: '09/28', hsn: '3004', mrp: 220.0, qty: 2.0, rate: 100.0, discountPer: 10.0, discountRupees: 20.0, gstRate: 12.0, isBreakage: true, total: 201.6),
+      ],
+      total: 201.6,
+      reason: '07-Expired',
+    );
+    expect(ph.saleReturns.first.returnType, equals('Breakage'));
+    expect(ph.saleReturns.first.version, equals(2));
+    expect(ph.saleReturns.first.reason, equals('07-Expired'));
+
+    // Reset to sellable unregistered B2C return (<= 1L) + add an unregistered B2CL return (> 1L inter-state)
+    final b2cRet = SaleReturn(
+      id: 'sr_b2c',
+      billNo: 'TXN-2',
+      partyId: custUnreg.id,
+      partyName: custUnreg.name,
+      partyGstin: '',
+      partyState: 'Rajasthan',
+      date: DateTime(2025, 6, 16),
+      items: [
+        BillItem(id: 'r2', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'AUG01', exp: '09/28', hsn: '3004', mrp: 220.0, qty: 2.0, rate: 100.0, discountPer: 10.0, discountRupees: 20.0, gstRate: 12.0, total: 201.6),
+      ],
+      totalAmount: 201.6,
+    );
+    final b2clRet = SaleReturn(
+      id: 'sr_b2cl',
+      billNo: 'TXN-3',
+      partyId: custB2cl.id,
+      partyName: custB2cl.name,
+      partyGstin: '',
+      partyState: 'Madhya Pradesh',
+      date: DateTime(2025, 6, 17),
+      items: [
+        BillItem(id: 'r3', srNo: 1, medicineID: med.id, name: med.name, packing: '1x10', batch: 'AUG01', exp: '09/28', hsn: '3004', mrp: 220.0, qty: 1000.0, rate: 100.0, gstRate: 12.0, total: 112000.0),
+      ],
+      totalAmount: 112000.0,
+    );
+
+    // 4. B2CS nets small unregistered return (900 - 180 = 720) & CDNUR only holds B2CL return
+    final gstr1 = GstOfflineJsonBuilder.buildGstr1Payload(
+      sales: [ph.sales.first],
+      returns: [b2cRet, b2clRet],
+      parties: ph.parties,
+      shop: ph.activeCompany!,
+      fromDate: DateTime(2025, 6, 1),
+      toDate: DateTime(2025, 6, 30),
+    );
+    expect(gstr1.cdnur.length, equals(1));
+    expect(gstr1.cdnur.first.ntNum, equals('TXN-3'));
+    expect(gstr1.b2cs.length, equals(1));
+    expect(gstr1.b2cs.first.txval, closeTo(720.0, 0.01));
+    expect(gstr1.docIssue.any((d) => d.docTyp == 'Credit Note'), isTrue);
+
+    // 5. B2CS & DOCS CSV net credit note / export doc types cleanly
+    final b2csCsv = GstOfflineCsvBuilder.buildB2csCsv(
+      sales: [ph.sales.first],
+      returns: [b2cRet],
+      parties: ph.parties,
+      shop: ph.activeCompany!,
+      fromDate: DateTime(2025, 6, 1),
+      toDate: DateTime(2025, 6, 30),
+    );
+    expect(b2csCsv.contains('720.00'), isTrue);
+
+    final docsCsv = GstOfflineCsvBuilder.buildDocsCsv(
+      sales: [ph.sales.first],
+      returns: [b2cRet],
+      fromDate: DateTime(2025, 6, 1),
+      toDate: DateTime(2025, 6, 30),
+    );
+    expect(docsCsv.contains('Credit Note'), isTrue);
+
+    // 6. Preflight validator deducts active credit notes & warns on Sec 34(2) expiry
+    final audit = GstPreflightValidator.audit(
+      sales: [ph.sales.first],
+      returns: [
+        SaleReturn(
+          id: 'sr_exp34',
+          billNo: 'TXN-OLD',
+          partyId: custUnreg.id,
+          partyName: custUnreg.name,
+          partyState: 'Rajasthan',
+          date: DateTime(2026, 12, 15),
+          origBillDate: DateTime(2025, 6, 10),
+          isCommercial: false,
+          items: b2cRet.items,
+          totalAmount: 201.6,
+        ),
+      ],
+      parties: ph.parties,
+      shop: ph.activeCompany!,
+      fromDate: DateTime(2025, 6, 1),
+      toDate: DateTime(2026, 12, 31),
+    );
+    expect(audit.totalTaxable, closeTo(720.0, 0.01));
+    expect(audit.issues.any((i) => i.title.contains('Sec 34(2)')), isTrue);
+  });
+
 }

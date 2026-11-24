@@ -114,6 +114,8 @@ class GstOfflineExportService {
         case "B2CS":
           csvContent = GstOfflineCsvBuilder.buildB2csCsv(
             sales: sales,
+            returns: returns,
+            parties: parties,
             shop: shop,
             fromDate: fromDate,
             toDate: toDate,
@@ -123,6 +125,8 @@ class GstOfflineExportService {
         case "HSN":
           csvContent = GstOfflineCsvBuilder.buildHsnCsv(
             sales: sales,
+            returns: returns,
+            parties: parties,
             shop: shop,
             fromDate: fromDate,
             toDate: toDate,
@@ -132,6 +136,8 @@ class GstOfflineExportService {
         case "DOCS":
           csvContent = GstOfflineCsvBuilder.buildDocsCsv(
             sales: sales,
+            returns: returns,
+            purchaseReturns: purchaseReturns,
             fromDate: fromDate,
             toDate: toDate,
           );
@@ -214,6 +220,8 @@ class GstOfflineExportService {
   }) {
     final report = GstPreflightValidator.audit(
       sales: sales,
+      returns: returns,
+      parties: parties,
       shop: shop,
       fromDate: fromDate,
       toDate: toDate,

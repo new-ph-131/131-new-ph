@@ -198,7 +198,7 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
         backgroundColor: Colors.red.shade900,
         foregroundColor: Colors.white,
         actions: [
-          if (items.isNotEmpty)
+          if (items.isNotEmpty && selectedParty != null)
             TextButton(
               onPressed: () => _handleSave(ph),
               child: const Text("SAVE AS BREAKAGE", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -554,6 +554,14 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
   }
 
   void _handleSave(PharoahManager ph) {
+    if (selectedParty == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a Party first."), backgroundColor: Colors.red));
+      return;
+    }
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add at least one item before saving."), backgroundColor: Colors.orange));
+      return;
+    }
     ph.finalizeSaleReturn(
       billNo: returnNoC.text,
       date: selectedDate,

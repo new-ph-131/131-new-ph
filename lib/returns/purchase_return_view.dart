@@ -73,18 +73,26 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
       reasonC.text = ex.reason;
       isCommercial = ex.isCommercial;
       isBreakageMode = ex.returnType.toLowerCase().contains("breakage") || ex.returnType.toLowerCase().contains("expiry");
-      try {
-        selectedSupplier = ph.parties.firstWhere((p) => p.name == ex.distributorName);
-      } catch (e) {
-        selectedSupplier = Party(id: "0", name: ex.distributorName);
-      }
+      selectedSupplier = ph.parties.firstWhere(
+        (p) => (ex.partyId.isNotEmpty && p.id == ex.partyId) ||
+               p.name.trim().toLowerCase() == ex.distributorName.trim().toLowerCase(),
+        orElse: () => Party(
+          id: ex.partyId.isNotEmpty ? ex.partyId : "0",
+          name: ex.distributorName,
+          gst: ex.partyGstin,
+          state: ex.partyState.isNotEmpty ? ex.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
+        ),
+      );
       setState(() => isLoading = false);
     } else {
       if (ph.activeCompany != null) {
+        var series = ph.getDefaultSeries("DEBIT_NOTE");
+        final pref = series.prefix.isNotEmpty ? series.prefix : "DN-";
+        final startNo = series.startNumber > 0 ? series.startNumber : 1;
         String nextNo = await PharoahNumberingEngine.getNextNumber(
-          type: "RETURN", companyID: ph.activeCompany!.id,
-          prefix: "DN-", 
-          startFrom: 1, currentList: ph.purchaseReturns,
+          type: "DEBIT_NOTE", companyID: ph.activeCompany!.id,
+          prefix: pref,
+          startFrom: startNo, currentList: ph.purchaseReturns,
         );
         setState(() {
           returnNoC.text = nextNo;
@@ -120,6 +128,8 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     isCommercial: isCommercial,
   );
 
+  bool get isCancelledRecord => widget.existingRecord?.status == "Cancelled";
+  bool get effectiveReadOnly => widget.isReadOnly || isCancelledRecord;
   double get netTaxable => gstSummary.netTaxable;
   double get calcCGST => gstSummary.totalCGST;
   double get calcSGST => gstSummary.totalSGST;
@@ -132,7 +142,13 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   // ===========================================================================
   void _showMagicHistoryBox(Medicine med, PharoahManager ph) {
     if (selectedSupplier == null) return;
-    final history = ph.getMedicineHistory(partyId: selectedSupplier!.id, medicineId: med.id, isSale: false);
+    final history = ph.getMedicineHistory(
+      partyId: selectedSupplier!.id,
+      medicineId: med.id,
+      partyName: selectedSupplier!.name,
+      medicineName: med.name,
+      isSale: false,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -165,7 +181,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
                       margin: const EdgeInsets.only(bottom: 10),
                       elevation: 1,
                       child: ListTile(
-                        onTap: widget.isReadOnly ? null : () { Navigator.pop(c); _showEntryCard(med, historyData: h); },
+                        onTap: effectiveReadOnly ? null : () { Navigator.pop(c); _showEntryCard(med, historyData: h); },
                         title: Text("Bill: ${h['billNo']} | ${DateFormat('dd MMM').format(h['date'])}"),
                         subtitle: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                           _miniInfo("BATCH", h['batch']),
@@ -206,10 +222,31 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     PurchaseItem? preFilled = existingItem;
     
     if (historyData != null && existingItem == null) {
+      final histPacking = (historyData['packing'] ?? '').toString().trim();
+      final histHsn = (historyData['hsn'] ?? '').toString().trim();
+      final histExp = (historyData['exp'] ?? '').toString().trim();
+      final histRateType = (historyData['appliedRateType'] ?? '').toString().trim();
       preFilled = PurchaseItem(
-        id: "temp", srNo: items.length + 1, medicineID: med.id, name: med.name, packing: med.packing,
-        batch: historyData['batch'], exp: "12/26", hsn: med.hsnCode, mrp: (historyData['mrp'] as num).toDouble(),
-        purchaseRate: (historyData['rate'] as num).toDouble(), gstRate: (historyData['gst'] as num).toDouble(), qty: 0, total: 0,
+        id: "temp",
+        srNo: items.length + 1,
+        medicineID: med.id,
+        name: med.name,
+        packing: histPacking.isNotEmpty ? histPacking : med.packing,
+        batch: (historyData['batch'] ?? '').toString(),
+        exp: histExp,
+        hsn: histHsn.isNotEmpty ? histHsn : med.hsnCode,
+        mrp: ((historyData['mrp'] ?? med.mrp) as num).toDouble(),
+        purchaseRate: ((historyData['rate'] ?? med.purRate) as num).toDouble(),
+        gstRate: ((historyData['gst'] ?? med.gst) as num).toDouble(),
+        discountPer: ((historyData['discountPer'] ?? 0.0) as num).toDouble(),
+        discountRupees: 0.0,
+        rateA: ((historyData['rateA'] ?? med.rateA) as num).toDouble(),
+        rateB: ((historyData['rateB'] ?? med.rateB) as num).toDouble(),
+        rateC: ((historyData['rateC'] ?? med.rateC) as num).toDouble(),
+        appliedRateType: histRateType.isNotEmpty ? histRateType : "A",
+        rateCFormula: ((historyData['rateCFormula'] ?? 0.0) as num).toDouble(),
+        qty: 0,
+        total: 0,
       );
     }
 
@@ -244,18 +281,29 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     return Scaffold(
       backgroundColor: const Color(0xFFFBF7F3),
       appBar: AppBar(
-        title: Text(widget.isReadOnly ? "Audit Debit Note" : (widget.existingRecord != null ? "Modify Debit Note" : "New Debit Note")),
+        title: Text(isCancelledRecord ? "Cancelled Debit Note (Read-Only)" : (effectiveReadOnly ? "Audit Debit Note" : (widget.existingRecord != null ? "Modify Debit Note" : "New Debit Note"))),
         backgroundColor: Colors.brown.shade800,
         foregroundColor: Colors.white,
         actions: [
           IconButton(icon: const Icon(Icons.print_rounded), onPressed: items.isEmpty ? null : () => _handlePrint(ph)),
-          if (!widget.isReadOnly && items.isNotEmpty) 
+          if (!effectiveReadOnly && items.isNotEmpty) 
             IconButton(icon: const Icon(Icons.check_circle_rounded, size: 28), onPressed: () => _handleSave(ph)),
         ],
       ),
       body: IgnorePointer(
-        ignoring: widget.isReadOnly,
+        ignoring: effectiveReadOnly,
         child: Column(children: [
+          if (isCancelledRecord)
+            Container(
+              width: double.infinity,
+              color: Colors.red.shade100,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Text(
+                "CANCELLED DEBIT NOTE — READ ONLY AUDIT LOCK",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.red.shade900),
+              ),
+            ),
           _buildHeader(ph),
           if (selectedSupplier != null) ...[
             _buildQuickModeToggle(),
@@ -289,7 +337,19 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
       child: ListTile(
         // 🔥 Tapping Logic: Edit (Point 3 Fix)
         onTap: () {
-          final med = ph.medicines.firstWhere((m) => m.id == it.medicineID);
+          final med = ph.medicines.firstWhere(
+            (m) => (it.medicineID.isNotEmpty && m.id == it.medicineID) ||
+                   m.name.trim().toUpperCase() == it.name.trim().toUpperCase(),
+            orElse: () => Medicine(
+              id: it.medicineID,
+              name: it.name,
+              packing: it.packing,
+              mrp: it.mrp,
+              gst: it.gstRate,
+              hsnCode: it.hsn,
+              purRate: it.purchaseRate,
+            ),
+          );
           _showEntryCard(med, existingItem: it);
         },
         tileColor: bgColor,
@@ -319,7 +379,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
               Text("DEBIT NOTE #${returnNoC.text}", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: Color(0xFFB45309))),
             ]),
             InkWell(
-              onTap: widget.isReadOnly ? null : () async {
+              onTap: effectiveReadOnly ? null : () async {
                 DateTime? p = await PharoahDateController.pickDate(
                   context: context,
                   currentFY: ph.currentFY,
@@ -393,7 +453,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
         Row(children: [
           Expanded(
             child: InkWell(
-              onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CREDIT"),
+              onTap: effectiveReadOnly ? null : () => setState(() => paymentMode = "CREDIT"),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 7),
                 decoration: BoxDecoration(
@@ -407,7 +467,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           const SizedBox(width: 8),
           Expanded(
             child: InkWell(
-              onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CASH"),
+              onTap: effectiveReadOnly ? null : () => setState(() => paymentMode = "CASH"),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 7),
                 decoration: BoxDecoration(
@@ -434,7 +494,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           Expanded(
             flex: 2,
             child: InkWell(
-              onTap: widget.isReadOnly ? null : () async {
+              onTap: effectiveReadOnly ? null : () async {
                 final picked = await showDatePicker(
                   context: context,
                   initialDate: GstComplianceHelper.clampPickerDate(origBillDate ?? selectedDate, DateTime(2017, 7, 1), selectedDate),
@@ -462,7 +522,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           ),
           const SizedBox(width: 6),
           InkWell(
-            onTap: widget.isReadOnly ? null : () => setState(() => isCommercial = !isCommercial),
+            onTap: effectiveReadOnly ? null : () => setState(() => isCommercial = !isCommercial),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
               decoration: BoxDecoration(
@@ -589,24 +649,43 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   );
 
   void _handleSave(PharoahManager ph) {
-    if (selectedSupplier == null) return;
+    if (effectiveReadOnly) return;
+    if (selectedSupplier == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a Supplier first."), backgroundColor: Colors.red));
+      return;
+    }
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add at least one item before saving."), backgroundColor: Colors.orange));
+      return;
+    }
+    final usedNo = returnNoC.text.trim();
     final String rType = items.isNotEmpty && items.every((it) => it.isBreakage)
         ? "Breakage"
         : (items.any((it) => it.isBreakage) ? "Mixed" : "Sellable");
     if (widget.existingRecord != null) {
       ph.updatePurchaseReturn(
-        id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!,
+        id: widget.existingRecord!.id, billNo: usedNo, date: selectedDate, party: selectedSupplier!,
         items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
         paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(), origBillDate: origBillDate,
         reason: reasonC.text.trim(), isCommercial: isCommercial,
       );
     } else {
       ph.finalizePurchaseReturn(
-        billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!,
+        billNo: usedNo, date: selectedDate, party: selectedSupplier!,
         items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
         type: rType, paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(),
         origBillDate: origBillDate, reason: reasonC.text.trim(), isCommercial: isCommercial,
       );
+      if (ph.activeCompany != null) {
+        var series = ph.getDefaultSeries("DEBIT_NOTE");
+        final pref = series.prefix.isNotEmpty ? series.prefix : "DN-";
+        PharoahNumberingEngine.updateSeriesCounter(
+          type: "DEBIT_NOTE",
+          companyID: ph.activeCompany!.id,
+          usedNumber: usedNo,
+          prefix: pref,
+        );
+      }
     }
     Navigator.pop(context);
   }

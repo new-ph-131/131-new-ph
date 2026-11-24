@@ -75,6 +75,12 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
     final b2b = activeSales.where((s) => s.partyGstin.trim().length == 15).toList();
     final b2c = activeSales.where((s) => s.partyGstin.trim().length != 15).toList();
 
+    final periodReturns = widget.webPh.saleReturns.where((r) {
+      final d = _dateOnly(r.date);
+      return r.isDeleted != 1 && !d.isBefore(fDate) && !d.isAfter(tDate);
+    }).toList();
+    final activeReturns = periodReturns.where((r) => r.status == "Active" && !r.isCommercial).toList();
+
     double totalTaxable = 0.0;
     double totalTax = 0.0;
     double grandTotal = 0.0;
@@ -82,7 +88,7 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
     for (var s in activeSales) {
       double t = s.items.fold(0.0, (sum, i) => sum + (i.cgst + i.sgst + i.igst));
       totalTax += t;
-      totalTaxable += (s.totalAmount - t);
+      totalTaxable += (s.totalAmount - s.roundOff - t);
       grandTotal += s.totalAmount;
     }
 
@@ -107,6 +113,40 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
           };
         }
       }
+    }
+
+    for (var ret in activeReturns) {
+      double gross = 0.0;
+      for (var it in ret.items) gross += ((it.qty * it.rate) - it.discountRupees);
+      final discRatio = (ret.extraDiscount > 0 && gross > 0) ? (ret.extraDiscount / gross) : 0.0;
+      double retTax = 0.0;
+      double retTaxable = 0.0;
+      for (var it in ret.items) {
+        final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+        final t = tx * (it.gstRate / 100.0);
+        final tot = tx + t;
+        retTaxable += tx;
+        retTax += t;
+
+        String cleanHsn = it.hsn.trim().replaceAll(RegExp(r'[^0-9]'), '');
+        if (cleanHsn.isEmpty) cleanHsn = "3004";
+        if (hsnSummary.containsKey(cleanHsn)) {
+          hsnSummary[cleanHsn]!['qty'] -= (it.qty + it.freeQty);
+          hsnSummary[cleanHsn]!['taxable'] -= tx;
+          hsnSummary[cleanHsn]!['tax'] -= t;
+          hsnSummary[cleanHsn]!['total'] -= tot;
+        } else {
+          hsnSummary[cleanHsn] = {
+            'qty': -(it.qty + it.freeQty),
+            'taxable': -tx,
+            'tax': -t,
+            'total': -tot,
+          };
+        }
+      }
+      totalTaxable -= retTaxable;
+      totalTax -= retTax;
+      grandTotal -= ret.totalAmount;
     }
 
     final shopProfile = _getShopProfile();
@@ -154,12 +194,12 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _metric("TOTAL INVOICES", "${activeSales.length}"),
-                _metric("B2B INVOICES", "${b2b.length}", color: const Color(0xFF38BDF8)),
-                _metric("B2C INVOICES", "${b2c.length}", color: const Color(0xFFA78BFA)),
-                _metric("TAXABLE VALUE", "₹${totalTaxable.toStringAsFixed(2)}"),
-                _metric("TOTAL TAX", "₹${totalTax.toStringAsFixed(2)}", color: Colors.orangeAccent),
-                _metric("INVOICE VALUE", "₹${grandTotal.toStringAsFixed(2)}", color: Colors.greenAccent),
+                _metric("INVOICES", "${activeSales.length}"),
+                _metric("B2B / B2C", "${b2b.length} / ${b2c.length}", color: const Color(0xFF38BDF8)),
+                _metric("CREDIT NOTES", "${activeReturns.length}", color: const Color(0xFFF43F5E)),
+                _metric("NET TAXABLE", "₹${totalTaxable.toStringAsFixed(2)}"),
+                _metric("NET TAX", "₹${totalTax.toStringAsFixed(2)}", color: Colors.orangeAccent),
+                _metric("NET VALUE", "₹${grandTotal.toStringAsFixed(2)}", color: Colors.greenAccent),
               ],
             ),
           ),
@@ -196,7 +236,7 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                onPressed: activeSales.isEmpty ? null : () {
+                onPressed: (activeSales.isEmpty && activeReturns.isEmpty) ? null : () {
                   GstOfflineExportService.exportGstr1Json(
                     context: context,
                     sales: widget.webPh.sales,
@@ -220,7 +260,7 @@ class _WebGstr1ViewState extends State<WebGstr1View> with SingleTickerProviderSt
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
-                onPressed: activeSales.isEmpty ? null : () {
+                onPressed: (activeSales.isEmpty && activeReturns.isEmpty) ? null : () {
                   GstOfflineExportService.showAuditModal(
                     context: context,
                     sales: widget.webPh.sales,

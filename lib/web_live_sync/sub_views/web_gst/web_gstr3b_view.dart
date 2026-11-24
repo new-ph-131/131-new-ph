@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../pharoah_web_manager.dart';
+import '../../../models.dart';
+import '../../../logic/gst_compliance_helper.dart';
 import '../../services/web_fy_date_range_helper.dart';
 
 class WebGstr3bView extends StatefulWidget {
@@ -47,40 +49,128 @@ class _WebGstr3bViewState extends State<WebGstr3bView> {
     final fDate = _dateOnly(fromDate);
     final tDate = _dateOnly(toDate);
 
+    final shopGstin = (widget.webPh.companyProfile['gstin'] ?? '').toString();
+    final shopState = (widget.webPh.companyProfile['state'] ?? 'Rajasthan').toString();
+
     final activeSales = widget.webPh.sales.where((s) {
       final d = _dateOnly(s.date);
-      return s.status == "Active" && !d.isBefore(fDate) && !d.isAfter(tDate);
+      return s.isDeleted != 1 && s.status == "Active" && !d.isBefore(fDate) && !d.isAfter(tDate);
+    }).toList();
+
+    final activeSaleReturns = widget.webPh.saleReturns.where((r) {
+      final d = _dateOnly(r.date);
+      return r.isDeleted != 1 && r.status == "Active" && !r.isCommercial && !d.isBefore(fDate) && !d.isAfter(tDate);
     }).toList();
 
     final activePurchases = widget.webPh.purchases.where((p) {
       final d = _dateOnly(p.date);
-      return !d.isBefore(fDate) && !d.isAfter(tDate);
+      return p.isDeleted != 1 && p.gstStatus != "Cancelled" && p.gstStatus != "Deleted" && !d.isBefore(fDate) && !d.isAfter(tDate);
     }).toList();
 
-    // 1. Outward Supplies Tax (Sales)
+    final activePurchaseReturns = widget.webPh.purchaseReturns.where((r) {
+      final d = _dateOnly(r.date);
+      return r.isDeleted != 1 && r.status == "Active" && !r.isCommercial && !d.isBefore(fDate) && !d.isAfter(tDate);
+    }).toList();
+
+    // 1. Outward Supplies Tax (Sales minus Active GST Credit Notes)
     double sTaxable = 0.0; double sCgst = 0.0; double sSgst = 0.0; double sIgst = 0.0;
     for (var s in activeSales) {
+      double t = s.items.fold(0.0, (sum, it) => sum + (it.cgst + it.sgst + it.igst));
+      sTaxable += (s.totalAmount - s.roundOff - t);
       for (var it in s.items) {
-        double tax = it.cgst + it.sgst + it.igst;
-        sTaxable += (it.total - tax);
         sCgst += it.cgst;
         sSgst += it.sgst;
         sIgst += it.igst;
       }
     }
-    double totalOutputTax = sCgst + sSgst + sIgst;
-
-    // 2. Inward Eligible ITC (Purchases)
-    double pTaxable = 0.0; double pCgst = 0.0; double pSgst = 0.0; double pIgst = 0.0;
-    for (var p in activePurchases) {
-      for (var it in p.items) {
-        double tRow = it.purchaseRate * it.qty;
-        double tax = it.total - tRow;
-        pTaxable += tRow;
-        pCgst += (tax / 2);
-        pSgst += (tax / 2);
+    for (var sr in activeSaleReturns) {
+      final match = widget.webPh.parties.firstWhere(
+        (pt) => (sr.partyId.isNotEmpty && pt.id == sr.partyId) || pt.name.trim().toLowerCase() == sr.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: sr.partyName, gst: sr.partyGstin, state: sr.partyState),
+      );
+      final isIntra = GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: match.gst.isNotEmpty ? match.gst : sr.partyGstin,
+        partyState: match.state.isNotEmpty ? match.state : sr.partyState,
+      );
+      double gross = 0.0;
+      for (var it in sr.items) gross += ((it.qty * it.rate) - it.discountRupees);
+      final discRatio = (sr.extraDiscount > 0 && gross > 0) ? (sr.extraDiscount / gross) : 0.0;
+      for (var it in sr.items) {
+        final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        sTaxable -= tx;
+        if (isIntra) {
+          sCgst -= (tax / 2.0);
+          sSgst -= (tax / 2.0);
+        } else {
+          sIgst -= tax;
+        }
       }
     }
+    double totalOutputTax = sCgst + sSgst + sIgst;
+
+    // 2. Inward Eligible ITC (Purchases using supplier POS minus Debit Notes ITC reversal)
+    double pTaxable = 0.0; double pCgst = 0.0; double pSgst = 0.0; double pIgst = 0.0;
+    for (var p in activePurchases) {
+      final match = widget.webPh.parties.firstWhere(
+        (pt) => (p.partyId.isNotEmpty && pt.id == p.partyId) || pt.name.trim().toLowerCase() == p.distributorName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: p.distributorName),
+      );
+      final isIntra = GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: match.gst,
+        partyState: match.state,
+      );
+      double gross = 0.0;
+      for (var it in p.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+      final discRatio = (p.extraDiscount > 0 && gross > 0) ? (p.extraDiscount / gross) : 0.0;
+      for (var it in p.items) {
+        final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        pTaxable += tx;
+        if (isIntra) {
+          pCgst += (tax / 2.0);
+          pSgst += (tax / 2.0);
+        } else {
+          pIgst += tax;
+        }
+      }
+    }
+
+    double dnTaxable = 0.0; double dnCgst = 0.0; double dnSgst = 0.0; double dnIgst = 0.0;
+    for (var pr in activePurchaseReturns) {
+      final match = widget.webPh.parties.firstWhere(
+        (pt) => (pr.partyId.isNotEmpty && pt.id == pr.partyId) || pt.name.trim().toLowerCase() == pr.distributorName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: pr.distributorName, gst: pr.partyGstin, state: pr.partyState),
+      );
+      final isIntra = GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: match.gst.isNotEmpty ? match.gst : pr.partyGstin,
+        partyState: match.state.isNotEmpty ? match.state : pr.partyState,
+      );
+      double gross = 0.0;
+      for (var it in pr.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+      final discRatio = (pr.extraDiscount > 0 && gross > 0) ? (pr.extraDiscount / gross) : 0.0;
+      for (var it in pr.items) {
+        final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+        final tax = tx * (it.gstRate / 100.0);
+        dnTaxable += tx;
+        if (isIntra) {
+          dnCgst += (tax / 2.0);
+          dnSgst += (tax / 2.0);
+        } else {
+          dnIgst += tax;
+        }
+      }
+    }
+    pTaxable -= dnTaxable;
+    pCgst -= dnCgst;
+    pSgst -= dnSgst;
+    pIgst -= dnIgst;
     double totalItc = pCgst + pSgst + pIgst;
 
     // 3. Net Tax Liability / Refund
@@ -125,7 +215,7 @@ class _WebGstr3bViewState extends State<WebGstr3bView> {
               TableRow(
                 decoration: const BoxDecoration(color: Colors.black12),
                 children: [
-                  _td("3.1 (a) Outward Taxable Supplies (Sales)", isLeft: true, isBold: true),
+                  _td("3.1 (a) Net Outward Supplies (Sales - Credit Notes)", isLeft: true, isBold: true),
                   _td("₹${sTaxable.toStringAsFixed(2)}", isRight: true),
                   _td("₹${sIgst.toStringAsFixed(2)}", isRight: true),
                   _td("₹${sCgst.toStringAsFixed(2)}", isRight: true),
@@ -136,7 +226,7 @@ class _WebGstr3bViewState extends State<WebGstr3bView> {
               TableRow(
                 decoration: const BoxDecoration(color: Colors.black12),
                 children: [
-                  _td("4. (A) Eligible ITC on Inward Supplies (Purchases)", isLeft: true, isBold: true),
+                  _td("4. (A/B) Net Eligible ITC (Purchases - Debit Notes)", isLeft: true, isBold: true),
                   _td("₹${pTaxable.toStringAsFixed(2)}", isRight: true),
                   _td("₹${pIgst.toStringAsFixed(2)}", isRight: true),
                   _td("₹${pCgst.toStringAsFixed(2)}", isRight: true),

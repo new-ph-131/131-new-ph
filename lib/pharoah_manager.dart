@@ -3543,6 +3543,10 @@ void registerBatchActivity({
       final String retType = items.isNotEmpty && items.every((it) => it.isBreakage)
           ? "Breakage"
           : (items.any((it) => it.isBreakage) ? "Mixed" : "Sellable");
+      if (activeCompany != null) {
+        await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: id, secondaryKey: billNo, fy: currentFY);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo, "", currentFY);
+      }
       final updatedReturn = SaleReturn(
         id: id, billNo: billNo, date: date,
         partyId: party.id, partyName: party.name, partyGstin: party.gst, partyState: party.state,
@@ -3557,18 +3561,46 @@ void registerBatchActivity({
       if (activeCompany != null) {
         WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
           if (t.isNotEmpty) {
-            ReturnsSyncModule.onSaleReturnSaved(updatedReturn, t);
+            CreditNoteSyncModule.onCreditNoteSaved(updatedReturn, t);
             D1SalesLedgerService.onSaleReturnSaved(updatedReturn, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
           }
         });
       }
-      
+
+      for (var item in items) {
+        String resolvedKey = item.medicineID;
+        try {
+          final med = medicines.firstWhere((m) => m.id == item.medicineID);
+          resolvedKey = med.identityKey;
+        } catch (_) {}
+        registerBatchActivity(
+          productKey: resolvedKey,
+          batchNo: item.batch,
+          exp: item.exp,
+          packing: item.packing,
+          mrp: item.mrp,
+          rate: item.rate,
+          rateA: item.appliedRateType == "A" ? item.rate : 0.0,
+          rateB: item.appliedRateType == "B" ? item.rate : 0.0,
+          rateC: item.appliedRateType == "C" ? item.rate : 0.0,
+          rateCFormula: item.rateCFormula,
+          appliedRateType: item.appliedRateType,
+          isPurchaseRate: false,
+        );
+      }
+
       InventoryLogicCenter.rebuildAllInventory(
         medicines: medicines, batchHistory: batchHistory, 
         purchases: purchases, sales: sales, 
         saleReturns: saleReturns, purchaseReturns: purchaseReturns
       );
-      await save(); 
+      await save();
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'SALE_RETURN_SAVED',
+        entityId: id,
+        unmarkedIds: [id, if (billNo.isNotEmpty) billNo],
+      );
       notifyListeners();
     }
   }
@@ -3580,6 +3612,10 @@ void registerBatchActivity({
       final String retType = items.isNotEmpty && items.every((it) => it.isBreakage)
           ? "Breakage"
           : (items.any((it) => it.isBreakage) ? "Mixed" : "Sellable");
+      if (activeCompany != null) {
+        await TombstoneEngine.unmarkTombstoneWithTimestamp(activeCompany!.id, id: id, secondaryKey: billNo, fy: currentFY);
+        D1SalesLedgerService.unmarkPermanentlyDeleted(id, billNo, "", currentFY);
+      }
       final updatedPReturn = PurchaseReturn(
         id: id, billNo: billNo, partyId: party.id, distributorName: party.name,
         partyGstin: party.gst, partyState: party.state,
@@ -3600,12 +3636,39 @@ void registerBatchActivity({
         });
       }
 
+      for (var item in items) {
+        String resolvedKey = item.medicineID;
+        try {
+          final med = medicines.firstWhere((m) => m.id == item.medicineID);
+          resolvedKey = med.identityKey;
+        } catch (_) {}
+        registerBatchActivity(
+          productKey: resolvedKey,
+          batchNo: item.batch,
+          exp: item.exp,
+          packing: item.packing,
+          mrp: item.mrp,
+          rate: item.purchaseRate,
+          rateA: item.rateA,
+          rateB: item.rateB,
+          rateC: item.rateC,
+          rateCFormula: item.rateCFormula,
+          appliedRateType: item.appliedRateType,
+        );
+      }
+
       InventoryLogicCenter.rebuildAllInventory(
         medicines: medicines, batchHistory: batchHistory, 
         purchases: purchases, sales: sales, 
         saleReturns: saleReturns, purchaseReturns: purchaseReturns
       );
       await save();
+      AppRealtimeCoordinator.instance.notifyAppMutation(
+        this,
+        action: 'PURCHASE_RETURN_SAVED',
+        entityId: id,
+        unmarkedIds: [id, if (billNo.isNotEmpty) billNo],
+      );
       notifyListeners();
     }
   }
@@ -3653,7 +3716,7 @@ void registerBatchActivity({
           final ret = saleReturns[i];
           WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
             if (t.isNotEmpty) {
-              ReturnsSyncModule.onSaleReturnSaved(ret, t);
+              CreditNoteSyncModule.onCreditNoteSaved(ret, t);
               D1SalesLedgerService.onSaleReturnSaved(ret, t, clientSource: "APP_MOBILE", fyOverride: currentFY);
             }
           });
@@ -3683,6 +3746,11 @@ void registerBatchActivity({
       sales: sales,
       saleReturns: saleReturns,
       purchaseReturns: purchaseReturns,
+    );
+    AppRealtimeCoordinator.instance.notifyAppMutation(
+      this,
+      action: isSaleReturn ? 'SALE_RETURN_SAVED' : 'PURCHASE_RETURN_SAVED',
+      entityId: id,
     );
     notifyListeners();
     save().then((_) => loadAllData());
@@ -5243,7 +5311,7 @@ void registerBatchActivity({
   NumberingSeries getDefaultSeries(String t) {
     final searchType = t.toUpperCase();
     try {
-      var s = numberingSeries.firstWhere((s) => (s.type == searchType || (searchType == "RETURN" && (s.type == "SALE_RETURN" || s.type == "CREDIT_NOTE"))) && s.isDefault && s.isActive);
+      var s = numberingSeries.firstWhere((s) => (s.type == searchType || (searchType == "RETURN" && (s.type == "SALE_RETURN" || s.type == "CREDIT_NOTE")) || ((searchType == "DEBIT_NOTE" || searchType == "PURCHASE_RETURN") && (s.type == "DEBIT_NOTE" || s.type == "PURCHASE_RETURN" || s.type == "DN"))) && s.isDefault && s.isActive);
       if (searchType == "RETURN" && (s.prefix == "SR-" || s.prefix == "CN-")) {
         s = NumberingSeries(
           id: s.id,
@@ -5263,7 +5331,7 @@ void registerBatchActivity({
       return s;
     } catch (e) {
       try {
-        var s = numberingSeries.firstWhere((s) => (s.type == searchType || (searchType == "RETURN" && (s.type == "SALE_RETURN" || s.type == "CREDIT_NOTE"))) && s.isActive);
+        var s = numberingSeries.firstWhere((s) => (s.type == searchType || (searchType == "RETURN" && (s.type == "SALE_RETURN" || s.type == "CREDIT_NOTE")) || ((searchType == "DEBIT_NOTE" || searchType == "PURCHASE_RETURN") && (s.type == "DEBIT_NOTE" || s.type == "PURCHASE_RETURN" || s.type == "DN"))) && s.isActive);
         if (searchType == "RETURN" && (s.prefix == "SR-" || s.prefix == "CN-")) {
           s = NumberingSeries(
             id: s.id,
@@ -5302,7 +5370,8 @@ void registerBatchActivity({
         } else {
           prefix = "TXN-";
         }
-        return NumberingSeries(id: 'sys_$searchType', name: 'Credit Note Default', type: searchType, prefix: prefix, isDefault: true, startNumber: 1);
+        final String defaultName = (searchType == "PURCHASE_RETURN" || searchType == "DEBIT_NOTE" || searchType == "DN") ? 'Debit Note Default' : 'Credit Note Default';
+        return NumberingSeries(id: 'sys_$searchType', name: defaultName, type: searchType, prefix: prefix, isDefault: true, startNumber: 1);
       }
     }
   }
@@ -5789,41 +5858,78 @@ void registerBatchActivity({
   List<Map<String, dynamic>> getMedicineHistory({
     required String partyId, 
     required String medicineId, 
+    String partyName = "",
+    String medicineName = "",
     required bool isSale
   }) {
+    final cleanPartyId = partyId.trim();
+    final cleanPartyName = partyName.trim().toLowerCase();
+    final cleanMedId = medicineId.trim();
+    final cleanMedName = medicineName.trim().toLowerCase();
     List<Map<String, dynamic>> history = [];
     if (isSale) {
-      for (var s in sales.where((s) => s.partyId == partyId && s.status == "Active")) {
-        for (var it in s.items.where((it) => it.medicineID == medicineId)) {
+      for (var s in sales) {
+        if (s.isDeleted == 1 || s.status != "Active") continue;
+        final matchesParty = (cleanPartyId.isNotEmpty && s.partyId.trim() == cleanPartyId) ||
+            (cleanPartyName.isNotEmpty && s.partyName.trim().toLowerCase() == cleanPartyName);
+        if (!matchesParty) continue;
+        for (var it in s.items) {
+          final matchesMed = (cleanMedId.isNotEmpty && it.medicineID.trim() == cleanMedId) ||
+              (cleanMedName.isNotEmpty && it.name.trim().toLowerCase() == cleanMedName);
+          if (!matchesMed) continue;
           history.add({
-            'date': s.date, 
-            'billNo': s.billNo, 
-            'batch': it.batch, 
-            'qty': it.qty, 
-            'free': it.freeQty, 
-            'rate': it.rate, 
-            'mrp': it.mrp, 
-            'gst': it.gstRate
+            'date': s.date,
+            'billNo': s.billNo,
+            'batch': it.batch,
+            'exp': it.exp,
+            'packing': it.packing,
+            'hsn': it.hsn,
+            'qty': it.qty,
+            'free': it.freeQty,
+            'rate': it.rate,
+            'mrp': it.mrp,
+            'gst': it.gstRate,
+            'discountPer': it.discountPer,
+            'discountRupees': it.discountRupees,
+            'appliedRateType': it.appliedRateType,
+            'rateCFormula': it.rateCFormula,
           });
         }
       }
     } else {
-      for (var p in purchases.where((p) => p.partyId == partyId)) {
-        for (var it in p.items.where((it) => it.medicineID == medicineId)) {
+      for (var p in purchases) {
+        if (p.isDeleted == 1 || p.gstStatus == "Cancelled" || p.gstStatus == "Deleted") continue;
+        final matchesParty = (cleanPartyId.isNotEmpty && p.partyId.trim() == cleanPartyId) ||
+            (cleanPartyName.isNotEmpty && p.distributorName.trim().toLowerCase() == cleanPartyName);
+        if (!matchesParty) continue;
+        for (var it in p.items) {
+          final matchesMed = (cleanMedId.isNotEmpty && it.medicineID.trim() == cleanMedId) ||
+              (cleanMedName.isNotEmpty && it.name.trim().toLowerCase() == cleanMedName);
+          if (!matchesMed) continue;
           history.add({
-            'date': p.date, 
-            'billNo': p.billNo, 
-            'batch': it.batch, 
-            'qty': it.qty, 
-            'free': it.freeQty, 
-            'rate': it.purchaseRate, 
-            'mrp': it.mrp, 
-            'gst': it.gstRate
+            'date': p.date,
+            'billNo': p.billNo,
+            'batch': it.batch,
+            'exp': it.exp,
+            'packing': it.packing,
+            'hsn': it.hsn,
+            'qty': it.qty,
+            'free': it.freeQty,
+            'rate': it.purchaseRate,
+            'mrp': it.mrp,
+            'gst': it.gstRate,
+            'discountPer': it.discountPer,
+            'discountRupees': it.discountRupees,
+            'rateA': it.rateA,
+            'rateB': it.rateB,
+            'rateC': it.rateC,
+            'appliedRateType': it.appliedRateType,
+            'rateCFormula': it.rateCFormula,
           });
         }
       }
     }
-    history.sort((a, b) => b['date'].compareTo(a['date']));
+    history.sort((a, b) => (b['date'] as DateTime).compareTo(a['date'] as DateTime));
     return history;
   }
 } // <--- THE DEFINITIVE CLOSING BRACE FOR PHAROAHMANAGER CLASS
