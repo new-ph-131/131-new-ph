@@ -8,11 +8,16 @@ import '../../../../web_app_date_logic.dart';
 import '../../../../web_pdf_router_service.dart';
 import '../mechanism/debit_note_mechanism.dart';
 import '../../../web_billing/mechanism/web_billing_gst_engine.dart';
+import '../../../../../logic/gst_compliance_helper.dart';
 
 class DebitNoteController extends ChangeNotifier {
   final TextEditingController noteNoC = TextEditingController();
   final TextEditingController extraDiscC = TextEditingController(text: "0");
   final TextEditingController remarksC = TextEditingController();
+  final TextEditingController origBillNoC = TextEditingController();
+  DateTime? origBillDate;
+  String paymentMode = "CREDIT";
+  bool isCommercial = false;
   final TextEditingController productSearchC = TextEditingController();
   final TextEditingController supplierSearchC = TextEditingController();
 
@@ -24,6 +29,7 @@ class DebitNoteController extends ChangeNotifier {
   bool isReadOnly = false;
   String? existingRecordId;
   String shopState = "Rajasthan";
+  String shopGstin = "";
 
   void init({
     required PharoahWebManager webPh,
@@ -32,20 +38,33 @@ class DebitNoteController extends ChangeNotifier {
   }) {
     isReadOnly = readOnly;
     shopState = (webPh.companyProfile['state'] != null && webPh.companyProfile['state'].toString().trim().isNotEmpty) ? webPh.companyProfile['state'].toString().trim() : "Rajasthan";
+    shopGstin = (webPh.companyProfile['gstin'] ?? '').toString().trim();
     if (existingRecord != null) {
       existingRecordId = existingRecord.id;
       noteNoC.text = existingRecord.billNo;
       selectedDate = existingRecord.date;
       extraDiscC.text = existingRecord.extraDiscount.toString();
+      paymentMode = existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
+      origBillNoC.text = existingRecord.origBillNo;
+      origBillDate = existingRecord.origBillDate;
+      remarksC.text = existingRecord.reason;
+      isCommercial = existingRecord.isCommercial;
       isBreakageMode = existingRecord.returnType.toLowerCase().contains("breakage") ||
           existingRecord.returnType.toLowerCase().contains("expiry");
       items = List.from(existingRecord.items);
       try {
         selectedSupplier = webPh.parties.firstWhere(
-          (p) => p.name.trim().toUpperCase() == existingRecord.distributorName.trim().toUpperCase(),
+          (p) => (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
+                 p.name.trim().toUpperCase() == existingRecord.distributorName.trim().toUpperCase(),
         );
       } catch (_) {
-        selectedSupplier = Party(id: 'temp', name: existingRecord.distributorName, group: "Sundry Creditors");
+        selectedSupplier = Party(
+          id: existingRecord.partyId.isNotEmpty ? existingRecord.partyId : 'temp',
+          name: existingRecord.distributorName,
+          gst: existingRecord.partyGstin,
+          state: existingRecord.partyState,
+          group: "Sundry Creditors",
+        );
       }
     } else {
       noteNoC.text = webPh.getNextBillNumber("DEBIT_NOTE", "WDN-", 1);
@@ -76,8 +95,34 @@ class DebitNoteController extends ChangeNotifier {
 
   void setDate(DateTime date) {
     selectedDate = date;
+    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+      isCommercial = true;
+    }
     notifyListeners();
   }
+
+  void setPaymentMode(String mode) {
+    paymentMode = mode;
+    notifyListeners();
+  }
+
+  void setOrigBillDate(DateTime? date) {
+    origBillDate = date;
+    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+      isCommercial = true;
+    }
+    notifyListeners();
+  }
+
+  void toggleCommercial(bool val) {
+    isCommercial = val;
+    notifyListeners();
+  }
+
+  bool get isSection34Expired => GstComplianceHelper.isSection34Expired(
+    origInvoiceDate: origBillDate,
+    noteDate: selectedDate,
+  );
 
   void addItem(PurchaseItem item) {
     items.add(item);
@@ -113,12 +158,18 @@ class DebitNoteController extends ChangeNotifier {
   }
 
   // --- CALCULATIONS ---
-  bool get isLocal => selectedSupplier == null || (selectedSupplier!.state.trim().toLowerCase() == shopState.trim().toLowerCase());
+  bool get isLocal => selectedSupplier == null || GstComplianceHelper.isIntraStateReturn(
+    shopGstin: shopGstin,
+    shopState: shopState,
+    partyGstin: selectedSupplier?.gst,
+    partyState: selectedSupplier?.state,
+  );
 
   BillGstSummary get gstSummary => WebBillingGstEngine.calculateForPurchase(
     items: items,
     extraDiscount: extraDiscount,
     isLocal: isLocal,
+    isCommercial: isCommercial,
   );
 
   double get subTotal => gstSummary.grossTaxable;
@@ -167,6 +218,11 @@ class DebitNoteController extends ChangeNotifier {
       extraDiscount: extraDiscount,
       roundOff: roundOff,
       returnType: returnType,
+      paymentMode: paymentMode,
+      origBillNo: origBillNoC.text.trim(),
+      origBillDate: origBillDate,
+      reason: remarksC.text.trim(),
+      isCommercial: isCommercial,
       existingId: existingRecordId,
     );
 
@@ -174,13 +230,21 @@ class DebitNoteController extends ChangeNotifier {
       final newReturn = PurchaseReturn(
         id: id,
         billNo: noteNoC.text.trim(),
+        partyId: selectedSupplier!.id,
         distributorName: selectedSupplier!.name,
+        partyGstin: selectedSupplier!.gst,
+        partyState: selectedSupplier!.state,
         date: selectedDate,
         items: List.from(items),
         totalAmount: grandTotal,
         extraDiscount: extraDiscount,
         roundOff: roundOff,
         returnType: returnType,
+        paymentMode: paymentMode,
+        origBillNo: origBillNoC.text.trim(),
+        origBillDate: origBillDate,
+        reason: remarksC.text.trim(),
+        isCommercial: isCommercial,
         status: "Active",
       );
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
@@ -197,6 +261,7 @@ class DebitNoteController extends ChangeNotifier {
     noteNoC.dispose();
     extraDiscC.dispose();
     remarksC.dispose();
+    origBillNoC.dispose();
     productSearchC.dispose();
     supplierSearchC.dispose();
     super.dispose();

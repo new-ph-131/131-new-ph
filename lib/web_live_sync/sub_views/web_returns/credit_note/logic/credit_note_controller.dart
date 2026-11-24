@@ -7,11 +7,16 @@ import '../../../../web_app_date_logic.dart';
 import '../../../../web_pdf_router_service.dart';
 import '../mechanism/credit_note_mechanism.dart';
 import '../../../web_billing/mechanism/web_billing_gst_engine.dart';
+import '../../../../../logic/gst_compliance_helper.dart';
 
 class CreditNoteController extends ChangeNotifier {
   final TextEditingController noteNoC = TextEditingController();
   final TextEditingController extraDiscC = TextEditingController(text: "0");
   final TextEditingController remarksC = TextEditingController();
+  final TextEditingController origBillNoC = TextEditingController();
+  DateTime? origBillDate;
+  String paymentMode = "CREDIT";
+  bool isCommercial = false;
   final TextEditingController productSearchC = TextEditingController();
   final TextEditingController customerSearchC = TextEditingController();
 
@@ -23,6 +28,7 @@ class CreditNoteController extends ChangeNotifier {
   bool isReadOnly = false;
   String? existingRecordId;
   String shopState = "Rajasthan";
+  String shopGstin = "";
 
   void init({
     required PharoahWebManager webPh,
@@ -31,18 +37,32 @@ class CreditNoteController extends ChangeNotifier {
   }) {
     isReadOnly = readOnly;
     shopState = (webPh.companyProfile['state'] != null && webPh.companyProfile['state'].toString().trim().isNotEmpty) ? webPh.companyProfile['state'].toString().trim() : "Rajasthan";
+    shopGstin = (webPh.companyProfile['gstin'] ?? '').toString().trim();
     if (existingRecord != null) {
       existingRecordId = existingRecord.id;
       noteNoC.text = existingRecord.billNo;
       selectedDate = existingRecord.date;
       extraDiscC.text = existingRecord.extraDiscount.toString();
+      paymentMode = existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
+      origBillNoC.text = existingRecord.origBillNo;
+      origBillDate = existingRecord.origBillDate;
+      remarksC.text = existingRecord.reason;
+      isCommercial = existingRecord.isCommercial;
       isBreakageMode = existingRecord.returnType.toLowerCase().contains("breakage") ||
           existingRecord.returnType.toLowerCase().contains("expiry");
       items = List.from(existingRecord.items);
       try {
-        selectedCustomer = webPh.parties.firstWhere((p) => p.name == existingRecord.partyName);
+        selectedCustomer = webPh.parties.firstWhere(
+          (p) => (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
+                 p.name.trim().toUpperCase() == existingRecord.partyName.trim().toUpperCase(),
+        );
       } catch (_) {
-        selectedCustomer = Party(id: 'temp', name: existingRecord.partyName);
+        selectedCustomer = Party(
+          id: existingRecord.partyId.isNotEmpty ? existingRecord.partyId : 'temp',
+          name: existingRecord.partyName,
+          gst: existingRecord.partyGstin,
+          state: existingRecord.partyState,
+        );
       }
     } else {
       noteNoC.text = webPh.getNextBillNumber("RETURN", "WCN-", 1);
@@ -73,8 +93,34 @@ class CreditNoteController extends ChangeNotifier {
 
   void setDate(DateTime date) {
     selectedDate = date;
+    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+      isCommercial = true;
+    }
     notifyListeners();
   }
+
+  void setPaymentMode(String mode) {
+    paymentMode = mode;
+    notifyListeners();
+  }
+
+  void setOrigBillDate(DateTime? date) {
+    origBillDate = date;
+    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+      isCommercial = true;
+    }
+    notifyListeners();
+  }
+
+  void toggleCommercial(bool val) {
+    isCommercial = val;
+    notifyListeners();
+  }
+
+  bool get isSection34Expired => GstComplianceHelper.isSection34Expired(
+    origInvoiceDate: origBillDate,
+    noteDate: selectedDate,
+  );
 
   void addItem(BillItem item) {
     items.add(item);
@@ -110,12 +156,18 @@ class CreditNoteController extends ChangeNotifier {
   }
 
   // --- CALCULATIONS ---
-  bool get isLocal => selectedCustomer == null || (selectedCustomer!.state.trim().toLowerCase() == shopState.trim().toLowerCase());
+  bool get isLocal => selectedCustomer == null || GstComplianceHelper.isIntraStateReturn(
+    shopGstin: shopGstin,
+    shopState: shopState,
+    partyGstin: selectedCustomer?.gst,
+    partyState: selectedCustomer?.state,
+  );
 
   BillGstSummary get gstSummary => WebBillingGstEngine.calculate(
     items: items,
     extraDiscount: extraDiscount,
     isLocal: isLocal,
+    isCommercial: isCommercial,
   );
 
   double get subTotal => gstSummary.grossTaxable;
@@ -164,6 +216,11 @@ class CreditNoteController extends ChangeNotifier {
       extraDiscount: extraDiscount,
       roundOff: roundOff,
       returnType: returnType,
+      paymentMode: paymentMode,
+      origBillNo: origBillNoC.text.trim(),
+      origBillDate: origBillDate,
+      reason: remarksC.text.trim(),
+      isCommercial: isCommercial,
       existingId: existingRecordId,
     );
 
@@ -172,12 +229,20 @@ class CreditNoteController extends ChangeNotifier {
         id: id,
         billNo: noteNoC.text.trim(),
         date: selectedDate,
+        partyId: selectedCustomer!.id,
         partyName: selectedCustomer!.name,
+        partyGstin: selectedCustomer!.gst,
+        partyState: selectedCustomer!.state,
         items: List.from(items),
         totalAmount: grandTotal,
         extraDiscount: extraDiscount,
         roundOff: roundOff,
         returnType: returnType,
+        paymentMode: paymentMode,
+        origBillNo: origBillNoC.text.trim(),
+        origBillDate: origBillDate,
+        reason: remarksC.text.trim(),
+        isCommercial: isCommercial,
         status: "Active",
       );
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
@@ -194,6 +259,7 @@ class CreditNoteController extends ChangeNotifier {
     noteNoC.dispose();
     extraDiscC.dispose();
     remarksC.dispose();
+    origBillNoC.dispose();
     productSearchC.dispose();
     customerSearchC.dispose();
     super.dispose();

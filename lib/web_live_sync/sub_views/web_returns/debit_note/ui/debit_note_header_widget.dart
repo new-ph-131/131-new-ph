@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../../web_models.dart';
 import '../../../../pharoah_web_manager.dart';
 import '../../../../web_app_date_logic.dart';
+import '../../../../../logic/gst_compliance_helper.dart';
 import '../logic/debit_note_controller.dart';
 import '../../../web_billing/quick_add_party_modal.dart';
 
@@ -83,11 +84,13 @@ class DebitNoteHeaderWidget extends StatelessWidget {
                   onTap: controller.isReadOnly
                       ? null
                       : () async {
+                          final fyStart = WebAppDateLogic.getFYStart(webPh.financialYear);
+                          final fyEnd = WebAppDateLogic.getFYEnd(webPh.financialYear);
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: controller.selectedDate,
-                            firstDate: WebAppDateLogic.getFYStart(webPh.financialYear),
-                            lastDate: WebAppDateLogic.getFYEnd(webPh.financialYear),
+                            initialDate: GstComplianceHelper.clampPickerDate(controller.selectedDate, fyStart, fyEnd),
+                            firstDate: fyStart,
+                            lastDate: fyEnd,
                           );
                           if (picked != null) controller.setDate(picked);
                         },
@@ -204,6 +207,136 @@ class DebitNoteHeaderWidget extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 10),
+          // Cash/Credit Mode & Rule 53(1A) Reference Row
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: controller.isReadOnly ? null : () => controller.setPaymentMode("CREDIT"),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            decoration: BoxDecoration(
+                              color: controller.paymentMode == "CREDIT" ? const Color(0xFFD97706) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text("CREDIT", textAlign: TextAlign.center, style: TextStyle(color: controller.paymentMode == "CREDIT" ? Colors.white : Colors.white54, fontSize: 9.5, fontWeight: FontWeight.w900)),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: controller.isReadOnly ? null : () => controller.setPaymentMode("CASH"),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 7),
+                            decoration: BoxDecoration(
+                              color: controller.paymentMode == "CASH" ? const Color(0xFF059669) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text("CASH REFUND", textAlign: TextAlign.center, style: TextStyle(color: controller.paymentMode == "CASH" ? Colors.white : Colors.white54, fontSize: 9.5, fontWeight: FontWeight.w900)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: TextField(
+                  controller: controller.origBillNoC,
+                  readOnly: controller.isReadOnly,
+                  style: const TextStyle(color: Colors.white, fontSize: 11.5),
+                  decoration: InputDecoration(
+                    labelText: "ORIG. PUR BILL NO (RULE 53)",
+                    labelStyle: const TextStyle(color: Colors.white54, fontSize: 8.5),
+                    filled: true,
+                    fillColor: Colors.black26,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: InkWell(
+                  onTap: controller.isReadOnly
+                      ? null
+                      : () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: GstComplianceHelper.clampPickerDate(
+                              controller.origBillDate ?? controller.selectedDate,
+                              DateTime(2017, 7, 1),
+                              controller.selectedDate,
+                            ),
+                            firstDate: DateTime(2017, 7, 1),
+                            lastDate: controller.selectedDate,
+                          );
+                          if (picked != null) controller.setOrigBillDate(picked);
+                        },
+                  child: Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white12)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          controller.origBillDate != null
+                              ? "Orig: ${DateFormat('dd/MM/yy').format(controller.origBillDate!)}"
+                              : "ORIG. BILL DATE",
+                          style: TextStyle(color: controller.origBillDate != null ? Colors.white : Colors.white54, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                        const Icon(Icons.event_note_rounded, color: Color(0xFFFBBF24), size: 15),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: controller.isReadOnly ? null : () => controller.toggleCommercial(!controller.isCommercial),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: controller.isCommercial ? const Color(0x44F59E0B) : Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: controller.isCommercial ? const Color(0xFFF59E0B) : Colors.white12),
+                  ),
+                  child: Text(
+                    controller.isCommercial ? "COMMERCIAL (NO GST)" : "GST NOTE",
+                    style: TextStyle(color: controller.isCommercial ? const Color(0xFFFBBF24) : Colors.white70, fontSize: 9.5, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (controller.isSection34Expired) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0x33F59E0B),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF59E0B)),
+              ),
+              child: Text(
+                "Sec 34(2) Cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(controller.origBillDate!))}) Crossed — Commercial Note (Without GST) recommended.",
+                style: const TextStyle(color: Color(0xFFFDE68A), fontSize: 10.5, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
 
           // Selected Supplier Card or Search Field

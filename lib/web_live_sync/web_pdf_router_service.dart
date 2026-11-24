@@ -12,6 +12,7 @@ import "web_models.dart";
 import "pharoah_web_manager.dart";
 import "pdf/web_voucher_pdf.dart";
 import "package:pharoah_erp/pdf/pdf_master_service.dart";
+import "package:pharoah_erp/logic/gst_compliance_helper.dart";
 import "pdf/web_sale_report_pdf.dart";
 import "pdf/web_purchase_report_pdf.dart";
 import "pdf/web_purchase_invoice_pdf.dart";
@@ -625,7 +626,12 @@ class WebPdfRouterService {
     const int itemsPerPage = 14; 
 
     String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
-    bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
+    bool isLocal = GstComplianceHelper.isIntraStateReturn(
+      shopGstin: shop.gstin,
+      shopState: shop.state,
+      partyGstin: party.gst.isNotEmpty ? party.gst : returnObj.partyGstin,
+      partyState: party.state.isNotEmpty ? party.state : returnObj.partyState,
+    );
 
     final sellable = returnObj.items.where((i) => i.isBreakage == false).toList();
     final breakage = returnObj.items.where((i) => i.isBreakage == true).toList();
@@ -680,10 +686,13 @@ class WebPdfRouterService {
                           175, true,
                           pw.Column(
                             children: [
-                              pw.Text("CREDIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                              pw.Text(returnObj.isCommercial ? "COMMERCIAL CREDIT NOTE" : "CREDIT NOTE", style: pw.TextStyle(fontSize: returnObj.isCommercial ? 9.5 : 11, fontWeight: pw.FontWeight.bold, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.red900)),
+                              if (returnObj.isCommercial) pw.Text("(SEC 34 - WITHOUT GST)", style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
                               pw.Divider(thickness: 0.5),
-                              pw.Text("CN: ${returnObj.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("CN: ${returnObj.billNo} | ${returnObj.paymentMode.isNotEmpty ? returnObj.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                               pw.Text(DateFormat("dd/MM/yyyy").format(returnObj.date), style: pw.TextStyle(fontSize: 8)),
+                              if (returnObj.origBillNo.isNotEmpty)
+                                pw.Text("Orig: ${returnObj.origBillNo}${returnObj.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(returnObj.origBillDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5)),
                             ],
                           ),
                         ),
@@ -735,6 +744,10 @@ class WebPdfRouterService {
                           }
                           BillItem i = entry as BillItem;
                           String qtyDisp = "${fmt(i.qty)}+${fmt(i.freeQty)}";
+                          double taxableRow = (i.qty * i.rate) - i.discountRupees;
+                          if (taxableRow < 0) taxableRow = 0.0;
+                          double effGst = returnObj.isCommercial ? 0.0 : i.gstRate;
+                          double rowTotal = returnObj.isCommercial ? taxableRow : i.total;
 
                           return pw.Container(
                             height: 18,
@@ -752,12 +765,12 @@ class WebPdfRouterService {
                                 _cell(i.mrp.toStringAsFixed(2), 55),
                                 _cell(i.rate.toStringAsFixed(2), 55),
                                 if (isLocal) ...[
-                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
-                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                                  _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
+                                  _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                                 ] else ...[
-                                  _cell("${i.gstRate.toStringAsFixed(1)}%", 80),
+                                  _cell("${effGst.toStringAsFixed(1)}%", 80),
                                 ],
-                                _cell(i.total.toStringAsFixed(2), 125),
+                                _cell(rowTotal.toStringAsFixed(2), 125),
                               ],
                             ),
                           );
@@ -795,6 +808,7 @@ class WebPdfRouterService {
       items: returnObj.items,
       extraDiscount: returnObj.extraDiscount,
       isLocal: isLocal,
+      isCommercial: returnObj.isCommercial,
     );
     return pw.Container(
       height: 100,
@@ -808,8 +822,15 @@ class WebPdfRouterService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text("Amount: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                if (returnObj.reason.isNotEmpty) pw.Padding(padding: const pw.EdgeInsets.only(top: 3), child: pw.Text("Reason: ${returnObj.reason}", style: const pw.TextStyle(fontSize: 7))),
+                if (returnObj.origBillNo.isNotEmpty) pw.Text("Ref Inv: ${returnObj.origBillNo}${returnObj.origBillDate != null ? ' dt ${DateFormat('dd/MM/yy').format(returnObj.origBillDate!)}' : ''}", style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
                 pw.Spacer(),
-                pw.Text("Verified return account settlement (Section 34 CGST Compliant).", style: const pw.TextStyle(fontSize: 7)),
+                pw.Text(
+                  returnObj.isCommercial
+                      ? "Commercial Credit Note (Without GST / Sec 34(2) CGST Act)."
+                      : "Verified return account settlement (Section 34 CGST Compliant).",
+                  style: pw.TextStyle(fontSize: 7, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.black),
+                ),
               ],
             ),
           ),
@@ -892,7 +913,12 @@ class WebPdfRouterService {
     const int itemsPerPage = 16;
 
     String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
-    bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
+    bool isLocal = GstComplianceHelper.isIntraStateReturn(
+      shopGstin: shop.gstin,
+      shopState: shop.state,
+      partyGstin: party.gst.isNotEmpty ? party.gst : returnObj.partyGstin,
+      partyState: party.state.isNotEmpty ? party.state : returnObj.partyState,
+    );
 
     final sellable = returnObj.items.where((i) => i.isBreakage == false).toList();
     final breakage = returnObj.items.where((i) => i.isBreakage == true).toList();
@@ -947,10 +973,13 @@ class WebPdfRouterService {
                           175, true,
                           pw.Column(
                             children: [
-                              pw.Text("DEBIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                              pw.Text(returnObj.isCommercial ? "COMMERCIAL DEBIT NOTE" : "DEBIT NOTE", style: pw.TextStyle(fontSize: returnObj.isCommercial ? 9.5 : 11, fontWeight: pw.FontWeight.bold, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.brown900)),
+                              if (returnObj.isCommercial) pw.Text("(SEC 34 - WITHOUT GST)", style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
                               pw.Divider(thickness: 0.5),
-                              pw.Text("No: ${returnObj.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                              pw.Text("No: ${returnObj.billNo} | ${returnObj.paymentMode.isNotEmpty ? returnObj.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                               pw.Text(DateFormat("dd/MM/yyyy").format(returnObj.date), style: pw.TextStyle(fontSize: 8)),
+                              if (returnObj.origBillNo.isNotEmpty)
+                                pw.Text("Orig: ${returnObj.origBillNo}${returnObj.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(returnObj.origBillDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5)),
                             ],
                           ),
                         ),
@@ -1000,6 +1029,10 @@ class WebPdfRouterService {
                           }
                           PurchaseItem i = entry as PurchaseItem;
                           int sNo = returnObj.items.indexOf(i) + 1;
+                          double taxableRow = (i.purchaseRate * i.qty) - i.discountRupees;
+                          if (taxableRow < 0) taxableRow = 0.0;
+                          double effGst = returnObj.isCommercial ? 0.0 : i.gstRate;
+                          double rowTotal = returnObj.isCommercial ? taxableRow : i.total;
                           return pw.Container(
                             height: 18,
                             decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
@@ -1016,12 +1049,12 @@ class WebPdfRouterService {
                                 _cell(i.mrp.toStringAsFixed(2), 55),
                                 _cell(i.purchaseRate.toStringAsFixed(2), 55),
                                 if (isLocal) ...[
-                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
-                                  _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                                  _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
+                                  _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                                 ] else ...[
-                                  _cell("${i.gstRate.toStringAsFixed(1)}%", 80),
+                                  _cell("${effGst.toStringAsFixed(1)}%", 80),
                                 ],
-                                _cell(i.total.toStringAsFixed(2), 100),
+                                _cell(rowTotal.toStringAsFixed(2), 100),
                               ],
                             ),
                           );
@@ -1060,6 +1093,7 @@ class WebPdfRouterService {
       items: returnObj.items,
       extraDiscount: returnObj.extraDiscount,
       isLocal: isLocal,
+      isCommercial: returnObj.isCommercial,
     );
     return pw.Container(
       height: 100,
@@ -1074,8 +1108,15 @@ class WebPdfRouterService {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+                if (returnObj.reason.isNotEmpty) pw.Padding(padding: const pw.EdgeInsets.only(top: 3), child: pw.Text("Reason: ${returnObj.reason}", style: const pw.TextStyle(fontSize: 7))),
+                if (returnObj.origBillNo.isNotEmpty) pw.Text("Ref Bill: ${returnObj.origBillNo}${returnObj.origBillDate != null ? ' dt ${DateFormat('dd/MM/yy').format(returnObj.origBillDate!)}' : ''}", style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
                 pw.Spacer(),
-                pw.Text("Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant).", style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+                pw.Text(
+                  returnObj.isCommercial
+                      ? "Commercial Debit Note (Without GST / Sec 34(2) CGST Act)."
+                      : "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant).",
+                  style: pw.TextStyle(fontSize: 6.5, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.grey700),
+                ),
               ],
             ),
           ),

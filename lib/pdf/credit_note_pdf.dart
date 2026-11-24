@@ -11,6 +11,7 @@ import '../gateway/company_registry_model.dart';
 import '../logic/app_settings_model.dart';
 import 'pdf_master_service.dart';
 import '../logic/app_billing_gst_engine.dart';
+import '../logic/gst_compliance_helper.dart';
 
 class CreditNotePdf {
   // 1. PRINT / PREVIEW
@@ -25,7 +26,12 @@ class CreditNotePdf {
     const double masterWidth = 800; 
     const int itemsPerPage = 20;
     String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
-    bool isLocal = shop.state.trim().toLowerCase() == party.state.trim().toLowerCase();
+    bool isLocal = GstComplianceHelper.isIntraStateReturn(
+      shopGstin: shop.gstin,
+      shopState: shop.state,
+      partyGstin: party.gst.isNotEmpty ? party.gst : ret.partyGstin,
+      partyState: party.state.isNotEmpty ? party.state : ret.partyState,
+    );
 
     final sellable = ret.items.where((i) => i.isBreakage == false).toList();
     final breakage = ret.items.where((i) => i.isBreakage == true).toList();
@@ -60,10 +66,13 @@ class CreditNotePdf {
                   pw.Text("GSTIN: ${shop.gstin} | DL: ${shop.dlNo}", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
                 ])),
                 _hBox(175, true, pw.Column(children: [
-                  pw.Text("CREDIT NOTE", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                  pw.Text(ret.isCommercial ? "COMMERCIAL CREDIT NOTE" : "CREDIT NOTE", style: pw.TextStyle(fontSize: ret.isCommercial ? 9.5 : 11, fontWeight: pw.FontWeight.bold, color: ret.isCommercial ? PdfColors.orange900 : PdfColors.red900)),
+                  if (ret.isCommercial) pw.Text("(SEC 34 - WITHOUT GST)", style: pw.TextStyle(fontSize: 6.5, fontWeight: pw.FontWeight.bold, color: PdfColors.orange900)),
                   pw.Divider(thickness: 0.5),
-                  pw.Text("CN: ${ret.billNo}", style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  pw.Text("CN: ${ret.billNo} | ${ret.paymentMode.isNotEmpty ? ret.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                   pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
+                  if (ret.origBillNo.isNotEmpty)
+                    pw.Text("Orig: ${ret.origBillNo}${ret.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(ret.origBillDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5)),
                 ])),
                 _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text("CONSIGNEE:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
@@ -86,20 +95,22 @@ class CreditNotePdf {
                 BillItem i = entry as BillItem;
                 double taxableRow = (i.qty * i.rate) - i.discountRupees;
                 if (taxableRow < 0) taxableRow = 0.0;
-                double taxAmt = i.total - taxableRow;
+                double effGst = ret.isCommercial ? 0.0 : i.gstRate;
+                double taxAmt = ret.isCommercial ? 0.0 : (i.total - taxableRow);
                 if (taxAmt < 0) taxAmt = 0.0;
+                double rowTotal = ret.isCommercial ? taxableRow : i.total;
                 return pw.Container(decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))), child: pw.Row(children: [
                     _cell("${ret.items.indexOf(i) + 1}", 25), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 50), _cell(i.packing, 40),
                     pw.Container(width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                     _cell(i.batch, 70), _cell(i.exp, 45), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.rate.toStringAsFixed(2), 55),
                     if (isLocal) ...[
-                      _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
-                      _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                      _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
+                      _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                     ] else ...[
-                      _cell("${i.gstRate.toStringAsFixed(1)}%", 35),
+                      _cell("${effGst.toStringAsFixed(1)}%", 35),
                       _cell(taxAmt.toStringAsFixed(1), 45),
                     ],
-                    _cell(i.total.toStringAsFixed(2), 125),
+                    _cell(rowTotal.toStringAsFixed(2), 125),
                 ]));
               }).toList())),
 
@@ -128,12 +139,20 @@ class CreditNotePdf {
       items: ret.items,
       extraDiscount: ret.extraDiscount,
       isLocal: local,
+      isCommercial: ret.isCommercial,
     );
     return pw.Container(height: 110, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
       pw.Container(width: 320, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text("Amount: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+        if (ret.reason.isNotEmpty) pw.Padding(padding: const pw.EdgeInsets.only(top: 3), child: pw.Text("Reason: ${ret.reason}", style: const pw.TextStyle(fontSize: 7))),
+        if (ret.origBillNo.isNotEmpty) pw.Text("Ref Inv: ${ret.origBillNo}${ret.origBillDate != null ? ' dt ${DateFormat('dd/MM/yy').format(ret.origBillDate!)}' : ''}", style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
         pw.Spacer(),
-        pw.Text("Verified return account settlement (Section 34 CGST Compliant).", style: const pw.TextStyle(fontSize: 7)),
+        pw.Text(
+          ret.isCommercial
+              ? "Commercial Credit Note (Without GST / Sec 34(2) CGST Act)."
+              : "Verified return account settlement (Section 34 CGST Compliant).",
+          style: pw.TextStyle(fontSize: 7, color: ret.isCommercial ? PdfColors.orange900 : PdfColors.black),
+        ),
       ])),
       pw.Container(width: 250, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
         _fRow("GROSS TAXABLE", summary.grossTaxable),

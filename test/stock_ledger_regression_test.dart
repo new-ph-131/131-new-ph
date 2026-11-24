@@ -10,6 +10,11 @@ import 'package:pharoah_erp/gateway/company_registry_model.dart';
 import 'package:pharoah_erp/inventory_logic_center.dart';
 import 'package:pharoah_erp/logic/app_accounts_calculator.dart';
 import 'package:pharoah_erp/compliance/gst_offline_engine/gst_state_codes.dart';
+import 'package:pharoah_erp/compliance/gst_offline_engine/gst_offline_json_builder.dart';
+import 'package:pharoah_erp/compliance/gst_offline_engine/gst_offline_csv_builder.dart';
+import 'package:pharoah_erp/logic/gst_compliance_helper.dart';
+import 'package:pharoah_erp/logic/app_billing_gst_engine.dart';
+import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/mechanism/web_billing_gst_engine.dart';
 import 'package:pharoah_erp/models.dart';
 import 'package:pharoah_erp/pharoah_manager.dart';
 import 'package:pharoah_erp/sync_bridge/engines/universal_delta_merger.dart';
@@ -834,31 +839,211 @@ void main() {
   test('PHASE-2: Cash CN / DN accounting, POS state resolution, and Section 34 Commercial Note exemption', () {
     final ph = PharoahManager();
     ph.currentFY = '2025-26';
-    ph.activeCompany = CompanyProfile(id: 'C1', name: 'Pharoah Pharma', gstin: '08AAAAA0000A1Z5', state: 'Rajasthan');
+    final shop = CompanyProfile(
+      id: 'C1',
+      name: 'Pharoah Pharma',
+      businessType: 'Wholesale',
+      createdAt: DateTime(2025, 4, 1),
+      password: '1234',
+      gstin: '08AAAAA0000A1Z5',
+      state: 'Rajasthan',
+    );
+    ph.activeCompany = shop;
 
-    // 1. POS State Resolution via GstStateCodes
+    // 1. POS State Resolution via GstStateCodes & GstComplianceHelper
     expect(GstStateCodes.resolvePos('27AAAAA0000A1Z5', 'Maharashtra'), equals('27'));
     expect(GstStateCodes.resolvePos('', 'Rajasthan'), equals('08'));
+    expect(
+      GstComplianceHelper.isIntraStateReturn(
+        shopGstin: '08AAAAA0000A1Z5',
+        shopState: 'Rajasthan',
+        partyGstin: '08BBBBB1111B1Z2',
+        partyState: 'Rajsthan', // Typo state must be overridden by GSTIN code 08
+      ),
+      isTrue,
+    );
+    expect(
+      GstComplianceHelper.isIntraStateReturn(
+        shopGstin: '08AAAAA0000A1Z5',
+        shopState: 'Rajasthan',
+        partyGstin: '27BBBBB1111B1Z2',
+        partyState: 'Rajasthan',
+      ),
+      isFalse,
+    );
 
-    // 2. Cash Credit Note vs Credit Credit Note ledger impact
-    final customer = Party(id: 'P1', name: 'Apollo Pharmacy', state: 'Rajasthan', group: 'Sundry Debtors', opBal: 1000.0);
+    // 1b. Section 34(2) Statutory Cutoff (30 Nov following end of FY of orig invoice)
+    expect(
+      GstComplianceHelper.isSection34Expired(
+        origInvoiceDate: DateTime(2024, 10, 15), // FY 2024-25 -> cutoff Nov 30, 2025
+        noteDate: DateTime(2025, 11, 30),
+      ),
+      isFalse,
+    );
+    expect(
+      GstComplianceHelper.isSection34Expired(
+        origInvoiceDate: DateTime(2024, 10, 15), // FY 2024-25 -> cutoff Nov 30, 2025
+        noteDate: DateTime(2025, 12, 1),
+      ),
+      isTrue,
+    );
+
+    // 2. Cash CN/DN vs Credit CN/DN ledger & App/Web Parity
+    final customer = Party(id: 'P1', name: 'Apollo Pharmacy', gst: '08BBBBB1111B1Z2', state: 'Rajasthan', group: 'Sundry Debtors', opBal: 1000.0);
+    final cashLedger = Party(id: 'cash', name: 'Cash in Hand', group: 'Cash in Hand', opBal: 2000.0);
     ph.parties = [customer];
     ph.sales = [];
     ph.purchases = [];
+    ph.vouchers = [];
+
+    final billItem = BillItem(
+      id: 'BI-1',
+      srNo: 1,
+      medicineID: 'M1',
+      name: 'Paracetamol 650',
+      packing: '15s',
+      batch: 'B1',
+      exp: '12/27',
+      hsn: '3004',
+      mrp: 30.0,
+      rate: 20.0,
+      gstRate: 12.0,
+      qty: 10.0,
+      freeQty: 0.0,
+      total: 224.0,
+    );
+    final purItem = PurchaseItem(
+      id: 'PI-1',
+      srNo: 1,
+      medicineID: 'M1',
+      name: 'Paracetamol 650',
+      packing: '15s',
+      batch: 'B1',
+      exp: '12/27',
+      hsn: '3004',
+      mrp: 30.0,
+      qty: 10.0,
+      purchaseRate: 15.0,
+      gstRate: 12.0,
+      total: 168.0,
+    );
 
     final cashCn = SaleReturn(
       id: 'CN-CASH',
       billNo: 'CC-1',
       date: DateTime(2025, 5, 10),
+      partyId: 'P1',
       partyName: 'Apollo Pharmacy',
+      partyGstin: '08BBBBB1111B1Z2',
+      partyState: 'Rajasthan',
+      items: [billItem],
       totalAmount: 500.0,
       paymentMode: 'CASH',
+      isCommercial: false,
     );
-    ph.saleReturns = [cashCn];
+    final creditCn = SaleReturn(
+      id: 'CN-CREDIT',
+      billNo: 'CN-2',
+      date: DateTime(2025, 5, 11),
+      partyId: 'P1',
+      partyName: 'Apollo Pharmacy',
+      partyGstin: '08BBBBB1111B1Z2',
+      partyState: 'Rajasthan',
+      items: [billItem],
+      totalAmount: 200.0,
+      paymentMode: 'CREDIT',
+      isCommercial: true,
+    );
+    final cashDn = PurchaseReturn(
+      id: 'DN-CASH',
+      billNo: 'DC-1',
+      date: DateTime(2025, 5, 12),
+      partyId: 'P1',
+      distributorName: 'Apollo Pharmacy',
+      partyGstin: '08BBBBB1111B1Z2',
+      partyState: 'Rajasthan',
+      items: [purItem],
+      totalAmount: 150.0,
+      paymentMode: 'CASH',
+      origBillNo: 'INV-99',
+      origBillDate: DateTime(2025, 4, 20),
+      reason: '01-Sales Return',
+      isCommercial: false,
+    );
+    ph.saleReturns = [cashCn, creditCn];
+    ph.purchaseReturns = [cashDn];
 
-    // Cash CN should NOT reduce party receivable balance (since paid in cash), but goes to Cash Book
-    double partyBal = AppAccountsCalculator.calculatePartyBalance(customer, sales: ph.sales, purchases: ph.purchases, saleReturns: ph.saleReturns, purchaseReturns: ph.purchaseReturns, vouchers: ph.vouchers);
-    expect(partyBal, equals(1000.0)); // OpBal remains 1000, not 500
+    // Party balance: OpBal 1000 - Credit CN 200 = 800 (Cash CN & Cash DN are immediately settled!)
+    final double appPartyBal = AppAccountsCalculator.calculatePartyBalance(
+      party: customer,
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+    );
+    final double webPartyBal = WebAccountsCalculator.calculatePartyBalance(
+      party: customer,
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+    );
+    expect(appPartyBal, equals(800.0));
+    expect(webPartyBal, equals(appPartyBal));
+
+    final appStmt = AppAccountsCalculator.getPartyStatementData(
+      party: customer,
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+      fromDate: DateTime(2025, 4, 1),
+      toDate: DateTime(2026, 3, 31),
+    );
+    final webStmt = WebAccountsCalculator.getPartyStatementData(
+      party: customer,
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+      fromDate: DateTime(2025, 4, 1),
+      toDate: DateTime(2026, 3, 31),
+    );
+    expect(appStmt['closingBalance'], equals(appPartyBal));
+    expect(webStmt['closingBalance'], equals(appPartyBal));
+
+    // Cash-in-Hand balance: 2000 - 500 (Cash CN) + 150 (Cash DN) = 1650
+    final double appCashBal = AppAccountsCalculator.calculateCashInHandBalance(
+      sales: ph.sales,
+      purchases: ph.purchases,
+      vouchers: ph.vouchers,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      openingCash: 2000.0,
+    );
+    final double appCashLedgerBal = AppAccountsCalculator.calculatePartyBalance(
+      party: cashLedger,
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+    );
+    final double webCashLedgerBal = WebAccountsCalculator.calculatePartyBalance(
+      party: cashLedger,
+      sales: ph.sales,
+      purchases: ph.purchases,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+      vouchers: ph.vouchers,
+    );
+    expect(appCashBal, equals(1650.0));
+    expect(appCashLedgerBal, equals(1650.0));
+    expect(webCashLedgerBal, equals(1650.0));
 
     final cashBook = AppAccountsCalculator.getCashBookStatement(
       fromDate: DateTime(2025, 4, 1),
@@ -869,7 +1054,38 @@ void main() {
       saleReturns: ph.saleReturns,
       purchaseReturns: ph.purchaseReturns,
     );
-    // Cash CN adds 500 out (cash refund paid out)
     expect(cashBook.any((e) => e['type'] == 'CASH CREDIT NOTE' && e['out'] == 500.0), isTrue);
+    expect(cashBook.any((e) => e['type'] == 'CASH DEBIT NOTE' && e['in'] == 150.0), isTrue);
+
+    // 3. Commercial Note (Sec 34) zeroes GST in App & Web engines & excludes from GSTR-1/2 exports
+    final appCommCn = AppBillingGstEngine.calculate(items: [billItem], isLocal: true, isCommercial: true);
+    final webCommDn = WebBillingGstEngine.calculateForPurchase(items: [purItem], isLocal: false, isCommercial: true);
+    expect(appCommCn.totalTax, equals(0.0));
+    expect(appCommCn.finalGrandTotal, equals(200.0));
+    expect(webCommDn.totalTax, equals(0.0));
+    expect(webCommDn.finalGrandTotal, equals(150.0));
+
+    final gstr1 = GstOfflineJsonBuilder.buildGstr1Payload(
+      sales: const [],
+      returns: ph.saleReturns,
+      parties: ph.parties,
+      shop: shop,
+      fromDate: DateTime(2025, 5, 1),
+      toDate: DateTime(2025, 5, 31),
+    );
+    // Only CC-1 (isCommercial: false) should be included; CN-2 (isCommercial: true) excluded
+    expect(gstr1.cdnr.length, equals(1));
+    expect(gstr1.cdnr.first.nt.length, equals(1));
+    expect(gstr1.cdnr.first.nt.first.ntNum, equals('CC-1'));
+
+    final cdnrCsv = GstOfflineCsvBuilder.buildCdnrCsv(
+      returns: ph.saleReturns,
+      parties: ph.parties,
+      shop: shop,
+      fromDate: DateTime(2025, 5, 1),
+      toDate: DateTime(2025, 5, 31),
+    );
+    expect(cdnrCsv.contains('CC-1'), isTrue);
+    expect(cdnrCsv.contains('CN-2'), isFalse);
   });
 }

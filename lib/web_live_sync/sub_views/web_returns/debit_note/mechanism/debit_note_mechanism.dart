@@ -3,6 +3,7 @@
 
 import '../../../../web_models.dart';
 import '../../../../pharoah_web_manager.dart';
+import '../../../../../logic/gst_compliance_helper.dart';
 
 class DebitNoteMechanism {
   /// 1. सप्लायर का पिछला खरीद इतिहास (Magic Purchase History Engine)
@@ -57,13 +58,21 @@ class DebitNoteMechanism {
     required double gstRate,
     required String shopState,
     required String supplierState,
+    String shopGstin = "",
+    String supplierGstin = "",
+    bool isCommercial = false,
   }) {
     double gross = qty * purchaseRate;
     double taxable = gross - discAmt;
     if (taxable < 0) taxable = 0.0;
 
-    double tax = taxable * (gstRate / 100);
-    bool isLocal = shopState.trim().toLowerCase() == supplierState.trim().toLowerCase();
+    double tax = isCommercial ? 0.0 : taxable * (gstRate / 100);
+    bool isLocal = GstComplianceHelper.isIntraStateReturn(
+      shopGstin: shopGstin,
+      shopState: shopState,
+      partyGstin: supplierGstin,
+      partyState: supplierState,
+    );
 
     return {
       'gross': gross,
@@ -87,18 +96,31 @@ class DebitNoteMechanism {
     required double extraDiscount,
     required double roundOff,
     required String returnType,
+    String paymentMode = "CREDIT",
+    String origBillNo = "",
+    DateTime? origBillDate,
+    String reason = "",
+    bool isCommercial = false,
     String? existingId,
   }) async {
     final newReturn = PurchaseReturn(
       id: noteId,
       billNo: noteNo,
+      partyId: supplier.id,
       distributorName: supplier.name,
+      partyGstin: supplier.gst,
+      partyState: supplier.state,
       date: date,
       items: List.from(items),
       totalAmount: totalAmount,
       extraDiscount: extraDiscount,
       roundOff: roundOff,
       returnType: returnType,
+      paymentMode: paymentMode,
+      origBillNo: origBillNo,
+      origBillDate: origBillDate,
+      reason: reason,
+      isCommercial: isCommercial,
       status: "Active",
     );
 

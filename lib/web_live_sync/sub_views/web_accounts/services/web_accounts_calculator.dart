@@ -81,6 +81,14 @@ class WebAccountsCalculator {
       for (var p in purchases.where((p) => p.isDeleted != 1 && p.paymentMode.trim().toUpperCase() == 'CASH')) {
         cashBal -= p.totalAmount;
       }
+      // Outward: Cash Credit Notes (Cash refund given to customer)
+      for (var sr in saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == 'Active') && r.paymentMode.trim().toUpperCase() == 'CASH')) {
+        cashBal -= sr.totalAmount;
+      }
+      // Inward: Cash Debit Notes (Cash refund received from supplier)
+      for (var pr in purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == 'Active') && r.paymentMode.trim().toUpperCase() == 'CASH')) {
+        cashBal += pr.totalAmount;
+      }
       // Vouchers: Receipts, Payments, Contras
       for (var v in vouchers.where((v) => v.isDeleted != 1 && v.status == 'Active')) {
         final type = v.type.trim().toUpperCase();
@@ -180,17 +188,19 @@ class WebAccountsCalculator {
     }
     for (var sr in saleReturns.where((r) =>
         r.isDeleted != 1 &&
-        r.partyName.trim().toUpperCase() == pName &&
+        ((r.partyId.isNotEmpty && r.partyId == pId) || r.partyName.trim().toUpperCase() == pName) &&
         (r.status.isEmpty || r.status == 'Active'))) {
-      if (sr.paymentMode.trim().toUpperCase() == 'CREDIT') {
+      final mode = sr.paymentMode.trim().toUpperCase();
+      if (mode.isEmpty || mode == 'CREDIT') {
         total -= sr.totalAmount;
       }
     }
     for (var pr in purchaseReturns.where((r) =>
         r.isDeleted != 1 &&
-        r.distributorName.trim().toUpperCase() == pName &&
+        ((r.partyId.isNotEmpty && r.partyId == pId) || r.distributorName.trim().toUpperCase() == pName) &&
         (r.status.isEmpty || r.status == 'Active'))) {
-      if (pr.paymentMode.trim().toUpperCase() == 'CREDIT') {
+      final mode = pr.paymentMode.trim().toUpperCase();
+      if (mode.isEmpty || mode == 'CREDIT') {
         total += pr.totalAmount;
       }
     }
@@ -249,6 +259,30 @@ class WebAccountsCalculator {
           'cr': p.totalAmount,
           'particulars': p.distributorName.isNotEmpty ? "Cash Pur: ${p.distributorName}" : "Cash Purchase",
           'obj': p,
+        });
+      }
+      // Cash Credit Notes (Cr Outward cash refund to customer)
+      for (var sr in saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == 'Active') && r.paymentMode.trim().toUpperCase() == 'CASH')) {
+        allTxns.add({
+          'date': sr.date,
+          'ref': sr.billNo,
+          'type': 'CASH CREDIT NOTE',
+          'dr': 0.0,
+          'cr': sr.totalAmount,
+          'particulars': sr.partyName.isNotEmpty ? "Cash CN: ${sr.partyName}" : "Cash Return In",
+          'obj': sr,
+        });
+      }
+      // Cash Debit Notes (Dr Inward cash refund from supplier)
+      for (var pr in purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == 'Active') && r.paymentMode.trim().toUpperCase() == 'CASH')) {
+        allTxns.add({
+          'date': pr.date,
+          'ref': pr.billNo,
+          'type': 'CASH DEBIT NOTE',
+          'dr': pr.totalAmount,
+          'cr': 0.0,
+          'particulars': pr.distributorName.isNotEmpty ? "Cash DN: ${pr.distributorName}" : "Cash Return Out",
+          'obj': pr,
         });
       }
       // Cash Vouchers
@@ -487,31 +521,77 @@ class WebAccountsCalculator {
       // Returns
       for (var sr in saleReturns.where((r) =>
           r.isDeleted != 1 &&
-          r.partyName.trim().toUpperCase() == pName &&
+          ((r.partyId.isNotEmpty && r.partyId == pId) || r.partyName.trim().toUpperCase() == pName) &&
           (r.status.isEmpty || r.status == 'Active'))) {
-        allTxns.add({
-          'date': sr.date,
-          'ref': sr.billNo,
-          'type': 'CN',
-          'dr': 0.0,
-          'cr': sr.totalAmount,
-          'particulars': "Credit Note #${sr.billNo}",
-          'obj': sr,
-        });
+        final modeUp = sr.paymentMode.trim().toUpperCase();
+        final isImmediateSettled = modeUp.isNotEmpty && modeUp != 'CREDIT';
+        if (isImmediateSettled) {
+          allTxns.add({
+            'date': sr.date,
+            'ref': sr.billNo,
+            'type': 'CN ($modeUp)',
+            'dr': 0.0,
+            'cr': sr.totalAmount,
+            'particulars': "Credit Note #${sr.billNo} [$modeUp REFUND]",
+            'obj': sr,
+          });
+          allTxns.add({
+            'date': sr.date,
+            'ref': "SETTLE-${sr.billNo}",
+            'type': 'CASH SETTLEMENT',
+            'dr': sr.totalAmount,
+            'cr': 0.0,
+            'particulars': "Immediate $modeUp Refund Paid #${sr.billNo}",
+            'obj': sr,
+          });
+        } else {
+          allTxns.add({
+            'date': sr.date,
+            'ref': sr.billNo,
+            'type': 'CN',
+            'dr': 0.0,
+            'cr': sr.totalAmount,
+            'particulars': "Credit Note #${sr.billNo}",
+            'obj': sr,
+          });
+        }
       }
       for (var pr in purchaseReturns.where((r) =>
           r.isDeleted != 1 &&
-          r.distributorName.trim().toUpperCase() == pName &&
+          ((r.partyId.isNotEmpty && r.partyId == pId) || r.distributorName.trim().toUpperCase() == pName) &&
           (r.status.isEmpty || r.status == 'Active'))) {
-        allTxns.add({
-          'date': pr.date,
-          'ref': pr.billNo,
-          'type': 'DN',
-          'dr': pr.totalAmount,
-          'cr': 0.0,
-          'particulars': "Debit Note #${pr.billNo}",
-          'obj': pr,
-        });
+        final modeUp = pr.paymentMode.trim().toUpperCase();
+        final isImmediateSettled = modeUp.isNotEmpty && modeUp != 'CREDIT';
+        if (isImmediateSettled) {
+          allTxns.add({
+            'date': pr.date,
+            'ref': pr.billNo,
+            'type': 'DN ($modeUp)',
+            'dr': pr.totalAmount,
+            'cr': 0.0,
+            'particulars': "Debit Note #${pr.billNo} [$modeUp REFUND]",
+            'obj': pr,
+          });
+          allTxns.add({
+            'date': pr.date,
+            'ref': "SETTLE-${pr.billNo}",
+            'type': 'CASH SETTLEMENT',
+            'dr': 0.0,
+            'cr': pr.totalAmount,
+            'particulars': "Immediate $modeUp Refund Received #${pr.billNo}",
+            'obj': pr,
+          });
+        } else {
+          allTxns.add({
+            'date': pr.date,
+            'ref': pr.billNo,
+            'type': 'DN',
+            'dr': pr.totalAmount,
+            'cr': 0.0,
+            'particulars': "Debit Note #${pr.billNo}",
+            'obj': pr,
+          });
+        }
       }
 
       // Vouchers

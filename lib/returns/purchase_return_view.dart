@@ -11,6 +11,8 @@ import '../product_master.dart';
 import '../pharoah_date_controller.dart';
 import '../app_date_logic.dart';
 import '../pdf/pdf_router_service.dart';
+import '../logic/app_billing_gst_engine.dart';
+import '../logic/gst_compliance_helper.dart';
 
 class PurchaseReturnView extends StatefulWidget {
   final PurchaseReturn? existingRecord; 
@@ -26,6 +28,11 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   final returnNoC = TextEditingController();
   final discountC = TextEditingController(text: "0"); 
   final medSearchC = TextEditingController(); // 🔥 FIX: Search UI Control (Point 1)
+  final origBillNoC = TextEditingController();
+  final reasonC = TextEditingController();
+  DateTime? origBillDate;
+  String paymentMode = "CREDIT";
+  bool isCommercial = false;
   
   DateTime selectedDate = DateTime.now();
   Party? selectedSupplier;
@@ -44,7 +51,11 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
 
   @override
   void dispose() {
-    medSearchC.dispose(); // Cleanup
+    medSearchC.dispose();
+    returnNoC.dispose();
+    discountC.dispose();
+    origBillNoC.dispose();
+    reasonC.dispose();
     super.dispose();
   }
 
@@ -56,6 +67,12 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
       selectedDate = ex.date;
       items = List.from(ex.items);
       discountC.text = ex.extraDiscount.toString();
+      paymentMode = ex.paymentMode.isNotEmpty ? ex.paymentMode : "CREDIT";
+      origBillNoC.text = ex.origBillNo;
+      origBillDate = ex.origBillDate;
+      reasonC.text = ex.reason;
+      isCommercial = ex.isCommercial;
+      isBreakageMode = ex.returnType.toLowerCase().contains("breakage") || ex.returnType.toLowerCase().contains("expiry");
       try {
         selectedSupplier = ph.parties.firstWhere((p) => p.name == ex.distributorName);
       } catch (e) {
@@ -78,47 +95,37 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     }
   }
 
-  // --- GST COMPLIANT CALCULATIONS (Section 15 & 34) ---
+  // --- GST COMPLIANT CALCULATIONS (Section 15 & 34 Unified Engine) ---
   bool get isLocal {
     final ph = Provider.of<PharoahManager>(context, listen: false);
-    return (selectedSupplier?.state.trim().toLowerCase() ?? "") == ((ph.activeCompany?.state ?? "Rajasthan").trim().toLowerCase());
+    return GstComplianceHelper.isIntraStateReturn(
+      shopGstin: ph.activeCompany?.gstin,
+      shopState: ph.activeCompany?.state ?? "Rajasthan",
+      partyGstin: selectedSupplier?.gst,
+      partyState: selectedSupplier?.state,
+    );
   }
 
-  double get grossTaxable => items.fold(0.0, (sum, it) {
-    double itemTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
-    return sum + (itemTaxable > 0 ? itemTaxable : 0.0);
-  });
+  bool get isSec34Expired => GstComplianceHelper.isSection34Expired(
+    origInvoiceDate: origBillDate,
+    noteDate: selectedDate,
+  );
 
   double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
 
-  double get validExtraDiscount {
-    double d = extraDiscount;
-    if (d < 0) return 0.0;
-    if (d > grossTaxable) return grossTaxable;
-    return d;
-  }
+  AppBillGstSummary get gstSummary => AppBillingGstEngine.calculateForPurchase(
+    items: items,
+    extraDiscount: extraDiscount,
+    isLocal: isLocal,
+    isCommercial: isCommercial,
+  );
 
-  double get netTaxable => (grossTaxable - validExtraDiscount) > 0 ? (grossTaxable - validExtraDiscount) : 0.0;
-
-  double get totalTax {
-    double ratio = grossTaxable > 0 ? (validExtraDiscount / grossTaxable) : 0.0;
-    double tax = 0.0;
-    for (var it in items) {
-      double itemTaxable = (it.qty * it.purchaseRate) - it.discountRupees;
-      if (itemTaxable < 0) itemTaxable = 0.0;
-      double itNetTaxable = itemTaxable * (1.0 - ratio);
-      tax += itNetTaxable * (it.gstRate / 100.0);
-    }
-    return tax;
-  }
-
-  double get calcCGST => isLocal ? (totalTax / 2.0) : 0.0;
-  double get calcSGST => isLocal ? (totalTax / 2.0) : 0.0;
-  double get calcIGST => !isLocal ? totalTax : 0.0;
-
-  double get rawGrandTotal => netTaxable + totalTax;
-  double get grandTotal => rawGrandTotal.roundToDouble();
-  double get roundOff => double.parse((grandTotal - rawGrandTotal).toStringAsFixed(2));
+  double get netTaxable => gstSummary.netTaxable;
+  double get calcCGST => gstSummary.totalCGST;
+  double get calcSGST => gstSummary.totalSGST;
+  double get calcIGST => gstSummary.totalIGST;
+  double get grandTotal => gstSummary.finalGrandTotal;
+  double get roundOff => gstSummary.roundOff;
 
   // ===========================================================================
   // 🪄 THE PURCHASE MAGIC BOX (QTY+FREE & ALWAYS-ON MANUAL ENTRY)
@@ -382,6 +389,103 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
             subtitle: Text("City: ${selectedSupplier!.city.isNotEmpty ? selectedSupplier!.city : 'N/A'} | GST: ${selectedSupplier!.gst.isNotEmpty ? selectedSupplier!.gst : 'URP'}"),
             trailing: widget.isReadOnly ? null : IconButton(icon: const Icon(Icons.close, color: Colors.red), onPressed: () => setState(() => selectedSupplier = null)),
           ),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: InkWell(
+              onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CREDIT"),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                decoration: BoxDecoration(
+                  color: paymentMode == "CREDIT" ? Colors.brown.shade800 : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text("CREDIT (LEDGER)", textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: paymentMode == "CREDIT" ? Colors.white : Colors.black54)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              onTap: widget.isReadOnly ? null : () => setState(() => paymentMode = "CASH"),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                decoration: BoxDecoration(
+                  color: paymentMode == "CASH" ? Colors.green.shade700 : Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text("CASH REFUND", textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: paymentMode == "CASH" ? Colors.white : Colors.black54)),
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            flex: 3,
+            child: TextField(
+              controller: origBillNoC,
+              readOnly: widget.isReadOnly,
+              style: const TextStyle(fontSize: 11),
+              decoration: const InputDecoration(labelText: "Orig. Pur Bill No (R53)", isDense: true, border: OutlineInputBorder()),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            flex: 2,
+            child: InkWell(
+              onTap: widget.isReadOnly ? null : () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: GstComplianceHelper.clampPickerDate(origBillDate ?? selectedDate, DateTime(2017, 7, 1), selectedDate),
+                  firstDate: DateTime(2017, 7, 1),
+                  lastDate: selectedDate,
+                );
+                if (picked != null) {
+                  setState(() {
+                    origBillDate = picked;
+                    if (GstComplianceHelper.isSection34Expired(origInvoiceDate: picked, noteDate: selectedDate)) {
+                      isCommercial = true;
+                    }
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(4)),
+                child: Text(
+                  origBillDate != null ? DateFormat("dd/MM/yy").format(origBillDate!) : "Orig. Date",
+                  style: TextStyle(fontSize: 11, color: origBillDate != null ? Colors.black87 : Colors.grey.shade600, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: widget.isReadOnly ? null : () => setState(() => isCommercial = !isCommercial),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+              decoration: BoxDecoration(
+                color: isCommercial ? Colors.amber.shade100 : Colors.grey.shade100,
+                border: Border.all(color: isCommercial ? Colors.amber.shade800 : Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(isCommercial ? "NO-GST" : "GST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: isCommercial ? Colors.amber.shade900 : Colors.black54)),
+            ),
+          ),
+        ]),
+        if (isSec34Expired) ...[
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.amber.shade400)),
+            child: Text(
+              "Sec 34(2) cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(origBillDate!))}) crossed — Commercial Note (No GST) recommended.",
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+            ),
+          ),
+        ],
     ]),
   );
 
@@ -426,6 +530,13 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
   Widget _buildAdvancedFooter() => Container(
     padding: const EdgeInsets.all(15), color: Colors.white,
     child: Column(children: [
+        TextField(
+          controller: reasonC,
+          readOnly: widget.isReadOnly,
+          style: const TextStyle(fontSize: 11),
+          decoration: const InputDecoration(labelText: "Reason / Remarks (Rule 53(1A))", isDense: true, border: OutlineInputBorder()),
+        ),
+        const SizedBox(height: 8),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           const Text("Extra Discount (-)", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           SizedBox(
@@ -449,7 +560,12 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
               Text("₹${netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
             ]),
             const SizedBox(height: 4),
-            if (isLocal)
+            if (isCommercial)
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text("Commercial Note (Sec 34)", style: TextStyle(fontSize: 11, color: Colors.amber.shade900)),
+                Text("GST EXEMPT (₹0.00)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+              ])
+            else if (isLocal)
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                 Text("CGST + SGST", style: TextStyle(fontSize: 11, color: Colors.brown.shade800)),
                 Text("₹${calcCGST.toStringAsFixed(2)} + ₹${calcSGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.brown.shade800)),
@@ -474,17 +590,37 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
 
   void _handleSave(PharoahManager ph) {
     if (selectedSupplier == null) return;
+    final String rType = items.isNotEmpty && items.every((it) => it.isBreakage)
+        ? "Breakage"
+        : (items.any((it) => it.isBreakage) ? "Mixed" : "Sellable");
     if (widget.existingRecord != null) {
-      ph.updatePurchaseReturn(id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
+      ph.updatePurchaseReturn(
+        id: widget.existingRecord!.id, billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!,
+        items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
+        paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(), origBillDate: origBillDate,
+        reason: reasonC.text.trim(), isCommercial: isCommercial,
+      );
     } else {
-      ph.finalizePurchaseReturn(billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!, items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
+      ph.finalizePurchaseReturn(
+        billNo: returnNoC.text, date: selectedDate, party: selectedSupplier!,
+        items: items, total: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
+        type: rType, paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(),
+        origBillDate: origBillDate, reason: reasonC.text.trim(), isCommercial: isCommercial,
+      );
     }
     Navigator.pop(context);
   }
 
   void _handlePrint(PharoahManager ph) async {
     if (selectedSupplier == null) return;
-    final returnObj = PurchaseReturn(id: "temp", billNo: returnNoC.text, date: selectedDate, distributorName: selectedSupplier!.name, items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff);
+    final returnObj = PurchaseReturn(
+      id: "temp", billNo: returnNoC.text, date: selectedDate,
+      partyId: selectedSupplier!.id, distributorName: selectedSupplier!.name,
+      partyGstin: selectedSupplier!.gst, partyState: selectedSupplier!.state,
+      items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
+      paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(), origBillDate: origBillDate,
+      reason: reasonC.text.trim(), isCommercial: isCommercial,
+    );
     await PdfRouterService.printDebitNote(returnObj: returnObj, supplier: selectedSupplier!, ph: ph);
   }
 }

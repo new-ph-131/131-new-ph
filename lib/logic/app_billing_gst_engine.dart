@@ -38,6 +38,7 @@ class AppBillingGstEngine {
     required List<BillItem> items,
     required double extraDiscount,
     required bool isLocal,
+    bool isCommercial = false,
   }) {
     if (items.isEmpty) {
       return const AppBillGstSummary(
@@ -81,7 +82,7 @@ class AppBillingGstEngine {
       double itemGrossTaxable = itemGrossTaxableList[i];
       double itemNetTaxable = itemGrossTaxable * (1.0 - discountRatio);
       double gstRate = item.gstRate;
-      double itemTax = itemNetTaxable * (gstRate / 100.0);
+      double itemTax = isCommercial ? 0.0 : itemNetTaxable * (gstRate / 100.0);
 
       slabTaxable[gstRate] = (slabTaxable[gstRate] ?? 0.0) + itemNetTaxable;
       slabTax[gstRate] = (slabTax[gstRate] ?? 0.0) + itemTax;
@@ -119,6 +120,7 @@ class AppBillingGstEngine {
     required List<PurchaseItem> items,
     required double extraDiscount,
     required bool isLocal,
+    bool isCommercial = false,
   }) {
     if (items.isEmpty) {
       return const AppBillGstSummary(
@@ -162,7 +164,7 @@ class AppBillingGstEngine {
       double itemGrossTaxable = itemGrossTaxableList[i];
       double itemNetTaxable = itemGrossTaxable * (1.0 - discountRatio);
       double gstRate = item.gstRate;
-      double itemTax = itemNetTaxable * (gstRate / 100.0);
+      double itemTax = isCommercial ? 0.0 : itemNetTaxable * (gstRate / 100.0);
 
       slabTaxable[gstRate] = (slabTaxable[gstRate] ?? 0.0) + itemNetTaxable;
       slabTax[gstRate] = (slabTax[gstRate] ?? 0.0) + itemTax;

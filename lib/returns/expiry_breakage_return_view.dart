@@ -8,6 +8,8 @@ import '../models.dart';
 import '../logic/pharoah_numbering_engine.dart';
 import '../item_entry_card.dart';
 import '../pharoah_date_controller.dart';
+import '../logic/app_billing_gst_engine.dart';
+import '../logic/gst_compliance_helper.dart';
 
 class ExpiryBreakageReturnView extends StatefulWidget {
   const ExpiryBreakageReturnView({super.key});
@@ -18,7 +20,13 @@ class ExpiryBreakageReturnView extends StatefulWidget {
 
 class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
   final returnNoC = TextEditingController();
+  final discountC = TextEditingController(text: "0");
+  final origBillNoC = TextEditingController();
+  final reasonC = TextEditingController(text: "07-Expiry / Breakage");
   DateTime selectedDate = DateTime.now();
+  DateTime? origBillDate;
+  String paymentMode = "CREDIT";
+  bool isCommercial = false;
   Party? selectedParty;
   List<BillItem> items = [];
   String searchQuery = "";
@@ -55,7 +63,41 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
     }
   }
 
-  double get totalAmt => items.fold(0, (sum, it) => sum + it.total);
+  bool get isLocal {
+    final ph = Provider.of<PharoahManager>(context, listen: false);
+    return GstComplianceHelper.isIntraStateReturn(
+      shopGstin: ph.activeCompany?.gstin,
+      shopState: ph.activeCompany?.state ?? "Rajasthan",
+      partyGstin: selectedParty?.gst,
+      partyState: selectedParty?.state,
+    );
+  }
+
+  bool get isSec34Expired => GstComplianceHelper.isSection34Expired(
+    origInvoiceDate: origBillDate,
+    noteDate: selectedDate,
+  );
+
+  double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
+
+  AppBillGstSummary get gstSummary => AppBillingGstEngine.calculate(
+    items: items,
+    extraDiscount: extraDiscount,
+    isLocal: isLocal,
+    isCommercial: isCommercial,
+  );
+
+  double get totalAmt => gstSummary.finalGrandTotal;
+  double get roundOff => gstSummary.roundOff;
+
+  @override
+  void dispose() {
+    returnNoC.dispose();
+    discountC.dispose();
+    origBillNoC.dispose();
+    reasonC.dispose();
+    super.dispose();
+  }
 
   void _recalculateSR() {
     setState(() {
@@ -257,6 +299,100 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
           title: Text(selectedParty!.name, style: const TextStyle(fontWeight: FontWeight.bold)),
           trailing: IconButton(onPressed: () => setState(() => selectedParty = null), icon: const Icon(Icons.close)),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Column(children: [
+            Row(children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => paymentMode = "CREDIT"),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(color: paymentMode == "CREDIT" ? Colors.blue.shade800 : Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                    child: Text("CREDIT (LEDGER)", textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: paymentMode == "CREDIT" ? Colors.white : Colors.black54)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => paymentMode = "CASH"),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(color: paymentMode == "CASH" ? Colors.green.shade700 : Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                    child: Text("CASH REFUND", textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: paymentMode == "CASH" ? Colors.white : Colors.black54)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                onTap: () => setState(() => isCommercial = !isCommercial),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isCommercial ? Colors.amber.shade100 : Colors.grey.shade200,
+                    border: Border.all(color: isCommercial ? Colors.amber.shade800 : Colors.grey.shade400),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(isCommercial ? "NO-GST" : "GST", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: isCommercial ? Colors.amber.shade900 : Colors.black54)),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: origBillNoC,
+                  style: const TextStyle(fontSize: 11),
+                  decoration: const InputDecoration(labelText: "Orig. Invoice No (R53)", isDense: true, filled: true, fillColor: Colors.white, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 2,
+                child: InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: GstComplianceHelper.clampPickerDate(origBillDate ?? selectedDate, DateTime(2017, 7, 1), selectedDate),
+                      firstDate: DateTime(2017, 7, 1),
+                      lastDate: selectedDate,
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        origBillDate = picked;
+                        if (GstComplianceHelper.isSection34Expired(origInvoiceDate: picked, noteDate: selectedDate)) {
+                          isCommercial = true;
+                        }
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.grey.shade400), borderRadius: BorderRadius.circular(4)),
+                    child: Text(
+                      origBillDate != null ? DateFormat("dd/MM/yy").format(origBillDate!) : "Orig. Date",
+                      style: TextStyle(fontSize: 11, color: origBillDate != null ? Colors.black87 : Colors.grey.shade600, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+            if (isSec34Expired) ...[
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.amber.shade400)),
+                child: Text(
+                  "Sec 34(2) cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(origBillDate!))}) crossed — Commercial Note (No GST) recommended.",
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                ),
+              ),
+            ],
+          ]),
+        ),
         
         _buildSearchBarTrigger(ph),
 
@@ -331,13 +467,87 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
 
   Widget _buildSummaryFooter() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(15),
       color: Colors.white,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
-          const Text("NON-SELLABLE TOTAL:", style: TextStyle(fontWeight: FontWeight.bold)),
-          Text("₹${totalAmt.toStringAsFixed(2)}", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.red.shade900)),
+          TextField(
+            controller: reasonC,
+            style: const TextStyle(fontSize: 11),
+            decoration: const InputDecoration(labelText: "Reason / Remarks (Rule 53(1A))", isDense: true, border: OutlineInputBorder()),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Extra Discount (-)", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+              SizedBox(
+                width: 90,
+                child: TextField(
+                  controller: discountC,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.right,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("Taxable Value", style: TextStyle(fontSize: 11, color: Colors.black87)),
+                    Text("₹${gstSummary.netTaxable.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (isCommercial)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("Commercial Note (Sec 34)", style: TextStyle(fontSize: 11, color: Colors.amber.shade900)),
+                      Text("GST EXEMPT (₹0.00)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                    ],
+                  )
+                else if (isLocal)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("CGST + SGST", style: TextStyle(fontSize: 11, color: Colors.red.shade900)),
+                      Text("₹${gstSummary.totalCGST.toStringAsFixed(2)} + ₹${gstSummary.totalSGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+                    ],
+                  )
+                else
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text("IGST", style: TextStyle(fontSize: 11, color: Colors.red.shade900)),
+                      Text("₹${gstSummary.totalIGST.toStringAsFixed(2)}", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          const Divider(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("NON-SELLABLE BREAKAGE TOTAL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                  Text("₹${totalAmt.toStringAsFixed(2)}", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.red.shade900)),
+                ],
+              ),
+              Text("R/O: ${roundOff.toStringAsFixed(2)}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            ],
+          ),
         ],
       ),
     );
@@ -350,7 +560,14 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
       party: selectedParty!,
       items: items,
       total: totalAmt,
+      extraDiscount: extraDiscount,
+      roundOff: roundOff,
       type: "Breakage",
+      paymentMode: paymentMode,
+      origBillNo: origBillNoC.text.trim(),
+      origBillDate: origBillDate,
+      reason: reasonC.text.trim(),
+      isCommercial: isCommercial,
     );
     
     if (ph.activeCompany != null) {

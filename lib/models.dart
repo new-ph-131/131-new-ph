@@ -1025,29 +1025,29 @@ class PurchaseChallan {
   }
 }
 
-class SaleReturn { 
-  String id, billNo, partyName, status, returnType, paymentMode, origBillNo, reason; 
-  DateTime date; 
+class SaleReturn {
+  String id, billNo, partyId, partyName, partyGstin, partyState, status, returnType, paymentMode, origBillNo, reason;
+  DateTime date;
   DateTime? origBillDate;
-  List<BillItem> items; 
+  List<BillItem> items;
   double totalAmount, extraDiscount, roundOff;
   int updatedAt, version, isDeleted;
   bool isCommercial;
-
   SaleReturn({
-    required this.id, required this.billNo, required this.date, 
-    required this.partyName, required this.items, required this.totalAmount, 
+    required this.id, required this.billNo, required this.date,
+    required this.partyName, required this.items, required this.totalAmount,
+    this.partyId = "", this.partyGstin = "", this.partyState = "",
     this.status = "Active", this.returnType = "Sellable",
     this.paymentMode = "CREDIT", this.origBillNo = "", this.origBillDate,
     this.reason = "", this.isCommercial = false,
     this.extraDiscount = 0.0, this.roundOff = 0.0,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
-  }); 
-
+  });
   Map<String, dynamic> toMap() => {
-    'id': id, 'billNo': billNo, 'date': date.toIso8601String(), 
-    'partyName': partyName, 'totalAmount': totalAmount, 
-    'status': status, 'returnType': returnType, 
+    'id': id, 'billNo': billNo, 'date': date.toIso8601String(),
+    'partyId': partyId, 'partyName': partyName, 'partyGstin': partyGstin, 'partyState': partyState,
+    'totalAmount': totalAmount,
+    'status': status, 'returnType': returnType,
     'paymentMode': paymentMode, 'origBillNo': origBillNo,
     'origBillDate': origBillDate?.toIso8601String(),
     'reason': reason, 'isCommercial': isCommercial,
@@ -1058,17 +1058,19 @@ class SaleReturn {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
-  }; 
-
+  };
   factory SaleReturn.fromMap(Map<String, dynamic> map) => SaleReturn(
-    id: map['id'] ?? "", billNo: map['billNo'] ?? "", 
-    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), 
-    partyName: map['partyName'] ?? "", 
-    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), 
+    id: map['id'] ?? "", billNo: map['billNo'] ?? "",
+    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
+    partyId: map['partyId'] ?? "",
+    partyName: map['partyName'] ?? "",
+    partyGstin: map['partyGstin'] ?? "",
+    partyState: map['partyState'] ?? "",
+    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(),
     extraDiscount: (map['extraDiscount'] ?? 0.0).toDouble(),
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
-    status: map['status'] ?? "Active", 
-    returnType: map['returnType'] ?? "Sellable", 
+    status: map['status'] ?? "Active",
+    returnType: map['returnType'] ?? "Sellable",
     paymentMode: map['paymentMode'] ?? "CREDIT",
     origBillNo: map['origBillNo'] ?? "",
     origBillDate: map['origBillDate'] != null ? DateTime.tryParse(map['origBillDate']) : null,
@@ -1078,32 +1080,32 @@ class SaleReturn {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  ); 
+  );
 }
 
-class PurchaseReturn { 
-  String id, billNo, distributorName, status, returnType, paymentMode, origBillNo, reason; 
-  DateTime date; 
+class PurchaseReturn {
+  String id, billNo, partyId, distributorName, partyGstin, partyState, status, returnType, paymentMode, origBillNo, reason;
+  DateTime date;
   DateTime? origBillDate;
-  List<PurchaseItem> items; 
+  List<PurchaseItem> items;
   double totalAmount, extraDiscount, roundOff;
   int updatedAt, version, isDeleted;
   bool isCommercial;
-
   PurchaseReturn({
-    required this.id, required this.billNo, required this.distributorName, 
-    required this.items, required this.totalAmount, required this.date, 
+    required this.id, required this.billNo, required this.distributorName,
+    required this.items, required this.totalAmount, required this.date,
+    this.partyId = "", this.partyGstin = "", this.partyState = "",
     this.status = "Active", this.returnType = "Sellable",
     this.paymentMode = "CREDIT", this.origBillNo = "", this.origBillDate,
     this.reason = "", this.isCommercial = false,
     this.extraDiscount = 0.0, this.roundOff = 0.0,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
-  }); 
-
+  });
   Map<String, dynamic> toMap() => {
-    'id': id, 'billNo': billNo, 'date': date.toIso8601String(), 
-    'distributorName': distributorName, 'totalAmount': totalAmount, 
-    'status': status, 'returnType': returnType, 
+    'id': id, 'billNo': billNo, 'date': date.toIso8601String(),
+    'partyId': partyId, 'distributorName': distributorName, 'partyGstin': partyGstin, 'partyState': partyState,
+    'totalAmount': totalAmount,
+    'status': status, 'returnType': returnType,
     'paymentMode': paymentMode, 'origBillNo': origBillNo,
     'origBillDate': origBillDate?.toIso8601String(),
     'reason': reason, 'isCommercial': isCommercial,
@@ -1114,15 +1116,17 @@ class PurchaseReturn {
     'isDeleted': isDeleted,
     'is_deleted': isDeleted,
     'sync_id': id,
-  }; 
-
+  };
   factory PurchaseReturn.fromMap(Map<String, dynamic> map) => PurchaseReturn(
-    id: map['id'] ?? "", billNo: map['billNo'] ?? "", 
-    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()), 
-    distributorName: map['distributorName'] ?? "", 
-    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), 
-    status: map['status'] ?? "Active", 
-    returnType: map['returnType'] ?? "Sellable", 
+    id: map['id'] ?? "", billNo: map['billNo'] ?? "",
+    date: DateTime.parse(map['date'] ?? DateTime.now().toIso8601String()),
+    partyId: map['partyId'] ?? "",
+    distributorName: map['distributorName'] ?? "",
+    partyGstin: map['partyGstin'] ?? "",
+    partyState: map['partyState'] ?? "",
+    totalAmount: (map['totalAmount'] ?? 0.0).toDouble(),
+    status: map['status'] ?? "Active",
+    returnType: map['returnType'] ?? "Sellable",
     paymentMode: map['paymentMode'] ?? "CREDIT",
     origBillNo: map['origBillNo'] ?? "",
     origBillDate: map['origBillDate'] != null ? DateTime.tryParse(map['origBillDate']) : null,
@@ -1134,9 +1138,8 @@ class PurchaseReturn {
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
     isDeleted: (map['isDeleted'] ?? map['is_deleted'] ?? (map['status'] == 'Deleted' ? 1 : 0)).toInt(),
-  ); 
+  );
 }
-
 // 6. SYSTEM
 class LogEntry { String id, action, details; DateTime time; LogEntry({required this.id, required this.action, required this.details, required this.time}); Map<String, dynamic> toMap() => {'id': id, 'action': action, 'details': details, 'time': time.toIso8601String()}; factory LogEntry.fromMap(Map<String, dynamic> map) => LogEntry(id: map['id'] ?? "", action: map['action'] ?? "", details: map['details'] ?? "", time: DateTime.parse(map['time'] ?? DateTime.now().toIso8601String())); }
 class Voucher {

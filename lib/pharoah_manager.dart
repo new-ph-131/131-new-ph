@@ -2237,7 +2237,10 @@ Future<bool> finalizePurchase({
       id: rId, 
       billNo: billNo, 
       date: date, 
+      partyId: party.id,
       partyName: party.name, 
+      partyGstin: party.gst,
+      partyState: party.state, 
       items: items, 
       totalAmount: total, 
       returnType: type, 
@@ -2329,7 +2332,10 @@ Future<bool> finalizePurchase({
     final newPReturn = PurchaseReturn(
       id: rId, 
       billNo: billNo, 
+      partyId: party.id,
       distributorName: party.name, 
+      partyGstin: party.gst,
+      partyState: party.state,
       date: date, 
       items: items, 
       totalAmount: total, 
@@ -3534,10 +3540,14 @@ void registerBatchActivity({
     int i = saleReturns.indexWhere((r) => r.id == id);
     if (i != -1) {
       final oldVer = saleReturns[i].version;
+      final String retType = items.isNotEmpty && items.every((it) => it.isBreakage)
+          ? "Breakage"
+          : (items.any((it) => it.isBreakage) ? "Mixed" : "Sellable");
       final updatedReturn = SaleReturn(
-        id: id, billNo: billNo, date: date, partyName: party.name, 
+        id: id, billNo: billNo, date: date,
+        partyId: party.id, partyName: party.name, partyGstin: party.gst, partyState: party.state,
         items: items, totalAmount: total, extraDiscount: extraDiscount, 
-        roundOff: roundOff, status: "Active",
+        roundOff: roundOff, status: "Active", returnType: retType,
         paymentMode: paymentMode, origBillNo: origBillNo, origBillDate: origBillDate,
         reason: reason, isCommercial: isCommercial,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -3567,10 +3577,14 @@ void registerBatchActivity({
     int i = purchaseReturns.indexWhere((r) => r.id == id);
     if (i != -1) {
       final oldVer = purchaseReturns[i].version;
+      final String retType = items.isNotEmpty && items.every((it) => it.isBreakage)
+          ? "Breakage"
+          : (items.any((it) => it.isBreakage) ? "Mixed" : "Sellable");
       final updatedPReturn = PurchaseReturn(
-        id: id, billNo: billNo, distributorName: party.name, 
+        id: id, billNo: billNo, partyId: party.id, distributorName: party.name,
+        partyGstin: party.gst, partyState: party.state,
         date: date, items: items, totalAmount: total, 
-        extraDiscount: extraDiscount, roundOff: roundOff, status: "Active",
+        extraDiscount: extraDiscount, roundOff: roundOff, status: "Active", returnType: retType,
         paymentMode: paymentMode, origBillNo: origBillNo, origBillDate: origBillDate,
         reason: reason, isCommercial: isCommercial,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -5330,6 +5344,8 @@ void registerBatchActivity({
       sales: sales,
       purchases: purchases,
       vouchers: vouchers,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
       openingCash: 0.0,
     );
   }

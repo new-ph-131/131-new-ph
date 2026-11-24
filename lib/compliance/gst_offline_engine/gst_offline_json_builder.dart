@@ -157,37 +157,55 @@ class GstOfflineJsonBuilder {
     final Map<String, List<GstCreditNote>> cdnrGrouped = {};
     final List<GstCdnurItem> cdnurList = [];
 
+    // Section 34 Commercial Notes (isCommercial == true) carry no GST adjustment & are excluded from GSTR-1 CDNR/CDNUR
     final periodReturns = returns.where((r) {
-      return !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.status == "Active";
+      return !r.date.isBefore(fDate) &&
+             !r.date.isAfter(tDate) &&
+             r.status == "Active" &&
+             r.isDeleted != 1 &&
+             !r.isCommercial;
     }).toList();
 
     for (final ret in periodReturns) {
       // Find party details
       final match = parties.firstWhere(
-        (p) => p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
-        orElse: () => Party(id: '', name: ret.partyName),
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.partyName, gst: ret.partyGstin, state: ret.partyState),
       );
-      final gstin = match.gst.trim().toUpperCase();
-      final pos = GstStateCodes.resolvePos(gstin.isNotEmpty ? gstin : null, match.state, defaultCode: companyPos);
+      final gstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
+      final pState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final pos = GstStateCodes.resolvePos(gstin.isNotEmpty ? gstin : null, pState, defaultCode: companyPos);
       final isIntra = (pos == companyPos);
       final idt = DateFormat('dd-MM-yyyy').format(ret.date);
 
-      // Estimate taxable vs tax from return totalAmount (defaulting to standard 12% if no items breakdown)
-      final rate = 12.0;
-      final txval = _round(ret.totalAmount / (1.0 + (rate / 100.0)));
-      final tax = _round(ret.totalAmount - txval);
-      final iamt = isIntra ? 0.0 : tax;
-      final camt = isIntra ? _round(tax / 2.0) : 0.0;
-      final samt = isIntra ? _round(tax / 2.0) : 0.0;
-
-      final taxItem = GstTaxItem(
-        num: 1,
-        rt: rate,
-        txval: txval,
-        iamt: iamt,
-        camt: camt,
-        samt: samt,
-      );
+      final List<GstTaxItem> taxItems = [];
+      if (ret.items.isNotEmpty) {
+        final slabMap = _computeSlabs(ret.items, ret.extraDiscount, isIntra);
+        int itemNum = 1;
+        for (final entry in slabMap.entries) {
+          taxItems.add(GstTaxItem(
+            num: itemNum++,
+            rt: entry.key,
+            txval: _round(entry.value.txval),
+            iamt: _round(entry.value.iamt),
+            camt: _round(entry.value.camt),
+            samt: _round(entry.value.samt),
+          ));
+        }
+      } else {
+        final rate = 12.0;
+        final txval = _round(ret.totalAmount / (1.0 + (rate / 100.0)));
+        final tax = _round(ret.totalAmount - txval);
+        taxItems.add(GstTaxItem(
+          num: 1,
+          rt: rate,
+          txval: txval,
+          iamt: isIntra ? 0.0 : tax,
+          camt: isIntra ? _round(tax / 2.0) : 0.0,
+          samt: isIntra ? _round(tax / 2.0) : 0.0,
+        ));
+      }
 
       if (gstin.length == 15) {
         final note = GstCreditNote(
@@ -195,7 +213,7 @@ class GstOfflineJsonBuilder {
           ntDt: idt,
           val: _round(ret.totalAmount),
           pos: pos,
-          itms: [taxItem],
+          itms: taxItems,
         );
         cdnrGrouped.putIfAbsent(gstin, () => []).add(note);
       } else {
@@ -204,7 +222,7 @@ class GstOfflineJsonBuilder {
           ntDt: idt,
           val: _round(ret.totalAmount),
           pos: pos,
-          itms: [taxItem],
+          itms: taxItems,
         ));
       }
     }

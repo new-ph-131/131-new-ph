@@ -305,41 +305,71 @@ class GstOfflineCsvBuilder {
       ]
     ];
 
+    // Section 34 Commercial Notes carry no GST impact and are excluded from GSTR-1 CDNR CSV
     final periodReturns = returns.where((r) {
       final inWindow = !r.date.isBefore(fDate) && !r.date.isAfter(tDate);
-      return inWindow && r.status == "Active";
+      return inWindow && r.status == "Active" && r.isDeleted != 1 && !r.isCommercial;
     }).toList();
 
     for (final ret in periodReturns) {
       final match = parties.firstWhere(
-        (p) => p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
-        orElse: () => Party(id: '', name: ret.partyName),
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.partyName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.partyName, gst: ret.partyGstin, state: ret.partyState),
       );
-      final gstin = match.gst.trim().toUpperCase();
+      final gstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
       if (gstin.length != 15) continue; // Only registered in CDNR table
 
-      final pos = GstStateCodes.resolvePos(gstin, match.state, defaultCode: companyPos);
+      final pState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final pos = GstStateCodes.resolvePos(gstin, pState, defaultCode: companyPos);
       final posLabel = GstStateCodes.getPosCsvLabel(pos);
       final idt = DateFormat('dd-MMM-yy').format(ret.date);
 
-      final rate = 12.0;
-      final txval = ret.totalAmount / (1.0 + (rate / 100.0));
-
-      rows.add([
-        gstin,
-        ret.partyName,
-        ret.billNo.isNotEmpty ? ret.billNo : "CR-${ret.id.substring(0, 6)}",
-        idt,
-        "C",
-        posLabel,
-        "N",
-        "Regular B2B",
-        ret.totalAmount.toStringAsFixed(2),
-        "",
-        rate.toStringAsFixed(0),
-        txval.toStringAsFixed(2),
-        "0.00"
-      ]);
+      if (ret.items.isNotEmpty) {
+        double gross = 0.0;
+        for (var it in ret.items) gross += ((it.qty * it.rate) - it.discountRupees);
+        final discRatio = (ret.extraDiscount > 0 && gross > 0) ? (ret.extraDiscount / gross) : 0.0;
+        final Map<double, double> rateTaxable = {};
+        for (var it in ret.items) {
+          final tx = ((it.qty * it.rate) - it.discountRupees) * (1.0 - discRatio);
+          rateTaxable[it.gstRate] = (rateTaxable[it.gstRate] ?? 0.0) + tx;
+        }
+        for (final entry in rateTaxable.entries) {
+          rows.add([
+            gstin,
+            ret.partyName,
+            ret.billNo.isNotEmpty ? ret.billNo : "CR-${ret.id.substring(0, 6)}",
+            idt,
+            "C",
+            posLabel,
+            "N",
+            "Regular B2B",
+            ret.totalAmount.toStringAsFixed(2),
+            "",
+            entry.key.toStringAsFixed(0),
+            entry.value.toStringAsFixed(2),
+            "0.00"
+          ]);
+        }
+      } else {
+        final rate = 12.0;
+        final txval = ret.totalAmount / (1.0 + (rate / 100.0));
+        rows.add([
+          gstin,
+          ret.partyName,
+          ret.billNo.isNotEmpty ? ret.billNo : "CR-${ret.id.substring(0, 6)}",
+          idt,
+          "C",
+          posLabel,
+          "N",
+          "Regular B2B",
+          ret.totalAmount.toStringAsFixed(2),
+          "",
+          rate.toStringAsFixed(0),
+          txval.toStringAsFixed(2),
+          "0.00"
+        ]);
+      }
     }
 
     return const ListToCsvConverter().convert(rows);
@@ -481,53 +511,100 @@ class GstOfflineCsvBuilder {
       ]
     ];
 
+    // Section 34 Commercial Notes carry no GST ITC reversal and are excluded from GSTR-2 Debit Note CSV
     final periodReturns = returns.where((r) {
       final inWindow = !r.date.isBefore(fDate) && !r.date.isAfter(tDate);
-      return inWindow && r.status == "Active";
+      return inWindow && r.status == "Active" && r.isDeleted != 1 && !r.isCommercial;
     }).toList();
 
     for (final ret in periodReturns) {
       final match = parties.firstWhere(
-        (p) => p.name.trim().toLowerCase() == ret.distributorName.trim().toLowerCase(),
-        orElse: () => Party(id: '', name: ret.distributorName),
+        (p) => (ret.partyId.isNotEmpty && p.id == ret.partyId) ||
+               p.name.trim().toLowerCase() == ret.distributorName.trim().toLowerCase(),
+        orElse: () => Party(id: '', name: ret.distributorName, gst: ret.partyGstin, state: ret.partyState),
       );
-      String gstin = match.gst.trim().toUpperCase();
+      String gstin = (match.gst.trim().isNotEmpty ? match.gst : ret.partyGstin).trim().toUpperCase();
       if (gstin.isEmpty || gstin == "N/A") gstin = "08AAACG1395D1ZU";
 
-      final pos = GstStateCodes.resolvePos(gstin, match.state, defaultCode: companyPos);
+      final pState = match.state.trim().isNotEmpty ? match.state : ret.partyState;
+      final pos = GstStateCodes.resolvePos(gstin, pState, defaultCode: companyPos);
       final isIntra = (pos == companyPos);
       final idt = DateFormat('dd-MMM-yy').format(ret.date);
+      final origNo = ret.origBillNo.isNotEmpty ? ret.origBillNo : "INV-REF";
+      final origDt = ret.origBillDate != null ? DateFormat('dd-MMM-yy').format(ret.origBillDate!) : idt;
+      final reason = ret.reason.isNotEmpty ? ret.reason : "01-Sales Return";
 
-      final rate = 12.0;
-      final txval = ret.totalAmount / (1.0 + (rate / 100.0));
-      final tax = ret.totalAmount - txval;
-      final iamt = isIntra ? 0.0 : tax;
-      final camt = isIntra ? (tax / 2.0) : 0.0;
-      final samt = isIntra ? (tax / 2.0) : 0.0;
-
-      rows.add([
-        gstin,
-        ret.billNo.isNotEmpty ? ret.billNo : "DR-${ret.id.substring(0, 6)}",
-        idt,
-        "INV-REF",
-        idt,
-        "N",
-        "D",
-        "01-Sales Return",
-        isIntra ? "Intra State" : "Inter State",
-        ret.totalAmount.toStringAsFixed(2),
-        rate.toStringAsFixed(0),
-        txval.toStringAsFixed(2),
-        iamt.toStringAsFixed(2),
-        camt.toStringAsFixed(2),
-        samt.toStringAsFixed(2),
-        "0.00",
-        "Inputs",
-        iamt.toStringAsFixed(2),
-        camt.toStringAsFixed(2),
-        samt.toStringAsFixed(2),
-        "0.00"
-      ]);
+      if (ret.items.isNotEmpty) {
+        double gross = 0.0;
+        for (var it in ret.items) gross += ((it.qty * it.purchaseRate) - it.discountRupees);
+        final discRatio = (ret.extraDiscount > 0 && gross > 0) ? (ret.extraDiscount / gross) : 0.0;
+        final Map<double, double> rateTaxable = {};
+        for (var it in ret.items) {
+          final tx = ((it.qty * it.purchaseRate) - it.discountRupees) * (1.0 - discRatio);
+          rateTaxable[it.gstRate] = (rateTaxable[it.gstRate] ?? 0.0) + tx;
+        }
+        for (final entry in rateTaxable.entries) {
+          final rate = entry.key;
+          final txval = entry.value;
+          final tax = txval * (rate / 100.0);
+          final iamt = isIntra ? 0.0 : tax;
+          final camt = isIntra ? (tax / 2.0) : 0.0;
+          final samt = isIntra ? (tax / 2.0) : 0.0;
+          rows.add([
+            gstin,
+            ret.billNo.isNotEmpty ? ret.billNo : "DR-${ret.id.substring(0, 6)}",
+            idt,
+            origNo,
+            origDt,
+            "N",
+            "D",
+            reason,
+            isIntra ? "Intra State" : "Inter State",
+            ret.totalAmount.toStringAsFixed(2),
+            rate.toStringAsFixed(0),
+            txval.toStringAsFixed(2),
+            iamt.toStringAsFixed(2),
+            camt.toStringAsFixed(2),
+            samt.toStringAsFixed(2),
+            "0.00",
+            "Inputs",
+            iamt.toStringAsFixed(2),
+            camt.toStringAsFixed(2),
+            samt.toStringAsFixed(2),
+            "0.00"
+          ]);
+        }
+      } else {
+        final rate = 12.0;
+        final txval = ret.totalAmount / (1.0 + (rate / 100.0));
+        final tax = ret.totalAmount - txval;
+        final iamt = isIntra ? 0.0 : tax;
+        final camt = isIntra ? (tax / 2.0) : 0.0;
+        final samt = isIntra ? (tax / 2.0) : 0.0;
+        rows.add([
+          gstin,
+          ret.billNo.isNotEmpty ? ret.billNo : "DR-${ret.id.substring(0, 6)}",
+          idt,
+          origNo,
+          origDt,
+          "N",
+          "D",
+          reason,
+          isIntra ? "Intra State" : "Inter State",
+          ret.totalAmount.toStringAsFixed(2),
+          rate.toStringAsFixed(0),
+          txval.toStringAsFixed(2),
+          iamt.toStringAsFixed(2),
+          camt.toStringAsFixed(2),
+          samt.toStringAsFixed(2),
+          "0.00",
+          "Inputs",
+          iamt.toStringAsFixed(2),
+          camt.toStringAsFixed(2),
+          samt.toStringAsFixed(2),
+          "0.00"
+        ]);
+      }
     }
 
     return const ListToCsvConverter().convert(rows);
