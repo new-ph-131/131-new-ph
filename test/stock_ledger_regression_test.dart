@@ -1013,8 +1013,8 @@ void main() {
       fromDate: DateTime(2025, 4, 1),
       toDate: DateTime(2026, 3, 31),
     );
-    expect(appStmt['closingBalance'], equals(appPartyBal));
-    expect(webStmt['closingBalance'], equals(appPartyBal));
+    expect(appStmt.last['balance'], equals(appPartyBal));
+    expect(webStmt.last['balance'], equals(appPartyBal));
 
     // Cash-in-Hand balance: 2000 - 500 (Cash CN) + 150 (Cash DN) = 1650
     final double appCashBal = AppAccountsCalculator.calculateCashInHandBalance(
@@ -1058,8 +1058,8 @@ void main() {
     expect(cashBook.any((e) => e['type'] == 'CASH DEBIT NOTE' && e['in'] == 150.0), isTrue);
 
     // 3. Commercial Note (Sec 34) zeroes GST in App & Web engines & excludes from GSTR-1/2 exports
-    final appCommCn = AppBillingGstEngine.calculate(items: [billItem], isLocal: true, isCommercial: true);
-    final webCommDn = WebBillingGstEngine.calculateForPurchase(items: [purItem], isLocal: false, isCommercial: true);
+    final appCommCn = AppBillingGstEngine.calculate(items: [billItem], extraDiscount: 0.0, isLocal: true, isCommercial: true);
+    final webCommDn = WebBillingGstEngine.calculateForPurchase(items: [purItem], extraDiscount: 0.0, isLocal: false, isCommercial: true);
     expect(appCommCn.totalTax, equals(0.0));
     expect(appCommCn.finalGrandTotal, equals(200.0));
     expect(webCommDn.totalTax, equals(0.0));
