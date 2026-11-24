@@ -76,18 +76,29 @@ class CreditNotePdf {
               pw.Container(color: PdfColors.grey200, child: pw.Row(children: [
                 _tCol("S.N", 25), _tCol("Qty+Free", 50), _tCol("Pack", 40), _tCol("Description", 210, isLeft: true), 
                 _tCol("Batch", 70), _tCol("Exp", 45), _tCol("HSN", 45), _tCol("MRP", 55), _tCol("Rate", 55), 
-                _tCol("CGST", 40), _tCol("SGST", 40), _tCol("Total", 125, isLast: true), 
+                if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
+                _tCol("Total", 125, isLast: true), 
               ])),
 
               // --- SMART CONTENT ---
               pw.Expanded(child: pw.Column(children: pageContent.map((entry) {
                 if (entry is String) return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))), child: pw.Text(entry, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
                 BillItem i = entry as BillItem;
+                double taxableRow = (i.qty * i.rate) - i.discountRupees;
+                if (taxableRow < 0) taxableRow = 0.0;
+                double taxAmt = i.total - taxableRow;
+                if (taxAmt < 0) taxAmt = 0.0;
                 return pw.Container(decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))), child: pw.Row(children: [
                     _cell("${ret.items.indexOf(i) + 1}", 25), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 50), _cell(i.packing, 40),
                     pw.Container(width: 210, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                     _cell(i.batch, 70), _cell(i.exp, 45), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.rate.toStringAsFixed(2), 55),
-                    _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40), _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                    if (isLocal) ...[
+                      _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                      _cell("${(i.gstRate / 2).toStringAsFixed(1)}%", 40),
+                    ] else ...[
+                      _cell("${i.gstRate.toStringAsFixed(1)}%", 35),
+                      _cell(taxAmt.toStringAsFixed(1), 45),
+                    ],
                     _cell(i.total.toStringAsFixed(2), 125),
                 ]));
               }).toList())),

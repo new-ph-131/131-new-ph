@@ -83,7 +83,7 @@ class DebitNotePdf {
                 _tCol("Product Name", 220, isLeft: true), 
                 _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
                 _tCol("MRP", 55), _tCol("Rate", 55), 
-                _tCol("CGST", 40), _tCol("SGST", 40),
+                if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
                 _tCol("Total", 100, isLast: true), 
               ])),
 
@@ -98,8 +98,10 @@ class DebitNotePdf {
                 int sNo = ret.items.indexOf(i) + 1;
                 bool isShaded = config.useZebraShading && (sNo % 2 != 0);
                 
-                double taxableRow = i.purchaseRate * i.qty;
+                double taxableRow = (i.purchaseRate * i.qty) - i.discountRupees;
+                if (taxableRow < 0) taxableRow = 0.0;
                 double taxAmt = i.total - taxableRow;
+                if (taxAmt < 0) taxAmt = 0.0;
 
                 return pw.Container(
                   color: isShaded ? PdfColors.grey50 : PdfColors.white,
@@ -112,8 +114,13 @@ class DebitNotePdf {
                     _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
                     _cell(i.mrp.toStringAsFixed(2), 55), 
                     _cell(i.purchaseRate.toStringAsFixed(2), 55),
-                    _cell(isLocal ? (taxAmt / 2).toStringAsFixed(1) : "0", 40),
-                    _cell(isLocal ? (taxAmt / 2).toStringAsFixed(1) : taxAmt.toStringAsFixed(1), 40),
+                    if (isLocal) ...[
+                      _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                      _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                    ] else ...[
+                      _cell("${i.gstRate.toStringAsFixed(1)}%", 35),
+                      _cell(taxAmt.toStringAsFixed(1), 45),
+                    ],
                     _cell(i.total.toStringAsFixed(2), 100),
                   ]),
                 );
@@ -186,18 +193,28 @@ class DebitNotePdf {
             pw.Container(color: PdfColors.grey200, child: pw.Row(children: [
               _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40), _tCol("Product Name", 220, isLeft: true), 
               _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45), _tCol("MRP", 55), _tCol("Rate", 55), 
-              _tCol("CGST", 40), _tCol("SGST", 40), _tCol("Total", 100, isLast: true), 
+              if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
+              _tCol("Total", 100, isLast: true), 
             ])),
             pw.Expanded(child: pw.Column(children: pageItems.map((entry) {
               if (entry is String) return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))), child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)));
               PurchaseItem i = entry as PurchaseItem;
-              double taxableRow = i.purchaseRate * i.qty;
+              double taxableRow = (i.purchaseRate * i.qty) - i.discountRupees;
+              if (taxableRow < 0) taxableRow = 0.0;
               double taxAmt = i.total - taxableRow;
+              if (taxAmt < 0) taxAmt = 0.0;
               return pw.Container(decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))), child: pw.Row(children: [
                   _cell("${ret.items.indexOf(i) + 1}", 25), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 60), _cell(i.packing, 40),
                   pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
                   _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.purchaseRate.toStringAsFixed(2), 55),
-                  _cell(isLocal ? (taxAmt / 2).toStringAsFixed(1) : "0", 40), _cell(isLocal ? (taxAmt / 2).toStringAsFixed(1) : taxAmt.toStringAsFixed(1), 40), _cell(i.total.toStringAsFixed(2), 100),
+                  if (isLocal) ...[
+                    _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                    _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                  ] else ...[
+                    _cell("${i.gstRate.toStringAsFixed(1)}%", 35),
+                    _cell(taxAmt.toStringAsFixed(1), 45),
+                  ],
+                  _cell(i.total.toStringAsFixed(2), 100),
               ]));
             }).toList())),
             if (isLastPage) _buildFixedSyncFooter(shop.name, ret, isLocal)

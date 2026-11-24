@@ -81,9 +81,12 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
     List<Map<String, dynamic>> history = [];
     Map<String, double> batchStockMap = {};
 
-    bool matchesMed(String mId) =>
+    bool matchesMed(String mId, [String mName = '']) =>
         mId == widget.medicine.id ||
-        (widget.medicine.identityKey.isNotEmpty && mId == widget.medicine.identityKey);
+        (widget.medicine.identityKey.isNotEmpty && mId == widget.medicine.identityKey) ||
+        (mName.trim().isNotEmpty &&
+            widget.medicine.name.trim().isNotEmpty &&
+            mName.trim().toUpperCase() == widget.medicine.name.trim().toUpperCase());
     String bLabel(String raw) => raw.trim().isEmpty ? "NO BATCH" : raw.trim().toUpperCase();
 
     // 0. Seed Batch Opening Stock + Manual Adjustments so batch totals match ON HAND
@@ -116,7 +119,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
 
     // 1. Trace: Purchases (Stock IN +)
     for (var p in ph.purchases.where((p) => p.isDeleted != 1)) {
-      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID, it.name))) {
         final bKey = bLabel(it.batch);
         history.add({'date': p.date, 'type': 'PUR', 'qty': it.qty + it.freeQty, 'party': p.distributorName, 'bill': p, 'batch': bKey, 'isIn': true});
         batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) + (it.qty + it.freeQty);
@@ -125,7 +128,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
 
     // 2. Trace: Sales (Stock OUT -)
     for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active"))) {
-      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID, it.name))) {
         final bKey = bLabel(it.batch);
         history.add({'date': s.date, 'type': 'SALE', 'qty': it.qty + it.freeQty, 'party': s.partyName, 'bill': s, 'batch': bKey, 'isIn': false});
         batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) - (it.qty + it.freeQty);
@@ -134,20 +137,21 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
 
     // 3. Sale Returns (CN) -> Stock IN + (If Sellable)
     for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
-      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name))) {
         final bKey = bLabel(it.batch);
         bool isSellable = it.isBreakage == false;
-        history.add({'date': r.date, 'type': isSellable ? 'SR-SELL' : 'SR-EXP', 'qty': it.qty + it.freeQty, 'party': r.partyName, 'bill': r, 'batch': bKey, 'isIn': isSellable});
+        history.add({'date': r.date, 'type': isSellable ? 'SR-SELL' : 'SR-EXP', 'qty': it.qty + it.freeQty, 'party': r.partyName, 'bill': r, 'batch': bKey, 'isIn': isSellable, 'isBreakage': !isSellable});
         if (isSellable) batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) + (it.qty + it.freeQty);
       }
     }
 
-    // 4. Purchase Returns (DN) -> Stock OUT -
+    // 4. Purchase Returns (DN) -> Stock OUT - (Only Sellable; Breakage/Expiry non-sellable does not deduct good stock)
     for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
-      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name))) {
         final bKey = bLabel(it.batch);
-        history.add({'date': r.date, 'type': 'PR-OUT', 'qty': it.qty + it.freeQty, 'party': r.distributorName, 'bill': r, 'batch': bKey, 'isIn': false});
-        batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) - (it.qty + it.freeQty);
+        bool isSellable = it.isBreakage == false;
+        history.add({'date': r.date, 'type': isSellable ? 'PR-OUT' : 'PR-EXP', 'qty': it.qty + it.freeQty, 'party': r.distributorName, 'bill': r, 'batch': bKey, 'isIn': false, 'isBreakage': !isSellable});
+        if (isSellable) batchStockMap[bKey] = (batchStockMap[bKey] ?? 0) - (it.qty + it.freeQty);
       }
     }
 
@@ -165,6 +169,7 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
         Expanded(child: displayHistory.isEmpty ? const Center(child: Text("No transactions found")) : ListView.builder(padding: const EdgeInsets.all(10), itemCount: displayHistory.length, itemBuilder: (c, i) {
               final h = displayHistory[i];
               bool isIn = h['isIn'];
+              bool isBrk = h['isBreakage'] == true;
               return Card(child: ListTile(
                 onTap: () {
                    // Deep Linking logic according to type
@@ -178,14 +183,14 @@ class _ItemLedgerDetailViewState extends State<ItemLedgerDetailView> {
                      Navigator.push(context, MaterialPageRoute(builder: (c) => PurchaseReturnView(existingRecord: h['bill'], isReadOnly: true)));
                    }
                 },
-                leading: CircleAvatar(backgroundColor: isIn ? Colors.green.shade50 : Colors.red.shade50, child: Icon(isIn ? Icons.south_west : Icons.north_east, color: isIn ? Colors.green : Colors.red, size: 16)),
+                leading: CircleAvatar(backgroundColor: isBrk ? Colors.orange.shade50 : (isIn ? Colors.green.shade50 : Colors.red.shade50), child: Icon(isBrk ? Icons.inventory_2_outlined : (isIn ? Icons.south_west : Icons.north_east), color: isBrk ? Colors.orange.shade800 : (isIn ? Colors.green : Colors.red), size: 16)),
                 title: Row(children: [
-                  Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), decoration: BoxDecoration(color: Colors.blueGrey.shade100, borderRadius: BorderRadius.circular(4)), child: Text(h['type'], style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold))),
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2), decoration: BoxDecoration(color: isBrk ? Colors.orange.shade100 : Colors.blueGrey.shade100, borderRadius: BorderRadius.circular(4)), child: Text(h['type'], style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: isBrk ? Colors.orange.shade900 : Colors.black87))),
                   const SizedBox(width: 8),
                   Expanded(child: Text(h['party'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
                 ]),
                 subtitle: Text("${DateFormat('dd/MM/yy').format(h['date'])} | Batch: ${h['batch']}"),
-                trailing: Text("${isIn ? '+' : '-'} ${formatQty(h['qty'])}", style: TextStyle(fontWeight: FontWeight.bold, color: isIn ? Colors.green : Colors.red)),
+                trailing: Text(isBrk ? "EXP ${formatQty(h['qty'])}" : "${isIn ? '+' : '-'} ${formatQty(h['qty'])}", style: TextStyle(fontWeight: FontWeight.bold, color: isBrk ? Colors.orange.shade800 : (isIn ? Colors.green : Colors.red))),
               ));
             }))
       ]),

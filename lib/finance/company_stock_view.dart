@@ -101,8 +101,12 @@ class _CompanyStockViewState extends State<CompanyStockView> {
   }) {
     double baseOpening = 0.0;
     
-    bool matchesMed(String mId) =>
-        mId == med.id || (med.identityKey.isNotEmpty && mId == med.identityKey);
+    bool matchesMed(String mId, [String mName = '']) =>
+        mId == med.id ||
+        (med.identityKey.isNotEmpty && mId == med.identityKey) ||
+        (mName.trim().isNotEmpty &&
+            med.name.trim().isNotEmpty &&
+            mName.trim().toUpperCase() == med.name.trim().toUpperCase());
     final DateTime fromStart = DateTime(from.year, from.month, from.day);
     final DateTime toEnd = DateTime(to.year, to.month, to.day, 23, 59, 59, 999);
 
@@ -118,22 +122,22 @@ class _CompanyStockViewState extends State<CompanyStockView> {
         double totalCN = 0.0;
         double totalDN = 0.0;
         for (var p in ph.purchases.where((p) => p.isDeleted != 1)) {
-          for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
+          for (var it in p.items.where((it) => matchesMed(it.medicineID, it.name))) {
             totalPur += (it.qty + it.freeQty);
           }
         }
         for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active"))) {
-          for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
+          for (var it in s.items.where((it) => matchesMed(it.medicineID, it.name))) {
             totalSale += (it.qty + it.freeQty);
           }
         }
         for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
-          for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
+          for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
             totalCN += (it.qty + it.freeQty);
           }
         }
         for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
-          for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+          for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
             totalDN += (it.qty + it.freeQty);
           }
         }
@@ -148,28 +152,28 @@ class _CompanyStockViewState extends State<CompanyStockView> {
 
     for (var p in ph.purchases.where((p) => p.isDeleted != 1 && p.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && p.partyId != selectedPartyId) continue;
-      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID, it.name))) {
         purBefore += (it.qty + it.freeQty);
       }
     }
 
     for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active") && s.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && s.partyId != selectedPartyId) continue;
-      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID, it.name))) {
         saleBefore += (it.qty + it.freeQty);
       }
     }
 
     for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && r.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && r.partyName != selectedParty) continue;
-      for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
         cnBefore += (it.qty + it.freeQty);
       }
     }
 
     for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && r.date.isBefore(fromStart))) {
       if (partySelectionType == "Single" && r.distributorName != selectedParty) continue;
-      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
         dnBefore += (it.qty + it.freeQty);
       }
     }
@@ -183,28 +187,28 @@ class _CompanyStockViewState extends State<CompanyStockView> {
 
     for (var p in ph.purchases.where((p) => p.isDeleted != 1 && !p.date.isBefore(fromStart) && !p.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && p.partyId != selectedPartyId) continue;
-      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID, it.name))) {
         purInPeriod += (it.qty + it.freeQty);
       }
     }
 
     for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active") && !s.date.isBefore(fromStart) && !s.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && s.partyId != selectedPartyId) continue;
-      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID, it.name))) {
         saleInPeriod += (it.qty + it.freeQty);
       }
     }
 
     for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && !r.date.isBefore(fromStart) && !r.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && r.partyName != selectedParty) continue;
-      for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
         cnInPeriod += (it.qty + it.freeQty);
       }
     }
 
     for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active") && !r.date.isBefore(fromStart) && !r.date.isAfter(toEnd))) {
       if (partySelectionType == "Single" && r.distributorName != selectedParty) continue;
-      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
         dnInPeriod += (it.qty + it.freeQty);
       }
     }

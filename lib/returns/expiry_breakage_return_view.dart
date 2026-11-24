@@ -133,8 +133,9 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
         med: med,
         srNo: items.length + 1,
         partyState: selectedParty?.state ?? "Rajasthan", // NAYA: Added partyState parameter
+        allowExpired: true,
         onAdd: (newItem) {
-          setState(() { items.add(newItem); });
+          setState(() { items.add(newItem.copyWith(isBreakage: true)); });
           Navigator.pop(context);
         },
         onCancel: () => Navigator.pop(context),
@@ -349,7 +350,7 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
       party: selectedParty!,
       items: items,
       total: totalAmt,
-      // type: "Breakage", <-- Ise delete kar dein ya rehne dein agar Manager update kar liya hai
+      type: "Breakage",
     );
     
     if (ph.activeCompany != null) {

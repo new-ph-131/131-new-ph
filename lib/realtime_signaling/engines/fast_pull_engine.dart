@@ -391,6 +391,12 @@ class FastPullEngine {
                   saleReturns: ph.saleReturns,
                   purchaseReturns: ph.purchaseReturns,
                 );
+                await File('$workingDir/meds.json').writeAsString(
+                  jsonEncode(ph.medicines.map((e) => e.toMap()).toList()),
+                );
+                await File('$workingDir/bats.json').writeAsString(
+                  jsonEncode(ph.batchHistory.map((k, v) => MapEntry(k, v.map((b) => b.toMap()).toList()))),
+                );
               }
               if (d1SalesMutated) {
                 await File('$workingDir/sales.json').writeAsString(

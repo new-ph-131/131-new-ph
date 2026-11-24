@@ -48,28 +48,31 @@ class _ItemMovementLedgerViewState extends State<ItemMovementLedgerView> {
   }
 
   List<Map<String, dynamic>> _calculateMovement(PharoahManager ph) {
-    bool matchesMed(String mId) =>
+    bool matchesMed(String mId, [String mName = '']) =>
         mId == selectedMed!.id ||
-        (selectedMed!.identityKey.isNotEmpty && mId == selectedMed!.identityKey);
+        (selectedMed!.identityKey.isNotEmpty && mId == selectedMed!.identityKey) ||
+        (mName.trim().isNotEmpty &&
+            selectedMed!.name.trim().isNotEmpty &&
+            mName.trim().toUpperCase() == selectedMed!.name.trim().toUpperCase());
 
     List<Map<String, dynamic>> history = [];
     for (var p in ph.purchases.where((p) => p.isDeleted != 1)) {
-      for (var it in p.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in p.items.where((it) => matchesMed(it.medicineID, it.name))) {
         history.add({'date': p.date, 'type': 'PURCHASE', 'party': p.distributorName, 'in': it.qty + it.freeQty, 'out': 0.0, 'batch': it.batch, 'ref': p.billNo});
       }
     }
     for (var s in ph.sales.where((s) => s.isDeleted != 1 && (s.status.isEmpty || s.status == "Active"))) {
-      for (var it in s.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in s.items.where((it) => matchesMed(it.medicineID, it.name))) {
         history.add({'date': s.date, 'type': 'SALE', 'party': s.partyName, 'in': 0.0, 'out': it.qty + it.freeQty, 'batch': it.batch, 'ref': s.billNo});
       }
     }
     for (var r in ph.saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
-      for (var it in r.items.where((it) => matchesMed(it.medicineID) && !it.isBreakage)) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
         history.add({'date': r.date, 'type': 'SALE RETURN', 'party': r.partyName, 'in': it.qty + it.freeQty, 'out': 0.0, 'batch': it.batch, 'ref': r.billNo});
       }
     }
     for (var r in ph.purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
-      for (var it in r.items.where((it) => matchesMed(it.medicineID))) {
+      for (var it in r.items.where((it) => matchesMed(it.medicineID, it.name) && !it.isBreakage)) {
         history.add({'date': r.date, 'type': 'PURCHASE RETURN', 'party': r.distributorName, 'in': 0.0, 'out': it.qty + it.freeQty, 'batch': it.batch, 'ref': r.billNo});
       }
     }

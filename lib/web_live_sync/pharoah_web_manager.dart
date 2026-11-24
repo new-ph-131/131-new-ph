@@ -1719,11 +1719,19 @@ class PharoahWebManager with ChangeNotifier {
     String status = "Active",
     bool isPurchaseRate = true,
   }) {
-    if (!batchHistory.containsKey(productKey)) {
-      batchHistory[productKey] = [];
+    String resolvedKey = productKey;
+    try {
+      final med = medicines.firstWhere(
+        (m) => m.id == productKey || m.identityKey == productKey || m.name.trim().toUpperCase() == productKey.trim().toUpperCase(),
+      );
+      resolvedKey = med.identityKey;
+    } catch (_) {}
+
+    if (!batchHistory.containsKey(resolvedKey)) {
+      batchHistory[resolvedKey] = [];
     }
 
-    List<BatchInfo> history = batchHistory[productKey]!;
+    List<BatchInfo> history = batchHistory[resolvedKey]!;
     int existingIdx = InventoryLogicCenter.findMatchingBatchIndex(
       history,
       batchNo: batchNo,
@@ -1776,6 +1784,16 @@ class PharoahWebManager with ChangeNotifier {
         appliedRateType: appliedRateType,
         status: status,
       ));
+    }
+
+    if (activeStoreToken.trim().isNotEmpty) {
+      final savedBatch = history[existingIdx != -1 ? existingIdx : history.length - 1];
+      BatchSyncModule.onBatchSaved(
+        batch: savedBatch,
+        medIdentityKey: resolvedKey,
+        storeToken: activeStoreToken,
+        isDelete: false,
+      );
     }
   }
 

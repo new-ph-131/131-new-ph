@@ -278,21 +278,22 @@ class AppStockAnalyticsEngine {
       }
     }
 
-    // 4. Purchase Returns / Debit Notes
+    // 4. Purchase Returns / Debit Notes (Sellable Return = OUT -, Breakage = non-stock)
     for (final r in ph.purchaseReturns) {
       if (r.isDeleted == 1 || r.status.toUpperCase() == "CANCELLED") continue;
       for (final it in r.items) {
         if (matchesItem(it.medicineID, it.name)) {
+          final bool isSellable = !it.isBreakage;
           rawTxns.add({
             'date': r.date,
             'type': 'DEBIT_NOTE',
-            'typeLabel': 'Debit Note (Return Out -)',
+            'typeLabel': isSellable ? 'Debit Note (Return Out -)' : 'Debit Note (Breakage/Exp)',
             'docNo': r.billNo,
             'party': r.distributorName,
             'batch': batchLabel(it.batch),
             'exp': it.exp,
             'inQty': 0.0,
-            'outQty': it.qty + it.freeQty,
+            'outQty': isSellable ? (it.qty + it.freeQty) : 0.0,
             'rate': it.purchaseRate,
             'color': const Color(0xFFDC2626),
             'icon': Icons.remove_shopping_cart_rounded,

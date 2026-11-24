@@ -712,15 +712,17 @@ void main() {
       ),
     ];
     ph.purchaseReturns = [
+      // Sellable Debit Note (qty 3) MUST deduct good stock; Breakage Debit Note (qty 2) MUST NOT deduct good stock
       PurchaseReturn(
         id: 'PR1',
         billNo: 'DN-1',
         date: DateTime(2025, 5, 10, 22, 0),
         distributorName: 'PX',
         items: [
-          PurchaseItem(id: '1', srNo: 1, medicineID: med.id, name: med.name, packing: med.packing, batch: 'B1', exp: '12/27', hsn: '3004', mrp: 100, qty: 3, purchaseRate: 60, gstRate: 12, total: 180, isBreakage: true),
+          PurchaseItem(id: '1', srNo: 1, medicineID: med.id, name: med.name, packing: med.packing, batch: 'B1', exp: '12/27', hsn: '3004', mrp: 100, qty: 3, purchaseRate: 60, gstRate: 12, total: 180, isBreakage: false),
+          PurchaseItem(id: '2', srNo: 2, medicineID: med.id, name: med.name, packing: med.packing, batch: 'B1', exp: '12/27', hsn: '3004', mrp: 100, qty: 2, purchaseRate: 60, gstRate: 12, total: 120, isBreakage: true),
         ],
-        totalAmount: 180,
+        totalAmount: 300,
       ),
     ];
 
@@ -732,7 +734,7 @@ void main() {
       saleReturns: ph.saleReturns,
       purchaseReturns: ph.purchaseReturns,
     );
-    // 10 (open) + 2 (adj) + 20 (pur) - 5 (sale) - 3 (DN) = 24.0
+    // 10 (open) + 2 (adj) + 20 (pur) - 5 (sale) - 3 (Sellable DN) = 24.0 (Breakage DN 2 ignored on good stock)
     expect(med.stock, equals(24.0));
 
     final flow = StockFlowEngine.getItemFlow(
@@ -743,7 +745,88 @@ void main() {
     );
     expect(flow['opening'], equals(12.0));
     expect(flow['received'], equals(20.0));
-    expect(flow['sale'], equals(8.0)); // 5 Sale + 3 DN
+    expect(flow['sale'], equals(8.0)); // 5 Sale + 3 Sellable DN
     expect(flow['closing'], equals(24.0));
+  });
+
+  test('PHASE-1: Loose stock preserved on Sale/DN and StockFlowEngine matches across differing medicineID via name fallback', () {
+    final medLoose = Medicine(id: 'MED_LOOSE', systemId: 'SYS_LOOSE', name: 'Syrup Loose', packing: '100ml', stock: 25.0);
+    final medNamed = Medicine(id: 'LOCAL_M1', systemId: 'SYS_M1', name: 'Pan 40', packing: '15s', mrp: 150, stock: 10.0);
+    final ph = PharoahManager()
+      ..medicines = [medLoose, medNamed]
+      ..batchHistory = {
+        medNamed.identityKey: [
+          BatchInfo(batch: 'B1', exp: '12/27', packing: '15s', mrp: 150, rate: 100, openingQty: 10.0, qty: 10.0),
+        ],
+      }
+      ..purchases = []
+      ..sales = [
+        Sale(
+          id: 'S_LOOSE',
+          billNo: 'SL-9',
+          partyId: 'P1',
+          date: DateTime(2025, 5, 10),
+          partyName: 'P1',
+          partyGstin: '',
+          partyState: 'Rajasthan',
+          items: [
+            BillItem(id: '1', srNo: 1, medicineID: medLoose.id, name: medLoose.name, packing: '100ml', batch: '', exp: '', hsn: '3004', mrp: 90, qty: 2, rate: 80, gstRate: 12, total: 160),
+          ],
+          totalAmount: 160,
+          paymentMode: 'CREDIT',
+        ),
+      ]
+      ..saleReturns = [
+        // Simulated Web Credit Note arriving with DIFFERENT medicineID ('WEB_DIFF_ID') but same name 'Pan 40'
+        SaleReturn(
+          id: 'SR_CROSS',
+          billNo: 'WCN-9',
+          date: DateTime(2025, 5, 10),
+          partyName: 'P1',
+          items: [
+            BillItem(id: '1', srNo: 1, medicineID: 'WEB_DIFF_ID', name: 'Pan 40', packing: '15s', batch: 'B1', exp: '12/27', hsn: '3004', mrp: 150, qty: 4, rate: 110, gstRate: 12, total: 440, isBreakage: false),
+          ],
+          totalAmount: 440,
+        ),
+      ]
+      ..purchaseReturns = [
+        PurchaseReturn(
+          id: 'PR_CROSS',
+          billNo: 'WDN-9',
+          date: DateTime(2025, 5, 10),
+          distributorName: 'P1',
+          items: [
+            PurchaseItem(id: '1', srNo: 1, medicineID: 'WEB_DIFF_ID', name: 'Pan 40', packing: '15s', batch: 'B1', exp: '12/27', hsn: '3004', mrp: 150, qty: 1, purchaseRate: 95, gstRate: 12, total: 95, isBreakage: false),
+            PurchaseItem(id: '2', srNo: 2, medicineID: 'WEB_DIFF_ID', name: 'Pan 40', packing: '15s', batch: 'B1', exp: '12/27', hsn: '3004', mrp: 150, qty: 3, purchaseRate: 95, gstRate: 12, total: 285, isBreakage: true),
+          ],
+          totalAmount: 380,
+        ),
+      ];
+
+    InventoryLogicCenter.rebuildAllInventory(
+      medicines: ph.medicines,
+      batchHistory: ph.batchHistory,
+      purchases: ph.purchases,
+      sales: ph.sales,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
+    );
+
+    // Loose item without batchHistory must NOT be wiped to 0.0
+    expect(medLoose.stock, equals(25.0));
+    expect(ph.batchHistory.containsKey(medLoose.identityKey), isFalse);
+
+    // Cross-ID Pan 40: 10 (open) + 4 (Sellable CN) - 1 (Sellable DN) = 13.0 (Breakage DN 3 ignored)
+    expect(medNamed.stock, equals(13.0));
+    final flow = StockFlowEngine.getItemFlow(
+      med: medNamed,
+      from: DateTime(2025, 5, 10),
+      to: DateTime(2025, 5, 10),
+      ph: ph,
+    );
+    expect(flow['opening'], equals(10.0));
+    expect(flow['received'], equals(4.0));
+    expect(flow['sale'], equals(1.0));
+    expect(flow['closing'], equals(13.0));
   });
 }

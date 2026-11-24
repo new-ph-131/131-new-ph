@@ -377,19 +377,21 @@ class InventoryLogicCenter {
       }
     }
 
-    // STEP E: PURCHASE RETURNS / DEBIT NOTES (Stock OUT -)
+    // STEP E: PURCHASE RETURNS / DEBIT NOTES (Sellable Stock OUT -; Breakage/Expiry non-sellable does NOT deduct good stock)
     for (var ret in purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == "Active"))) {
       for (var item in ret.items) {
-        _updateStock(
-          batchHistory,
-          medicines,
-          item.medicineID,
-          item.name,
-          item.batch,
-          (item.qty + item.freeQty),
-          false,
-          item,
-        );
+        if (item.isBreakage == false) {
+          _updateStock(
+            batchHistory,
+            medicines,
+            item.medicineID,
+            item.name,
+            item.batch,
+            (item.qty + item.freeQty),
+            false,
+            item,
+          );
+        }
       }
     }
 
@@ -438,7 +440,11 @@ class InventoryLogicCenter {
       final Medicine? med = _findMedicine(medicines, medId, medName);
       if (med == null) return;
       final String key = med.identityKey;
-      if (!batchHistory.containsKey(key)) batchHistory[key] = [];
+      final bool hadKey = batchHistory.containsKey(key);
+      if (!hadKey) {
+        if (!isAdd) return; // Guard loose/unbatched stock from being wiped to 0 by STEP F
+        batchHistory[key] = [];
+      }
 
       final List<BatchInfo> batches = batchHistory[key]!;
       final bool isPurItem = item is PurchaseItem;
