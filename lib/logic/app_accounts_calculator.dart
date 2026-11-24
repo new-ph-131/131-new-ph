@@ -620,6 +620,8 @@ class AppAccountsCalculator {
     required List<Sale> sales,
     required List<Purchase> purchases,
     required List<Voucher> vouchers,
+    List<SaleReturn> saleReturns = const [],
+    List<PurchaseReturn> purchaseReturns = const [],
     double openingCash = 0.0,
   }) {
     List<Map<String, dynamic>> allCashTxns = [];

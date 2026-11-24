@@ -5341,6 +5341,8 @@ void registerBatchActivity({
       sales: sales,
       purchases: purchases,
       vouchers: vouchers,
+      saleReturns: saleReturns,
+      purchaseReturns: purchaseReturns,
       openingCash: 0.0,
     );
   }

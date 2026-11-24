@@ -175,6 +175,8 @@ class _CashBankBookViewState extends State<CashBankBookView> with SingleTickerPr
       sales: ph.sales,
       purchases: ph.purchases,
       vouchers: ph.vouchers,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
       openingCash: 0.0,
     );
 

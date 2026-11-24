@@ -865,6 +865,8 @@ void main() {
       sales: ph.sales,
       purchases: ph.purchases,
       vouchers: ph.vouchers,
+      saleReturns: ph.saleReturns,
+      purchaseReturns: ph.purchaseReturns,
     );
     // Cash CN adds 500 out (cash refund paid out)
     expect(cashBook.any((e) => e['type'] == 'CASH CREDIT NOTE' && e['out'] == 500.0), isTrue);
