@@ -26,6 +26,9 @@ import 'package:pharoah_erp/sync_core/modules/batch_sync_module.dart';
 import 'package:pharoah_erp/sync_core/modules/medicine_sync_module.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 import 'package:pharoah_erp/web_live_sync/sub_views/web_accounts/services/web_accounts_calculator.dart';
+import 'package:pharoah_erp/pdf/credit_note_pdf.dart';
+import 'package:pharoah_erp/pdf/debit_note_pdf.dart';
+import 'package:pharoah_erp/web_live_sync/web_pdf_router_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -1524,5 +1527,345 @@ void main() {
     );
     expect(docsCsv.contains('CCN-1'), isFalse);
     expect(docsCsv.contains('WCN-1'), isTrue);
+  });
+
+  test('PHASE-5: Multi-invoice per-item origin resolution, manual blank preservation, Sec 34(2) per-item check, and PDF smoke test', () async {
+    final cust = Party(
+      id: 'C_MULTI',
+      name: 'Apollo Retail',
+      gst: '08AABCA1111A1Z5',
+      state: 'Rajasthan',
+    );
+    final sup = Party(
+      id: 'S_MULTI',
+      name: 'Cipla Distributors',
+      gst: '08AABCC2222B1Z8',
+      state: 'Rajasthan',
+      group: 'Sundry Creditors',
+    );
+    final shop = CompanyProfile(
+      id: 'COMP_P5',
+      name: 'MedPlus Wholesale',
+      businessType: 'WHOLESALE',
+      createdAt: DateTime(2025, 4, 1),
+      password: 'admin',
+      gstin: '08AABCM3333C1Z2',
+      state: 'Rajasthan',
+    );
+    final config = AppConfig();
+
+    // 1. Model serialization & copyWith(clearOrigBillDate)
+    final origBillItem = BillItem(
+      id: 'BI_1',
+      srNo: 1,
+      medicineID: 'M1',
+      name: 'Dolo 650',
+      packing: '15T',
+      batch: 'B101',
+      exp: '12/27',
+      hsn: '3004',
+      mrp: 35,
+      rate: 25,
+      gstRate: 12,
+      qty: 2,
+      total: 56,
+      origBillNo: 'INV-101',
+      origBillDate: DateTime(2025, 4, 10),
+      isManualOrigin: false,
+    );
+    final restoredBillItem = BillItem.fromMap(origBillItem.toMap());
+    expect(restoredBillItem.origBillNo, equals('INV-101'));
+    expect(restoredBillItem.origBillDate, equals(DateTime(2025, 4, 10)));
+    expect(restoredBillItem.isManualOrigin, isFalse);
+
+    final clearedBillItem = restoredBillItem.copyWith(
+      origBillNo: '',
+      clearOrigBillDate: true,
+      isManualOrigin: true,
+    );
+    expect(clearedBillItem.origBillNo, isEmpty);
+    expect(clearedBillItem.origBillDate, isNull);
+    expect(clearedBillItem.isManualOrigin, isTrue);
+
+    final origPurItem = PurchaseItem(
+      id: 'PI_1',
+      srNo: 1,
+      medicineID: 'M2',
+      name: 'Augmentin 625',
+      packing: '10T',
+      batch: 'BP2',
+      exp: '11/27',
+      hsn: '3004',
+      mrp: 200,
+      qty: 3,
+      purchaseRate: 120,
+      gstRate: 12,
+      total: 403.2,
+      origBillNo: 'PB-201',
+      origBillDate: DateTime(2025, 5, 1),
+      isManualOrigin: false,
+    );
+    final restoredPurItem = PurchaseItem.fromMap(origPurItem.toMap());
+    expect(restoredPurItem.origBillNo, equals('PB-201'));
+    expect(restoredPurItem.origBillDate, equals(DateTime(2025, 5, 1)));
+    expect(restoredPurItem.isManualOrigin, isFalse);
+
+    // 2. Auto-resolver from Sales & Purchases history respects isManualOrigin == true
+    final pastSales = [
+      Sale(
+        id: 'S_101',
+        billNo: 'INV-101',
+        partyId: cust.id,
+        partyName: cust.name,
+        date: DateTime(2025, 4, 10),
+        totalAmount: 112,
+        paymentMode: 'CREDIT',
+        items: [origBillItem],
+      ),
+      Sale(
+        id: 'S_102',
+        billNo: 'INV-102',
+        partyId: cust.id,
+        partyName: cust.name,
+        date: DateTime(2025, 6, 15),
+        totalAmount: 224,
+        paymentMode: 'CREDIT',
+        items: [
+          BillItem(
+            id: 'BI_S2',
+            srNo: 1,
+            medicineID: 'M2',
+            name: 'Augmentin 625',
+            packing: '10T',
+            batch: 'B202',
+            exp: '10/27',
+            hsn: '3004',
+            mrp: 200,
+            rate: 150,
+            gstRate: 12,
+            qty: 1,
+            total: 168,
+          ),
+        ],
+      ),
+    ];
+
+    final cnItemsInput = [
+      BillItem(
+        id: 'RET_1',
+        srNo: 1,
+        medicineID: 'M1',
+        name: 'Dolo 650',
+        packing: '15T',
+        batch: 'B101',
+        exp: '12/27',
+        hsn: '3004',
+        mrp: 35,
+        rate: 25,
+        gstRate: 12,
+        qty: 1,
+        total: 28,
+      ),
+      BillItem(
+        id: 'RET_2',
+        srNo: 2,
+        medicineID: 'M2',
+        name: 'Augmentin 625',
+        packing: '10T',
+        batch: 'B202',
+        exp: '10/27',
+        hsn: '3004',
+        mrp: 200,
+        rate: 150,
+        gstRate: 12,
+        qty: 1,
+        total: 168,
+      ),
+      BillItem(
+        id: 'RET_MANUAL',
+        srNo: 3,
+        medicineID: 'M1',
+        name: 'Dolo 650',
+        packing: '15T',
+        batch: 'B101',
+        exp: '12/27',
+        hsn: '3004',
+        mrp: 35,
+        rate: 25,
+        gstRate: 12,
+        qty: 1,
+        total: 28,
+        origBillNo: '',
+        origBillDate: null,
+        isManualOrigin: true,
+      ),
+    ];
+
+    final resolvedCnItems = GstComplianceHelper.resolveMissingBillItemOrigins(
+      items: cnItemsInput,
+      sales: pastSales,
+      partyId: cust.id,
+      partyName: cust.name,
+    );
+    expect(resolvedCnItems[0].origBillNo, equals('INV-101'));
+    expect(resolvedCnItems[0].origBillDate, equals(DateTime(2025, 4, 10)));
+    expect(resolvedCnItems[1].origBillNo, equals('INV-102'));
+    expect(resolvedCnItems[1].origBillDate, equals(DateTime(2025, 6, 15)));
+    expect(resolvedCnItems[2].origBillNo, isEmpty);
+    expect(resolvedCnItems[2].origBillDate, isNull);
+    expect(resolvedCnItems[2].isManualOrigin, isTrue);
+
+    final cnSummary = GstComplianceHelper.summarizeOriginInvoices(resolvedCnItems);
+    expect(cnSummary.uniqueCount, equals(2));
+    expect(cnSummary.headerBillNo, equals('Multi (2 Inv)'));
+    expect(cnSummary.headerDate, equals(DateTime(2025, 4, 10)));
+    expect(cnSummary.footerRefText, contains('INV-101'));
+    expect(cnSummary.footerRefText, contains('INV-102'));
+
+    final manualOnlySummary = GstComplianceHelper.summarizeOriginInvoices([resolvedCnItems[2]]);
+    expect(manualOnlySummary.uniqueCount, equals(0));
+    expect(manualOnlySummary.headerBillNo, isEmpty);
+    expect(manualOnlySummary.footerRefText, isEmpty);
+
+    // Purchase auto-resolve
+    final pastPurchases = [
+      Purchase(
+        id: 'P_201',
+        internalNo: 'PUR-201',
+        billNo: 'PB-201',
+        partyId: sup.id,
+        date: DateTime(2025, 5, 1),
+        entryDate: DateTime(2025, 5, 1),
+        distributorName: sup.name,
+        items: [origPurItem],
+        totalAmount: 403.2,
+        paymentMode: 'CREDIT',
+      ),
+    ];
+    final resolvedDnItems = GstComplianceHelper.resolveMissingPurchaseItemOrigins(
+      items: [
+        PurchaseItem(
+          id: 'DN_1',
+          srNo: 1,
+          medicineID: 'M2',
+          name: 'Augmentin 625',
+          packing: '10T',
+          batch: 'BP2',
+          exp: '11/27',
+          hsn: '3004',
+          mrp: 200,
+          qty: 1,
+          purchaseRate: 120,
+          gstRate: 12,
+          total: 134.4,
+        ),
+        PurchaseItem(
+          id: 'DN_MANUAL',
+          srNo: 2,
+          medicineID: 'M2',
+          name: 'Augmentin 625',
+          packing: '10T',
+          batch: 'BP2',
+          exp: '11/27',
+          hsn: '3004',
+          mrp: 200,
+          qty: 1,
+          purchaseRate: 120,
+          gstRate: 12,
+          total: 134.4,
+          isManualOrigin: true,
+        ),
+      ],
+      purchases: pastPurchases,
+      partyId: sup.id,
+      partyName: sup.name,
+    );
+    expect(resolvedDnItems[0].origBillNo, equals('PB-201'));
+    expect(resolvedDnItems[1].origBillNo, isEmpty);
+    expect(resolvedDnItems[1].isManualOrigin, isTrue);
+
+    // 3. Per-item Sec 34(2) expiry check & GstPreflightValidator detection
+    final expiredItem = resolvedCnItems[0].copyWith(
+      origBillNo: 'INV-OLD',
+      origBillDate: DateTime(2024, 2, 1), // FY 2023-24 -> cutoff 30 Nov 2024
+    );
+    final srExpired = SaleReturn(
+      id: 'SR_EXP_P5',
+      billNo: 'CN-EXP-1',
+      partyId: cust.id,
+      partyName: cust.name,
+      partyGstin: cust.gst,
+      partyState: cust.state,
+      date: DateTime(2025, 2, 10),
+      origBillNo: 'Multi (2 Inv)',
+      origBillDate: null,
+      items: [expiredItem, resolvedCnItems[1]],
+      totalAmount: 196,
+    );
+    expect(
+      GstComplianceHelper.getExpiredOriginDate(
+        headerOrigDate: srExpired.origBillDate,
+        items: srExpired.items,
+        noteDate: srExpired.date,
+      ),
+      equals(DateTime(2024, 2, 1)),
+    );
+    final audit = GstPreflightValidator.audit(
+      sales: pastSales,
+      returns: [srExpired],
+      parties: [cust],
+      shop: shop,
+      fromDate: DateTime(2025, 2, 1),
+      toDate: DateTime(2025, 2, 28),
+    );
+    expect(audit.issues.any((i) => i.title == 'Sec 34(2) Time-Limit Crossed'), isTrue);
+
+    // 4. PDF byte generation smoke test (Mobile & Web CN + DN with mixed history + manual blank items)
+    final srForPdf = SaleReturn(
+      id: 'SR_PDF',
+      billNo: 'CN-MULTI-1',
+      partyId: cust.id,
+      partyName: cust.name,
+      partyGstin: cust.gst,
+      partyState: cust.state,
+      date: DateTime(2025, 7, 1),
+      origBillNo: cnSummary.headerBillNo,
+      origBillDate: cnSummary.headerDate,
+      items: resolvedCnItems,
+      totalAmount: 224,
+    );
+    final prForPdf = PurchaseReturn(
+      id: 'PR_PDF',
+      billNo: 'DN-MULTI-1',
+      partyId: sup.id,
+      distributorName: sup.name,
+      partyGstin: sup.gst,
+      partyState: sup.state,
+      date: DateTime(2025, 7, 1),
+      origBillNo: 'PB-201',
+      origBillDate: DateTime(2025, 5, 1),
+      items: resolvedDnItems,
+      totalAmount: 268.8,
+    );
+
+    final mobCnBytes = await CreditNotePdf.generateBytes(srForPdf, cust, shop, config);
+    final mobDnBytes = await DebitNotePdf.generateBytes(prForPdf, sup, shop, config);
+    final webCnBytes = await WebPdfRouterService.generateCreditNoteBytes(
+      returnObj: srForPdf,
+      party: cust,
+      shop: shop,
+      sales: pastSales,
+    );
+    final webDnBytes = await WebPdfRouterService.generateDebitNoteBytes(
+      returnObj: prForPdf,
+      party: sup,
+      shop: shop,
+      purchases: pastPurchases,
+    );
+
+    expect(mobCnBytes.length, greaterThan(500));
+    expect(mobDnBytes.length, greaterThan(500));
+    expect(webCnBytes.length, greaterThan(500));
+    expect(webDnBytes.length, greaterThan(500));
   });
 }

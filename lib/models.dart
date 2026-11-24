@@ -429,10 +429,11 @@ class Party {
 // ===========================================================================
 
 class BillItem {
-  String id, medicineID, name, packing, batch, exp, hsn, sourceChallanNo, sourceChallanId, appliedRateType; 
+  String id, medicineID, name, packing, batch, exp, hsn, sourceChallanNo, sourceChallanId, appliedRateType, origBillNo; 
   int srNo; 
   double mrp, qty, freeQty, rate, gstRate, cgst, sgst, igst, total, discountRupees, discountPer, rateCFormula; 
-  bool isBreakage;
+  bool isBreakage, isManualOrigin;
+  DateTime? origBillDate;
 
   BillItem({
     required this.id, required this.srNo, required this.medicineID, required this.name, required this.packing, required this.batch, required this.exp, required this.hsn, required this.mrp, required this.qty, this.freeQty = 0, required this.rate, required this.gstRate, this.cgst = 0, this.sgst = 0, this.igst = 0, required this.total, this.discountRupees = 0, 
@@ -440,20 +441,42 @@ class BillItem {
     this.isBreakage = false,
     this.sourceChallanNo = "", this.sourceChallanId = "",
     this.appliedRateType = "A", // Naya field: Choice Memory
-    this.rateCFormula = 0.0     // Naya field: Formula Memory
+    this.rateCFormula = 0.0,    // Naya field: Formula Memory
+    this.origBillNo = "",
+    this.origBillDate,
+    this.isManualOrigin = false,
   });
 
-  BillItem copyWith({int? srNo, String? sourceChallanNo, String? sourceChallanId, double? discountPer, double? discountRupees, bool? isBreakage}) => BillItem(
+  BillItem copyWith({
+    int? srNo,
+    String? sourceChallanNo,
+    String? sourceChallanId,
+    double? discountPer,
+    double? discountRupees,
+    bool? isBreakage,
+    String? origBillNo,
+    DateTime? origBillDate,
+    bool clearOrigBillDate = false,
+    bool? isManualOrigin,
+  }) => BillItem(
     id: id, srNo: srNo ?? this.srNo, medicineID: medicineID, name: name, packing: packing, batch: batch, exp: exp, hsn: hsn, mrp: mrp, qty: qty, freeQty: freeQty, rate: rate, gstRate: gstRate, cgst: cgst, sgst: sgst, igst: igst, total: total, 
     discountRupees: discountRupees ?? this.discountRupees, 
     discountPer: discountPer ?? this.discountPer, 
     isBreakage: isBreakage ?? this.isBreakage,
     sourceChallanNo: sourceChallanNo ?? this.sourceChallanNo, 
     sourceChallanId: sourceChallanId ?? this.sourceChallanId,
-    appliedRateType: appliedRateType, rateCFormula: rateCFormula
+    appliedRateType: appliedRateType, rateCFormula: rateCFormula,
+    origBillNo: origBillNo ?? this.origBillNo,
+    origBillDate: clearOrigBillDate ? null : (origBillDate ?? this.origBillDate),
+    isManualOrigin: isManualOrigin ?? this.isManualOrigin,
   );
   
-  Map<String, dynamic> toMap() => {'id': id, 'srNo': srNo, 'medicineID': medicineID, 'name': name, 'packing': packing, 'batch': batch, 'exp': exp, 'hsn': hsn, 'mrp': mrp, 'qty': qty, 'freeQty': freeQty, 'rate': rate, 'gstRate': gstRate, 'cgst': cgst, 'sgst': sgst, 'igst': igst, 'total': total, 'discountRupees': discountRupees, 'discountPer': discountPer, 'isBreakage': isBreakage, 'sourceChallanNo': sourceChallanNo, 'sourceChallanId': sourceChallanId, 'appliedRateType': appliedRateType, 'rateCFormula': rateCFormula};
+  Map<String, dynamic> toMap() => {
+    'id': id, 'srNo': srNo, 'medicineID': medicineID, 'name': name, 'packing': packing, 'batch': batch, 'exp': exp, 'hsn': hsn, 'mrp': mrp, 'qty': qty, 'freeQty': freeQty, 'rate': rate, 'gstRate': gstRate, 'cgst': cgst, 'sgst': sgst, 'igst': igst, 'total': total, 'discountRupees': discountRupees, 'discountPer': discountPer, 'isBreakage': isBreakage, 'sourceChallanNo': sourceChallanNo, 'sourceChallanId': sourceChallanId, 'appliedRateType': appliedRateType, 'rateCFormula': rateCFormula,
+    'origBillNo': origBillNo,
+    if (origBillDate != null) 'origBillDate': origBillDate!.toIso8601String(),
+    'isManualOrigin': isManualOrigin,
+  };
   
   factory BillItem.fromMap(Map<String, dynamic> map) => BillItem(
     id: map['id'] ?? "", srNo: map['srNo'] ?? 0, medicineID: map['medicineID'] ?? "", name: map['name'] ?? "", packing: map['packing'] ?? "", batch: map['batch'] ?? "", exp: map['exp'] ?? "", hsn: map['hsn'] ?? "", mrp: (map['mrp'] ?? 0.0).toDouble(), qty: (map['qty'] ?? 0.0).toDouble(), freeQty: (map['freeQty'] ?? 0.0).toDouble(), rate: (map['rate'] ?? 0.0).toDouble(), gstRate: (map['gstRate'] ?? 0.0).toDouble(), cgst: (map['cgst'] ?? 0.0).toDouble(), sgst: (map['sgst'] ?? 0.0).toDouble(), igst: (map['igst'] ?? 0.0).toDouble(), total: (map['total'] ?? 0.0).toDouble(), 
@@ -463,14 +486,18 @@ class BillItem {
     sourceChallanNo: map['sourceChallanNo'] ?? "", sourceChallanId: map['sourceChallanId'] ?? "",
     appliedRateType: map['appliedRateType'] ?? "A",
     rateCFormula: (map['rateCFormula'] ?? 0.0).toDouble(),
+    origBillNo: (map['origBillNo'] ?? "").toString(),
+    origBillDate: map['origBillDate'] != null ? DateTime.tryParse(map['origBillDate'].toString()) : null,
+    isManualOrigin: map['isManualOrigin'] == true || map['isManualOrigin'] == 1,
   );
 }
 
 class PurchaseItem {
-  String id, medicineID, name, packing, batch, exp, hsn, sourceChallanNo, sourceChallanId, appliedRateType; 
+  String id, medicineID, name, packing, batch, exp, hsn, sourceChallanNo, sourceChallanId, appliedRateType, origBillNo; 
   int srNo; 
   double mrp, qty, freeQty, purchaseRate, gstRate, total, rateA, rateB, rateC, discountPer, discountRupees, rateCFormula;
-  bool isBreakage;
+  bool isBreakage, isManualOrigin;
+  DateTime? origBillDate;
 
   PurchaseItem({
     required this.id, required this.srNo, required this.medicineID, required this.name, required this.packing, required this.batch, required this.exp, required this.hsn, required this.mrp, required this.qty, this.freeQty = 0, required this.purchaseRate, required this.gstRate, required this.total, this.rateA = 0, this.rateB = 0, this.rateC = 0, 
@@ -478,20 +505,42 @@ class PurchaseItem {
     this.isBreakage = false,
     this.sourceChallanNo = "", this.sourceChallanId = "",
     this.appliedRateType = "A", // Choice Memory
-    this.rateCFormula = 0.0     // Formula Memory
+    this.rateCFormula = 0.0,    // Formula Memory
+    this.origBillNo = "",
+    this.origBillDate,
+    this.isManualOrigin = false,
   });
 
-  PurchaseItem copyWith({int? srNo, String? sourceChallanNo, String? sourceChallanId, double? discountPer, double? discountRupees, bool? isBreakage}) => PurchaseItem(
+  PurchaseItem copyWith({
+    int? srNo,
+    String? sourceChallanNo,
+    String? sourceChallanId,
+    double? discountPer,
+    double? discountRupees,
+    bool? isBreakage,
+    String? origBillNo,
+    DateTime? origBillDate,
+    bool clearOrigBillDate = false,
+    bool? isManualOrigin,
+  }) => PurchaseItem(
     id: id, srNo: srNo ?? this.srNo, medicineID: medicineID, name: name, packing: packing, batch: batch, exp: exp, hsn: hsn, mrp: mrp, qty: qty, freeQty: freeQty, purchaseRate: purchaseRate, gstRate: gstRate, total: total, rateA: rateA, rateB: rateB, rateC: rateC, 
     discountPer: discountPer ?? this.discountPer, 
     discountRupees: discountRupees ?? this.discountRupees, 
     isBreakage: isBreakage ?? this.isBreakage,
     sourceChallanNo: sourceChallanNo ?? this.sourceChallanNo, 
     sourceChallanId: sourceChallanId ?? this.sourceChallanId,
-    appliedRateType: appliedRateType, rateCFormula: rateCFormula
+    appliedRateType: appliedRateType, rateCFormula: rateCFormula,
+    origBillNo: origBillNo ?? this.origBillNo,
+    origBillDate: clearOrigBillDate ? null : (origBillDate ?? this.origBillDate),
+    isManualOrigin: isManualOrigin ?? this.isManualOrigin,
   );
 
-  Map<String, dynamic> toMap() => {'id': id, 'srNo': srNo, 'medicineID': medicineID, 'name': name, 'packing': packing, 'batch': batch, 'exp': exp, 'hsn': hsn, 'mrp': mrp, 'qty': qty, 'freeQty': freeQty, 'purchaseRate': purchaseRate, 'gstRate': gstRate, 'total': total, 'rateA': rateA, 'rateB': rateB, 'rateC': rateC, 'discountPer': discountPer, 'discountRupees': discountRupees, 'isBreakage': isBreakage, 'sourceChallanNo': sourceChallanNo, 'sourceChallanId': sourceChallanId, 'appliedRateType': appliedRateType, 'rateCFormula': rateCFormula};
+  Map<String, dynamic> toMap() => {
+    'id': id, 'srNo': srNo, 'medicineID': medicineID, 'name': name, 'packing': packing, 'batch': batch, 'exp': exp, 'hsn': hsn, 'mrp': mrp, 'qty': qty, 'freeQty': freeQty, 'purchaseRate': purchaseRate, 'gstRate': gstRate, 'total': total, 'rateA': rateA, 'rateB': rateB, 'rateC': rateC, 'discountPer': discountPer, 'discountRupees': discountRupees, 'isBreakage': isBreakage, 'sourceChallanNo': sourceChallanNo, 'sourceChallanId': sourceChallanId, 'appliedRateType': appliedRateType, 'rateCFormula': rateCFormula,
+    'origBillNo': origBillNo,
+    if (origBillDate != null) 'origBillDate': origBillDate!.toIso8601String(),
+    'isManualOrigin': isManualOrigin,
+  };
   
   factory PurchaseItem.fromMap(Map<String, dynamic> map) => PurchaseItem(
     id: map['id'] ?? "", srNo: map['srNo'] ?? 0, medicineID: map['medicineID'] ?? "", name: map['name'] ?? "", packing: map['packing'] ?? "", batch: map['batch'] ?? "", exp: map['exp'] ?? "", hsn: map['hsn'] ?? "", mrp: (map['mrp'] ?? 0.0).toDouble(), qty: (map['qty'] ?? 0.0).toDouble(), freeQty: (map['freeQty'] ?? 0.0).toDouble(), purchaseRate: (map['purchaseRate'] ?? 0.0).toDouble(), gstRate: (map['gstRate'] ?? 0.0).toDouble(), total: (map['total'] ?? 0.0).toDouble(), rateA: (map['rateA'] ?? 0.0).toDouble(), rateB: (map['rateB'] ?? 0.0).toDouble(), rateC: (map['rateC'] ?? 0.0).toDouble(), 
@@ -501,6 +550,9 @@ class PurchaseItem {
     sourceChallanNo: map['sourceChallanNo'] ?? "", sourceChallanId: map['sourceChallanId'] ?? "",
     appliedRateType: map['appliedRateType'] ?? "A",
     rateCFormula: (map['rateCFormula'] ?? 0.0).toDouble(),
+    origBillNo: (map['origBillNo'] ?? "").toString(),
+    origBillDate: map['origBillDate'] != null ? DateTime.tryParse(map['origBillDate'].toString()) : null,
+    isManualOrigin: map['isManualOrigin'] == true || map['isManualOrigin'] == 1,
   );
 }
 

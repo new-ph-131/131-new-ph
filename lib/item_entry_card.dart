@@ -405,7 +405,10 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
                                 discountPer: double.tryParse(normDiscC.text) ?? 0.0,
                                 appliedRateType: selectedRateType, 
                                 rateCFormula: double.tryParse(rateCDiscC.text) ?? 0.0, 
-                                isBreakage: widget.allowExpired
+                                isBreakage: widget.allowExpired,
+                                origBillNo: widget.existingItem?.origBillNo ?? "",
+                                origBillDate: widget.existingItem?.origBillDate,
+                                isManualOrigin: widget.existingItem?.isManualOrigin ?? false,
                              ));
                           }, 
                           child: const Text("CONFIRM & ADD", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.0))

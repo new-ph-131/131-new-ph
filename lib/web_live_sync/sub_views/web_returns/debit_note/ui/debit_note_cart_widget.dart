@@ -3,6 +3,7 @@ import 'package:pharoah_erp/expiry_master.dart';
 
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../../../web_models.dart';
 import '../../../../pharoah_web_manager.dart';
 import '../logic/debit_note_controller.dart';
@@ -49,6 +50,9 @@ class DebitNoteCartWidget extends StatelessWidget {
     Map<String, dynamic>? historyData,
   }) {
     List<BatchInfo> batches = webPh.getBatchesForMedicine(med);
+    final String histBillNo = (historyData?['billNo'] ?? '').toString().trim();
+    final DateTime? histDate = historyData?['date'] is DateTime ? historyData!['date'] as DateTime : null;
+    final bool isManualNew = itemToEdit == null && historyData == null;
 
     final batchC = TextEditingController(text: itemToEdit?.batch ?? (historyData?['batch'] ?? ""));
     final expC = TextEditingController(text: itemToEdit?.exp ?? (historyData?['exp'] ?? "12/28"));
@@ -187,13 +191,16 @@ class DebitNoteCartWidget extends StatelessWidget {
                 discountRupees: dAmt,
                 appliedRateType: selectedRateType,
                 rateCFormula: double.tryParse(rateCDiscC.text) ?? 0.0,
-                isBreakage: controller.isBreakageMode,
+                isBreakage: itemToEdit != null ? itemToEdit.isBreakage : controller.isBreakageMode,
+                origBillNo: itemToEdit != null ? itemToEdit.origBillNo : (isManualNew ? "" : histBillNo),
+                origBillDate: itemToEdit != null ? itemToEdit.origBillDate : (isManualNew ? null : histDate),
+                isManualOrigin: itemToEdit != null ? itemToEdit.isManualOrigin : (isManualNew || histBillNo.isEmpty),
               );
 
               if (editIndex != null) {
-                controller.updateItem(editIndex, newItem);
+                controller.updateItem(editIndex, newItem, webPh: webPh);
               } else {
-                controller.addItem(newItem);
+                controller.addItem(newItem, webPh: webPh);
               }
               Navigator.pop(c);
             }
@@ -581,7 +588,7 @@ class DebitNoteCartWidget extends StatelessWidget {
               const Spacer(),
               if (controller.items.isNotEmpty && !controller.isReadOnly)
                 TextButton(
-                  onPressed: () => controller.clearCart(),
+                  onPressed: () => controller.clearCart(webPh: webPh),
                   child: const Text("Clear Cart", style: TextStyle(color: Colors.redAccent, fontSize: 11)),
                 ),
             ],
@@ -598,8 +605,8 @@ class DebitNoteCartWidget extends StatelessWidget {
           else
             LayoutBuilder(
               builder: (context, constraints) {
-                final bool isNarrow = constraints.maxWidth < 800;
-                final double contentWidth = isNarrow ? 800.0 : constraints.maxWidth;
+                final bool isNarrow = constraints.maxWidth < 900;
+                final double contentWidth = isNarrow ? 900.0 : constraints.maxWidth;
 
                 return SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -622,6 +629,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                               _colHead("SN", width: 36),
                               _colHead("TYPE", width: 56),
                               Expanded(flex: 4, child: _colHead("PRODUCT NAME", isLeft: true)),
+                              _colHead("ORIG. BILL", width: 105, isLeft: true),
                               _colHead("PACK", width: 75),
                               _colHead("BATCH", width: 85),
                               _colHead("EXP", width: 65),
@@ -666,7 +674,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                               ),
                             ),
                             onDismissed: (_) {
-                              controller.removeItem(idx);
+                              controller.removeItem(idx, webPh: webPh);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text("🗑️ ${it.name} removed from Debit Note"),
@@ -723,6 +731,27 @@ class DebitNoteCartWidget extends StatelessWidget {
                                       ),
                                     ),
                                   ),
+                                  SizedBox(
+                                    width: 105,
+                                    child: it.origBillNo.trim().isEmpty
+                                        ? const SizedBox.shrink()
+                                        : Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                it.origBillNo,
+                                                style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 10, fontWeight: FontWeight.bold),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              if (it.origBillDate != null)
+                                                Text(
+                                                  DateFormat('dd/MM/yy').format(it.origBillDate!),
+                                                  style: const TextStyle(color: Colors.white54, fontSize: 8.5),
+                                                ),
+                                            ],
+                                          ),
+                                  ),
                                   _colCell(it.packing, width: 75),
                                   _colCell(it.batch, width: 85),
                                   _colCell(it.exp, width: 65),
@@ -752,7 +781,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                                             icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.redAccent),
                                             padding: EdgeInsets.zero,
                                             constraints: const BoxConstraints(),
-                                            onPressed: () => controller.removeItem(idx),
+                                            onPressed: () => controller.removeItem(idx, webPh: webPh),
                                           ),
                                         ] else
                                           const Icon(Icons.lock_rounded, size: 14, color: Colors.white38),

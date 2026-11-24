@@ -567,9 +567,9 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                               onPressed: () {
                                 final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
                                 if (isCn) {
-                                  WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop);
+                                  WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop, sales: webPh.sales);
                                 } else {
-                                  WebPdfRouterService.printDebitNote(returnObj: item, party: pObj, shop: activeShop);
+                                  WebPdfRouterService.printDebitNote(returnObj: item, party: pObj, shop: activeShop, purchases: webPh.purchases);
                                 }
                               },
                             ),
@@ -579,9 +579,9 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                               onPressed: () {
                                 final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
                                 if (isCn) {
-                                  WebPdfRouterService.downloadCreditNotePdf(returnObj: item, party: pObj, shop: activeShop);
+                                  WebPdfRouterService.downloadCreditNotePdf(returnObj: item, party: pObj, shop: activeShop, sales: webPh.sales);
                                 } else {
-                                  WebPdfRouterService.downloadDebitNotePdf(returnObj: item, party: pObj, shop: activeShop);
+                                  WebPdfRouterService.downloadDebitNotePdf(returnObj: item, party: pObj, shop: activeShop, purchases: webPh.purchases);
                                 }
                               },
                             ),

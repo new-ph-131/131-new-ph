@@ -337,7 +337,7 @@ class DebitNoteHeaderWidget extends StatelessWidget {
               ],
             ],
           ),
-          if (controller.isSection34Expired) ...[
+          if (controller.isSection34Expired && controller.expiredOriginDate != null) ...[
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
@@ -348,7 +348,7 @@ class DebitNoteHeaderWidget extends StatelessWidget {
                 border: Border.all(color: const Color(0xFFF59E0B)),
               ),
               child: Text(
-                "Sec 34(2) Cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(controller.origBillDate!))}) Crossed — Commercial Note (Without GST) recommended.",
+                "Sec 34(2) Cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(controller.expiredOriginDate!))}) Crossed — Commercial Note (Without GST) recommended.",
                 style: const TextStyle(color: Color(0xFFFDE68A), fontSize: 10.5, fontWeight: FontWeight.bold),
               ),
             ),

@@ -66,7 +66,12 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
       final ex = widget.existingRecord!;
       returnNoC.text = ex.billNo;
       selectedDate = ex.date;
-      items = List.from(ex.items);
+      items = GstComplianceHelper.resolveMissingPurchaseItemOrigins(
+        items: ex.items,
+        purchases: ph.purchases,
+        partyId: ex.partyId,
+        partyName: ex.distributorName,
+      );
       discountC.text = ex.extraDiscount.toString();
       paymentMode = ex.paymentMode.isNotEmpty ? ex.paymentMode : "CREDIT";
       origBillNoC.text = ex.origBillNo;
@@ -86,6 +91,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           state: ex.partyState.isNotEmpty ? ex.partyState : (ph.activeCompany?.state ?? "Rajasthan"),
         ),
       );
+      _syncHeaderOriginFromItems(ph, silent: true);
       setState(() => isLoading = false);
     } else {
       if (ph.activeCompany != null) {
@@ -150,10 +156,34 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
     );
   }
 
-  bool get isSec34Expired => GstComplianceHelper.isSection34Expired(
-    origInvoiceDate: origBillDate,
+  DateTime? get expiredOriginDate => GstComplianceHelper.getExpiredOriginDate(
+    headerOrigDate: origBillDate,
+    items: items,
     noteDate: selectedDate,
   );
+
+  bool get isSec34Expired => expiredOriginDate != null;
+
+  Future<void> _syncHeaderOriginFromItems(PharoahManager ph, {bool silent = false}) async {
+    final summary = GstComplianceHelper.summarizeOriginInvoices(items);
+    if (summary.uniqueCount > 0) {
+      origBillNoC.text = summary.headerBillNo;
+      origBillDate = summary.headerDate;
+    } else if (items.isNotEmpty && items.every((it) => it.isManualOrigin)) {
+      origBillNoC.text = "";
+      origBillDate = null;
+    }
+    final canComm = GstComplianceHelper.isCommercialNoteAllowed(ph.config);
+    final expDate = GstComplianceHelper.getExpiredOriginDate(
+      headerOrigDate: origBillDate,
+      items: items,
+      noteDate: selectedDate,
+    );
+    if (!silent && expDate != null && canComm && !isCommercial) {
+      setState(() => isCommercial = true);
+      await _refreshNumberForCommercialMode(ph, true);
+    }
+  }
 
   double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
 
@@ -256,6 +286,9 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
 
   void _showEntryCard(Medicine med, {PurchaseItem? existingItem, Map<String, dynamic>? historyData}) {
     PurchaseItem? preFilled = existingItem;
+    final String histBillNo = (historyData?['billNo'] ?? '').toString().trim();
+    final DateTime? histDate = historyData?['date'] is DateTime ? historyData!['date'] as DateTime : null;
+    final bool isManualNew = existingItem == null && historyData == null;
     
     if (historyData != null && existingItem == null) {
       final histPacking = (historyData['packing'] ?? '').toString().trim();
@@ -283,6 +316,9 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
         rateCFormula: ((historyData['rateCFormula'] ?? 0.0) as num).toDouble(),
         qty: 0,
         total: 0,
+        origBillNo: histBillNo,
+        origBillDate: histDate,
+        isManualOrigin: histBillNo.isEmpty,
       );
     }
 
@@ -293,16 +329,32 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
         srNo: existingItem?.srNo ?? items.length + 1,
         existingItem: preFilled,
         allowExpired: true,
-        onAdd: (newItem) {
+        onAdd: (newItem) async {
+          final finalized = existingItem != null
+              ? newItem.copyWith(
+                  isBreakage: existingItem.isBreakage,
+                  origBillNo: existingItem.origBillNo,
+                  origBillDate: existingItem.origBillDate,
+                  isManualOrigin: existingItem.isManualOrigin,
+                )
+              : newItem.copyWith(
+                  isBreakage: isBreakageMode,
+                  origBillNo: isManualNew ? "" : histBillNo,
+                  origBillDate: isManualNew ? null : histDate,
+                  clearOrigBillDate: isManualNew,
+                  isManualOrigin: isManualNew || histBillNo.isEmpty,
+                );
+          final ph = Provider.of<PharoahManager>(context, listen: false);
           setState(() {
             if (existingItem != null) {
               int idx = items.indexWhere((it) => it.id == existingItem.id);
-              items[idx] = newItem.copyWith(isBreakage: existingItem.isBreakage);
+              if (idx != -1) items[idx] = finalized;
             } else {
-              items.add(newItem.copyWith(isBreakage: isBreakageMode));
+              items.add(finalized);
             }
           });
           Navigator.pop(context);
+          await _syncHeaderOriginFromItems(ph);
         },
         onCancel: () => Navigator.pop(context),
       ),
@@ -394,9 +446,33 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
           const SizedBox(width: 8),
           Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         ]),
-        subtitle: Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${formatQty(it.qty)} + ${formatQty(it.freeQty)}"),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Batch: ${it.batch} | Exp: ${it.exp} | Qty: ${formatQty(it.qty)} + ${formatQty(it.freeQty)}"),
+            if (it.origBillNo.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Text(
+                    "Bill: ${it.origBillNo}${it.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(it.origBillDate!)})' : ''}",
+                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.brown.shade800),
+                  ),
+                ),
+              ),
+          ],
+        ),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: TextStyle(fontWeight: FontWeight.w900, color: themeColor)),
-        onLongPress: () => setState(() => items.removeAt(index)),
+        onLongPress: () {
+          setState(() => items.removeAt(index));
+          _syncHeaderOriginFromItems(ph, silent: true);
+        },
       ),
     );
   }
@@ -628,7 +704,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.amber.shade400)),
             child: Text(
-              "Sec 34(2) cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(origBillDate!))}) crossed — Commercial Note (No GST) recommended.",
+              "Sec 34(2) cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(expiredOriginDate!))}) crossed — Commercial Note (No GST) recommended.",
               style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
             ),
           ),
@@ -822,11 +898,17 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
 
   void _handlePrint(PharoahManager ph) async {
     if (selectedSupplier == null) return;
+    final resolvedItems = GstComplianceHelper.resolveMissingPurchaseItemOrigins(
+      items: items,
+      purchases: ph.purchases,
+      partyId: selectedSupplier!.id,
+      partyName: selectedSupplier!.name,
+    );
     final returnObj = PurchaseReturn(
       id: "temp", billNo: returnNoC.text, date: selectedDate,
       partyId: selectedSupplier!.id, distributorName: selectedSupplier!.name,
       partyGstin: selectedSupplier!.gst, partyState: selectedSupplier!.state,
-      items: items, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
+      items: resolvedItems, totalAmount: grandTotal, extraDiscount: extraDiscount, roundOff: roundOff,
       paymentMode: paymentMode, origBillNo: origBillNoC.text.trim(), origBillDate: origBillDate,
       reason: _effectiveReason, isCommercial: isCommercial,
     );

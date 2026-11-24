@@ -148,13 +148,16 @@ class GstPreflightValidator {
 
     final periodReturns = returns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1 && r.status == "Active").toList();
     for (final ret in periodReturns) {
-      if (ret.origBillDate != null &&
-          !ret.isCommercial &&
-          GstComplianceHelper.isSection34Expired(origInvoiceDate: ret.origBillDate, noteDate: ret.date)) {
+      final cnExpDate = GstComplianceHelper.getExpiredOriginDate(
+        headerOrigDate: ret.origBillDate,
+        items: ret.items,
+        noteDate: ret.date,
+      );
+      if (cnExpDate != null && !ret.isCommercial) {
         issues.add(GstAuditIssue(
           severity: GstIssueSeverity.warning,
           title: "Sec 34(2) Time-Limit Crossed",
-          message: "Credit Note '${ret.billNo}' references invoice dated ${ret.origBillDate!.toString().substring(0, 10)} past 30 Nov cutoff — mark as Commercial Note.",
+          message: "Credit Note '${ret.billNo}' references invoice dated ${cnExpDate.toString().substring(0, 10)} past 30 Nov cutoff — mark as Commercial Note.",
           billNo: ret.billNo,
         ));
       }
@@ -205,13 +208,16 @@ class GstPreflightValidator {
     }
 
     for (final pr in purchaseReturns.where((r) => !r.date.isBefore(fDate) && !r.date.isAfter(tDate) && r.isDeleted != 1 && r.status == "Active")) {
-      if (pr.origBillDate != null &&
-          !pr.isCommercial &&
-          GstComplianceHelper.isSection34Expired(origInvoiceDate: pr.origBillDate, noteDate: pr.date)) {
+      final dnExpDate = GstComplianceHelper.getExpiredOriginDate(
+        headerOrigDate: pr.origBillDate,
+        items: pr.items,
+        noteDate: pr.date,
+      );
+      if (dnExpDate != null && !pr.isCommercial) {
         issues.add(GstAuditIssue(
           severity: GstIssueSeverity.warning,
           title: "Sec 34(2) Time-Limit Crossed (DN)",
-          message: "Debit Note '${pr.billNo}' crossed 30 Nov Sec 34(2) cutoff — review ITC reversal / Commercial flag.",
+          message: "Debit Note '${pr.billNo}' references bill dated ${dnExpDate.toString().substring(0, 10)} past 30 Nov Sec 34(2) cutoff — review ITC reversal / Commercial flag.",
           billNo: pr.billNo,
         ));
       }

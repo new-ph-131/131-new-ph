@@ -54,7 +54,12 @@ class DebitNoteController extends ChangeNotifier {
       isCommercial = existingRecord.isCommercial;
       isBreakageMode = existingRecord.returnType.toLowerCase().contains("breakage") ||
           existingRecord.returnType.toLowerCase().contains("expiry");
-      items = List.from(existingRecord.items);
+      items = GstComplianceHelper.resolveMissingPurchaseItemOrigins(
+        items: existingRecord.items,
+        purchases: webPh.purchases,
+        partyId: existingRecord.partyId,
+        partyName: existingRecord.distributorName,
+      );
       try {
         selectedSupplier = webPh.parties.firstWhere(
           (p) => (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
@@ -69,6 +74,7 @@ class DebitNoteController extends ChangeNotifier {
           group: "Sundry Creditors",
         );
       }
+      _syncHeaderOriginFromItems(webPh: webPh, silent: true, clearWhenEmpty: false);
     } else {
       selectedReason = GstComplianceHelper.standardReasons.first;
       remarksC.clear();
@@ -120,7 +126,7 @@ class DebitNoteController extends ChangeNotifier {
   void setDate(DateTime date, {PharoahWebManager? webPh}) {
     selectedDate = date;
     final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
-    if (canComm && GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+    if (canComm && isSection34Expired) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
     }
@@ -135,7 +141,7 @@ class DebitNoteController extends ChangeNotifier {
   void setOrigBillDate(DateTime? date, {PharoahWebManager? webPh}) {
     origBillDate = date;
     final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
-    if (canComm && GstComplianceHelper.isSection34Expired(origInvoiceDate: origBillDate, noteDate: selectedDate)) {
+    if (canComm && isSection34Expired) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
     }
@@ -148,35 +154,62 @@ class DebitNoteController extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get isSection34Expired => GstComplianceHelper.isSection34Expired(
-    origInvoiceDate: origBillDate,
+  DateTime? get expiredOriginDate => GstComplianceHelper.getExpiredOriginDate(
+    headerOrigDate: origBillDate,
+    items: items,
     noteDate: selectedDate,
   );
 
-  void addItem(PurchaseItem item) {
+  bool get isSection34Expired => expiredOriginDate != null;
+
+  void _syncHeaderOriginFromItems({
+    PharoahWebManager? webPh,
+    bool silent = false,
+    bool clearWhenEmpty = true,
+  }) {
+    final summary = GstComplianceHelper.summarizeOriginInvoices(items);
+    if (summary.uniqueCount > 0) {
+      origBillNoC.text = summary.headerBillNo;
+      origBillDate = summary.headerDate;
+    } else if (clearWhenEmpty && (items.isEmpty || items.every((it) => it.isManualOrigin))) {
+      origBillNoC.text = "";
+      origBillDate = null;
+    }
+    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    if (!silent && canComm && isSection34Expired && !isCommercial) {
+      isCommercial = true;
+      if (webPh != null) _refreshNumberForCommercial(webPh, true);
+    }
+  }
+
+  void addItem(PurchaseItem item, {PharoahWebManager? webPh}) {
     items.add(item);
     _recalculateSR();
+    _syncHeaderOriginFromItems(webPh: webPh);
     notifyListeners();
   }
 
-  void updateItem(int index, PurchaseItem item) {
+  void updateItem(int index, PurchaseItem item, {PharoahWebManager? webPh}) {
     if (index >= 0 && index < items.length) {
       items[index] = item;
       _recalculateSR();
+      _syncHeaderOriginFromItems(webPh: webPh);
       notifyListeners();
     }
   }
 
-  void removeItem(int index) {
+  void removeItem(int index, {PharoahWebManager? webPh}) {
     if (index >= 0 && index < items.length) {
       items.removeAt(index);
       _recalculateSR();
+      _syncHeaderOriginFromItems(webPh: webPh, silent: true);
       notifyListeners();
     }
   }
 
-  void clearCart() {
+  void clearCart({PharoahWebManager? webPh}) {
     items.clear();
+    _syncHeaderOriginFromItems(webPh: webPh, silent: true);
     notifyListeners();
   }
 
@@ -229,6 +262,14 @@ class DebitNoteController extends ChangeNotifier {
 
     isSaving = true;
     notifyListeners();
+
+    items = GstComplianceHelper.resolveMissingPurchaseItemOrigins(
+      items: items,
+      purchases: webPh.purchases,
+      partyId: selectedSupplier!.id,
+      partyName: selectedSupplier!.name,
+    );
+    _syncHeaderOriginFromItems(webPh: webPh, silent: true, clearWhenEmpty: false);
 
     String id = existingRecordId ?? "DN-WEB-${DateTime.now().millisecondsSinceEpoch}";
     String returnType = isBreakageMode ? "Breakage" : "Sellable";

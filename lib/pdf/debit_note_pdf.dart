@@ -27,6 +27,12 @@ class DebitNotePdf {
       partyState: supplier.state.isNotEmpty ? supplier.state : ret.partyState,
     );
 
+    final originSummary = GstComplianceHelper.summarizeOriginInvoices(
+      ret.items,
+      fallbackBillNo: ret.origBillNo,
+      fallbackDate: ret.origBillDate,
+    );
+
     // Logic: Categorization 100% aligned with plan
     final sellable = ret.items.where((i) => i.isBreakage == false).toList();
     final breakage = ret.items.where((i) => i.isBreakage == true).toList();
@@ -73,8 +79,8 @@ class DebitNotePdf {
                   pw.Divider(thickness: 0.5),
                   pw.Text("No: ${ret.billNo} | ${ret.paymentMode.isNotEmpty ? ret.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                   pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
-                  if (ret.origBillNo.isNotEmpty)
-                    pw.Text("Orig: ${ret.origBillNo}${ret.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(ret.origBillDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5)),
+                  if (originSummary.headerBillNo.isNotEmpty)
+                    pw.Text("Orig: ${originSummary.headerBillNo}${originSummary.headerDate != null ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
                 ])),
                 _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text("SEND TO SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
@@ -86,10 +92,11 @@ class DebitNotePdf {
                 ])),
               ]),
 
-              // --- SYNCED TABLE GRID (12 COLUMNS - TOTAL 800PT) ---
+              // --- SYNCED TABLE GRID (13 COLUMNS - TOTAL 800PT) ---
               pw.Container(color: PdfColors.grey200, child: pw.Row(children: [
                 _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40), 
-                _tCol("Product Name", 220, isLeft: true), 
+                _tCol("Product Name", 160, isLeft: true), 
+                _tCol("Orig. Bill", 60),
                 _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
                 _tCol("MRP", 55), _tCol("Rate", 55), 
                 if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
@@ -119,7 +126,8 @@ class DebitNotePdf {
                     _cell("$sNo", 25), 
                     _cell("${fmt(i.qty)} + ${fmt(i.freeQty)}", 60), 
                     _cell(i.packing, 40),
-                    pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
+                    pw.Container(width: 160, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1)),
+                    _origCell(i.origBillNo, i.origBillDate, 60),
                     _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
                     _cell(i.mrp.toStringAsFixed(2), 55), 
                     _cell(i.purchaseRate.toStringAsFixed(2), 55),
@@ -163,6 +171,12 @@ class DebitNotePdf {
       partyState: supplier.state.isNotEmpty ? supplier.state : ret.partyState,
     );
 
+    final originSummary = GstComplianceHelper.summarizeOriginInvoices(
+      ret.items,
+      fallbackBillNo: ret.origBillNo,
+      fallbackDate: ret.origBillDate,
+    );
+
     final sellable = ret.items.where((i) => i.isBreakage == false).toList();
     final breakage = ret.items.where((i) => i.isBreakage == true).toList();
 
@@ -198,8 +212,8 @@ class DebitNotePdf {
                 pw.Divider(thickness: 0.5),
                 pw.Text("No: ${ret.billNo} | ${ret.paymentMode.isNotEmpty ? ret.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                 pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
-                if (ret.origBillNo.isNotEmpty)
-                  pw.Text("Orig: ${ret.origBillNo}${ret.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(ret.origBillDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5)),
+                if (originSummary.headerBillNo.isNotEmpty)
+                  pw.Text("Orig: ${originSummary.headerBillNo}${originSummary.headerDate != null ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
               ])),
               _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                 pw.Text("SEND TO SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
@@ -208,7 +222,7 @@ class DebitNotePdf {
               ])),
             ]),
             pw.Container(color: PdfColors.grey200, child: pw.Row(children: [
-              _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40), _tCol("Product Name", 220, isLeft: true), 
+              _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40), _tCol("Product Name", 160, isLeft: true), _tCol("Orig. Bill", 60),
               _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45), _tCol("MRP", 55), _tCol("Rate", 55), 
               if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
               _tCol("Total", 100, isLast: true), 
@@ -224,7 +238,8 @@ class DebitNotePdf {
               double rowTotal = ret.isCommercial ? taxableRow : i.total;
               return pw.Container(decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))), child: pw.Row(children: [
                   _cell("${ret.items.indexOf(i) + 1}", 25), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 60), _cell(i.packing, 40),
-                  pw.Container(width: 220, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold))),
+                  pw.Container(width: 160, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1)),
+                  _origCell(i.origBillNo, i.origBillDate, 60),
                   _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.purchaseRate.toStringAsFixed(2), 55),
                   if (isLocal) ...[
                     _cell((taxAmt / 2).toStringAsFixed(1), 40),
@@ -246,8 +261,33 @@ class DebitNotePdf {
   static pw.Widget _hBox(double w, bool b, pw.Widget child) => pw.Container(width: w, height: 105, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: b ? 0.5 : 0), bottom: const pw.BorderSide(width: 0.5))), child: child);
   static pw.Widget _tCol(String t, double w, {bool isLast = false, bool isLeft = false}) => pw.Container(width: w, height: 20, alignment: isLeft ? pw.Alignment.centerLeft : pw.Alignment.center, padding: pw.EdgeInsets.only(left: 5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: isLast ? 0 : 0.5), bottom: const pw.BorderSide(width: 0.5))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)));
   static pw.Widget _cell(String t, double w) => pw.Container(width: w, height: 18, alignment: pw.Alignment.center, decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))), child: pw.Text(t, style: pw.TextStyle(fontSize: 7.5)));
+  static pw.Widget _origCell(String billNo, DateTime? date, double w) {
+    final clean = billNo.trim();
+    return pw.Container(
+      width: w,
+      height: 18,
+      alignment: pw.Alignment.center,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 2),
+      decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.2, color: PdfColors.grey))),
+      child: clean.isEmpty
+          ? pw.SizedBox()
+          : pw.Column(
+              mainAxisAlignment: pw.MainAxisAlignment.center,
+              children: [
+                pw.Text(clean, style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold), maxLines: 1),
+                if (date != null)
+                  pw.Text(DateFormat('dd/MM/yy').format(date), style: pw.TextStyle(fontSize: 5, color: PdfColors.grey700), maxLines: 1),
+              ],
+            ),
+    );
+  }
 
   static pw.Widget _buildFixedSyncFooter(String n, PurchaseReturn ret, bool local) {
+    final originSummary = GstComplianceHelper.summarizeOriginInvoices(
+      ret.items,
+      fallbackBillNo: ret.origBillNo,
+      fallbackDate: ret.origBillDate,
+    );
     final summary = AppBillingGstEngine.calculateForPurchase(
       items: ret.items,
       extraDiscount: ret.extraDiscount,
@@ -258,7 +298,7 @@ class DebitNotePdf {
       pw.Container(width: 330, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
         if (ret.reason.isNotEmpty) pw.Padding(padding: const pw.EdgeInsets.only(top: 3), child: pw.Text("Reason: ${ret.reason}", style: const pw.TextStyle(fontSize: 7))),
-        if (ret.origBillNo.isNotEmpty) pw.Text("Ref Bill: ${ret.origBillNo}${ret.origBillDate != null ? ' dt ${DateFormat('dd/MM/yy').format(ret.origBillDate!)}' : ''}", style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+        if (originSummary.footerRefText.isNotEmpty) pw.Text("Ref Bill: ${originSummary.footerRefText}", style: pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700), maxLines: 2),
         pw.Spacer(),
         pw.Text(
           ret.isCommercial

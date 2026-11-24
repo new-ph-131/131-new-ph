@@ -74,10 +74,47 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
     );
   }
 
-  bool get isSec34Expired => GstComplianceHelper.isSection34Expired(
-    origInvoiceDate: origBillDate,
+  DateTime? get expiredOriginDate => GstComplianceHelper.getExpiredOriginDate(
+    headerOrigDate: origBillDate,
+    items: items,
     noteDate: selectedDate,
   );
+
+  bool get isSec34Expired => expiredOriginDate != null;
+
+  Future<void> _syncHeaderOriginFromItems(PharoahManager ph) async {
+    final summary = GstComplianceHelper.summarizeOriginInvoices(items);
+    if (summary.uniqueCount > 0) {
+      origBillNoC.text = summary.headerBillNo;
+      origBillDate = summary.headerDate;
+    } else if (items.isNotEmpty && items.every((it) => it.isManualOrigin)) {
+      origBillNoC.text = "";
+      origBillDate = null;
+    }
+    final canComm = GstComplianceHelper.isCommercialNoteAllowed(ph.config);
+    final expDate = GstComplianceHelper.getExpiredOriginDate(
+      headerOrigDate: origBillDate,
+      items: items,
+      noteDate: selectedDate,
+    );
+    if (expDate != null && canComm && !isCommercial) {
+      setState(() => isCommercial = true);
+      if (ph.activeCompany != null) {
+        var ccnSer = ph.getDefaultSeries("COMMERCIAL_NOTE");
+        final ccnPref = ccnSer.prefix.isNotEmpty
+            ? ccnSer.prefix
+            : (ph.config.commercialNotePrefix.isNotEmpty ? ph.config.commercialNotePrefix : "CCN-");
+        final n = await PharoahNumberingEngine.getNextNumber(
+          type: "COMMERCIAL_NOTE",
+          companyID: ph.activeCompany!.id,
+          prefix: ccnPref,
+          startFrom: ccnSer.startNumber > 0 ? ccnSer.startNumber : 1,
+          currentList: [...ph.saleReturns, ...ph.purchaseReturns],
+        );
+        if (mounted) setState(() => returnNoC.text = n);
+      }
+    }
+  }
 
   double get extraDiscount => double.tryParse(discountC.text) ?? 0.0;
 
@@ -156,7 +193,7 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
                       subtitle: Text("Pack: ${filteredMeds[i].packing} | Current Stock: ${filteredMeds[i].stock}"),
                       onTap: () {
                         Navigator.pop(context);
-                        _showQuantityEntry(filteredMeds[i]);
+                        _showMagicHistoryBox(filteredMeds[i], ph);
                       },
                     ),
                   ),
@@ -169,17 +206,127 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
     );
   }
 
-  void _showQuantityEntry(Medicine med) {
+  void _showMagicHistoryBox(Medicine med, PharoahManager ph) {
+    if (selectedParty == null) {
+      _showQuantityEntry(med);
+      return;
+    }
+    final history = ph.getMedicineHistory(
+      partyId: selectedParty!.id,
+      medicineId: med.id,
+      partyName: selectedParty!.name,
+      medicineName: med.name,
+      isSale: true,
+    );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (c) => Container(
+        height: MediaQuery.of(context).size.height * 0.72,
+        decoration: const BoxDecoration(color: Color(0xFFF8F9FA), borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+        child: Column(children: [
+          Container(margin: const EdgeInsets.all(14), height: 5, width: 60, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(10))),
+          Text("SALE HISTORY", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.red.shade900, letterSpacing: 2)),
+          const SizedBox(height: 4),
+          Text(med.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          const Divider(),
+          Expanded(
+            child: history.isEmpty
+                ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.history_toggle_off, size: 40, color: Colors.grey.shade300),
+                    const Text("No sale history for this party.", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  ]))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: history.length,
+                    itemBuilder: (c, i) {
+                      final h = history[i];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          onTap: () {
+                            Navigator.pop(c);
+                            _showQuantityEntry(med, historyData: h);
+                          },
+                          title: Text("Bill: ${h['billNo']} | ${DateFormat('dd/MM/yy').format(h['date'])}"),
+                          subtitle: Text("Batch: ${h['batch']} | Qty: ${formatQty(h['qty'])} + ${formatQty(h['free'])} | Rate: ₹${h['rate']}"),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(c);
+                  _showQuantityEntry(med);
+                },
+                style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.red.shade700), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                icon: Icon(Icons.edit_document, color: Colors.red.shade700),
+                label: Text("NOT IN HISTORY? ENTER MANUALLY", style: TextStyle(color: Colors.red.shade800, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  void _showQuantityEntry(Medicine med, {Map<String, dynamic>? historyData}) {
+    final String histBillNo = (historyData?['billNo'] ?? '').toString().trim();
+    final DateTime? histDate = historyData?['date'] is DateTime ? historyData!['date'] as DateTime : null;
+    final bool isManual = historyData == null;
+    BillItem? preFilled;
+    if (historyData != null) {
+      final histPacking = (historyData['packing'] ?? '').toString().trim();
+      final histHsn = (historyData['hsn'] ?? '').toString().trim();
+      final histExp = (historyData['exp'] ?? '').toString().trim();
+      preFilled = BillItem(
+        id: "temp",
+        srNo: items.length + 1,
+        medicineID: med.id,
+        name: med.name,
+        packing: histPacking.isNotEmpty ? histPacking : med.packing,
+        batch: (historyData['batch'] ?? '').toString(),
+        exp: histExp,
+        hsn: histHsn.isNotEmpty ? histHsn : med.hsnCode,
+        mrp: ((historyData['mrp'] ?? med.mrp) as num).toDouble(),
+        rate: ((historyData['rate'] ?? med.rateA) as num).toDouble(),
+        gstRate: ((historyData['gst'] ?? med.gst) as num).toDouble(),
+        discountPer: ((historyData['discountPer'] ?? 0.0) as num).toDouble(),
+        qty: 0,
+        total: 0,
+        isBreakage: true,
+        origBillNo: histBillNo,
+        origBillDate: histDate,
+        isManualOrigin: histBillNo.isEmpty,
+      );
+    }
     showDialog(
       context: context,
       builder: (c) => ItemEntryCard(
         med: med,
         srNo: items.length + 1,
         partyState: selectedParty?.state ?? "Rajasthan", // NAYA: Added partyState parameter
+        existingItem: preFilled,
         allowExpired: true,
-        onAdd: (newItem) {
-          setState(() { items.add(newItem.copyWith(isBreakage: true)); });
+        onAdd: (newItem) async {
+          final ph = Provider.of<PharoahManager>(context, listen: false);
+          final finalized = newItem.copyWith(
+            isBreakage: true,
+            origBillNo: isManual ? "" : histBillNo,
+            origBillDate: isManual ? null : histDate,
+            clearOrigBillDate: isManual,
+            isManualOrigin: isManual || histBillNo.isEmpty,
+          );
+          setState(() { items.add(finalized); });
           Navigator.pop(context);
+          await _syncHeaderOriginFromItems(ph);
         },
         onCancel: () => Navigator.pop(context),
       ),
@@ -439,7 +586,7 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.amber.shade400)),
                 child: Text(
-                  "Sec 34(2) cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(origBillDate!))}) crossed — Commercial Note (No GST) recommended.",
+                  "Sec 34(2) cutoff (${DateFormat('dd/MM/yyyy').format(GstComplianceHelper.getSection34CutoffDate(expiredOriginDate!))}) crossed — Commercial Note (No GST) recommended.",
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
                 ),
               ),
@@ -495,7 +642,20 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
       child: ListTile(
         leading: CircleAvatar(backgroundColor: Colors.red.shade50, child: Text("${it.srNo}", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade900))),
         title: Text(it.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text("Batch: ${it.batch} | Reason: Expiry/Breakage"),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Batch: ${it.batch} | Reason: Expiry/Breakage"),
+            if (it.origBillNo.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  "Inv: ${it.origBillNo}${it.origBillDate != null ? ' (${DateFormat('dd/MM/yy').format(it.origBillDate!)})' : ''}",
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.indigo.shade800),
+                ),
+              ),
+          ],
+        ),
         trailing: Text("₹${it.total.toStringAsFixed(2)}", style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
       ),
     );
@@ -511,8 +671,10 @@ class _ExpiryBreakageReturnViewState extends State<ExpiryBreakageReturnView> {
         child: const Icon(Icons.delete, color: Colors.white, size: 28),
       ),
       onDismissed: (direction) {
+        final ph = Provider.of<PharoahManager>(context, listen: false);
         setState(() { items.removeAt(index); });
-        _recalculateSR(); 
+        _recalculateSR();
+        _syncHeaderOriginFromItems(ph);
       },
       child: card,
     );

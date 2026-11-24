@@ -15,6 +15,7 @@ import '../models.dart';
 import '../pharoah_manager.dart';
 import '../gateway/company_registry_model.dart';
 import '../logic/email_service.dart';
+import '../logic/gst_compliance_helper.dart';
 
 // --- PDF Generators ---
 import 'sale_invoice_pdf.dart';
@@ -112,16 +113,82 @@ class PdfRouterService {
     }
   }
 
+  static SaleReturn _withResolvedSaleReturnOrigins(SaleReturn returnObj, PharoahManager ph, Party party) {
+    final resolvedItems = GstComplianceHelper.resolveMissingBillItemOrigins(
+      items: returnObj.items,
+      sales: ph.sales,
+      partyId: returnObj.partyId.isNotEmpty ? returnObj.partyId : party.id,
+      partyName: returnObj.partyName.isNotEmpty ? returnObj.partyName : party.name,
+    );
+    return SaleReturn(
+      id: returnObj.id,
+      billNo: returnObj.billNo,
+      partyId: returnObj.partyId,
+      partyName: returnObj.partyName,
+      partyGstin: returnObj.partyGstin,
+      partyState: returnObj.partyState,
+      items: resolvedItems,
+      totalAmount: returnObj.totalAmount,
+      date: returnObj.date,
+      status: returnObj.status,
+      returnType: returnObj.returnType,
+      paymentMode: returnObj.paymentMode,
+      origBillNo: returnObj.origBillNo,
+      origBillDate: returnObj.origBillDate,
+      reason: returnObj.reason,
+      isCommercial: returnObj.isCommercial,
+      extraDiscount: returnObj.extraDiscount,
+      roundOff: returnObj.roundOff,
+      updatedAt: returnObj.updatedAt,
+      version: returnObj.version,
+      isDeleted: returnObj.isDeleted,
+    );
+  }
+
+  static PurchaseReturn _withResolvedPurchaseReturnOrigins(PurchaseReturn returnObj, PharoahManager ph, Party supplier) {
+    final resolvedItems = GstComplianceHelper.resolveMissingPurchaseItemOrigins(
+      items: returnObj.items,
+      purchases: ph.purchases,
+      partyId: returnObj.partyId.isNotEmpty ? returnObj.partyId : supplier.id,
+      partyName: returnObj.distributorName.isNotEmpty ? returnObj.distributorName : supplier.name,
+    );
+    return PurchaseReturn(
+      id: returnObj.id,
+      billNo: returnObj.billNo,
+      partyId: returnObj.partyId,
+      distributorName: returnObj.distributorName,
+      partyGstin: returnObj.partyGstin,
+      partyState: returnObj.partyState,
+      items: resolvedItems,
+      totalAmount: returnObj.totalAmount,
+      date: returnObj.date,
+      status: returnObj.status,
+      returnType: returnObj.returnType,
+      paymentMode: returnObj.paymentMode,
+      origBillNo: returnObj.origBillNo,
+      origBillDate: returnObj.origBillDate,
+      reason: returnObj.reason,
+      isCommercial: returnObj.isCommercial,
+      extraDiscount: returnObj.extraDiscount,
+      roundOff: returnObj.roundOff,
+      updatedAt: returnObj.updatedAt,
+      version: returnObj.version,
+      isDeleted: returnObj.isDeleted,
+    );
+  }
+
   static Future<void> printCreditNote({required SaleReturn returnObj, required Party party, required PharoahManager ph}) async {
     final latestParty = _getLatestParty(ph, party.id, returnObj.partyName.isNotEmpty ? returnObj.partyName : party.name);
-    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: latestParty, ph: ph, type: "RETURN");
-    else await CreditNotePdf.generate(returnObj, latestParty, ph.activeCompany!, ph.config);
+    final resolvedReturn = _withResolvedSaleReturnOrigins(returnObj, ph, latestParty);
+    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: resolvedReturn, party: latestParty, ph: ph, type: "RETURN");
+    else await CreditNotePdf.generate(resolvedReturn, latestParty, ph.activeCompany!, ph.config);
   }
 
   static Future<void> printDebitNote({required PurchaseReturn returnObj, required Party supplier, required PharoahManager ph}) async {
     final latestParty = _getLatestParty(ph, supplier.id, returnObj.distributorName.isNotEmpty ? returnObj.distributorName : supplier.name);
-    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: returnObj, party: latestParty, ph: ph, type: "RETURN");
-    else await DebitNotePdf.generate(returnObj, latestParty, ph.activeCompany!, ph.config);
+    final resolvedReturn = _withResolvedPurchaseReturnOrigins(returnObj, ph, latestParty);
+    if (ph.config.printFormat == "Thermal") await UniversalThermalEngine.generate(doc: resolvedReturn, party: latestParty, ph: ph, type: "RETURN");
+    else await DebitNotePdf.generate(resolvedReturn, latestParty, ph.activeCompany!, ph.config);
   }
 
   // ===========================================================================
@@ -207,10 +274,13 @@ class PdfRouterService {
       else if (type == "RETURN" || type == "CN" || type == "DN") {
         if (doc is SaleReturn) {
           docNo = doc.billNo;
-          pdfBytes = await CreditNotePdf.generateBytes(doc, party, ph.activeCompany!, config);
+          final resolvedDoc = _withResolvedSaleReturnOrigins(doc, ph, party);
+          pdfBytes = await CreditNotePdf.generateBytes(resolvedDoc, party, ph.activeCompany!, config);
         } else {
-          docNo = (doc as PurchaseReturn).billNo;
-          pdfBytes = await DebitNotePdf.generateBytes(doc, party, ph.activeCompany!, config);
+          final pr = doc as PurchaseReturn;
+          docNo = pr.billNo;
+          final resolvedDoc = _withResolvedPurchaseReturnOrigins(pr, ph, party);
+          pdfBytes = await DebitNotePdf.generateBytes(resolvedDoc, party, ph.activeCompany!, config);
         }
       }
     else if (type == "LEDGER") {

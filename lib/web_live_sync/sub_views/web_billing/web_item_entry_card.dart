@@ -470,6 +470,9 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                                     appliedRateType: selectedRateType,
                                     rateCFormula: double.tryParse(rateCDiscC.text) ?? 0.0,
                                     isBreakage: widget.allowExpired,
+                                    origBillNo: widget.existingItem?.origBillNo ?? "",
+                                    origBillDate: widget.existingItem?.origBillDate,
+                                    isManualOrigin: widget.existingItem?.isManualOrigin ?? false,
                                   ));
                                 },
                           child: Text(

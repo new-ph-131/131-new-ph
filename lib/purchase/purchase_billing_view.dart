@@ -709,7 +709,10 @@ class _PurchaseItemEntryCardState extends State<PurchaseItemEntryCard> {
                                 total: netTotal, discountPer: double.tryParse(discPerC.text) ?? 0, discountRupees: dA,
                                 rateA: double.tryParse(rateAC.text) ?? 0, rateB: double.tryParse(rateBC.text) ?? 0, rateC: double.tryParse(rateCC.text) ?? 0,
                                 appliedRateType: selectedRateType, rateCFormula: double.tryParse(rateCDiscC.text) ?? 0.0,
-                                isBreakage: widget.allowExpired
+                                isBreakage: widget.allowExpired,
+                                origBillNo: widget.existingItem?.origBillNo ?? "",
+                                origBillDate: widget.existingItem?.origBillDate,
+                                isManualOrigin: widget.existingItem?.isManualOrigin ?? false,
                              ));
                           }, 
                           child: const Text("CONFIRM & ADD", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1.0))
