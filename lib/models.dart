@@ -1026,16 +1026,20 @@ class PurchaseChallan {
 }
 
 class SaleReturn { 
-  String id, billNo, partyName, status, returnType; 
+  String id, billNo, partyName, status, returnType, paymentMode, origBillNo, reason; 
   DateTime date; 
+  DateTime? origBillDate;
   List<BillItem> items; 
   double totalAmount, extraDiscount, roundOff;
   int updatedAt, version, isDeleted;
+  bool isCommercial;
 
   SaleReturn({
     required this.id, required this.billNo, required this.date, 
     required this.partyName, required this.items, required this.totalAmount, 
     this.status = "Active", this.returnType = "Sellable",
+    this.paymentMode = "CREDIT", this.origBillNo = "", this.origBillDate,
+    this.reason = "", this.isCommercial = false,
     this.extraDiscount = 0.0, this.roundOff = 0.0,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   }); 
@@ -1044,6 +1048,9 @@ class SaleReturn {
     'id': id, 'billNo': billNo, 'date': date.toIso8601String(), 
     'partyName': partyName, 'totalAmount': totalAmount, 
     'status': status, 'returnType': returnType, 
+    'paymentMode': paymentMode, 'origBillNo': origBillNo,
+    'origBillDate': origBillDate?.toIso8601String(),
+    'reason': reason, 'isCommercial': isCommercial,
     'extraDiscount': extraDiscount, 'roundOff': roundOff,
     'items': items.map((i) => i.toMap()).toList(),
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
@@ -1062,6 +1069,11 @@ class SaleReturn {
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
     status: map['status'] ?? "Active", 
     returnType: map['returnType'] ?? "Sellable", 
+    paymentMode: map['paymentMode'] ?? "CREDIT",
+    origBillNo: map['origBillNo'] ?? "",
+    origBillDate: map['origBillDate'] != null ? DateTime.tryParse(map['origBillDate']) : null,
+    reason: map['reason'] ?? "",
+    isCommercial: map['isCommercial'] == true || map['isCommercial'] == 1,
     items: (map['items'] as List?)?.map((i) => BillItem.fromMap(i)).toList() ?? [],
     updatedAt: (map['updatedAt'] ?? (map['date'] != null ? (DateTime.tryParse(map['date'] ?? '')?.millisecondsSinceEpoch ?? 0) : 0)).toInt(),
     version: (map['version'] ?? 1).toInt(),
@@ -1070,16 +1082,20 @@ class SaleReturn {
 }
 
 class PurchaseReturn { 
-  String id, billNo, distributorName, status, returnType; 
+  String id, billNo, distributorName, status, returnType, paymentMode, origBillNo, reason; 
   DateTime date; 
+  DateTime? origBillDate;
   List<PurchaseItem> items; 
   double totalAmount, extraDiscount, roundOff;
   int updatedAt, version, isDeleted;
+  bool isCommercial;
 
   PurchaseReturn({
     required this.id, required this.billNo, required this.distributorName, 
     required this.items, required this.totalAmount, required this.date, 
     this.status = "Active", this.returnType = "Sellable",
+    this.paymentMode = "CREDIT", this.origBillNo = "", this.origBillDate,
+    this.reason = "", this.isCommercial = false,
     this.extraDiscount = 0.0, this.roundOff = 0.0,
     this.updatedAt = 0, this.version = 1, this.isDeleted = 0,
   }); 
@@ -1088,8 +1104,11 @@ class PurchaseReturn {
     'id': id, 'billNo': billNo, 'date': date.toIso8601String(), 
     'distributorName': distributorName, 'totalAmount': totalAmount, 
     'status': status, 'returnType': returnType, 
-    'items': items.map((i) => i.toMap()).toList(),
+    'paymentMode': paymentMode, 'origBillNo': origBillNo,
+    'origBillDate': origBillDate?.toIso8601String(),
+    'reason': reason, 'isCommercial': isCommercial,
     'extraDiscount': extraDiscount, 'roundOff': roundOff,
+    'items': items.map((i) => i.toMap()).toList(),
     'updatedAt': updatedAt > 0 ? updatedAt : DateTime.now().millisecondsSinceEpoch,
     'version': version,
     'isDeleted': isDeleted,
@@ -1104,6 +1123,11 @@ class PurchaseReturn {
     totalAmount: (map['totalAmount'] ?? 0.0).toDouble(), 
     status: map['status'] ?? "Active", 
     returnType: map['returnType'] ?? "Sellable", 
+    paymentMode: map['paymentMode'] ?? "CREDIT",
+    origBillNo: map['origBillNo'] ?? "",
+    origBillDate: map['origBillDate'] != null ? DateTime.tryParse(map['origBillDate']) : null,
+    reason: map['reason'] ?? "",
+    isCommercial: map['isCommercial'] == true || map['isCommercial'] == 1,
     extraDiscount: (map['extraDiscount'] ?? 0.0).toDouble(),
     roundOff: (map['roundOff'] ?? 0.0).toDouble(),
     items: (map['items'] as List?)?.map((i) => PurchaseItem.fromMap(i)).toList() ?? [],

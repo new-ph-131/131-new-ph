@@ -182,13 +182,17 @@ class AppAccountsCalculator {
         r.isDeleted != 1 &&
         r.partyName.trim().toUpperCase() == pName &&
         (r.status.isEmpty || r.status == 'Active'))) {
-      total -= sr.totalAmount;
+      if (sr.paymentMode.trim().toUpperCase() == 'CREDIT') {
+        total -= sr.totalAmount;
+      }
     }
     for (var pr in purchaseReturns.where((r) =>
         r.isDeleted != 1 &&
         r.distributorName.trim().toUpperCase() == pName &&
         (r.status.isEmpty || r.status == 'Active'))) {
-      total += pr.totalAmount;
+      if (pr.paymentMode.trim().toUpperCase() == 'CREDIT') {
+        total += pr.totalAmount;
+      }
     }
     for (var v in vouchers.where((v) =>
         v.isDeleted != 1 &&
@@ -632,7 +636,7 @@ class AppAccountsCalculator {
       });
     }
 
-    // 2. Cash Purchases (Outward -)
+    // 2. Cash Purchases (Outward -) & Cash Debit Notes (Inward Cash Refund +)
     for (var p in purchases.where((p) => p.isDeleted != 1 && p.paymentMode.trim().toUpperCase() == 'CASH')) {
       allCashTxns.add({
         'date': p.date,
@@ -641,6 +645,26 @@ class AppAccountsCalculator {
         'type': 'CASH PURCHASE',
         'in': 0.0,
         'out': p.totalAmount,
+      });
+    }
+    for (var pr in purchaseReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == 'Active') && r.paymentMode.trim().toUpperCase() == 'CASH')) {
+      allCashTxns.add({
+        'date': pr.date,
+        'ref': pr.billNo,
+        'particulars': pr.distributorName.isNotEmpty ? "Cash DN: ${pr.distributorName}" : "Cash Return Out",
+        'type': 'CASH DEBIT NOTE',
+        'in': pr.totalAmount,
+        'out': 0.0,
+      });
+    }
+    for (var sr in saleReturns.where((r) => r.isDeleted != 1 && (r.status.isEmpty || r.status == 'Active') && r.paymentMode.trim().toUpperCase() == 'CASH')) {
+      allCashTxns.add({
+        'date': sr.date,
+        'ref': sr.billNo,
+        'particulars': sr.partyName.isNotEmpty ? "Cash CN: ${sr.partyName}" : "Cash Return In",
+        'type': 'CASH CREDIT NOTE',
+        'in': 0.0,
+        'out': sr.totalAmount,
       });
     }
 

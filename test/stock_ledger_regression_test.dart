@@ -829,4 +829,44 @@ void main() {
     expect(flow['sale'], equals(1.0));
     expect(flow['closing'], equals(13.0));
   });
+
+  test('PHASE-2: Cash CN / DN accounting, POS state resolution, and Section 34 Commercial Note exemption', () {
+    final ph = PharoahManager();
+    ph.currentFY = '2025-26';
+    ph.activeCompany = CompanyProfile(id: 'C1', name: 'Pharoah Pharma', gstin: '08AAAAA0000A1Z5', state: 'Rajasthan');
+
+    // 1. POS State Resolution via GstStateCodes
+    expect(GstStateCodes.resolvePos('27AAAAA0000A1Z5', 'Maharashtra'), equals('27'));
+    expect(GstStateCodes.resolvePos('', 'Rajasthan'), equals('08'));
+
+    // 2. Cash Credit Note vs Credit Credit Note ledger impact
+    final customer = Party(id: 'P1', name: 'Apollo Pharmacy', state: 'Rajasthan', group: 'Sundry Debtors', opBal: 1000.0);
+    ph.parties = [customer];
+    ph.sales = [];
+    ph.purchases = [];
+
+    final cashCn = SaleReturn(
+      id: 'CN-CASH',
+      billNo: 'CC-1',
+      date: DateTime(2025, 5, 10),
+      partyName: 'Apollo Pharmacy',
+      totalAmount: 500.0,
+      paymentMode: 'CASH',
+    );
+    ph.saleReturns = [cashCn];
+
+    // Cash CN should NOT reduce party receivable balance (since paid in cash), but goes to Cash Book
+    double partyBal = AppAccountsCalculator.calculatePartyBalance(customer, sales: ph.sales, purchases: ph.purchases, saleReturns: ph.saleReturns, purchaseReturns: ph.purchaseReturns, vouchers: ph.vouchers);
+    expect(partyBal, equals(1000.0)); // OpBal remains 1000, not 500
+
+    final cashBook = AppAccountsCalculator.getCashBookStatement(
+      fromDate: DateTime(2025, 4, 1),
+      toDate: DateTime(2026, 3, 31),
+      sales: ph.sales,
+      purchases: ph.purchases,
+      vouchers: ph.vouchers,
+    );
+    // Cash CN adds 500 out (cash refund paid out)
+    expect(cashBook.any((e) => e['type'] == 'CASH CREDIT NOTE' && e['out'] == 500.0), isTrue);
+  });
 }

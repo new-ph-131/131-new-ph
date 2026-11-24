@@ -2214,6 +2214,11 @@ Future<bool> finalizePurchase({
     double extraDiscount = 0.0, 
     double roundOff = 0.0, 
     String type = "Mixed",
+    String paymentMode = "CREDIT",
+    String origBillNo = "",
+    DateTime? origBillDate,
+    String reason = "",
+    bool isCommercial = false,
     String? existingId,
   }) async { 
     final String rId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
@@ -2236,6 +2241,11 @@ Future<bool> finalizePurchase({
       items: items, 
       totalAmount: total, 
       returnType: type, 
+      paymentMode: paymentMode,
+      origBillNo: origBillNo,
+      origBillDate: origBillDate,
+      reason: reason,
+      isCommercial: isCommercial,
       extraDiscount: extraDiscount, 
       roundOff: roundOff, 
       status: "Active",
@@ -2297,6 +2307,11 @@ Future<bool> finalizePurchase({
     double extraDiscount = 0.0, 
     double roundOff = 0.0, 
     String type = "Mixed",
+    String paymentMode = "CREDIT",
+    String origBillNo = "",
+    DateTime? origBillDate,
+    String reason = "",
+    bool isCommercial = false,
     String? existingId,
   }) async { 
     final String rId = (existingId != null && existingId.isNotEmpty) ? existingId : DateTime.now().toString();
@@ -2320,6 +2335,11 @@ Future<bool> finalizePurchase({
       totalAmount: total, 
       status: "Active", 
       returnType: type, 
+      paymentMode: paymentMode,
+      origBillNo: origBillNo,
+      origBillDate: origBillDate,
+      reason: reason,
+      isCommercial: isCommercial,
       extraDiscount: extraDiscount, 
       roundOff: roundOff, 
       updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -3510,7 +3530,7 @@ void registerBatchActivity({
   // ⚡ ADVANCED STOCK-SAFE MODIFICATION ENGINE
   // ===========================================================================
 
-  Future<void> updateSaleReturn({required String id, required String billNo, required DateTime date, required Party party, required List<BillItem> items, required double total, double extraDiscount = 0.0, double roundOff = 0.0}) async {
+  Future<void> updateSaleReturn({required String id, required String billNo, required DateTime date, required Party party, required List<BillItem> items, required double total, double extraDiscount = 0.0, double roundOff = 0.0, String paymentMode = "CREDIT", String origBillNo = "", DateTime? origBillDate, String reason = "", bool isCommercial = false}) async {
     int i = saleReturns.indexWhere((r) => r.id == id);
     if (i != -1) {
       final oldVer = saleReturns[i].version;
@@ -3518,6 +3538,8 @@ void registerBatchActivity({
         id: id, billNo: billNo, date: date, partyName: party.name, 
         items: items, totalAmount: total, extraDiscount: extraDiscount, 
         roundOff: roundOff, status: "Active",
+        paymentMode: paymentMode, origBillNo: origBillNo, origBillDate: origBillDate,
+        reason: reason, isCommercial: isCommercial,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         version: oldVer + 1,
       );
@@ -3541,7 +3563,7 @@ void registerBatchActivity({
     }
   }
 
-  Future<void> updatePurchaseReturn({required String id, required String billNo, required DateTime date, required Party party, required List<PurchaseItem> items, required double total, double extraDiscount = 0.0, double roundOff = 0.0}) async {
+  Future<void> updatePurchaseReturn({required String id, required String billNo, required DateTime date, required Party party, required List<PurchaseItem> items, required double total, double extraDiscount = 0.0, double roundOff = 0.0, String paymentMode = "CREDIT", String origBillNo = "", DateTime? origBillDate, String reason = "", bool isCommercial = false}) async {
     int i = purchaseReturns.indexWhere((r) => r.id == id);
     if (i != -1) {
       final oldVer = purchaseReturns[i].version;
@@ -3549,6 +3571,8 @@ void registerBatchActivity({
         id: id, billNo: billNo, distributorName: party.name, 
         date: date, items: items, totalAmount: total, 
         extraDiscount: extraDiscount, roundOff: roundOff, status: "Active",
+        paymentMode: paymentMode, origBillNo: origBillNo, origBillDate: origBillDate,
+        reason: reason, isCommercial: isCommercial,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         version: oldVer + 1,
       );

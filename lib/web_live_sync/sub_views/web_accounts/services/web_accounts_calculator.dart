@@ -182,13 +182,17 @@ class WebAccountsCalculator {
         r.isDeleted != 1 &&
         r.partyName.trim().toUpperCase() == pName &&
         (r.status.isEmpty || r.status == 'Active'))) {
-      total -= sr.totalAmount;
+      if (sr.paymentMode.trim().toUpperCase() == 'CREDIT') {
+        total -= sr.totalAmount;
+      }
     }
     for (var pr in purchaseReturns.where((r) =>
         r.isDeleted != 1 &&
         r.distributorName.trim().toUpperCase() == pName &&
         (r.status.isEmpty || r.status == 'Active'))) {
-      total += pr.totalAmount;
+      if (pr.paymentMode.trim().toUpperCase() == 'CREDIT') {
+        total += pr.totalAmount;
+      }
     }
     for (var v in vouchers.where((v) =>
         v.isDeleted != 1 &&
