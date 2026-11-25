@@ -425,14 +425,20 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                           const Text("RATE:", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
                           const SizedBox(width: 8),
                           _rateSegment("RATE A", selectedRateType == "A", () {
+                            if (selectedRateType == "A") return;
+                            FocusScope.of(context).unfocus();
                             setState(() { selectedRateType = "A"; _updateRateLogic(); });
                           }),
                           const SizedBox(width: 6),
                           _rateSegment("RATE B", selectedRateType == "B", () {
+                            if (selectedRateType == "B") return;
+                            FocusScope.of(context).unfocus();
                             setState(() { selectedRateType = "B"; _updateRateLogic(); });
                           }),
                           const SizedBox(width: 6),
                           _rateSegment("RATE C", selectedRateType == "C", () {
+                            if (selectedRateType == "C") return;
+                            FocusScope.of(context).unfocus();
                             setState(() { selectedRateType = "C"; _updateRateLogic(); });
                           }),
                         ],
@@ -468,7 +474,11 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                                   style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                                 ),
                                 selected: !_useSchemeNetRate,
-                                onSelected: (_) => _toggleReturnSchemeMode(false),
+                                onSelected: (_) {
+                                  if (!_useSchemeNetRate) return;
+                                  FocusScope.of(context).unfocus();
+                                  _toggleReturnSchemeMode(false);
+                                },
                                 visualDensity: VisualDensity.compact,
                                 selectedColor: const Color(0xFF2563EB),
                                 backgroundColor: const Color(0xFF1E293B),
@@ -481,7 +491,11 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                                   style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                                 ),
                                 selected: _useSchemeNetRate,
-                                onSelected: (_) => _toggleReturnSchemeMode(true),
+                                onSelected: (_) {
+                                  if (_useSchemeNetRate) return;
+                                  FocusScope.of(context).unfocus();
+                                  _toggleReturnSchemeMode(true);
+                                },
                                 visualDensity: VisualDensity.compact,
                                 selectedColor: const Color(0xFF0F766E),
                                 backgroundColor: const Color(0xFF1E293B),
@@ -570,6 +584,7 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                                     ),
                                     InkWell(
                                       onTap: () {
+                                        FocusScope.of(context).unfocus();
                                         setState(() {
                                           _netRateInclGst = !_netRateInclGst;
                                           _syncNetRateFromInputs();
@@ -589,7 +604,10 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                                       ),
                                     ),
                                     InkWell(
-                                      onTap: () => setState(() => _netViaDisc = !_netViaDisc),
+                                      onTap: () {
+                                        FocusScope.of(context).unfocus();
+                                        setState(() => _netViaDisc = !_netViaDisc);
+                                      },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                         decoration: BoxDecoration(
@@ -764,27 +782,116 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
     Widget? suffix,
     Function(String)? onChanged,
   }) {
+    return _SpaciousInputField(
+      label: label,
+      ctrl: ctrl,
+      isNum: isNum,
+      isReadOnly: isReadOnly,
+      isHighlight: isHighlight,
+      textColor: textColor,
+      suffix: suffix,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _SpaciousInputField extends StatefulWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final bool isNum;
+  final bool isReadOnly;
+  final bool isHighlight;
+  final Color? textColor;
+  final Widget? suffix;
+  final Function(String)? onChanged;
+
+  const _SpaciousInputField({
+    required this.label,
+    required this.ctrl,
+    this.isNum = false,
+    this.isReadOnly = false,
+    this.isHighlight = false,
+    this.textColor,
+    this.suffix,
+    this.onChanged,
+  });
+
+  @override
+  State<_SpaciousInputField> createState() => _SpaciousInputFieldState();
+}
+
+class _SpaciousInputFieldState extends State<_SpaciousInputField> {
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isFocused = _focusNode.hasFocus;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool activeBorder = _isFocused || widget.isHighlight;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+        Text(
+          widget.label,
+          style: TextStyle(
+            color: _isFocused ? const Color(0xFF38BDF8) : Colors.white54,
+            fontSize: 8.5,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
-            color: isReadOnly ? Colors.black38 : (isHighlight ? const Color(0x332563EB) : Colors.black26),
+            color: widget.isReadOnly
+                ? Colors.black38
+                : (activeBorder ? const Color(0x332563EB) : Colors.black26),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: isHighlight ? const Color(0xFF38BDF8) : Colors.white12),
+            border: Border.all(
+              color: activeBorder ? const Color(0xFF38BDF8) : Colors.white12,
+              width: _isFocused ? 1.5 : 1.0,
+            ),
           ),
           child: Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: ctrl,
-                  readOnly: isReadOnly,
-                  onChanged: onChanged,
-                  keyboardType: isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-                  style: TextStyle(color: textColor ?? Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  controller: widget.ctrl,
+                  focusNode: _focusNode,
+                  showCursor: _isFocused,
+                  cursorColor: const Color(0xFF38BDF8),
+                  cursorHeight: 14,
+                  cursorWidth: 1.5,
+                  cursorRadius: const Radius.circular(2),
+                  readOnly: widget.isReadOnly,
+                  onChanged: widget.onChanged,
+                  keyboardType: widget.isNum
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  style: TextStyle(
+                    color: widget.textColor ?? Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                   decoration: const InputDecoration(
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 8),
@@ -792,7 +899,7 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                   ),
                 ),
               ),
-              if (suffix != null) suffix,
+              if (widget.suffix != null) widget.suffix!,
             ],
           ),
         ),

@@ -325,11 +325,21 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
                         children: [
                           const Text("APPLY SCHEME:", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
                           const SizedBox(width: 10),
-                          _segmentRate("RATE A", selectedRateType == "A", () => setState(() => selectedRateType = "A")),
+                          _segmentRate("RATE A", selectedRateType == "A", () {
+                            if (selectedRateType == "A") return;
+                            FocusScope.of(context).unfocus();
+                            setState(() => selectedRateType = "A");
+                          }),
                           const SizedBox(width: 6),
-                          _segmentRate("RATE B", selectedRateType == "B", () => setState(() => selectedRateType = "B")),
+                          _segmentRate("RATE B", selectedRateType == "B", () {
+                            if (selectedRateType == "B") return;
+                            FocusScope.of(context).unfocus();
+                            setState(() => selectedRateType = "B");
+                          }),
                           const SizedBox(width: 6),
                           _segmentRate("RATE C", selectedRateType == "C", () {
+                            if (selectedRateType == "C") return;
+                            FocusScope.of(context).unfocus();
                             setState(() {
                               selectedRateType = "C";
                               _calcRateC();
@@ -397,6 +407,7 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
                                     ),
                                     InkWell(
                                       onTap: () {
+                                        FocusScope.of(context).unfocus();
                                         setState(() {
                                           _netRateInclGst = !_netRateInclGst;
                                           _syncNetRateFromInputs();
@@ -416,7 +427,10 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
                                       ),
                                     ),
                                     InkWell(
-                                      onTap: () => setState(() => _netViaDisc = !_netViaDisc),
+                                      onTap: () {
+                                        FocusScope.of(context).unfocus();
+                                        setState(() => _netViaDisc = !_netViaDisc);
+                                      },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                         decoration: BoxDecoration(
@@ -595,31 +609,116 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
     Widget? suffix,
     Function(String)? onChanged,
   }) {
+    return _WebPurchaseInputField(
+      label: label,
+      ctrl: ctrl,
+      isNum: isNum,
+      isReadOnly: isReadOnly,
+      suffix: suffix,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _WebPurchaseInputField extends StatefulWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final bool isNum;
+  final bool isReadOnly;
+  final Widget? suffix;
+  final Function(String)? onChanged;
+
+  const _WebPurchaseInputField({
+    required this.label,
+    required this.ctrl,
+    this.isNum = false,
+    this.isReadOnly = false,
+    this.suffix,
+    this.onChanged,
+  });
+
+  @override
+  State<_WebPurchaseInputField> createState() => _WebPurchaseInputFieldState();
+}
+
+class _WebPurchaseInputFieldState extends State<_WebPurchaseInputField> {
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isFocused = _focusNode.hasFocus;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
+        Text(
+          widget.label,
+          style: TextStyle(
+            color: _isFocused ? const Color(0xFFFBBF24) : Colors.white54,
+            fontSize: 8.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
-            color: isReadOnly ? Colors.black38 : Colors.black26,
+            color: widget.isReadOnly
+                ? Colors.black38
+                : (_isFocused ? const Color(0x33F59E0B) : Colors.black26),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white12),
+            border: Border.all(
+              color: _isFocused ? const Color(0xFFFBBF24) : Colors.white12,
+              width: _isFocused ? 1.5 : 1.0,
+            ),
           ),
           child: Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: ctrl,
-                  readOnly: isReadOnly,
-                  onChanged: onChanged,
-                  keyboardType: isNum ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: InputBorder.none),
+                  controller: widget.ctrl,
+                  focusNode: _focusNode,
+                  showCursor: _isFocused,
+                  cursorColor: const Color(0xFFFBBF24),
+                  cursorHeight: 14,
+                  cursorWidth: 1.5,
+                  cursorRadius: const Radius.circular(2),
+                  readOnly: widget.isReadOnly,
+                  onChanged: widget.onChanged,
+                  keyboardType: widget.isNum
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    border: InputBorder.none,
+                  ),
                 ),
               ),
-              if (suffix != null) suffix,
+              if (widget.suffix != null) widget.suffix!,
             ],
           ),
         ),

@@ -90,6 +90,20 @@
     };
   </script>
 </head>
+<head>
+  <style>
+    html, body {
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input, textarea {
+      -webkit-user-select: text !important;
+      user-select: text !important;
+    }
+  </style>
+</head>
 <body style="background-color: #0F172A; margin: 0; padding: 0;">
   <script>
     if ('serviceWorker' in navigator) {

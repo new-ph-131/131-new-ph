@@ -586,13 +586,21 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         fontSize: 9.5,
                                         fontWeight: FontWeight.bold)),
                                 const SizedBox(width: 10),
-                                _rateSegment("RATE A", selectedRateType == "A",
-                                    () => setDialogState(() => selectedRateType = "A")),
+                                _rateSegment("RATE A", selectedRateType == "A", () {
+                                  if (selectedRateType == "A") return;
+                                  FocusScope.of(context).unfocus();
+                                  setDialogState(() => selectedRateType = "A");
+                                }),
                                 const SizedBox(width: 6),
-                                _rateSegment("RATE B", selectedRateType == "B",
-                                    () => setDialogState(() => selectedRateType = "B")),
+                                _rateSegment("RATE B", selectedRateType == "B", () {
+                                  if (selectedRateType == "B") return;
+                                  FocusScope.of(context).unfocus();
+                                  setDialogState(() => selectedRateType = "B");
+                                }),
                                 const SizedBox(width: 6),
                                 _rateSegment("RATE C", selectedRateType == "C", () {
+                                  if (selectedRateType == "C") return;
+                                  FocusScope.of(context).unfocus();
                                   setDialogState(() {
                                     selectedRateType = "C";
                                     calculateRateC();
@@ -631,7 +639,11 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                                       ),
                                       selected: !useSchemeNetRate,
-                                      onSelected: (_) => toggleSchemeMode(false),
+                                      onSelected: (_) {
+                                        if (!useSchemeNetRate) return;
+                                        FocusScope.of(context).unfocus();
+                                        toggleSchemeMode(false);
+                                      },
                                       visualDensity: VisualDensity.compact,
                                       selectedColor: const Color(0xFFD97706),
                                       backgroundColor: const Color(0xFF1E293B),
@@ -644,7 +656,11 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
                                       ),
                                       selected: useSchemeNetRate,
-                                      onSelected: (_) => toggleSchemeMode(true),
+                                      onSelected: (_) {
+                                        if (useSchemeNetRate) return;
+                                        FocusScope.of(context).unfocus();
+                                        toggleSchemeMode(true);
+                                      },
                                       visualDensity: VisualDensity.compact,
                                       selectedColor: const Color(0xFF0F766E),
                                       backgroundColor: const Color(0xFF1E293B),
@@ -753,6 +769,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                                           ),
                                           InkWell(
                                             onTap: () {
+                                              FocusScope.of(context).unfocus();
                                               setDialogState(() {
                                                 netRateInclGst = !netRateInclGst;
                                                 syncNetRateFromInputs();
@@ -772,7 +789,10 @@ class DebitNoteCartWidget extends StatelessWidget {
                                             ),
                                           ),
                                           InkWell(
-                                            onTap: () => setDialogState(() => netViaDisc = !netViaDisc),
+                                            onTap: () {
+                                              FocusScope.of(context).unfocus();
+                                              setDialogState(() => netViaDisc = !netViaDisc);
+                                            },
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                               decoration: BoxDecoration(
@@ -916,43 +936,124 @@ class DebitNoteCartWidget extends StatelessWidget {
     Function(String)? onChanged,
     Function(String)? onSubmitted,
   }) {
+    return _DebitNoteInputField(
+      label: label,
+      ctrl: ctrl,
+      isNum: isNum,
+      isHighlight: isHighlight,
+      isReadOnly: isReadOnly,
+      suffix: suffix,
+      onChanged: onChanged,
+      onSubmitted: onSubmitted,
+    );
+  }
+}
+
+class _DebitNoteInputField extends StatefulWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final bool isNum;
+  final bool isHighlight;
+  final bool isReadOnly;
+  final Widget? suffix;
+  final Function(String)? onChanged;
+  final Function(String)? onSubmitted;
+
+  const _DebitNoteInputField({
+    required this.label,
+    required this.ctrl,
+    this.isNum = false,
+    this.isHighlight = false,
+    this.isReadOnly = false,
+    this.suffix,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  @override
+  State<_DebitNoteInputField> createState() => _DebitNoteInputFieldState();
+}
+
+class _DebitNoteInputFieldState extends State<_DebitNoteInputField> {
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isFocused = _focusNode.hasFocus;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool activeBorder = _isFocused || widget.isHighlight;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                color: Colors.white54, fontSize: 8.5, fontWeight: FontWeight.bold)),
+        Text(
+          widget.label,
+          style: TextStyle(
+            color: _isFocused ? const Color(0xFFFBBF24) : Colors.white54,
+            fontSize: 8.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           decoration: BoxDecoration(
-            color: isReadOnly
+            color: widget.isReadOnly
                 ? Colors.black38
-                : (isHighlight ? const Color(0x33F59E0B) : Colors.black26),
+                : (activeBorder ? const Color(0x33F59E0B) : Colors.black26),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color: isHighlight ? const Color(0xFFF59E0B) : Colors.white12),
+              color: activeBorder ? const Color(0xFFFBBF24) : Colors.white12,
+              width: _isFocused ? 1.5 : 1.0,
+            ),
           ),
           child: Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: ctrl,
-                  readOnly: isReadOnly,
-                  onChanged: onChanged,
-                  onSubmitted: onSubmitted,
-                  keyboardType: isNum
+                  controller: widget.ctrl,
+                  focusNode: _focusNode,
+                  showCursor: _isFocused,
+                  cursorColor: const Color(0xFFFBBF24),
+                  cursorHeight: 14,
+                  cursorWidth: 1.5,
+                  cursorRadius: const Radius.circular(2),
+                  readOnly: widget.isReadOnly,
+                  onChanged: widget.onChanged,
+                  onSubmitted: widget.onSubmitted,
+                  keyboardType: widget.isNum
                       ? const TextInputType.numberWithOptions(decimal: true)
                       : TextInputType.text,
                   style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                   decoration: const InputDecoration(
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 8),
-                      border: InputBorder.none),
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    border: InputBorder.none,
+                  ),
                 ),
               ),
-              if (suffix != null) suffix,
+              if (widget.suffix != null) widget.suffix!,
             ],
           ),
         ),

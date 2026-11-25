@@ -364,18 +364,24 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                 const Text("RATE SCHEME:", style: TextStyle(color: Colors.white54, fontSize: 9.5, fontWeight: FontWeight.bold)),
                                 const SizedBox(width: 10),
                                 _rateSegment("RATE A", selectedRateType == "A", () {
+                                  if (selectedRateType == "A") return;
+                                  FocusScope.of(context).unfocus();
                                   setDialogState(() {
                                     selectedRateType = "A";
                                   });
                                 }),
                                 const SizedBox(width: 6),
                                 _rateSegment("RATE B", selectedRateType == "B", () {
+                                  if (selectedRateType == "B") return;
+                                  FocusScope.of(context).unfocus();
                                   setDialogState(() {
                                     selectedRateType = "B";
                                   });
                                 }),
                                 const SizedBox(width: 6),
                                 _rateSegment("RATE C", selectedRateType == "C", () {
+                                  if (selectedRateType == "C") return;
+                                  FocusScope.of(context).unfocus();
                                   setDialogState(() {
                                     selectedRateType = "C";
                                     calculateRateC();
@@ -504,6 +510,7 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                           ),
                                           InkWell(
                                             onTap: () {
+                                              FocusScope.of(context).unfocus();
                                               setDialogState(() {
                                                 netRateInclGst = !netRateInclGst;
                                                 syncNetRateFromInputs();
@@ -523,7 +530,10 @@ class _WebPurchaseChallanBillingViewState extends State<WebPurchaseChallanBillin
                                             ),
                                           ),
                                           InkWell(
-                                            onTap: () => setDialogState(() => netViaDisc = !netViaDisc),
+                                            onTap: () {
+                                              FocusScope.of(context).unfocus();
+                                              setDialogState(() => netViaDisc = !netViaDisc);
+                                            },
                                             child: Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                               decoration: BoxDecoration(
