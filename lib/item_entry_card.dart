@@ -9,6 +9,7 @@ import 'expiry_master.dart';
 import 'batch_sync_engine.dart';
 import 'widgets.dart'; // Naya global lookup widget load karne ke liye
 import 'logic/return_history_engine.dart';
+import 'logic/item_net_rate_helper.dart';
 
 class ItemEntryCard extends StatefulWidget {
   final Medicine med;
@@ -47,11 +48,14 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
   final freeC = TextEditingController(text: "0"); 
   final gstC = TextEditingController();
   final normDiscC = TextEditingController(text: "0.0");
-  final discAmtC = TextEditingController(text: "0.0"); 
+  final discAmtC = TextEditingController(text: "0.0");
+  final netRateC = TextEditingController(text: "0.00");
 
   String selectedRateType = "A";
   bool hideZeroStock = true;
   bool _useSchemeNetRate = false;
+  bool _netRateInclGst = false;
+  bool _netViaDisc = false;
 
   @override
   void initState() {
@@ -95,12 +99,67 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
       rateCDiscC.text = i.rateCFormula.toString();
       normDiscC.text = i.discountPer.toString();
       
-      _syncBillDiscount(true); 
+      _syncBillDiscount(true);
     } else {
       mrpC.text = widget.med.mrp.toString();
       gstC.text = widget.med.gst.toString();
       _updateRateLogic();
     }
+    _syncNetRateFromInputs();
+  }
+
+  void _syncNetRateFromInputs() {
+    final double q = double.tryParse(qtyC.text) ?? 0.0;
+    final double f = double.tryParse(freeC.text) ?? 0.0;
+    final double r = double.tryParse(rateC.text) ?? 0.0;
+    final double dAmt = double.tryParse(discAmtC.text) ?? 0.0;
+    final double g = double.tryParse(gstC.text) ?? 0.0;
+    final double val = _netRateInclGst
+        ? ItemNetRateHelper.computeLandedNetRate(
+            qty: q, freeQty: f, rate: r, discRupees: dAmt, gstRate: g)
+        : ItemNetRateHelper.computeTaxableNetRate(
+            qty: q, freeQty: f, rate: r, discRupees: dAmt);
+    netRateC.text = val.toStringAsFixed(2);
+  }
+
+  void _onNetRateChanged(String raw) {
+    final double target = double.tryParse(raw) ?? 0.0;
+    final double rawQ = double.tryParse(qtyC.text) ?? 0.0;
+    final double q = rawQ > 0 ? rawQ : 1.0;
+    final double f = double.tryParse(freeC.text) ?? 0.0;
+    final double g = double.tryParse(gstC.text) ?? 0.0;
+    if (target <= 0) {
+      setState(() {});
+      return;
+    }
+    if (_netViaDisc) {
+      final double r = double.tryParse(rateC.text) ?? 0.0;
+      final res = ItemNetRateHelper.reverseComputeDiscount(
+        targetNetRate: target,
+        qty: q,
+        freeQty: f,
+        rate: r,
+        gstRate: g,
+        isInclGst: _netRateInclGst,
+      );
+      normDiscC.text = res.discPer.toStringAsFixed(2);
+      discAmtC.text = res.discAmt.toStringAsFixed(2);
+    } else {
+      final double dPer = double.tryParse(normDiscC.text) ?? 0.0;
+      final double newRate = ItemNetRateHelper.reverseComputeRate(
+        targetNetRate: target,
+        qty: q,
+        freeQty: f,
+        discPer: dPer,
+        gstRate: g,
+        isInclGst: _netRateInclGst,
+      );
+      if (selectedRateType == "C") selectedRateType = "A";
+      rateC.text = newRate.toStringAsFixed(2);
+      final double gross = rawQ * newRate;
+      discAmtC.text = (gross * (dPer / 100.0)).toStringAsFixed(2);
+    }
+    setState(() {});
   }
 
   void _calculateRateC() {
@@ -117,7 +176,12 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
     double q = double.tryParse(qtyC.text) ?? 0;
     double r = double.tryParse(rateC.text) ?? 0;
     double gross = q * r;
-    if (gross <= 0) return;
+    if (gross <= 0) {
+      discAmtC.text = "0.00";
+      _syncNetRateFromInputs();
+      setState(() {});
+      return;
+    }
     if (isPercentSource) {
       double p = double.tryParse(normDiscC.text) ?? 0;
       discAmtC.text = (gross * (p / 100)).toStringAsFixed(2);
@@ -125,6 +189,7 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
       double a = double.tryParse(discAmtC.text) ?? 0;
       normDiscC.text = ((a / gross) * 100).toStringAsFixed(2);
     }
+    _syncNetRateFromInputs();
     setState(() {});
   }
 
@@ -429,7 +494,7 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
                         children: [
                           Expanded(child: _vibrantInput("QUANTITY", qtyC, accentElectric, false, isNum: true, highlight: true, onChanged: (v) => _syncBillDiscount(true))),
                           const SizedBox(width: 12),
-                          Expanded(child: _vibrantInput("FREE QTY", freeC, accentElectric, false, isNum: true)),
+                          Expanded(child: _vibrantInput("FREE QTY", freeC, accentElectric, false, isNum: true, onChanged: (v) { _syncNetRateFromInputs(); setState(() {}); })),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -441,7 +506,120 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
                           Expanded(child: _vibrantInput("DISCOUNT ₹", discAmtC, accentElectric, false, isNum: true, onChanged: (v) => _syncBillDiscount(false))),
                         ],
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: neonGreen.withOpacity(0.45)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  "NET RATE / UNIT (${_netRateInclGst ? 'INCL. GST' : 'EXCL. GST'})",
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF065F46),
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _netRateInclGst = !_netRateInclGst;
+                                      _syncNetRateFromInputs();
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _netRateInclGst ? const Color(0xFF0F766E) : const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      _netRateInclGst ? "Incl. GST" : "Excl. GST",
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: _netRateInclGst ? Colors.white : const Color(0xFF065F46),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () => setState(() => _netViaDisc = !_netViaDisc),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _netViaDisc ? accentElectric : const Color(0xFFE0E7FF),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      _netViaDisc ? "Via: Disc%" : "Via: Rate",
+                                      style: TextStyle(
+                                        fontSize: 8.5,
+                                        fontWeight: FontWeight.w900,
+                                        color: _netViaDisc ? Colors.white : brandDark,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _vibrantInput(
+                                    "NET RATE ₹",
+                                    netRateC,
+                                    neonGreen,
+                                    false,
+                                    highlight: true,
+                                    isNum: true,
+                                    labelColor: const Color(0xFF065F46),
+                                    onChanged: _onNetRateChanged,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Builder(
+                                  builder: (_) {
+                                    final double qv = double.tryParse(qtyC.text) ?? 0;
+                                    final double fv = double.tryParse(freeC.text) ?? 0;
+                                    final double rv = double.tryParse(rateC.text) ?? 0;
+                                    final double dv = double.tryParse(discAmtC.text) ?? 0;
+                                    final double gv = double.tryParse(gstC.text) ?? 0;
+                                    final taxNet = ItemNetRateHelper.computeTaxableNetRate(qty: qv, freeQty: fv, rate: rv, discRupees: dv);
+                                    final landNet = ItemNetRateHelper.computeLandedNetRate(qty: qv, freeQty: fv, rate: rv, discRupees: dv, gstRate: gv);
+                                    return Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          "Taxable: ₹${taxNet.toStringAsFixed(2)}/u",
+                                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
+                                        ),
+                                        Text(
+                                          "Landed: ₹${landNet.toStringAsFixed(2)}/u",
+                                          style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Color(0xFF0F766E)),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // Glowing Neon Emerald Total Box
                       Container(

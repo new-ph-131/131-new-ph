@@ -12,6 +12,7 @@ import '../../shared/web_pull_from_bill_modal.dart';
 import '../../../web_billing/web_batch_lookup_dialog.dart';
 import '../../../web_billing/quick_add_product_modal.dart';
 import '../../../../../logic/return_history_engine.dart';
+import '../../../../../logic/item_net_rate_helper.dart';
 import '../../../../../expiry_master.dart';
 
 class DebitNoteCartWidget extends StatelessWidget {
@@ -211,10 +212,16 @@ class DebitNoteCartWidget extends StatelessWidget {
     final discAmtC = TextEditingController(
       text: itemToEdit != null
           ? itemToEdit.discountRupees.toStringAsFixed(2)
-          : "0.0",
+          : (((double.tryParse(qtyC.text) ?? 0.0) *
+                  (double.tryParse(purRateC.text) ?? 0.0) *
+                  ((double.tryParse(discPerC.text) ?? 0.0) / 100.0)))
+              .toStringAsFixed(2),
     );
+    final netRateC = TextEditingController();
 
     String selectedRateType = itemToEdit?.appliedRateType ?? "A";
+    bool netRateInclGst = false;
+    bool netViaDisc = false;
     final double histBilledQ = (historyData?['billedQty'] as num?)?.toDouble() ?? 0.0;
     final double histBilledF = (historyData?['billedFreeQty'] as num?)?.toDouble() ?? 0.0;
     final double histOrigRate =
@@ -230,6 +237,22 @@ class DebitNoteCartWidget extends StatelessWidget {
           )
         : null;
     bool useSchemeNetRate = schemeCtx?.initialUseSchemeNetRate ?? false;
+
+    void syncNetRateFromInputs() {
+      final double q = double.tryParse(qtyC.text) ?? 0.0;
+      final double f = double.tryParse(freeC.text) ?? 0.0;
+      final double r = double.tryParse(purRateC.text) ?? 0.0;
+      final double dAmt = double.tryParse(discAmtC.text) ?? 0.0;
+      final double g = double.tryParse(gstC.text) ?? 0.0;
+      final double val = netRateInclGst
+          ? ItemNetRateHelper.computeLandedNetRate(
+              qty: q, freeQty: f, rate: r, discRupees: dAmt, gstRate: g)
+          : ItemNetRateHelper.computeTaxableNetRate(
+              qty: q, freeQty: f, rate: r, discRupees: dAmt);
+      netRateC.text = val.toStringAsFixed(2);
+    }
+
+    syncNetRateFromInputs();
 
     showDialog(
       context: context,
@@ -252,7 +275,11 @@ class DebitNoteCartWidget extends StatelessWidget {
               double q = double.tryParse(qtyC.text) ?? 0.0;
               double r = double.tryParse(purRateC.text) ?? 0.0;
               double gross = q * r;
-              if (gross <= 0) return;
+              if (gross <= 0) {
+                discAmtC.text = "0.00";
+                syncNetRateFromInputs();
+                return;
+              }
 
               if (isPercentSource) {
                 double p = double.tryParse(discPerC.text) ?? 0.0;
@@ -261,6 +288,46 @@ class DebitNoteCartWidget extends StatelessWidget {
                 double a = double.tryParse(discAmtC.text) ?? 0.0;
                 discPerC.text = ((a / gross) * 100).toStringAsFixed(2);
               }
+              syncNetRateFromInputs();
+            }
+
+            void onNetRateChanged(String raw) {
+              final double target = double.tryParse(raw) ?? 0.0;
+              final double rawQ = double.tryParse(qtyC.text) ?? 0.0;
+              final double qVal = rawQ > 0 ? rawQ : 1.0;
+              final double fVal = double.tryParse(freeC.text) ?? 0.0;
+              final double gVal = double.tryParse(gstC.text) ?? 0.0;
+              if (target <= 0) {
+                setDialogState(() {});
+                return;
+              }
+              if (netViaDisc) {
+                final double rVal = double.tryParse(purRateC.text) ?? 0.0;
+                final res = ItemNetRateHelper.reverseComputeDiscount(
+                  targetNetRate: target,
+                  qty: qVal,
+                  freeQty: fVal,
+                  rate: rVal,
+                  gstRate: gVal,
+                  isInclGst: netRateInclGst,
+                );
+                discPerC.text = res.discPer.toStringAsFixed(2);
+                discAmtC.text = (rawQ > 0 ? res.discAmt : 0.0).toStringAsFixed(2);
+              } else {
+                final double dPer = double.tryParse(discPerC.text) ?? 0.0;
+                final double newRate = ItemNetRateHelper.reverseComputeRate(
+                  targetNetRate: target,
+                  qty: qVal,
+                  freeQty: fVal,
+                  discPer: dPer,
+                  gstRate: gVal,
+                  isInclGst: netRateInclGst,
+                );
+                purRateC.text = newRate.toStringAsFixed(2);
+                final double gross = rawQ * newRate;
+                discAmtC.text = (gross * (dPer / 100.0)).toStringAsFixed(2);
+              }
+              setDialogState(() {});
             }
 
             void toggleSchemeMode(bool useNet) {
@@ -618,6 +685,7 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         onChanged: (_) => setDialogState(() {
                                               if (selectedRateType == "C")
                                                 calculateRateC();
+                                              syncNetRateFromInputs();
                                             }))),
                               ],
                             ),
@@ -633,7 +701,10 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         onSubmitted: (_) => executeSave())),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                    child: _dialogInput("FREE QTY", freeC, isNum: true)),
+                                    child: _dialogInput("FREE QTY", freeC,
+                                        isNum: true,
+                                        onChanged: (_) => setDialogState(
+                                            () => syncNetRateFromInputs()))),
                                 const SizedBox(width: 8),
                                 Expanded(
                                     child: _dialogInput("DISC %", discPerC,
@@ -647,6 +718,119 @@ class DebitNoteCartWidget extends StatelessWidget {
                                         onChanged: (_) =>
                                             setDialogState(() => syncDiscount(false)))),
                               ],
+                            ),
+                            const SizedBox(height: 12),
+                            Builder(
+                              builder: (_) {
+                                final double fQty = double.tryParse(freeC.text) ?? 0.0;
+                                final double taxableNet = ItemNetRateHelper.computeTaxableNetRate(
+                                    qty: q, freeQty: fQty, rate: pRate, discRupees: dAmt);
+                                final double landedNet = ItemNetRateHelper.computeLandedNetRate(
+                                    qty: q, freeQty: fQty, rate: pRate, discRupees: dAmt, gstRate: gPer);
+                                return Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0x44F59E0B)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            "NET RATE / UNIT (${netRateInclGst ? 'INCL. GST' : 'EXCL. GST'})",
+                                            style: const TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w900,
+                                              color: Color(0xFFFBBF24),
+                                              letterSpacing: 0.6,
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: () {
+                                              setDialogState(() {
+                                                netRateInclGst = !netRateInclGst;
+                                                syncNetRateFromInputs();
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: netRateInclGst ? const Color(0xFF0F766E) : const Color(0xFF1E293B),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: const Color(0x55F59E0B)),
+                                              ),
+                                              child: Text(
+                                                netRateInclGst ? "Incl. GST" : "Excl. GST",
+                                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                              ),
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: () => setDialogState(() => netViaDisc = !netViaDisc),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: netViaDisc ? const Color(0xFF2563EB) : const Color(0xFFD97706),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                netViaDisc ? "Via: Disc%" : "Via: Pur.Rate",
+                                                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            flex: 3,
+                                            child: _dialogInput(
+                                              "NET RATE ₹ (${netRateInclGst ? 'INCL. GST' : 'EXCL. GST'})",
+                                              netRateC,
+                                              isNum: true,
+                                              isHighlight: true,
+                                              onChanged: onNetRateChanged,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            flex: 4,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black26,
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: Colors.white12),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    "Taxable/u: ₹${taxableNet.toStringAsFixed(2)}",
+                                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70),
+                                                  ),
+                                                  Text(
+                                                    "Landed/u (incl GST): ₹${landedNet.toStringAsFixed(2)}",
+                                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFFBBF24)),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                             const SizedBox(height: 12),
                             Row(

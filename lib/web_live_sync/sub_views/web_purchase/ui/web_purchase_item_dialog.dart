@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:pharoah_erp/web_live_sync/web_models.dart';
 import 'package:pharoah_erp/web_live_sync/pharoah_web_manager.dart';
 import 'package:pharoah_erp/web_live_sync/sub_views/web_billing/web_batch_lookup_dialog.dart';
+import 'package:pharoah_erp/logic/item_net_rate_helper.dart';
 
 class WebPurchaseItemDialog extends StatefulWidget {
   final Medicine med;
@@ -42,13 +43,69 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
   final rateCDiscC = TextEditingController(text: "0.0");
   final discPerC = TextEditingController(text: "0.0");
   final discAmtC = TextEditingController(text: "0.0");
+  final netRateC = TextEditingController();
 
   String selectedRateType = "A";
+  bool _netRateInclGst = false;
+  bool _netViaDisc = false;
 
   @override
   void initState() {
     super.initState();
     _setupInitialData();
+  }
+
+  void _syncNetRateFromInputs() {
+    final double q = double.tryParse(qtyC.text) ?? 0.0;
+    final double f = double.tryParse(freeC.text) ?? 0.0;
+    final double r = double.tryParse(purRateC.text) ?? 0.0;
+    final double dAmt = double.tryParse(discAmtC.text) ?? 0.0;
+    final double g = double.tryParse(gstC.text) ?? 0.0;
+    final double val = _netRateInclGst
+        ? ItemNetRateHelper.computeLandedNetRate(
+            qty: q, freeQty: f, rate: r, discRupees: dAmt, gstRate: g)
+        : ItemNetRateHelper.computeTaxableNetRate(
+            qty: q, freeQty: f, rate: r, discRupees: dAmt);
+    netRateC.text = val.toStringAsFixed(2);
+  }
+
+  void _onNetRateChanged(String raw) {
+    final double target = double.tryParse(raw) ?? 0.0;
+    final double rawQ = double.tryParse(qtyC.text) ?? 0.0;
+    final double q = rawQ > 0 ? rawQ : 1.0;
+    final double f = double.tryParse(freeC.text) ?? 0.0;
+    final double g = double.tryParse(gstC.text) ?? 0.0;
+    if (target <= 0) {
+      setState(() {});
+      return;
+    }
+    if (_netViaDisc) {
+      final double r = double.tryParse(purRateC.text) ?? 0.0;
+      final res = ItemNetRateHelper.reverseComputeDiscount(
+        targetNetRate: target,
+        qty: q,
+        freeQty: f,
+        rate: r,
+        gstRate: g,
+        isInclGst: _netRateInclGst,
+      );
+      discPerC.text = res.discPer.toStringAsFixed(2);
+      discAmtC.text = (rawQ > 0 ? res.discAmt : 0.0).toStringAsFixed(2);
+    } else {
+      final double dPer = double.tryParse(discPerC.text) ?? 0.0;
+      final double newRate = ItemNetRateHelper.reverseComputeRate(
+        targetNetRate: target,
+        qty: q,
+        freeQty: f,
+        discPer: dPer,
+        gstRate: g,
+        isInclGst: _netRateInclGst,
+      );
+      purRateC.text = newRate.toStringAsFixed(2);
+      final double gross = rawQ * newRate;
+      discAmtC.text = (gross * (dPer / 100.0)).toStringAsFixed(2);
+    }
+    setState(() {});
   }
 
   void _setupInitialData() {
@@ -84,6 +141,7 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
     double formulaDisc = double.tryParse(rateCDiscC.text) ?? 0.0;
     double baseTaxable = (mrp / (1 + (gst / 100)));
     rateCC.text = (baseTaxable - (baseTaxable * (formulaDisc / 100))).toStringAsFixed(2);
+    _syncNetRateFromInputs();
     setState(() {});
   }
 
@@ -91,7 +149,12 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
     double q = double.tryParse(qtyC.text) ?? 0;
     double r = double.tryParse(purRateC.text) ?? 0;
     double gross = q * r;
-    if (gross <= 0) return;
+    if (gross <= 0) {
+      discAmtC.text = "0.00";
+      _syncNetRateFromInputs();
+      setState(() {});
+      return;
+    }
     if (isPercentSource) {
       double p = double.tryParse(discPerC.text) ?? 0;
       discAmtC.text = (gross * (p / 100)).toStringAsFixed(2);
@@ -99,6 +162,7 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
       double a = double.tryParse(discAmtC.text) ?? 0;
       discPerC.text = ((a / gross) * 100).toStringAsFixed(2);
     }
+    _syncNetRateFromInputs();
     setState(() {});
   }
 
@@ -284,7 +348,7 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
                           const SizedBox(width: 8),
                           Expanded(child: _inputField(label: "PUR. RATE ₹ *", ctrl: purRateC, isNum: true, onChanged: (_) => _syncDiscount(true))),
                           const SizedBox(width: 8),
-                          Expanded(child: _inputField(label: "GST %", ctrl: gstC, isNum: true, onChanged: (_) { if (selectedRateType == "C") _calcRateC(); })),
+                          Expanded(child: _inputField(label: "GST %", ctrl: gstC, isNum: true, onChanged: (_) { if (selectedRateType == "C") { _calcRateC(); } else { _syncNetRateFromInputs(); setState(() {}); } })),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -292,12 +356,124 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
                         children: [
                           Expanded(child: _inputField(label: "QTY *", ctrl: qtyC, isNum: true, onChanged: (_) => _syncDiscount(true))),
                           const SizedBox(width: 8),
-                          Expanded(child: _inputField(label: "FREE QTY", ctrl: freeC, isNum: true)),
+                          Expanded(child: _inputField(label: "FREE QTY", ctrl: freeC, isNum: true, onChanged: (_) { _syncNetRateFromInputs(); setState(() {}); })),
                           const SizedBox(width: 8),
                           Expanded(child: _inputField(label: "DISC %", ctrl: discPerC, isNum: true, onChanged: (_) => _syncDiscount(true))),
                           const SizedBox(width: 8),
                           Expanded(child: _inputField(label: "DISC ₹", ctrl: discAmtC, isNum: true, onChanged: (_) => _syncDiscount(false))),
                         ],
+                      ),
+                      const SizedBox(height: 12),
+                      Builder(
+                        builder: (_) {
+                          final double freeQtyVal = double.tryParse(freeC.text) ?? 0.0;
+                          final double taxableNet = ItemNetRateHelper.computeTaxableNetRate(
+                              qty: q, freeQty: freeQtyVal, rate: pRate, discRupees: dAmt);
+                          final double landedNet = ItemNetRateHelper.computeLandedNetRate(
+                              qty: q, freeQty: freeQtyVal, rate: pRate, discRupees: dAmt, gstRate: gPer);
+                          return Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0x44F59E0B)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      "NET RATE / UNIT (${_netRateInclGst ? 'INCL. GST' : 'EXCL. GST'})",
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        color: Color(0xFFFBBF24),
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () {
+                                        setState(() {
+                                          _netRateInclGst = !_netRateInclGst;
+                                          _syncNetRateFromInputs();
+                                        });
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: _netRateInclGst ? const Color(0xFF0F766E) : const Color(0xFF1E293B),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: const Color(0x55F59E0B)),
+                                        ),
+                                        child: Text(
+                                          _netRateInclGst ? "Incl. GST" : "Excl. GST",
+                                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () => setState(() => _netViaDisc = !_netViaDisc),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: _netViaDisc ? const Color(0xFF2563EB) : const Color(0xFFD97706),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          _netViaDisc ? "Via: Disc%" : "Via: Pur.Rate",
+                                          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: _inputField(
+                                        label: "NET RATE ₹ (${_netRateInclGst ? 'INCL. GST' : 'EXCL. GST'})",
+                                        ctrl: netRateC,
+                                        isNum: true,
+                                        onChanged: _onNetRateChanged,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      flex: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black26,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.white12),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              "Taxable/u: ₹${taxableNet.toStringAsFixed(2)}",
+                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70),
+                                            ),
+                                            Text(
+                                              "Landed/u (incl GST): ₹${landedNet.toStringAsFixed(2)}",
+                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFFFBBF24)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 12),
                       Row(
