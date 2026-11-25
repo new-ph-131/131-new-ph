@@ -32,6 +32,7 @@ class DebitNotePdf {
       fallbackBillNo: ret.origBillNo,
       fallbackDate: ret.origBillDate,
     );
+    final bool showReverseLabel = GstComplianceHelper.isCommercialNoteAllowed(config);
 
     // Logic: Categorization 100% aligned with plan
     final sellable = ret.items.where((i) => i.isBreakage == false).toList();
@@ -80,7 +81,7 @@ class DebitNotePdf {
                   pw.Text("No: ${ret.billNo} | ${ret.paymentMode.isNotEmpty ? ret.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                   pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
                   if (originSummary.headerBillNo.isNotEmpty)
-                    pw.Text("Orig: ${originSummary.headerBillNo}${originSummary.headerDate != null ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
+                    pw.Text("Orig: ${originSummary.headerBillNo}${(originSummary.uniqueCount == 1 && originSummary.headerDate != null) ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
                 ])),
                 _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                   pw.Text("SEND TO SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
@@ -92,15 +93,16 @@ class DebitNotePdf {
                 ])),
               ]),
 
-              // --- SYNCED TABLE GRID (13 COLUMNS - TOTAL 800PT) ---
+              // --- SYNCED TABLE GRID (15 COLUMNS - TOTAL 800PT WITH DISC% & TAXABLE) ---
               pw.Container(color: PdfColors.grey200, child: pw.Row(children: [
-                _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40), 
-                _tCol("Product Name", 160, isLeft: true), 
-                _tCol("Orig. Bill", 60),
-                _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
-                _tCol("MRP", 55), _tCol("Rate", 55), 
-                if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
-                _tCol("Total", 100, isLast: true), 
+                _tCol("S.N", 22), _tCol("Qty+Free", 44), _tCol("Pack", 35),
+                _tCol("Product Name", 132, isLeft: true),
+                _tCol("Orig. Bill", 58),
+                _tCol("Batch", 62), _tCol("Exp", 38), _tCol("HSN", 45),
+                _tCol("MRP", 46), _tCol("Rate", 46),
+                _tCol("Disc%", 34), _tCol("Taxable", 62),
+                if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
+                _tCol("Total", 96, isLast: true),
               ])),
 
               // --- SMART CONTENT ---
@@ -109,41 +111,50 @@ class DebitNotePdf {
                   return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))),
                   child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)));
                 }
-                // Field Mapping Fix: Using purchaseRate
                 PurchaseItem i = entry as PurchaseItem;
                 int sNo = ret.items.indexOf(i) + 1;
                 bool isShaded = config.useZebraShading && (sNo % 2 != 0);
-                
-                double taxableRow = (i.purchaseRate * i.qty) - i.discountRupees;
+
+                double grossRow = i.purchaseRate * i.qty;
+                double taxableRow = grossRow - i.discountRupees;
                 if (taxableRow < 0) taxableRow = 0.0;
-                double taxAmt = i.total - taxableRow;
+                double discPct = i.discountPer > 0
+                    ? i.discountPer
+                    : (grossRow > 0 && i.discountRupees > 0 ? (i.discountRupees / grossRow) * 100.0 : 0.0);
+                String discLabel = discPct > 0.005
+                    ? "${discPct % 1 == 0 ? discPct.toInt() : discPct.toStringAsFixed(1)}%"
+                    : "-";
+                double effGst = ret.isCommercial ? 0.0 : i.gstRate;
+                double taxAmt = ret.isCommercial ? 0.0 : (i.total - taxableRow);
                 if (taxAmt < 0) taxAmt = 0.0;
+                double rowTotal = ret.isCommercial ? taxableRow : i.total;
 
                 return pw.Container(
-                  color: isShaded ? PdfColors.grey50 : PdfColors.white,
-                  decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
+                  decoration: pw.BoxDecoration(color: isShaded ? PdfColors.grey50 : PdfColors.white, border: pw.Border(bottom: pw.BorderSide(width: 0.1))),
                   child: pw.Row(children: [
-                    _cell("$sNo", 25), 
-                    _cell("${fmt(i.qty)} + ${fmt(i.freeQty)}", 60), 
-                    _cell(i.packing, 40),
-                    pw.Container(width: 160, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1)),
-                    _origCell(i.origBillNo, i.origBillDate, 60),
-                    _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
-                    _cell(i.mrp.toStringAsFixed(2), 55), 
-                    _cell(i.purchaseRate.toStringAsFixed(2), 55),
+                    _cell("$sNo", 22),
+                    _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 44),
+                    _cell(i.packing, 35),
+                    pw.Container(width: 132, padding: const pw.EdgeInsets.only(left: 6), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1)),
+                    _origCell(i.origBillNo, i.origBillDate, 58),
+                    _cell(i.batch, 62), _cell(i.exp, 38), _cell(i.hsn, 45),
+                    _cell(i.mrp.toStringAsFixed(2), 46),
+                    _cell(i.purchaseRate.toStringAsFixed(2), 46),
+                    _cell(discLabel, 34),
+                    _cell(taxableRow.toStringAsFixed(2), 62),
                     if (isLocal) ...[
-                      _cell((taxAmt / 2).toStringAsFixed(1), 40),
-                      _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                      _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
+                      _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                     ] else ...[
-                      _cell("${i.gstRate.toStringAsFixed(1)}%", 35),
+                      _cell("${effGst.toStringAsFixed(1)}%", 35),
                       _cell(taxAmt.toStringAsFixed(1), 45),
                     ],
-                    _cell(i.total.toStringAsFixed(2), 100),
+                    _cell(rowTotal.toStringAsFixed(2), 96),
                   ]),
                 );
               }).toList())),
 
-              if (isLastPage) _buildFixedSyncFooter(shop.name, ret, isLocal)
+              if (isLastPage) _buildFixedSyncFooter(shop.name, ret, isLocal, showReverseLabel, config.signLabel)
             ]),
           ),
           pw.SizedBox(height: 4), // Professional margins spacer
@@ -176,6 +187,7 @@ class DebitNotePdf {
       fallbackBillNo: ret.origBillNo,
       fallbackDate: ret.origBillDate,
     );
+    final bool showReverseLabel = GstComplianceHelper.isCommercialNoteAllowed(config);
 
     final sellable = ret.items.where((i) => i.isBreakage == false).toList();
     final breakage = ret.items.where((i) => i.isBreakage == true).toList();
@@ -213,7 +225,7 @@ class DebitNotePdf {
                 pw.Text("No: ${ret.billNo} | ${ret.paymentMode.isNotEmpty ? ret.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                 pw.Text(DateFormat('dd/MM/yyyy').format(ret.date), style: pw.TextStyle(fontSize: 8)),
                 if (originSummary.headerBillNo.isNotEmpty)
-                  pw.Text("Orig: ${originSummary.headerBillNo}${originSummary.headerDate != null ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
+                  pw.Text("Orig: ${originSummary.headerBillNo}${(originSummary.uniqueCount == 1 && originSummary.headerDate != null) ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
               ])),
               _hBox(345, false, pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
                 pw.Text("SEND TO SUPPLIER:", style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold, color: PdfColors.grey700)),
@@ -222,36 +234,45 @@ class DebitNotePdf {
               ])),
             ]),
             pw.Container(color: PdfColors.grey200, child: pw.Row(children: [
-              _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40), _tCol("Product Name", 160, isLeft: true), _tCol("Orig. Bill", 60),
-              _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45), _tCol("MRP", 55), _tCol("Rate", 55), 
-              if (isLocal) ...[_tCol("CGST", 40), _tCol("SGST", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
-              _tCol("Total", 100, isLast: true), 
+              _tCol("S.N", 22), _tCol("Qty+Free", 44), _tCol("Pack", 35), _tCol("Product Name", 132, isLeft: true), _tCol("Orig. Bill", 58),
+              _tCol("Batch", 62), _tCol("Exp", 38), _tCol("HSN", 45), _tCol("MRP", 46), _tCol("Rate", 46),
+              _tCol("Disc%", 34), _tCol("Taxable", 62),
+              if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
+              _tCol("Total", 96, isLast: true),
             ])),
             pw.Expanded(child: pw.Column(children: pageItems.map((entry) {
               if (entry is String) return pw.Container(width: masterWidth, padding: const pw.EdgeInsets.all(3), decoration: pw.BoxDecoration(color: PdfColors.grey100, border: pw.Border(bottom: pw.BorderSide(width: 0.5))), child: pw.Text(entry, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)));
               PurchaseItem i = entry as PurchaseItem;
-              double taxableRow = (i.purchaseRate * i.qty) - i.discountRupees;
+              double grossRow = i.purchaseRate * i.qty;
+              double taxableRow = grossRow - i.discountRupees;
               if (taxableRow < 0) taxableRow = 0.0;
+              double discPct = i.discountPer > 0
+                  ? i.discountPer
+                  : (grossRow > 0 && i.discountRupees > 0 ? (i.discountRupees / grossRow) * 100.0 : 0.0);
+              String discLabel = discPct > 0.005
+                  ? "${discPct % 1 == 0 ? discPct.toInt() : discPct.toStringAsFixed(1)}%"
+                  : "-";
               double effGst = ret.isCommercial ? 0.0 : i.gstRate;
               double taxAmt = ret.isCommercial ? 0.0 : (i.total - taxableRow);
               if (taxAmt < 0) taxAmt = 0.0;
               double rowTotal = ret.isCommercial ? taxableRow : i.total;
               return pw.Container(decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1))), child: pw.Row(children: [
-                  _cell("${ret.items.indexOf(i) + 1}", 25), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 60), _cell(i.packing, 40),
-                  pw.Container(width: 160, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1)),
-                  _origCell(i.origBillNo, i.origBillDate, 60),
-                  _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 55), _cell(i.purchaseRate.toStringAsFixed(2), 55),
+                  _cell("${ret.items.indexOf(i) + 1}", 22), _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 44), _cell(i.packing, 35),
+                  pw.Container(width: 132, padding: const pw.EdgeInsets.only(left: 6), alignment: pw.Alignment.centerLeft, child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1)),
+                  _origCell(i.origBillNo, i.origBillDate, 58),
+                  _cell(i.batch, 62), _cell(i.exp, 38), _cell(i.hsn, 45), _cell(i.mrp.toStringAsFixed(2), 46), _cell(i.purchaseRate.toStringAsFixed(2), 46),
+                  _cell(discLabel, 34), _cell(taxableRow.toStringAsFixed(2), 62),
                   if (isLocal) ...[
-                    _cell((taxAmt / 2).toStringAsFixed(1), 40),
-                    _cell((taxAmt / 2).toStringAsFixed(1), 40),
+                    _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
+                    _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                   ] else ...[
                     _cell("${effGst.toStringAsFixed(1)}%", 35),
                     _cell(taxAmt.toStringAsFixed(1), 45),
                   ],
-                  _cell(rowTotal.toStringAsFixed(2), 100),
+                  _cell(rowTotal.toStringAsFixed(2), 96),
               ]));
             }).toList())),
-            if (isLastPage) _buildFixedSyncFooter(shop.name, ret, isLocal)
+            if (isLastPage) _buildFixedSyncFooter(shop.name, ret, isLocal, showReverseLabel, config.signLabel)
           ])),
       ));
     }
@@ -282,7 +303,7 @@ class DebitNotePdf {
     );
   }
 
-  static pw.Widget _buildFixedSyncFooter(String n, PurchaseReturn ret, bool local) {
+  static pw.Widget _buildFixedSyncFooter(String n, PurchaseReturn ret, bool local, bool showReverseLabel, String signLabel) {
     final originSummary = GstComplianceHelper.summarizeOriginInvoices(
       ret.items,
       fallbackBillNo: ret.origBillNo,
@@ -294,6 +315,8 @@ class DebitNotePdf {
       isLocal: local,
       isCommercial: ret.isCommercial,
     );
+    final double totalItemDisc = ret.items.fold(0.0, (sum, it) => sum + (it.discountRupees > 0 ? it.discountRupees : 0.0));
+    final String sigText = signLabel.trim().isNotEmpty ? signLabel.trim().toUpperCase() : "AUTHORISED SIGNATORY";
     return pw.Container(height: 110, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
       pw.Container(width: 330, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
         pw.Text("Amt Words: RUPEES ${PdfMasterService.numberToWords(summary.finalGrandTotal.round())} ONLY", style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
@@ -303,19 +326,22 @@ class DebitNotePdf {
         pw.Text(
           ret.isCommercial
               ? "Commercial Debit Note (Without GST / Sec 34(2) CGST Act)."
-              : "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant).",
+              : (!showReverseLabel
+                  ? "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant) | Reverse Charge: No"
+                  : "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant)."),
           style: pw.TextStyle(fontSize: 6, color: ret.isCommercial ? PdfColors.orange900 : PdfColors.black),
         ),
       ])),
-      pw.Container(width: 250, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
+      pw.Container(width: 250, padding: const pw.EdgeInsets.all(4), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
+        if (totalItemDisc > 0.005) _fRow("ITEM DISC (-)", totalItemDisc),
         _fRow("GROSS TAXABLE", summary.grossTaxable),
         if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
         if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
         if (local) ...[
-          if (summary.totalCGST > 0) _fRow("CGST REVERSE", summary.totalCGST),
-          if (summary.totalSGST > 0) _fRow("SGST REVERSE", summary.totalSGST),
+          if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST", summary.totalCGST),
+          if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST", summary.totalSGST),
         ] else ...[
-          if (summary.totalIGST > 0) _fRow("IGST REVERSE", summary.totalIGST),
+          if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST", summary.totalIGST),
         ],
         if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
         pw.Divider(thickness: 0.5),
@@ -327,7 +353,7 @@ class DebitNotePdf {
       pw.Container(width: 220, padding: const pw.EdgeInsets.all(5), child: pw.Column(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
         pw.Text("For $n", style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
         pw.SizedBox(height: 30),
-        pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
+        pw.Text(sigText, style: pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
       ])),
     ]));
   }

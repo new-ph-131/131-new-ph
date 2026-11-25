@@ -316,7 +316,7 @@ class CreditNoteController extends ChangeNotifier {
         status: "Active",
       );
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
-      await WebPdfRouterService.printCreditNote(returnObj: newReturn, party: selectedCustomer!, shop: shopProfile);
+      await WebPdfRouterService.printCreditNote(returnObj: newReturn, party: selectedCustomer!, shop: shopProfile, sales: webPh.sales, config: webPh.appConfig);
     }
 
     isSaving = false;

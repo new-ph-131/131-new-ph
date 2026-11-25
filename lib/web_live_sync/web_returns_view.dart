@@ -567,9 +567,9 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                               onPressed: () {
                                 final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
                                 if (isCn) {
-                                  WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop, sales: webPh.sales);
+                                  WebPdfRouterService.printCreditNote(returnObj: item, party: pObj, shop: activeShop, sales: webPh.sales, config: webPh.appConfig);
                                 } else {
-                                  WebPdfRouterService.printDebitNote(returnObj: item, party: pObj, shop: activeShop, purchases: webPh.purchases);
+                                  WebPdfRouterService.printDebitNote(returnObj: item, party: pObj, shop: activeShop, purchases: webPh.purchases, config: webPh.appConfig);
                                 }
                               },
                             ),
@@ -579,9 +579,9 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                               onPressed: () {
                                 final pObj = webPh.parties.firstWhere((p) => p.name == party, orElse: () => Party(id: 'temp', name: party));
                                 if (isCn) {
-                                  WebPdfRouterService.downloadCreditNotePdf(returnObj: item, party: pObj, shop: activeShop, sales: webPh.sales);
+                                  WebPdfRouterService.downloadCreditNotePdf(returnObj: item, party: pObj, shop: activeShop, sales: webPh.sales, config: webPh.appConfig);
                                 } else {
-                                  WebPdfRouterService.downloadDebitNotePdf(returnObj: item, party: pObj, shop: activeShop, purchases: webPh.purchases);
+                                  WebPdfRouterService.downloadDebitNotePdf(returnObj: item, party: pObj, shop: activeShop, purchases: webPh.purchases, config: webPh.appConfig);
                                 }
                               },
                             ),

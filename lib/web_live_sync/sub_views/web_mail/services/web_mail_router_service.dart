@@ -157,6 +157,7 @@ class WebMailRouterService {
             party: party,
             shop: shop,
             sales: webPh.sales,
+            config: webPh.appConfig,
           );
         } else if (doc is PurchaseReturn) {
           docNo = doc.billNo;
@@ -165,6 +166,7 @@ class WebMailRouterService {
             party: party,
             shop: shop,
             purchases: webPh.purchases,
+            config: webPh.appConfig,
           );
         } else {
           return;
@@ -329,7 +331,7 @@ class WebMailRouterService {
             orElse: () => Party(id: 'temp', name: doc.partyName),
           );
           if (onProgress != null) onProgress((i + 1) / documents.length, p.name);
-          pdfBytes = await WebPdfRouterService.generateCreditNoteBytes(returnObj: doc, party: p, shop: shop, sales: webPh.sales);
+          pdfBytes = await WebPdfRouterService.generateCreditNoteBytes(returnObj: doc, party: p, shop: shop, sales: webPh.sales, config: webPh.appConfig);
         } else if (doc is PurchaseReturn) {
           fileNo = doc.billNo;
           final p = webPh.parties.firstWhere(
@@ -337,7 +339,7 @@ class WebMailRouterService {
             orElse: () => Party(id: 'temp', name: doc.distributorName),
           );
           if (onProgress != null) onProgress((i + 1) / documents.length, p.name);
-          pdfBytes = await WebPdfRouterService.generateDebitNoteBytes(returnObj: doc, party: p, shop: shop, purchases: webPh.purchases);
+          pdfBytes = await WebPdfRouterService.generateDebitNoteBytes(returnObj: doc, party: p, shop: shop, purchases: webPh.purchases, config: webPh.appConfig);
         } else {
           continue;
         }

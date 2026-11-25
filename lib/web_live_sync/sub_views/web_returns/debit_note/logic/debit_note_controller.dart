@@ -318,7 +318,7 @@ class DebitNoteController extends ChangeNotifier {
         status: "Active",
       );
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
-      await WebPdfRouterService.printDebitNote(returnObj: newReturn, party: selectedSupplier!, shop: shopProfile);
+      await WebPdfRouterService.printDebitNote(returnObj: newReturn, party: selectedSupplier!, shop: shopProfile, purchases: webPh.purchases, config: webPh.appConfig);
     }
 
     isSaving = false;

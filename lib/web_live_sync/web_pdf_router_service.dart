@@ -620,6 +620,7 @@ class WebPdfRouterService {
     required Party party,
     required CompanyProfile shop,
     List<Sale>? sales,
+    AppConfig? config,
   }) async {
     final pdf = pw.Document();
     const double masterWidth = 800;
@@ -662,6 +663,8 @@ class WebPdfRouterService {
       fallbackBillNo: effectiveReturn.origBillNo,
       fallbackDate: effectiveReturn.origBillDate,
     );
+    final bool showReverseLabel = config != null && GstComplianceHelper.isCommercialNoteAllowed(config);
+    final String signLabel = config?.signLabel ?? "";
 
     String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
     bool isLocal = GstComplianceHelper.isIntraStateReturn(
@@ -730,7 +733,7 @@ class WebPdfRouterService {
                               pw.Text("CN: ${effectiveReturn.billNo} | ${effectiveReturn.paymentMode.isNotEmpty ? effectiveReturn.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                               pw.Text(DateFormat("dd/MM/yyyy").format(effectiveReturn.date), style: pw.TextStyle(fontSize: 8)),
                               if (originSummary.headerBillNo.isNotEmpty)
-                                pw.Text("Orig: ${originSummary.headerBillNo}${originSummary.headerDate != null ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
+                                pw.Text("Orig: ${originSummary.headerBillNo}${(originSummary.uniqueCount == 1 && originSummary.headerDate != null) ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
                             ],
                           ),
                         ),
@@ -751,18 +754,19 @@ class WebPdfRouterService {
                       ],
                     ),
 
-                    // Table Header
+                    // Table Header (15 Columns - 800pt with Disc% & Taxable)
                     pw.Container(
                       color: PdfColors.grey200,
                       child: pw.Row(
                         children: [
-                          _tCol("S.N", 25), _tCol("Qty+Free", 50), _tCol("Pack", 40),
-                          _tCol("Description", 150, isLeft: true),
-                          _tCol("Orig. Inv", 60),
-                          _tCol("Batch", 70), _tCol("Exp", 45), _tCol("HSN", 45),
-                          _tCol("MRP", 55), _tCol("Rate", 55),
-                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else _tCol("IGST%", 80),
-                          _tCol("Total", 125, isLast: true),
+                          _tCol("S.N", 22), _tCol("Qty+Free", 44), _tCol("Pack", 35),
+                          _tCol("Description", 132, isLeft: true),
+                          _tCol("Orig. Inv", 58),
+                          _tCol("Batch", 62), _tCol("Exp", 38), _tCol("HSN", 45),
+                          _tCol("MRP", 46), _tCol("Rate", 46),
+                          _tCol("Disc%", 34), _tCol("Taxable", 62),
+                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
+                          _tCol("Total", 96, isLast: true),
                         ],
                       ),
                     ),
@@ -783,9 +787,18 @@ class WebPdfRouterService {
                           }
                           BillItem i = entry as BillItem;
                           String qtyDisp = "${fmt(i.qty)}+${fmt(i.freeQty)}";
-                          double taxableRow = (i.qty * i.rate) - i.discountRupees;
+                          double grossRow = i.qty * i.rate;
+                          double taxableRow = grossRow - i.discountRupees;
                           if (taxableRow < 0) taxableRow = 0.0;
+                          double discPct = i.discountPer > 0
+                              ? i.discountPer
+                              : (grossRow > 0 && i.discountRupees > 0 ? (i.discountRupees / grossRow) * 100.0 : 0.0);
+                          String discLabel = discPct > 0.005
+                              ? "${discPct % 1 == 0 ? discPct.toInt() : discPct.toStringAsFixed(1)}%"
+                              : "-";
                           double effGst = effectiveReturn.isCommercial ? 0.0 : i.gstRate;
+                          double taxAmt = effectiveReturn.isCommercial ? 0.0 : (i.total - taxableRow);
+                          if (taxAmt < 0) taxAmt = 0.0;
                           double rowTotal = effectiveReturn.isCommercial ? taxableRow : i.total;
 
                           return pw.Container(
@@ -793,24 +806,27 @@ class WebPdfRouterService {
                             decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
                             child: pw.Row(
                               children: [
-                                _cell("${effectiveReturn.items.indexOf(i) + 1}", 25),
-                                _cell(qtyDisp, 50),
-                                _cell(i.packing, 40),
+                                _cell("${effectiveReturn.items.indexOf(i) + 1}", 22),
+                                _cell(qtyDisp, 44),
+                                _cell(i.packing, 35),
                                 pw.Container(
-                                  width: 150, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
+                                  width: 132, padding: const pw.EdgeInsets.only(left: 6), alignment: pw.Alignment.centerLeft,
                                   child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1),
                                 ),
-                                _origCell(i.origBillNo, i.origBillDate, 60),
-                                _cell(i.batch, 70), _cell(i.exp, 45), _cell(i.hsn, 45),
-                                _cell(i.mrp.toStringAsFixed(2), 55),
-                                _cell(i.rate.toStringAsFixed(2), 55),
+                                _origCell(i.origBillNo, i.origBillDate, 58),
+                                _cell(i.batch, 62), _cell(i.exp, 38), _cell(i.hsn, 45),
+                                _cell(i.mrp.toStringAsFixed(2), 46),
+                                _cell(i.rate.toStringAsFixed(2), 46),
+                                _cell(discLabel, 34),
+                                _cell(taxableRow.toStringAsFixed(2), 62),
                                 if (isLocal) ...[
                                   _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                                   _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                                 ] else ...[
-                                  _cell("${effGst.toStringAsFixed(1)}%", 80),
+                                  _cell("${effGst.toStringAsFixed(1)}%", 35),
+                                  _cell(taxAmt.toStringAsFixed(1), 45),
                                 ],
-                                _cell(rowTotal.toStringAsFixed(2), 125),
+                                _cell(rowTotal.toStringAsFixed(2), 96),
                               ],
                             ),
                           );
@@ -819,7 +835,7 @@ class WebPdfRouterService {
                     ),
 
                     // Page Footer Dock
-                    if (isLastPage) _buildCreditNoteFooter(shop.name, effectiveReturn, isLocal)
+                    if (isLastPage) _buildCreditNoteFooter(shop.name, effectiveReturn, isLocal, showReverseLabel, signLabel)
                     else pw.Container(
                       height: 20, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
                       child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
@@ -843,7 +859,7 @@ class WebPdfRouterService {
     return pdf.save();
   }
 
-  static pw.Widget _buildCreditNoteFooter(String shopName, SaleReturn returnObj, bool isLocal) {
+  static pw.Widget _buildCreditNoteFooter(String shopName, SaleReturn returnObj, bool isLocal, bool showReverseLabel, String signLabel) {
     final originSummary = GstComplianceHelper.summarizeOriginInvoices(
       returnObj.items,
       fallbackBillNo: returnObj.origBillNo,
@@ -855,8 +871,10 @@ class WebPdfRouterService {
       isLocal: isLocal,
       isCommercial: returnObj.isCommercial,
     );
+    final double totalItemDisc = returnObj.items.fold(0.0, (sum, it) => sum + (it.discountRupees > 0 ? it.discountRupees : 0.0));
+    final String sigText = signLabel.trim().isNotEmpty ? signLabel.trim().toUpperCase() : "AUTHORISED SIGNATORY";
     return pw.Container(
-      height: 100,
+      height: 110,
       decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
       child: pw.Row(
         children: [
@@ -873,8 +891,10 @@ class WebPdfRouterService {
                 pw.Text(
                   returnObj.isCommercial
                       ? "Commercial Credit Note (Without GST / Sec 34(2) CGST Act)."
-                      : "Verified return account settlement (Section 34 CGST Compliant).",
-                  style: pw.TextStyle(fontSize: 7, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.black),
+                      : (!showReverseLabel
+                          ? "Verified return account settlement (Section 34 CGST Compliant) | Reverse Charge: No"
+                          : "Verified return account settlement (Section 34 CGST Compliant)."),
+                  style: pw.TextStyle(fontSize: 6.5, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.black),
                 ),
               ],
             ),
@@ -884,14 +904,15 @@ class WebPdfRouterService {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
+                if (totalItemDisc > 0.005) _fRow("ITEM DISC (-)", totalItemDisc),
                 _fRow("GROSS TAXABLE", summary.grossTaxable),
                 if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
                 if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  if (summary.totalCGST > 0) _fRow("CGST REVERSE", summary.totalCGST),
-                  if (summary.totalSGST > 0) _fRow("SGST REVERSE", summary.totalSGST),
+                  if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST", summary.totalSGST),
                 ] else ...[
-                  if (summary.totalIGST > 0) _fRow("IGST REVERSE", summary.totalIGST),
+                  if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST", summary.totalIGST),
                 ],
                 if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
@@ -916,7 +937,7 @@ class WebPdfRouterService {
                 ),
                 pw.Align(
                   alignment: pw.Alignment.bottomRight,
-                  child: pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+                  child: pw.Text(sigText, style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
                 ),
               ],
             ),
@@ -931,8 +952,9 @@ class WebPdfRouterService {
     required Party party,
     required CompanyProfile shop,
     List<Sale>? sales,
+    AppConfig? config,
   }) async {
-    final bytes = await generateCreditNoteBytes(returnObj: returnObj, party: party, shop: shop, sales: sales);
+    final bytes = await generateCreditNoteBytes(returnObj: returnObj, party: party, shop: shop, sales: sales, config: config);
     await Printing.layoutPdf(onLayout: (_) async => bytes, name: "CreditNote_${returnObj.billNo}", format: PdfPageFormat.a4.landscape);
   }
 
@@ -941,8 +963,9 @@ class WebPdfRouterService {
     required Party party,
     required CompanyProfile shop,
     List<Sale>? sales,
+    AppConfig? config,
   }) async {
-    final bytes = await generateCreditNoteBytes(returnObj: returnObj, party: party, shop: shop, sales: sales);
+    final bytes = await generateCreditNoteBytes(returnObj: returnObj, party: party, shop: shop, sales: sales, config: config);
     await Printing.sharePdf(bytes: bytes, filename: "CreditNote_${returnObj.billNo}.pdf");
   }
 
@@ -954,6 +977,7 @@ class WebPdfRouterService {
     required Party party,
     required CompanyProfile shop,
     List<Purchase>? purchases,
+    AppConfig? config,
   }) async {
     final pdf = pw.Document();
     const double masterWidth = 800;
@@ -996,6 +1020,8 @@ class WebPdfRouterService {
       fallbackBillNo: effectiveReturn.origBillNo,
       fallbackDate: effectiveReturn.origBillDate,
     );
+    final bool showReverseLabel = config != null && GstComplianceHelper.isCommercialNoteAllowed(config);
+    final String signLabel = config?.signLabel ?? "";
 
     String fmt(double v) => v % 1 == 0 ? v.toInt().toString() : v.toStringAsFixed(1);
     bool isLocal = GstComplianceHelper.isIntraStateReturn(
@@ -1064,7 +1090,7 @@ class WebPdfRouterService {
                               pw.Text("No: ${effectiveReturn.billNo} | ${effectiveReturn.paymentMode.isNotEmpty ? effectiveReturn.paymentMode : 'CREDIT'}", style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                               pw.Text(DateFormat("dd/MM/yyyy").format(effectiveReturn.date), style: pw.TextStyle(fontSize: 8)),
                               if (originSummary.headerBillNo.isNotEmpty)
-                                pw.Text("Orig: ${originSummary.headerBillNo}${originSummary.headerDate != null ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
+                                pw.Text("Orig: ${originSummary.headerBillNo}${(originSummary.uniqueCount == 1 && originSummary.headerDate != null) ? ' (${DateFormat('dd/MM/yy').format(originSummary.headerDate!)})' : ''}", style: pw.TextStyle(fontSize: 6.5), maxLines: 1),
                             ],
                           ),
                         ),
@@ -1083,18 +1109,19 @@ class WebPdfRouterService {
                       ],
                     ),
 
-                    // Table Header: 12 Columns matching App layout
+                    // Table Header: 15 Columns matching App layout (800pt with Disc% & Taxable)
                     pw.Container(
                       color: PdfColors.grey200,
                       child: pw.Row(
                         children: [
-                          _tCol("S.N", 25), _tCol("Qty+Free", 60), _tCol("Pack", 40),
-                          _tCol("Product Name", 160, isLeft: true),
-                          _tCol("Orig. Bill", 60),
-                          _tCol("Batch", 75), _tCol("Exp", 45), _tCol("HSN", 45),
-                          _tCol("MRP", 55), _tCol("Rate", 55),
-                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else _tCol("IGST%", 80),
-                          _tCol("Total", 100, isLast: true),
+                          _tCol("S.N", 22), _tCol("Qty+Free", 44), _tCol("Pack", 35),
+                          _tCol("Product Name", 132, isLeft: true),
+                          _tCol("Orig. Bill", 58),
+                          _tCol("Batch", 62), _tCol("Exp", 38), _tCol("HSN", 45),
+                          _tCol("MRP", 46), _tCol("Rate", 46),
+                          _tCol("Disc%", 34), _tCol("Taxable", 62),
+                          if (isLocal) ...[_tCol("CGST%", 40), _tCol("SGST%", 40)] else ...[_tCol("GST%", 35), _tCol("IGST", 45)],
+                          _tCol("Total", 96, isLast: true),
                         ],
                       ),
                     ),
@@ -1115,33 +1142,45 @@ class WebPdfRouterService {
                           }
                           PurchaseItem i = entry as PurchaseItem;
                           int sNo = effectiveReturn.items.indexOf(i) + 1;
-                          double taxableRow = (i.purchaseRate * i.qty) - i.discountRupees;
+                          double grossRow = i.purchaseRate * i.qty;
+                          double taxableRow = grossRow - i.discountRupees;
                           if (taxableRow < 0) taxableRow = 0.0;
+                          double discPct = i.discountPer > 0
+                              ? i.discountPer
+                              : (grossRow > 0 && i.discountRupees > 0 ? (i.discountRupees / grossRow) * 100.0 : 0.0);
+                          String discLabel = discPct > 0.005
+                              ? "${discPct % 1 == 0 ? discPct.toInt() : discPct.toStringAsFixed(1)}%"
+                              : "-";
                           double effGst = effectiveReturn.isCommercial ? 0.0 : i.gstRate;
+                          double taxAmt = effectiveReturn.isCommercial ? 0.0 : (i.total - taxableRow);
+                          if (taxAmt < 0) taxAmt = 0.0;
                           double rowTotal = effectiveReturn.isCommercial ? taxableRow : i.total;
                           return pw.Container(
                             height: 18,
                             decoration: pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.1, color: PdfColors.grey400))),
                             child: pw.Row(
                               children: [
-                                _cell("$sNo", 25),
-                                _cell("${fmt(i.qty)} + ${fmt(i.freeQty)}", 60),
-                                _cell(i.packing, 40),
+                                _cell("$sNo", 22),
+                                _cell("${fmt(i.qty)}+${fmt(i.freeQty)}", 44),
+                                _cell(i.packing, 35),
                                 pw.Container(
-                                  width: 160, padding: const pw.EdgeInsets.only(left: 8), alignment: pw.Alignment.centerLeft,
+                                  width: 132, padding: const pw.EdgeInsets.only(left: 6), alignment: pw.Alignment.centerLeft,
                                   child: pw.Text(i.name, style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold), maxLines: 1),
                                 ),
-                                _origCell(i.origBillNo, i.origBillDate, 60),
-                                _cell(i.batch, 75), _cell(i.exp, 45), _cell(i.hsn, 45),
-                                _cell(i.mrp.toStringAsFixed(2), 55),
-                                _cell(i.purchaseRate.toStringAsFixed(2), 55),
+                                _origCell(i.origBillNo, i.origBillDate, 58),
+                                _cell(i.batch, 62), _cell(i.exp, 38), _cell(i.hsn, 45),
+                                _cell(i.mrp.toStringAsFixed(2), 46),
+                                _cell(i.purchaseRate.toStringAsFixed(2), 46),
+                                _cell(discLabel, 34),
+                                _cell(taxableRow.toStringAsFixed(2), 62),
                                 if (isLocal) ...[
                                   _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                                   _cell("${(effGst / 2).toStringAsFixed(1)}%", 40),
                                 ] else ...[
-                                  _cell("${effGst.toStringAsFixed(1)}%", 80),
+                                  _cell("${effGst.toStringAsFixed(1)}%", 35),
+                                  _cell(taxAmt.toStringAsFixed(1), 45),
                                 ],
-                                _cell(rowTotal.toStringAsFixed(2), 100),
+                                _cell(rowTotal.toStringAsFixed(2), 96),
                               ],
                             ),
                           );
@@ -1150,7 +1189,7 @@ class WebPdfRouterService {
                     ),
 
                     // Footer with 3 Boxes (Total in the center)
-                    if (isLastPage) _buildFixedSyncFooter(shop.name, effectiveReturn, isLocal)
+                    if (isLastPage) _buildFixedSyncFooter(shop.name, effectiveReturn, isLocal, showReverseLabel, signLabel)
                     else pw.Container(
                       height: 25, alignment: pw.Alignment.centerRight, padding: const pw.EdgeInsets.only(right: 20),
                       child: pw.Text("Continued on next page...", style: pw.TextStyle(fontStyle: pw.FontStyle.italic, fontSize: 8)),
@@ -1175,7 +1214,7 @@ class WebPdfRouterService {
   }
 
   // Exact 3-Box Footer matching App Layout
-  static pw.Widget _buildFixedSyncFooter(String shopName, PurchaseReturn returnObj, bool isLocal) {
+  static pw.Widget _buildFixedSyncFooter(String shopName, PurchaseReturn returnObj, bool isLocal, bool showReverseLabel, String signLabel) {
     final originSummary = GstComplianceHelper.summarizeOriginInvoices(
       returnObj.items,
       fallbackBillNo: returnObj.origBillNo,
@@ -1187,8 +1226,10 @@ class WebPdfRouterService {
       isLocal: isLocal,
       isCommercial: returnObj.isCommercial,
     );
+    final double totalItemDisc = returnObj.items.fold(0.0, (sum, it) => sum + (it.discountRupees > 0 ? it.discountRupees : 0.0));
+    final String sigText = signLabel.trim().isNotEmpty ? signLabel.trim().toUpperCase() : "AUTHORISED SIGNATORY";
     return pw.Container(
-      height: 100,
+      height: 110,
       decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))),
       child: pw.Row(
         children: [
@@ -1206,8 +1247,10 @@ class WebPdfRouterService {
                 pw.Text(
                   returnObj.isCommercial
                       ? "Commercial Debit Note (Without GST / Sec 34(2) CGST Act)."
-                      : "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant).",
-                  style: pw.TextStyle(fontSize: 6.5, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.grey700),
+                      : (!showReverseLabel
+                          ? "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant) | Reverse Charge: No"
+                          : "Note: Outward Debit Settlement with Distributor (Section 34 CGST Compliant)."),
+                  style: pw.TextStyle(fontSize: 6, color: returnObj.isCommercial ? PdfColors.orange900 : PdfColors.grey700),
                 ),
               ],
             ),
@@ -1218,14 +1261,15 @@ class WebPdfRouterService {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
+                if (totalItemDisc > 0.005) _fRow("ITEM DISC (-)", totalItemDisc),
                 _fRow("GROSS TAXABLE", summary.grossTaxable),
                 if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
                 if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  if (summary.totalCGST > 0) _fRow("CGST REVERSE", summary.totalCGST),
-                  if (summary.totalSGST > 0) _fRow("SGST REVERSE", summary.totalSGST),
+                  if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST", summary.totalSGST),
                 ] else ...[
-                  if (summary.totalIGST > 0) _fRow("IGST REVERSE", summary.totalIGST),
+                  if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST", summary.totalIGST),
                 ],
                 if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
@@ -1251,7 +1295,7 @@ class WebPdfRouterService {
                 ),
                 pw.Align(
                   alignment: pw.Alignment.bottomRight,
-                  child: pw.Text("AUTHORISED SIGNATORY", style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+                  child: pw.Text(sigText, style: pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
                 ),
               ],
             ),
@@ -1266,8 +1310,9 @@ class WebPdfRouterService {
     required Party party,
     required CompanyProfile shop,
     List<Purchase>? purchases,
+    AppConfig? config,
   }) async {
-    final bytes = await generateDebitNoteBytes(returnObj: returnObj, party: party, shop: shop, purchases: purchases);
+    final bytes = await generateDebitNoteBytes(returnObj: returnObj, party: party, shop: shop, purchases: purchases, config: config);
     await Printing.layoutPdf(onLayout: (_) async => bytes, name: "DebitNote_${returnObj.billNo}", format: PdfPageFormat.a4.landscape);
   }
 
@@ -1276,8 +1321,9 @@ class WebPdfRouterService {
     required Party party,
     required CompanyProfile shop,
     List<Purchase>? purchases,
+    AppConfig? config,
   }) async {
-    final bytes = await generateDebitNoteBytes(returnObj: returnObj, party: party, shop: shop, purchases: purchases);
+    final bytes = await generateDebitNoteBytes(returnObj: returnObj, party: party, shop: shop, purchases: purchases, config: config);
     await Printing.sharePdf(bytes: bytes, filename: "DebitNote_${returnObj.billNo}.pdf");
   }
 
