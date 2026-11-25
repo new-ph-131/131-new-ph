@@ -35,6 +35,7 @@ class _WebReturnsViewState extends State<WebReturnsView> {
   dynamic recordToEdit;
   bool isReadOnlyMode = false;
   bool showCancelled = false;
+  bool openBreakageMode = false;
 
   DateTime regFromDate = DateTime.now();
   DateTime regToDate = DateTime.now();
@@ -49,7 +50,8 @@ class _WebReturnsViewState extends State<WebReturnsView> {
     } else if (widget.initialAction == "GO_DN" || widget.initialTabIndex == 1) {
       activeSubView = "DN";
     } else if (widget.initialAction == "GO_BREAKAGE") {
-      activeSubView = "CN"; // Handled seamlessly inside Credit Note with Breakage mode
+      activeSubView = "CN";
+      openBreakageMode = true;
     } else if (widget.initialAction == "GO_RET_REG" || widget.initialTabIndex == 2) {
       activeSubView = "REGISTER";
     } else {
@@ -136,10 +138,12 @@ class _WebReturnsViewState extends State<WebReturnsView> {
       return WebCreditNoteScreen(
         existingRecord: recordToEdit is SaleReturn ? recordToEdit : null,
         isReadOnly: isReadOnlyMode,
+        initialBreakageMode: openBreakageMode,
         onBack: () => setState(() {
           activeSubView = "HUB";
           recordToEdit = null;
           isReadOnlyMode = false;
+          openBreakageMode = false;
         }),
       );
     }
@@ -224,6 +228,7 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     onTap: () => setState(() {
                       recordToEdit = null;
                       isReadOnlyMode = false;
+                      openBreakageMode = false;
                       activeSubView = "CN";
                     }),
                   ),
@@ -248,6 +253,7 @@ class _WebReturnsViewState extends State<WebReturnsView> {
                     onTap: () => setState(() {
                       recordToEdit = null;
                       isReadOnlyMode = false;
+                      openBreakageMode = true;
                       activeSubView = "CN";
                     }),
                   ),

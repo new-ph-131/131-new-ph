@@ -1,4 +1,5 @@
 // FILE: lib/web_live_sync/sub_views/web_returns/credit_note/logic/credit_note_controller.dart
+// ignore_for_file: prefer_const_constructors, unnecessary_const
 
 import 'package:flutter/material.dart';
 import '../../../../web_models.dart';
@@ -8,10 +9,12 @@ import '../../../../web_pdf_router_service.dart';
 import '../mechanism/credit_note_mechanism.dart';
 import '../../../web_billing/mechanism/web_billing_gst_engine.dart';
 import '../../../../../logic/gst_compliance_helper.dart';
+import '../../../../../logic/return_history_engine.dart';
 
 class CreditNoteController extends ChangeNotifier {
   final TextEditingController noteNoC = TextEditingController();
   final TextEditingController extraDiscC = TextEditingController(text: "0");
+  final TextEditingController extraDiscPerC = TextEditingController(text: "0");
   final TextEditingController remarksC = TextEditingController();
   final TextEditingController origBillNoC = TextEditingController();
   DateTime? origBillDate;
@@ -35,16 +38,22 @@ class CreditNoteController extends ChangeNotifier {
     required PharoahWebManager webPh,
     SaleReturn? existingRecord,
     bool readOnly = false,
+    bool initialBreakageMode = false,
   }) {
     isReadOnly = readOnly;
-    shopState = (webPh.companyProfile['state'] != null && webPh.companyProfile['state'].toString().trim().isNotEmpty) ? webPh.companyProfile['state'].toString().trim() : "Rajasthan";
+    shopState = (webPh.companyProfile['state'] != null &&
+            webPh.companyProfile['state'].toString().trim().isNotEmpty)
+        ? webPh.companyProfile['state'].toString().trim()
+        : "Rajasthan";
     shopGstin = (webPh.companyProfile['gstin'] ?? '').toString().trim();
+
     if (existingRecord != null) {
       existingRecordId = existingRecord.id;
       noteNoC.text = existingRecord.billNo;
       selectedDate = existingRecord.date;
-      extraDiscC.text = existingRecord.extraDiscount.toString();
-      paymentMode = existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
+      extraDiscC.text = existingRecord.extraDiscount.toStringAsFixed(2);
+      paymentMode =
+          existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
       origBillNoC.text = existingRecord.origBillNo;
       origBillDate = existingRecord.origBillDate;
       final parsedReason = GstComplianceHelper.parseReason(existingRecord.reason);
@@ -61,8 +70,9 @@ class CreditNoteController extends ChangeNotifier {
       );
       try {
         selectedCustomer = webPh.parties.firstWhere(
-          (p) => (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
-                 p.name.trim().toUpperCase() == existingRecord.partyName.trim().toUpperCase(),
+          (p) =>
+              (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
+              p.name.trim().toUpperCase() == existingRecord.partyName.trim().toUpperCase(),
         );
       } catch (_) {
         selectedCustomer = Party(
@@ -73,8 +83,15 @@ class CreditNoteController extends ChangeNotifier {
         );
       }
       _syncHeaderOriginFromItems(webPh: webPh, silent: true, clearWhenEmpty: false);
+      _syncExtraDiscPercentFromRupees();
     } else {
-      selectedReason = GstComplianceHelper.standardReasons.first;
+      isBreakageMode = initialBreakageMode;
+      selectedReason = initialBreakageMode
+          ? GstComplianceHelper.standardReasons.firstWhere(
+              (r) => r.contains("07"),
+              orElse: () => GstComplianceHelper.standardReasons.first,
+            )
+          : GstComplianceHelper.standardReasons.first;
       remarksC.clear();
       noteNoC.text = webPh.getNextBillNumber("RETURN", "WCN-", 1);
       selectedDate = WebAppDateLogic.getSmartDate(webPh.financialYear);
@@ -123,7 +140,8 @@ class CreditNoteController extends ChangeNotifier {
 
   void setDate(DateTime date, {PharoahWebManager? webPh}) {
     selectedDate = date;
-    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    final bool canComm =
+        webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
     if (canComm && isSection34Expired) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
@@ -138,7 +156,8 @@ class CreditNoteController extends ChangeNotifier {
 
   void setOrigBillDate(DateTime? date, {PharoahWebManager? webPh}) {
     origBillDate = date;
-    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    final bool canComm =
+        webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
     if (canComm && isSection34Expired) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
@@ -152,11 +171,51 @@ class CreditNoteController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _syncExtraDiscPercentFromRupees() {
+    final double gross = subTotal;
+    final double discRs = double.tryParse(extraDiscC.text) ?? 0.0;
+    if (gross > 0 && discRs > 0) {
+      extraDiscPerC.text = ((discRs / gross) * 100.0).toStringAsFixed(2);
+    } else {
+      extraDiscPerC.text = "0";
+    }
+  }
+
+  void setExtraDiscRupees(String val) {
+    final double gross = subTotal;
+    final double discRs = double.tryParse(val) ?? 0.0;
+    if (gross > 0 && discRs > 0) {
+      extraDiscPerC.text = ((discRs / gross) * 100.0).toStringAsFixed(2);
+    } else {
+      extraDiscPerC.text = "0";
+    }
+    notifyListeners();
+  }
+
+  void setExtraDiscPercent(String val) {
+    final double gross = subTotal;
+    final double discPer = double.tryParse(val) ?? 0.0;
+    if (gross > 0 && discPer > 0) {
+      extraDiscC.text = (gross * (discPer / 100.0)).toStringAsFixed(2);
+    } else {
+      extraDiscC.text = "0";
+    }
+    notifyListeners();
+  }
+
+  void _reapplyExtraDiscFromPercentIfActive() {
+    final double pct = double.tryParse(extraDiscPerC.text) ?? 0.0;
+    final double gross = subTotal;
+    if (pct > 0 && gross > 0) {
+      extraDiscC.text = (gross * (pct / 100.0)).toStringAsFixed(2);
+    }
+  }
+
   DateTime? get expiredOriginDate => GstComplianceHelper.getExpiredOriginDate(
-    headerOrigDate: origBillDate,
-    items: items,
-    noteDate: selectedDate,
-  );
+        headerOrigDate: origBillDate,
+        items: items,
+        noteDate: selectedDate,
+      );
 
   bool get isSection34Expired => expiredOriginDate != null;
 
@@ -169,11 +228,13 @@ class CreditNoteController extends ChangeNotifier {
     if (summary.uniqueCount > 0) {
       origBillNoC.text = summary.headerBillNo;
       origBillDate = summary.headerDate;
-    } else if (clearWhenEmpty && (items.isEmpty || items.every((it) => it.isManualOrigin))) {
+    } else if (clearWhenEmpty &&
+        (items.isEmpty || items.every((it) => it.isManualOrigin))) {
       origBillNoC.text = "";
       origBillDate = null;
     }
-    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    final bool canComm =
+        webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
     if (!silent && canComm && isSection34Expired && !isCommercial) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
@@ -184,6 +245,16 @@ class CreditNoteController extends ChangeNotifier {
     items.add(item);
     _recalculateSR();
     _syncHeaderOriginFromItems(webPh: webPh);
+    _reapplyExtraDiscFromPercentIfActive();
+    notifyListeners();
+  }
+
+  void addItemsBatch(List<BillItem> newItems, {PharoahWebManager? webPh}) {
+    if (newItems.isEmpty) return;
+    items.addAll(newItems);
+    _recalculateSR();
+    _syncHeaderOriginFromItems(webPh: webPh);
+    _reapplyExtraDiscFromPercentIfActive();
     notifyListeners();
   }
 
@@ -192,8 +263,26 @@ class CreditNoteController extends ChangeNotifier {
       items[index] = item;
       _recalculateSR();
       _syncHeaderOriginFromItems(webPh: webPh);
+      _reapplyExtraDiscFromPercentIfActive();
       notifyListeners();
     }
+  }
+
+  void updateItemQty(int index, double newQty, {PharoahWebManager? webPh}) {
+    if (index < 0 || index >= items.length || isReadOnly) return;
+    if (newQty <= 0) {
+      removeItem(index, webPh: webPh);
+      return;
+    }
+    items[index] = ReturnHistoryEngine.recalcBillItemQty(
+      items[index],
+      qty: newQty,
+      isLocal: isLocal,
+      isCommercial: isCommercial,
+    );
+    _recalculateSR();
+    _reapplyExtraDiscFromPercentIfActive();
+    notifyListeners();
   }
 
   void removeItem(int index, {PharoahWebManager? webPh}) {
@@ -201,6 +290,7 @@ class CreditNoteController extends ChangeNotifier {
       items.removeAt(index);
       _recalculateSR();
       _syncHeaderOriginFromItems(webPh: webPh, silent: true);
+      _reapplyExtraDiscFromPercentIfActive();
       notifyListeners();
     }
   }
@@ -208,6 +298,8 @@ class CreditNoteController extends ChangeNotifier {
   void clearCart({PharoahWebManager? webPh}) {
     items.clear();
     _syncHeaderOriginFromItems(webPh: webPh, silent: true);
+    extraDiscC.text = "0";
+    extraDiscPerC.text = "0";
     notifyListeners();
   }
 
@@ -217,20 +309,63 @@ class CreditNoteController extends ChangeNotifier {
     }
   }
 
+  // --- SMART HISTORY & COMPLIANCE HELPERS ---
+  String get posCode => GstComplianceHelper.resolvePartyPosCode(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: selectedCustomer?.gst,
+        partyState: selectedCustomer?.state,
+      );
+
+  List<ReturnBatchGroup> getBatchGroupsForMed(PharoahWebManager webPh, Medicine med) {
+    if (selectedCustomer == null) return const [];
+    return ReturnHistoryEngine.buildBatchGroups(
+      isSale: true,
+      partyId: selectedCustomer!.id,
+      partyName: selectedCustomer!.name,
+      medicineId: med.id,
+      medicineName: med.name,
+      sales: webPh.sales,
+      purchases: webPh.purchases,
+      saleReturns: webPh.saleReturns,
+      purchaseReturns: webPh.purchaseReturns,
+      currentCartItems: items,
+      excludeNoteId: existingRecordId,
+    );
+  }
+
+  List<ReturnRecentBill> getRecentBills(PharoahWebManager webPh, {int limit = 12}) {
+    if (selectedCustomer == null) return const [];
+    return ReturnHistoryEngine.getRecentPartyBills(
+      isSale: true,
+      partyId: selectedCustomer!.id,
+      partyName: selectedCustomer!.name,
+      sales: webPh.sales,
+      purchases: webPh.purchases,
+      saleReturns: webPh.saleReturns,
+      purchaseReturns: webPh.purchaseReturns,
+      currentCartItems: items,
+      excludeNoteId: existingRecordId,
+      limit: limit,
+    );
+  }
+
   // --- CALCULATIONS ---
-  bool get isLocal => selectedCustomer == null || GstComplianceHelper.isIntraStateReturn(
-    shopGstin: shopGstin,
-    shopState: shopState,
-    partyGstin: selectedCustomer?.gst,
-    partyState: selectedCustomer?.state,
-  );
+  bool get isLocal =>
+      selectedCustomer == null ||
+      GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: selectedCustomer?.gst,
+        partyState: selectedCustomer?.state,
+      );
 
   BillGstSummary get gstSummary => WebBillingGstEngine.calculate(
-    items: items,
-    extraDiscount: extraDiscount,
-    isLocal: isLocal,
-    isCommercial: isCommercial,
-  );
+        items: items,
+        extraDiscount: extraDiscount,
+        isLocal: isLocal,
+        isCommercial: isCommercial,
+      );
 
   double get subTotal => gstSummary.grossTaxable;
   double get totalTaxable => gstSummary.netTaxable;
@@ -243,17 +378,22 @@ class CreditNoteController extends ChangeNotifier {
   double get grandTotal => gstSummary.finalGrandTotal;
   double get roundOff => gstSummary.roundOff;
 
-  Future<bool> saveCreditNote(BuildContext context, PharoahWebManager webPh, {bool andPrint = false}) async {
+  Future<bool> saveCreditNote(BuildContext context, PharoahWebManager webPh,
+      {bool andPrint = false}) async {
     if (selectedCustomer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select a Customer first!"), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text("Please select a Customer first!"),
+            backgroundColor: Colors.orange),
       );
       return false;
     }
 
     if (items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Credit Note cannot be empty! Please add products."), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text("Credit Note cannot be empty! Please add products."),
+            backgroundColor: Colors.orange),
       );
       return false;
     }
@@ -316,7 +456,13 @@ class CreditNoteController extends ChangeNotifier {
         status: "Active",
       );
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
-      await WebPdfRouterService.printCreditNote(returnObj: newReturn, party: selectedCustomer!, shop: shopProfile, sales: webPh.sales, config: webPh.appConfig);
+      await WebPdfRouterService.printCreditNote(
+        returnObj: newReturn,
+        party: selectedCustomer!,
+        shop: shopProfile,
+        sales: webPh.sales,
+        config: webPh.appConfig,
+      );
     }
 
     isSaving = false;
@@ -328,6 +474,7 @@ class CreditNoteController extends ChangeNotifier {
   void dispose() {
     noteNoC.dispose();
     extraDiscC.dispose();
+    extraDiscPerC.dispose();
     remarksC.dispose();
     origBillNoC.dispose();
     productSearchC.dispose();

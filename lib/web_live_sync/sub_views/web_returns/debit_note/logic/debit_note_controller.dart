@@ -9,10 +9,12 @@ import '../../../../web_pdf_router_service.dart';
 import '../mechanism/debit_note_mechanism.dart';
 import '../../../web_billing/mechanism/web_billing_gst_engine.dart';
 import '../../../../../logic/gst_compliance_helper.dart';
+import '../../../../../logic/return_history_engine.dart';
 
 class DebitNoteController extends ChangeNotifier {
   final TextEditingController noteNoC = TextEditingController();
   final TextEditingController extraDiscC = TextEditingController(text: "0");
+  final TextEditingController extraDiscPerC = TextEditingController(text: "0");
   final TextEditingController remarksC = TextEditingController();
   final TextEditingController origBillNoC = TextEditingController();
   DateTime? origBillDate;
@@ -38,14 +40,19 @@ class DebitNoteController extends ChangeNotifier {
     bool readOnly = false,
   }) {
     isReadOnly = readOnly;
-    shopState = (webPh.companyProfile['state'] != null && webPh.companyProfile['state'].toString().trim().isNotEmpty) ? webPh.companyProfile['state'].toString().trim() : "Rajasthan";
+    shopState = (webPh.companyProfile['state'] != null &&
+            webPh.companyProfile['state'].toString().trim().isNotEmpty)
+        ? webPh.companyProfile['state'].toString().trim()
+        : "Rajasthan";
     shopGstin = (webPh.companyProfile['gstin'] ?? '').toString().trim();
+
     if (existingRecord != null) {
       existingRecordId = existingRecord.id;
       noteNoC.text = existingRecord.billNo;
       selectedDate = existingRecord.date;
-      extraDiscC.text = existingRecord.extraDiscount.toString();
-      paymentMode = existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
+      extraDiscC.text = existingRecord.extraDiscount.toStringAsFixed(2);
+      paymentMode =
+          existingRecord.paymentMode.isNotEmpty ? existingRecord.paymentMode : "CREDIT";
       origBillNoC.text = existingRecord.origBillNo;
       origBillDate = existingRecord.origBillDate;
       final parsedReason = GstComplianceHelper.parseReason(existingRecord.reason);
@@ -62,8 +69,10 @@ class DebitNoteController extends ChangeNotifier {
       );
       try {
         selectedSupplier = webPh.parties.firstWhere(
-          (p) => (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
-                 p.name.trim().toUpperCase() == existingRecord.distributorName.trim().toUpperCase(),
+          (p) =>
+              (existingRecord.partyId.isNotEmpty && p.id == existingRecord.partyId) ||
+              p.name.trim().toUpperCase() ==
+                  existingRecord.distributorName.trim().toUpperCase(),
         );
       } catch (_) {
         selectedSupplier = Party(
@@ -75,6 +84,7 @@ class DebitNoteController extends ChangeNotifier {
         );
       }
       _syncHeaderOriginFromItems(webPh: webPh, silent: true, clearWhenEmpty: false);
+      _syncExtraDiscPercentFromRupees();
     } else {
       selectedReason = GstComplianceHelper.standardReasons.first;
       remarksC.clear();
@@ -125,7 +135,8 @@ class DebitNoteController extends ChangeNotifier {
 
   void setDate(DateTime date, {PharoahWebManager? webPh}) {
     selectedDate = date;
-    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    final bool canComm =
+        webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
     if (canComm && isSection34Expired) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
@@ -140,7 +151,8 @@ class DebitNoteController extends ChangeNotifier {
 
   void setOrigBillDate(DateTime? date, {PharoahWebManager? webPh}) {
     origBillDate = date;
-    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    final bool canComm =
+        webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
     if (canComm && isSection34Expired) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
@@ -154,11 +166,51 @@ class DebitNoteController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _syncExtraDiscPercentFromRupees() {
+    final double gross = subTotal;
+    final double discRs = double.tryParse(extraDiscC.text) ?? 0.0;
+    if (gross > 0 && discRs > 0) {
+      extraDiscPerC.text = ((discRs / gross) * 100.0).toStringAsFixed(2);
+    } else {
+      extraDiscPerC.text = "0";
+    }
+  }
+
+  void setExtraDiscRupees(String val) {
+    final double gross = subTotal;
+    final double discRs = double.tryParse(val) ?? 0.0;
+    if (gross > 0 && discRs > 0) {
+      extraDiscPerC.text = ((discRs / gross) * 100.0).toStringAsFixed(2);
+    } else {
+      extraDiscPerC.text = "0";
+    }
+    notifyListeners();
+  }
+
+  void setExtraDiscPercent(String val) {
+    final double gross = subTotal;
+    final double discPer = double.tryParse(val) ?? 0.0;
+    if (gross > 0 && discPer > 0) {
+      extraDiscC.text = (gross * (discPer / 100.0)).toStringAsFixed(2);
+    } else {
+      extraDiscC.text = "0";
+    }
+    notifyListeners();
+  }
+
+  void _reapplyExtraDiscFromPercentIfActive() {
+    final double pct = double.tryParse(extraDiscPerC.text) ?? 0.0;
+    final double gross = subTotal;
+    if (pct > 0 && gross > 0) {
+      extraDiscC.text = (gross * (pct / 100.0)).toStringAsFixed(2);
+    }
+  }
+
   DateTime? get expiredOriginDate => GstComplianceHelper.getExpiredOriginDate(
-    headerOrigDate: origBillDate,
-    items: items,
-    noteDate: selectedDate,
-  );
+        headerOrigDate: origBillDate,
+        items: items,
+        noteDate: selectedDate,
+      );
 
   bool get isSection34Expired => expiredOriginDate != null;
 
@@ -171,11 +223,13 @@ class DebitNoteController extends ChangeNotifier {
     if (summary.uniqueCount > 0) {
       origBillNoC.text = summary.headerBillNo;
       origBillDate = summary.headerDate;
-    } else if (clearWhenEmpty && (items.isEmpty || items.every((it) => it.isManualOrigin))) {
+    } else if (clearWhenEmpty &&
+        (items.isEmpty || items.every((it) => it.isManualOrigin))) {
       origBillNoC.text = "";
       origBillDate = null;
     }
-    final bool canComm = webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
+    final bool canComm =
+        webPh == null || GstComplianceHelper.isCommercialNoteAllowed(webPh.appConfig);
     if (!silent && canComm && isSection34Expired && !isCommercial) {
       isCommercial = true;
       if (webPh != null) _refreshNumberForCommercial(webPh, true);
@@ -186,6 +240,16 @@ class DebitNoteController extends ChangeNotifier {
     items.add(item);
     _recalculateSR();
     _syncHeaderOriginFromItems(webPh: webPh);
+    _reapplyExtraDiscFromPercentIfActive();
+    notifyListeners();
+  }
+
+  void addItemsBatch(List<PurchaseItem> newItems, {PharoahWebManager? webPh}) {
+    if (newItems.isEmpty) return;
+    items.addAll(newItems);
+    _recalculateSR();
+    _syncHeaderOriginFromItems(webPh: webPh);
+    _reapplyExtraDiscFromPercentIfActive();
     notifyListeners();
   }
 
@@ -194,8 +258,25 @@ class DebitNoteController extends ChangeNotifier {
       items[index] = item;
       _recalculateSR();
       _syncHeaderOriginFromItems(webPh: webPh);
+      _reapplyExtraDiscFromPercentIfActive();
       notifyListeners();
     }
+  }
+
+  void updateItemQty(int index, double newQty, {PharoahWebManager? webPh}) {
+    if (index < 0 || index >= items.length || isReadOnly) return;
+    if (newQty <= 0) {
+      removeItem(index, webPh: webPh);
+      return;
+    }
+    items[index] = ReturnHistoryEngine.recalcPurchaseItemQty(
+      items[index],
+      qty: newQty,
+      isCommercial: isCommercial,
+    );
+    _recalculateSR();
+    _reapplyExtraDiscFromPercentIfActive();
+    notifyListeners();
   }
 
   void removeItem(int index, {PharoahWebManager? webPh}) {
@@ -203,6 +284,7 @@ class DebitNoteController extends ChangeNotifier {
       items.removeAt(index);
       _recalculateSR();
       _syncHeaderOriginFromItems(webPh: webPh, silent: true);
+      _reapplyExtraDiscFromPercentIfActive();
       notifyListeners();
     }
   }
@@ -210,6 +292,8 @@ class DebitNoteController extends ChangeNotifier {
   void clearCart({PharoahWebManager? webPh}) {
     items.clear();
     _syncHeaderOriginFromItems(webPh: webPh, silent: true);
+    extraDiscC.text = "0";
+    extraDiscPerC.text = "0";
     notifyListeners();
   }
 
@@ -219,20 +303,63 @@ class DebitNoteController extends ChangeNotifier {
     }
   }
 
+  // --- SMART HISTORY & COMPLIANCE HELPERS ---
+  String get posCode => GstComplianceHelper.resolvePartyPosCode(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: selectedSupplier?.gst,
+        partyState: selectedSupplier?.state,
+      );
+
+  List<ReturnBatchGroup> getBatchGroupsForMed(PharoahWebManager webPh, Medicine med) {
+    if (selectedSupplier == null) return const [];
+    return ReturnHistoryEngine.buildBatchGroups(
+      isSale: false,
+      partyId: selectedSupplier!.id,
+      partyName: selectedSupplier!.name,
+      medicineId: med.id,
+      medicineName: med.name,
+      sales: webPh.sales,
+      purchases: webPh.purchases,
+      saleReturns: webPh.saleReturns,
+      purchaseReturns: webPh.purchaseReturns,
+      currentCartItems: items,
+      excludeNoteId: existingRecordId,
+    );
+  }
+
+  List<ReturnRecentBill> getRecentBills(PharoahWebManager webPh, {int limit = 12}) {
+    if (selectedSupplier == null) return const [];
+    return ReturnHistoryEngine.getRecentPartyBills(
+      isSale: false,
+      partyId: selectedSupplier!.id,
+      partyName: selectedSupplier!.name,
+      sales: webPh.sales,
+      purchases: webPh.purchases,
+      saleReturns: webPh.saleReturns,
+      purchaseReturns: webPh.purchaseReturns,
+      currentCartItems: items,
+      excludeNoteId: existingRecordId,
+      limit: limit,
+    );
+  }
+
   // --- CALCULATIONS ---
-  bool get isLocal => selectedSupplier == null || GstComplianceHelper.isIntraStateReturn(
-    shopGstin: shopGstin,
-    shopState: shopState,
-    partyGstin: selectedSupplier?.gst,
-    partyState: selectedSupplier?.state,
-  );
+  bool get isLocal =>
+      selectedSupplier == null ||
+      GstComplianceHelper.isIntraStateReturn(
+        shopGstin: shopGstin,
+        shopState: shopState,
+        partyGstin: selectedSupplier?.gst,
+        partyState: selectedSupplier?.state,
+      );
 
   BillGstSummary get gstSummary => WebBillingGstEngine.calculateForPurchase(
-    items: items,
-    extraDiscount: extraDiscount,
-    isLocal: isLocal,
-    isCommercial: isCommercial,
-  );
+        items: items,
+        extraDiscount: extraDiscount,
+        isLocal: isLocal,
+        isCommercial: isCommercial,
+      );
 
   double get subTotal => gstSummary.grossTaxable;
   double get totalTaxable => gstSummary.netTaxable;
@@ -245,17 +372,22 @@ class DebitNoteController extends ChangeNotifier {
   double get grandTotal => gstSummary.finalGrandTotal;
   double get roundOff => gstSummary.roundOff;
 
-  Future<bool> saveDebitNote(BuildContext context, PharoahWebManager webPh, {bool andPrint = false}) async {
+  Future<bool> saveDebitNote(BuildContext context, PharoahWebManager webPh,
+      {bool andPrint = false}) async {
     if (selectedSupplier == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select a Supplier / Distributor first!"), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text("Please select a Supplier / Distributor first!"),
+            backgroundColor: Colors.orange),
       );
       return false;
     }
 
     if (items.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Debit Note cannot be empty! Please add products."), backgroundColor: Colors.orange),
+        const SnackBar(
+            content: Text("Debit Note cannot be empty! Please add products."),
+            backgroundColor: Colors.orange),
       );
       return false;
     }
@@ -318,7 +450,13 @@ class DebitNoteController extends ChangeNotifier {
         status: "Active",
       );
       final shopProfile = CompanyProfile.fromMap(webPh.companyProfile);
-      await WebPdfRouterService.printDebitNote(returnObj: newReturn, party: selectedSupplier!, shop: shopProfile, purchases: webPh.purchases, config: webPh.appConfig);
+      await WebPdfRouterService.printDebitNote(
+        returnObj: newReturn,
+        party: selectedSupplier!,
+        shop: shopProfile,
+        purchases: webPh.purchases,
+        config: webPh.appConfig,
+      );
     }
 
     isSaving = false;
@@ -330,6 +468,7 @@ class DebitNoteController extends ChangeNotifier {
   void dispose() {
     noteNoC.dispose();
     extraDiscC.dispose();
+    extraDiscPerC.dispose();
     remarksC.dispose();
     origBillNoC.dispose();
     productSearchC.dispose();
