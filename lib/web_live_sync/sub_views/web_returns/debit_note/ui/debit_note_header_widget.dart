@@ -165,9 +165,9 @@ class DebitNoteHeaderWidget extends StatelessWidget {
                         Colors.white70,
                         Colors.white10,
                       ),
-                      if (controller.selectedSupplier!.dlNo.isNotEmpty)
+                      if (controller.selectedSupplier!.dl.isNotEmpty)
                         _infoBadge(
-                          "DL: ${controller.selectedSupplier!.dlNo}",
+                          "DL: ${controller.selectedSupplier!.dl}",
                           Colors.white54,
                           Colors.white10,
                         ),

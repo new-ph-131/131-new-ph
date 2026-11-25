@@ -164,9 +164,9 @@ class CreditNoteHeaderWidget extends StatelessWidget {
                         Colors.white70,
                         Colors.white10,
                       ),
-                      if (controller.selectedCustomer!.dlNo.isNotEmpty)
+                      if (controller.selectedCustomer!.dl.isNotEmpty)
                         _infoBadge(
-                          "DL: ${controller.selectedCustomer!.dlNo}",
+                          "DL: ${controller.selectedCustomer!.dl}",
                           Colors.white54,
                           Colors.white10,
                         ),

@@ -321,8 +321,7 @@ class CreditNoteCartWidget extends StatelessWidget {
             if (matchingMeds.isNotEmpty || matchingBills.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
-                constraints: const EdgeInsets.symmetric(horizontal: 0, vertical: 0)
-                    .copyWith(maxHeight: 220),
+                constraints: const BoxConstraints(maxHeight: 220),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(10),
