@@ -131,6 +131,10 @@ class ReturnBatchGroup {
     required this.invoices,
   });
 
+  String get batch => batchDisplay;
+  double get alreadyReturnedQty => totalReturnedQty;
+  double get totalBilledFree => totalBilledFreeQty;
+
   double get netReturnableQty =>
       (totalBilledQty - totalReturnedQty) > 0 ? (totalBilledQty - totalReturnedQty) : 0.0;
 
