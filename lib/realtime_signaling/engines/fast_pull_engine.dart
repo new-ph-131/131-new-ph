@@ -777,7 +777,7 @@ class FastPullEngine {
           saleChallans: ph.saleChallans,
           purchaseChallans: ph.purchaseChallans,
           storeToken: storeToken,
-          onMedicineSaved: (m) => ph.saveOrUpdateMedicine(m),
+          onMedicineSaved: (m) => ph.saveOrUpdateMedicine(m, triggerCloudSync: false),
         );
         for (final m in ph.medicines) {
           MasterCascadeService.cascadeProductUpdate(

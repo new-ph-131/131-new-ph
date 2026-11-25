@@ -233,10 +233,14 @@ class AppRealtimeCoordinator {
           final token = await WebLiveToken.getOrCreateToken(ph.activeCompany!.id);
 
           // 1. Flush Outbox first so D1 erp_master_sync has the latest App records immediately
-          await SyncQueueManager.flushOutboxAsJSONBatch();
+          final bool hadOutboxOps = SyncQueueManager.pendingCount > 0;
+          final bool outboxOk = await SyncQueueManager.flushOutboxAsJSONBatch();
+          final bool outboxNotifiedD1 = hadOutboxOps && outboxOk;
+          final bool sentPreSignal =
+              !outboxNotifiedD1 || batchDeleted.isNotEmpty || batchUnmarked.isNotEmpty;
 
-          // 2. Broadcast instant signal to Cloudflare Edge (<30ms)
-          if (token.isNotEmpty) {
+          // 2. Broadcast instant signal to Cloudflare Edge (<30ms) only when Outbox didn't already wake D1 or tombstones need immediate propagation
+          if (token.isNotEmpty && sentPreSignal) {
             await CloudSignalChannel.instance.broadcastSignal(
               SyncSignalEvent(
                 storeToken: token,

@@ -1703,7 +1703,7 @@ class PharoahWebManager with ChangeNotifier {
     );
   }
 
-  void registerBatchActivity({
+  bool registerBatchActivity({
     required String productKey,
     required String batchNo,
     required String exp,
@@ -1718,6 +1718,7 @@ class PharoahWebManager with ChangeNotifier {
     double qtyChange = 0.0,
     String status = "Active",
     bool isPurchaseRate = true,
+    bool syncToCloud = true,
   }) {
     String resolvedKey = productKey;
     try {
@@ -1745,26 +1746,56 @@ class PharoahWebManager with ChangeNotifier {
     double finalRateB = rateB == 0.0 ? (rateA == 0.0 ? mrp * 0.95 : rateA * 0.95) : rateB;
     double finalRateC = rateC == 0.0 ? (rateA == 0.0 ? mrp * 0.92 : rateA * 0.92) : rateC;
 
+    bool didMutate = false;
     if (existingIdx != -1) {
       final existing = history[existingIdx];
       // 🛡️ LWW Protection: If batch was already configured in Master (version > 1), preserve its master pricing & expiry!
       if (existing.version <= 1) {
-        if (exp.trim().isNotEmpty) existing.exp = exp;
-        if (mrp > 0) existing.mrp = mrp;
-        if (packing.trim().isNotEmpty) existing.packing = packing;
-        if (isPurchaseRate && rate > 0) {
+        if (exp.trim().isNotEmpty && existing.exp != exp) {
+          existing.exp = exp;
+          didMutate = true;
+        }
+        if (mrp > 0 && existing.mrp != mrp) {
+          existing.mrp = mrp;
+          didMutate = true;
+        }
+        if (packing.trim().isNotEmpty && existing.packing != packing) {
+          existing.packing = packing;
+          didMutate = true;
+        }
+        if (isPurchaseRate && rate > 0 && (existing.rate != rate || existing.purRate != rate)) {
           existing.rate = rate;
           existing.purRate = rate;
+          didMutate = true;
         }
-        if (finalRateA > 0) existing.rateA = finalRateA;
-        if (finalRateB > 0) existing.rateB = finalRateB;
-        if (finalRateC > 0) existing.rateC = finalRateC;
-        existing.rateCFormula = rateCFormula;
-        existing.appliedRateType = appliedRateType;
-        existing.status = status;
+        if (finalRateA > 0 && existing.rateA != finalRateA) {
+          existing.rateA = finalRateA;
+          didMutate = true;
+        }
+        if (finalRateB > 0 && existing.rateB != finalRateB) {
+          existing.rateB = finalRateB;
+          didMutate = true;
+        }
+        if (finalRateC > 0 && existing.rateC != finalRateC) {
+          existing.rateC = finalRateC;
+          didMutate = true;
+        }
+        if (existing.rateCFormula != rateCFormula) {
+          existing.rateCFormula = rateCFormula;
+          didMutate = true;
+        }
+        if (existing.appliedRateType != appliedRateType) {
+          existing.appliedRateType = appliedRateType;
+          didMutate = true;
+        }
+        if (existing.status != status) {
+          existing.status = status;
+          didMutate = true;
+        }
       }
       if (qtyChange != 0.0) {
         existing.qty += qtyChange;
+        didMutate = true;
       }
     } else {
       history.add(BatchInfo(
@@ -1784,9 +1815,10 @@ class PharoahWebManager with ChangeNotifier {
         appliedRateType: appliedRateType,
         status: status,
       ));
+      didMutate = true;
     }
 
-    if (activeStoreToken.trim().isNotEmpty) {
+    if (activeStoreToken.trim().isNotEmpty && syncToCloud && didMutate) {
       final savedBatch = history[existingIdx != -1 ? existingIdx : history.length - 1];
       BatchSyncModule.onBatchSaved(
         batch: savedBatch,
@@ -1795,6 +1827,7 @@ class PharoahWebManager with ChangeNotifier {
         isDelete: false,
       );
     }
+    return didMutate;
   }
 
   void autoHydrateBatchHistoryFromTransactions() {
@@ -1809,7 +1842,7 @@ class PharoahWebManager with ChangeNotifier {
         } catch (_) {}
         if (resolvedKey.isEmpty) resolvedKey = item.name.trim().toUpperCase();
 
-        registerBatchActivity(
+        if (registerBatchActivity(
           productKey: resolvedKey,
           batchNo: item.batch,
           exp: item.exp,
@@ -1819,8 +1852,10 @@ class PharoahWebManager with ChangeNotifier {
           appliedRateType: item.appliedRateType,
           rateCFormula: item.rateCFormula,
           isPurchaseRate: false,
-        );
-        hasUpdates = true;
+          syncToCloud: false,
+        )) {
+          hasUpdates = true;
+        }
       }
     }
 
@@ -1833,7 +1868,7 @@ class PharoahWebManager with ChangeNotifier {
         } catch (_) {}
         if (resolvedKey.isEmpty) resolvedKey = item.name.trim().toUpperCase();
 
-        registerBatchActivity(
+        if (registerBatchActivity(
           productKey: resolvedKey,
           batchNo: item.batch,
           exp: item.exp,
@@ -1845,8 +1880,10 @@ class PharoahWebManager with ChangeNotifier {
           rateC: item.rateC,
           appliedRateType: item.appliedRateType,
           rateCFormula: item.rateCFormula,
-        );
-        hasUpdates = true;
+          syncToCloud: false,
+        )) {
+          hasUpdates = true;
+        }
       }
     }
 

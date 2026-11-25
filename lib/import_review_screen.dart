@@ -651,6 +651,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
           packing: m.packing,
           mrp: (it['mrp'] as num).toDouble(),
           rate: pRate,
+          persist: false,
         );
 
         items.add(PurchaseItem(

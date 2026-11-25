@@ -109,7 +109,7 @@ async function ensureSignalTablesOnce(db: any): Promise<void> {
           "is_deleted INTEGER NOT NULL, " +
           "bill_data TEXT NOT NULL)"
         ),
-        db.prepare("CREATE INDEX IF NOT EXISTS idx_doc_type_updated ON erp_master_sync (store_token, document_type, updated_at)"),
+        db.prepare("DROP INDEX IF EXISTS idx_doc_type_updated"),
         db.prepare("CREATE INDEX IF NOT EXISTS idx_erp_master_sync_store_updated ON erp_master_sync (store_token, updated_at)"),
         db.prepare(
           "CREATE TABLE IF NOT EXISTS store_sync_meta (" +
@@ -186,7 +186,8 @@ async function applyAtomicTombstonesAndEvent(
         "INSERT INTO signal_tombstones (store_token, tomb_key, fy, updated_at) VALUES (?, ?, ?, ?) " +
         "ON CONFLICT(store_token, tomb_key) DO UPDATE SET " +
         "updated_at = CASE WHEN excluded.updated_at > signal_tombstones.updated_at THEN excluded.updated_at ELSE signal_tombstones.updated_at END, " +
-        "fy = CASE WHEN excluded.fy != '' THEN excluded.fy ELSE signal_tombstones.fy END"
+        "fy = CASE WHEN excluded.fy != '' THEN excluded.fy ELSE signal_tombstones.fy END " +
+        "WHERE excluded.updated_at > signal_tombstones.updated_at OR (excluded.fy != '' AND excluded.fy != signal_tombstones.fy)"
       ).bind(storeToken, dk, fy, eventTs)
     );
   }
@@ -606,7 +607,11 @@ export async function onRequestPost(context: any) {
                 "WHEN is_deleted = 1 THEN CASE WHEN (?4 > version AND ?5 > updated_at) THEN 0 ELSE 1 END " +
                 "WHEN (?5 >= updated_at OR ?4 > version) THEN ?6 ELSE is_deleted END, " +
               "version = CASE WHEN ?4 > version THEN ?4 ELSE version END, " +
-              "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END"
+              "updated_at = CASE WHEN ?5 > updated_at THEN ?5 ELSE updated_at END " +
+              "WHERE " +
+                "(?6 = 1 AND (is_deleted != 1 OR ?4 > version OR (?7 != bill_data AND (?5 >= updated_at OR ?4 >= version)))) " +
+                "OR (is_deleted = 1 AND ?6 = 0 AND ?4 > version AND ?5 > updated_at) " +
+                "OR (is_deleted = 0 AND ?6 = 0 AND ((?4 > version) OR ((?5 >= updated_at OR ?4 > version) AND (?7 != bill_data OR store_token != ?2 OR document_type != ?3))))"
             ).bind(sId, storeToken, dType, ver, uAt, isDel, bData);
             sqlStatements.push(stmt);
           }
@@ -621,17 +626,20 @@ export async function onRequestPost(context: any) {
           }
         }
 
-        activeDeletesInPost = await applyAtomicTombstonesAndEvent(
-          db,
-          storeToken,
-          record,
-          effectiveDeletes,
-          effectiveUnmarks,
-          reqFy,
-          effectiveTs,
-          maxBatchOpTs,
-          0
-        );
+        const isOutboxBatch = (body.source || "").toString().toUpperCase() === "OUTBOX_BATCH";
+        if (!isOutboxBatch || sqlStatements.length > 0 || effectiveDeletes.length > 0 || effectiveUnmarks.length > 0) {
+          activeDeletesInPost = await applyAtomicTombstonesAndEvent(
+            db,
+            storeToken,
+            record,
+            effectiveDeletes,
+            effectiveUnmarks,
+            reqFy,
+            effectiveTs,
+            maxBatchOpTs,
+            0
+          );
+        }
       } catch (d1Err) {
         console.error("D1 Write Exception:", d1Err);
       }

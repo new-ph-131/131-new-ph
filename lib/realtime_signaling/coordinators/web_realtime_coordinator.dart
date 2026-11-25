@@ -160,21 +160,27 @@ class WebRealtimeCoordinator {
           await webManager.awaitPendingD1Writes();
 
           // 1. Flush Outbox immediately so D1 erp_master_sync has the WPUR-/W- record BEFORE App polls
-          await SyncQueueManager.flushOutboxAsJSONBatch();
+          final bool hadOutboxOps = SyncQueueManager.pendingCount > 0;
+          final bool outboxOk = await SyncQueueManager.flushOutboxAsJSONBatch();
+          final bool outboxNotifiedD1 = hadOutboxOps && outboxOk;
+          final bool sentPreSignal =
+              !outboxNotifiedD1 || batchDeleted.isNotEmpty || batchUnmarked.isNotEmpty;
 
-          // 2. Broadcast instant D1 wake-up event (<30ms) so App gets D1 batch_operations immediately
-          await CloudSignalChannel.instance.broadcastSignal(
-            SyncSignalEvent(
-              storeToken: webManager.activeStoreToken,
-              source: 'web',
-              action: action,
-              entityId: entityId,
-              financialYear: effFy,
-              deletedIds: batchDeleted,
-              unmarkedIds: batchUnmarked,
-              companyId: webManager.companyProfile['id']?.toString() ?? '',
-            ),
-          );
+          // 2. Broadcast instant D1 wake-up event (<30ms) only when Outbox didn't already wake D1 or tombstones need immediate propagation
+          if (sentPreSignal) {
+            await CloudSignalChannel.instance.broadcastSignal(
+              SyncSignalEvent(
+                storeToken: webManager.activeStoreToken,
+                source: 'web',
+                action: action,
+                entityId: entityId,
+                financialYear: effFy,
+                deletedIds: batchDeleted,
+                unmarkedIds: batchUnmarked,
+                companyId: webManager.companyProfile['id']?.toString() ?? '',
+              ),
+            );
+          }
 
           // 3. Push full snapshot to Cloud Relay (Google Drive)
           final bool relayOk = await webManager.pushUpdatedDataToCloud();

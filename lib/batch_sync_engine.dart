@@ -8,7 +8,7 @@ import "inventory_logic_center.dart";
 import "sync_core/modules/batch_sync_module.dart";
 
 class BatchSyncEngine {
-  static void registerBatchActivity({
+  static bool registerBatchActivity({
     PharoahManager? ph,
     Map<String, List<BatchInfo>>? batchHistory,
     List<Medicine>? medicines,
@@ -27,8 +27,10 @@ class BatchSyncEngine {
     String status = "Active",
     String storeToken = "",
     bool isPurchaseRate = true,
+    bool persist = true,
+    bool syncToCloud = true,
   }) {
-    if (ph != null && ph.activeCompany == null && batchHistory == null) return;
+    if (ph != null && ph.activeCompany == null && batchHistory == null) return false;
     final Map<String, List<BatchInfo>> targetHistory = batchHistory ?? ph!.batchHistory;
     final List<Medicine> targetMeds = medicines ?? ph?.medicines ?? const <Medicine>[];
 
@@ -58,25 +60,55 @@ class BatchSyncEngine {
     double finalRateB = rateB == 0.0 ? (rateA == 0.0 ? mrp * 0.95 : rateA * 0.95) : rateB;
     double finalRateC = rateC == 0.0 ? (rateA == 0.0 ? mrp * 0.92 : rateA * 0.92) : rateC;
 
+    bool didMutate = false;
     if (existingIdx != -1) {
       final existing = history[existingIdx];
       if (existing.version <= 1) {
-        if (exp.trim().isNotEmpty) existing.exp = exp;
-        if (mrp > 0) existing.mrp = mrp;
-        if (packing.trim().isNotEmpty) existing.packing = packing;
-        if (isPurchaseRate && rate > 0) {
+        if (exp.trim().isNotEmpty && existing.exp != exp) {
+          existing.exp = exp;
+          didMutate = true;
+        }
+        if (mrp > 0 && existing.mrp != mrp) {
+          existing.mrp = mrp;
+          didMutate = true;
+        }
+        if (packing.trim().isNotEmpty && existing.packing != packing) {
+          existing.packing = packing;
+          didMutate = true;
+        }
+        if (isPurchaseRate && rate > 0 && (existing.rate != rate || existing.purRate != rate)) {
           existing.rate = rate;
           existing.purRate = rate;
+          didMutate = true;
         }
-        if (finalRateA > 0) existing.rateA = finalRateA;
-        if (finalRateB > 0) existing.rateB = finalRateB;
-        if (finalRateC > 0) existing.rateC = finalRateC;
-        existing.rateCFormula = rateCFormula;
-        existing.appliedRateType = appliedRateType;
-        existing.status = status;
+        if (finalRateA > 0 && existing.rateA != finalRateA) {
+          existing.rateA = finalRateA;
+          didMutate = true;
+        }
+        if (finalRateB > 0 && existing.rateB != finalRateB) {
+          existing.rateB = finalRateB;
+          didMutate = true;
+        }
+        if (finalRateC > 0 && existing.rateC != finalRateC) {
+          existing.rateC = finalRateC;
+          didMutate = true;
+        }
+        if (existing.rateCFormula != rateCFormula) {
+          existing.rateCFormula = rateCFormula;
+          didMutate = true;
+        }
+        if (existing.appliedRateType != appliedRateType) {
+          existing.appliedRateType = appliedRateType;
+          didMutate = true;
+        }
+        if (existing.status != status) {
+          existing.status = status;
+          didMutate = true;
+        }
       }
       if (qtyChange != 0.0) {
         existing.qty += qtyChange;
+        didMutate = true;
       }
     } else {
       history.add(BatchInfo(
@@ -96,15 +128,16 @@ class BatchSyncEngine {
         appliedRateType: appliedRateType,
         status: status,
       ));
+      didMutate = true;
     }
 
-    if (ph != null) {
+    if (ph != null && persist && didMutate) {
       ph.save();
     }
     final String effectiveToken = storeToken.trim().isNotEmpty
         ? storeToken.trim()
         : (ph?.activeCompany?.id ?? "");
-    if (effectiveToken.isNotEmpty) {
+    if (effectiveToken.isNotEmpty && syncToCloud && didMutate) {
       final savedBatch = history[existingIdx != -1 ? existingIdx : history.length - 1];
       BatchSyncModule.onBatchSaved(
         batch: savedBatch,
@@ -113,6 +146,7 @@ class BatchSyncEngine {
         isDelete: false,
       );
     }
+    return didMutate;
   }
 
   static List<BatchInfo> getFilteredBatches({

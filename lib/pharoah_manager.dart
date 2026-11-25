@@ -1038,6 +1038,7 @@ Future<void> finalizeSale({
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
         isPurchaseRate: false,
+        persist: false,
       );
     }
     
@@ -1250,6 +1251,7 @@ Future<bool> finalizePurchase({
         rateC: item.rateC,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        persist: false,
       );
     }
     
@@ -1362,6 +1364,7 @@ Future<bool> finalizePurchase({
         rateC: item.rateC,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        persist: false,
       );
     }
     
@@ -1989,6 +1992,7 @@ Future<bool> finalizePurchase({
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
         isPurchaseRate: false,
+        persist: false,
       );
     }
     notifyListeners();
@@ -2139,6 +2143,7 @@ Future<bool> finalizePurchase({
         rateC: item.rateC,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        persist: false,
       );
     }
     notifyListeners();
@@ -2286,6 +2291,7 @@ Future<bool> finalizePurchase({
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
         isPurchaseRate: false,
+        persist: false,
       );
     }
 
@@ -2381,6 +2387,7 @@ Future<bool> finalizePurchase({
         rateC: item.rateC,
         rateCFormula: item.rateCFormula,
         appliedRateType: item.appliedRateType,
+        persist: false,
       );
     }
 
@@ -2399,7 +2406,7 @@ Future<bool> finalizePurchase({
   // 7. BATCH TOOLS & INVENTORY INTEL
   // ===========================================================================
 
-void registerBatchActivity({
+bool registerBatchActivity({
     required String productKey, 
     required String batchNo, 
     required String exp, 
@@ -2414,9 +2421,11 @@ void registerBatchActivity({
     double qtyChange = 0.0,
     String status = "Active",
     bool isPurchaseRate = true,
+    bool persist = true,
+    bool syncToCloud = true,
   }) {
     // Direct delegation to BatchSyncEngine (Centralized safe sync)
-    BatchSyncEngine.registerBatchActivity(
+    return BatchSyncEngine.registerBatchActivity(
       ph: this,
       productKey: productKey,
       batchNo: batchNo,
@@ -2432,6 +2441,8 @@ void registerBatchActivity({
       qtyChange: qtyChange,
       status: status,
       isPurchaseRate: isPurchaseRate,
+      persist: persist,
+      syncToCloud: syncToCloud,
     );
   }
 
@@ -2447,7 +2458,7 @@ void registerBatchActivity({
         } catch (_) {}
         if (resolvedKey.isEmpty) resolvedKey = item.name.trim().toUpperCase();
 
-        registerBatchActivity(
+        if (registerBatchActivity(
           productKey: resolvedKey,
           batchNo: item.batch,
           exp: item.exp,
@@ -2457,8 +2468,11 @@ void registerBatchActivity({
           appliedRateType: item.appliedRateType,
           rateCFormula: item.rateCFormula,
           isPurchaseRate: false,
-        );
-        hasUpdates = true;
+          persist: false,
+          syncToCloud: false,
+        )) {
+          hasUpdates = true;
+        }
       }
     }
 
@@ -2471,7 +2485,7 @@ void registerBatchActivity({
         } catch (_) {}
         if (resolvedKey.isEmpty) resolvedKey = item.name.trim().toUpperCase();
 
-        registerBatchActivity(
+        if (registerBatchActivity(
           productKey: resolvedKey,
           batchNo: item.batch,
           exp: item.exp,
@@ -2483,8 +2497,11 @@ void registerBatchActivity({
           rateC: item.rateC,
           appliedRateType: item.appliedRateType,
           rateCFormula: item.rateCFormula,
-        );
-        hasUpdates = true;
+          persist: false,
+          syncToCloud: false,
+        )) {
+          hasUpdates = true;
+        }
       }
     }
 
@@ -2497,7 +2514,7 @@ void registerBatchActivity({
     for (var sr in saleReturns.where((e) => e.isDeleted != 1)) processBillItems(sr.items);
 
     if (hasUpdates) {
-      save();
+      save(triggerCloudSync: false);
       notifyListeners();
     }
   }
@@ -2934,7 +2951,7 @@ void registerBatchActivity({
     saveOrUpdateMedicine(m);
   }
 
-  void saveOrUpdateMedicine(Medicine med) {
+  void saveOrUpdateMedicine(Medicine med, {bool triggerCloudSync = true}) {
     final String cleanKey = MedicineSyncModule.getCompositeKey(name: med.name, packing: med.packing, company: med.companyId);
     final int nowTs = DateTime.now().millisecondsSinceEpoch;
 
@@ -2985,10 +3002,10 @@ void registerBatchActivity({
       ));
     }
 
-    save();
+    save(triggerCloudSync: triggerCloudSync);
     notifyListeners();
 
-    if (activeCompany != null) {
+    if (triggerCloudSync && activeCompany != null) {
       WebLiveToken.getOrCreateToken(activeCompany!.id).then((t) {
         if (t.isNotEmpty) {
           MedicineSyncModule.onMedicineSaved(med, t);
@@ -3586,6 +3603,7 @@ void registerBatchActivity({
           rateCFormula: item.rateCFormula,
           appliedRateType: item.appliedRateType,
           isPurchaseRate: false,
+          persist: false,
         );
       }
 
@@ -3654,6 +3672,7 @@ void registerBatchActivity({
           rateC: item.rateC,
           rateCFormula: item.rateCFormula,
           appliedRateType: item.appliedRateType,
+          persist: false,
         );
       }
 
