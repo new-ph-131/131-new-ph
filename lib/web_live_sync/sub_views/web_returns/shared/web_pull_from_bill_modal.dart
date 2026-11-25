@@ -10,11 +10,15 @@ class WebPullFromBillResultLine {
   final Medicine medicine;
   final ReturnHistoryInvoiceLine line;
   final double qty;
+  final double freeQty;
+  final bool useSchemeNetRate;
 
   const WebPullFromBillResultLine({
     required this.medicine,
     required this.line,
     required this.qty,
+    this.freeQty = 0.0,
+    this.useSchemeNetRate = false,
   });
 }
 
@@ -48,6 +52,8 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
   ReturnRecentBill? _selectedBill;
   final Set<int> _checkedLineIndexes = {};
   final Map<int, TextEditingController> _qtyControllers = {};
+  final Map<int, TextEditingController> _freeControllers = {};
+  bool _useSchemeNetRate = false;
 
   Color get _accent =>
       widget.isSale ? const Color(0xFFF87171) : const Color(0xFFFBBF24);
@@ -92,7 +98,11 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
     for (final c in _qtyControllers.values) {
       c.dispose();
     }
+    for (final c in _freeControllers.values) {
+      c.dispose();
+    }
     _qtyControllers.clear();
+    _freeControllers.clear();
   }
 
   void _selectBill(ReturnRecentBill bill) {
@@ -101,13 +111,39 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
     _selectedBill = bill;
     for (int i = 0; i < bill.lines.length; i++) {
       final ln = bill.lines[i];
-      final defQty = ln.availableQty > 0 ? ln.availableQty : ln.billedQty;
+      final bool netMode = _useSchemeNetRate && ln.hasFreeScheme;
+      final defQty = netMode
+          ? (ln.totalAvailableAll > 0 ? ln.totalAvailableAll : ln.totalBilledAll)
+          : (ln.availableQty > 0 ? ln.availableQty : ln.billedQty);
+      final defFree = netMode ? 0.0 : ln.availableFreeQty;
       _qtyControllers[i] = TextEditingController(text: formatQty(defQty));
-      if (ln.availableQty > 0) {
+      _freeControllers[i] = TextEditingController(text: formatQty(defFree));
+      if (ln.totalAvailableAll > 0) {
         _checkedLineIndexes.add(i);
       }
     }
     setState(() {});
+  }
+
+  void _toggleSchemeMode(bool useNet) {
+    setState(() {
+      _useSchemeNetRate = useNet;
+      if (_selectedBill != null) {
+        for (int i = 0; i < _selectedBill!.lines.length; i++) {
+          final ln = _selectedBill!.lines[i];
+          if (!ln.hasFreeScheme) continue;
+          if (useNet) {
+            final defQ = ln.totalAvailableAll > 0 ? ln.totalAvailableAll : ln.totalBilledAll;
+            _qtyControllers[i]?.text = formatQty(defQ);
+            _freeControllers[i]?.text = "0";
+          } else {
+            final defQ = ln.availableQty > 0 ? ln.availableQty : ln.billedQty;
+            _qtyControllers[i]?.text = formatQty(defQ);
+            _freeControllers[i]?.text = formatQty(ln.availableFreeQty);
+          }
+        }
+      }
+    });
   }
 
   void _selectAllAvailable() {
@@ -115,7 +151,7 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
     setState(() {
       _checkedLineIndexes.clear();
       for (int i = 0; i < _selectedBill!.lines.length; i++) {
-        if (_selectedBill!.lines[i].availableQty > 0) {
+        if (_selectedBill!.lines[i].totalAvailableAll > 0) {
           _checkedLineIndexes.add(i);
         }
       }
@@ -148,12 +184,16 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
     final List<WebPullFromBillResultLine> out = [];
     for (final idx in (_checkedLineIndexes.toList()..sort())) {
       final ln = _selectedBill!.lines[idx];
+      final bool netMode = _useSchemeNetRate && ln.hasFreeScheme;
       final qty = double.tryParse(_qtyControllers[idx]?.text ?? "0") ?? 0.0;
-      if (qty <= 0) continue;
+      final freeQ = netMode ? 0.0 : (double.tryParse(_freeControllers[idx]?.text ?? "0") ?? 0.0);
+      if (qty <= 0 && freeQ <= 0) continue;
       out.add(WebPullFromBillResultLine(
         medicine: _resolveMedicine(ln),
         line: ln.toInvoiceLine(),
         qty: qty,
+        freeQty: freeQ,
+        useSchemeNetRate: netMode,
       ));
     }
     if (out.isEmpty) {
@@ -398,17 +438,60 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
                                     ),
                                   ],
                                 ),
+                                if (_selectedBill!.lines.any((l) => l.hasFreeScheme))
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: Row(
+                                      children: [
+                                        const Text(
+                                          "SCHEME MODE:",
+                                          style: TextStyle(
+                                            color: Colors.white54,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        ChoiceChip(
+                                          label: const Text("Bill Rate + Free",
+                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                          selected: !_useSchemeNetRate,
+                                          onSelected: (_) => _toggleSchemeMode(false),
+                                          visualDensity: VisualDensity.compact,
+                                          selectedColor: _primaryBtn,
+                                          backgroundColor: const Color(0xFF1E293B),
+                                          labelStyle: const TextStyle(color: Colors.white),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        ChoiceChip(
+                                          label: const Text("Scheme Net Rate (Random Qty)",
+                                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                          selected: _useSchemeNetRate,
+                                          onSelected: (_) => _toggleSchemeMode(true),
+                                          visualDensity: VisualDensity.compact,
+                                          selectedColor: const Color(0xFF0F766E),
+                                          backgroundColor: const Color(0xFF1E293B),
+                                          labelStyle: const TextStyle(color: Colors.white),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 const Divider(color: Colors.white10, height: 12),
                                 Expanded(
                                   child: ListView.builder(
                                     itemCount: _selectedBill!.lines.length,
                                     itemBuilder: (c, idx) {
                                       final ln = _selectedBill!.lines[idx];
+                                      final bool netMode = _useSchemeNetRate && ln.hasFreeScheme;
                                       final checked = _checkedLineIndexes.contains(idx);
-                                      final avail = ln.availableQty > 0.0001;
                                       final qtyCtrl = _qtyControllers[idx]!;
+                                      final freeCtrl = _freeControllers[idx]!;
                                       final typedQty = double.tryParse(qtyCtrl.text) ?? 0.0;
-                                      final overReturn = typedQty > ln.availableQty + 0.0001;
+                                      final typedFree = netMode ? 0.0 : (double.tryParse(freeCtrl.text) ?? 0.0);
+                                      final bool avail = ln.totalAvailableAll > 0.0001;
+                                      final bool overReturn = netMode
+                                          ? (typedQty > ln.totalAvailableAll + 0.0001)
+                                          : (typedQty > ln.availableQty + 0.0001 || typedFree > ln.availableFreeQty + 0.0001);
 
                                       return Container(
                                         margin: const EdgeInsets.only(bottom: 7),
@@ -455,15 +538,17 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
                                                   ),
                                                   const SizedBox(height: 2),
                                                   Text(
-                                                    "Batch: ${ln.batch} • Exp: ${ln.exp} • Rate: ₹${ln.rate.toStringAsFixed(2)}${ln.discountPer > 0 ? ' (-${ln.discountPer.toStringAsFixed(1)}%)' : ''} • GST: ${ln.gstRate.toInt()}%",
-                                                    style: const TextStyle(
-                                                      color: Colors.white54,
+                                                    netMode
+                                                        ? "Batch: ${ln.batch} • Exp: ${ln.exp} • Scheme Net: ₹${ln.schemeNetRate.toStringAsFixed(2)} (Bill ₹${ln.rate.toStringAsFixed(2)})${ln.discountPer > 0 ? ' (-${ln.discountPer.toStringAsFixed(1)}%)' : ''}"
+                                                        : "Batch: ${ln.batch} • Exp: ${ln.exp} • Rate: ₹${ln.rate.toStringAsFixed(2)}${ln.discountPer > 0 ? ' (-${ln.discountPer.toStringAsFixed(1)}%)' : ''} • GST: ${ln.gstRate.toInt()}%",
+                                                    style: TextStyle(
+                                                      color: netMode ? const Color(0xFF38BDF8) : Colors.white54,
                                                       fontSize: 10,
                                                     ),
                                                   ),
                                                   const SizedBox(height: 2),
                                                   Text(
-                                                    "Billed: ${formatQty(ln.billedQty)} • Ret: ${formatQty(ln.alreadyReturnedQty)} • Avail: ${formatQty(ln.availableQty)}",
+                                                    "Billed: ${formatQty(ln.billedQty)}${ln.billedFreeQty > 0 ? '+${formatQty(ln.billedFreeQty)}F' : ''} • Ret: ${formatQty(ln.alreadyReturnedQty)}${ln.alreadyReturnedFreeQty > 0 ? '+${formatQty(ln.alreadyReturnedFreeQty)}F' : ''} • Avail: ${netMode ? '${formatQty(ln.totalAvailableAll)} Net' : '${formatQty(ln.availableQty)}${ln.availableFreeQty > 0 ? '+${formatQty(ln.availableFreeQty)}F' : ''}'}",
                                                     style: TextStyle(
                                                       color: avail
                                                           ? Colors.greenAccent
@@ -479,41 +564,81 @@ class _WebPullFromBillModalState extends State<WebPullFromBillModal> {
                                             Column(
                                               crossAxisAlignment: CrossAxisAlignment.end,
                                               children: [
-                                                SizedBox(
-                                                  width: 78,
-                                                  height: 34,
-                                                  child: TextField(
-                                                    controller: qtyCtrl,
-                                                    keyboardType: TextInputType.number,
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(
-                                                      color: overReturn
-                                                          ? Colors.orangeAccent
-                                                          : Colors.white,
-                                                      fontWeight: FontWeight.w900,
-                                                      fontSize: 12,
-                                                    ),
-                                                    decoration: InputDecoration(
-                                                      labelText: "RET QTY",
-                                                      labelStyle: const TextStyle(
-                                                          color: Colors.white54, fontSize: 8.5),
-                                                      filled: true,
-                                                      fillColor: Colors.black26,
-                                                      contentPadding:
-                                                          const EdgeInsets.symmetric(horizontal: 6),
-                                                      border: OutlineInputBorder(
-                                                        borderRadius: BorderRadius.circular(7),
-                                                        borderSide: BorderSide(
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    SizedBox(
+                                                      width: 72,
+                                                      height: 34,
+                                                      child: TextField(
+                                                        controller: qtyCtrl,
+                                                        keyboardType: TextInputType.number,
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(
                                                           color: overReturn
                                                               ? Colors.orangeAccent
-                                                              : Colors.white24,
+                                                              : Colors.white,
+                                                          fontWeight: FontWeight.w900,
+                                                          fontSize: 12,
                                                         ),
+                                                        decoration: InputDecoration(
+                                                          labelText: netMode ? "NET QTY" : "RET QTY",
+                                                          labelStyle: const TextStyle(
+                                                              color: Colors.white54, fontSize: 8.5),
+                                                          filled: true,
+                                                          fillColor: Colors.black26,
+                                                          contentPadding:
+                                                              const EdgeInsets.symmetric(horizontal: 6),
+                                                          border: OutlineInputBorder(
+                                                            borderRadius: BorderRadius.circular(7),
+                                                            borderSide: BorderSide(
+                                                              color: overReturn
+                                                                  ? Colors.orangeAccent
+                                                                  : Colors.white24,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        onChanged: (_) => setState(() {
+                                                          _checkedLineIndexes.add(idx);
+                                                        }),
                                                       ),
                                                     ),
-                                                    onChanged: (_) => setState(() {
-                                                      _checkedLineIndexes.add(idx);
-                                                    }),
-                                                  ),
+                                                    if (!netMode && ln.billedFreeQty > 0) ...[
+                                                      const SizedBox(width: 6),
+                                                      SizedBox(
+                                                        width: 60,
+                                                        height: 34,
+                                                        child: TextField(
+                                                          controller: freeCtrl,
+                                                          keyboardType: TextInputType.number,
+                                                          textAlign: TextAlign.center,
+                                                          style: const TextStyle(
+                                                            color: Color(0xFF38BDF8),
+                                                            fontWeight: FontWeight.w900,
+                                                            fontSize: 12,
+                                                          ),
+                                                          decoration: InputDecoration(
+                                                            labelText: "FREE",
+                                                            labelStyle: const TextStyle(
+                                                                color: Colors.white54, fontSize: 8.5),
+                                                            filled: true,
+                                                            fillColor: Colors.black26,
+                                                            contentPadding:
+                                                                const EdgeInsets.symmetric(horizontal: 6),
+                                                            border: OutlineInputBorder(
+                                                              borderRadius: BorderRadius.circular(7),
+                                                              borderSide: const BorderSide(
+                                                                color: Colors.white24,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          onChanged: (_) => setState(() {
+                                                            _checkedLineIndexes.add(idx);
+                                                          }),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                                 if (overReturn)
                                                   const Padding(

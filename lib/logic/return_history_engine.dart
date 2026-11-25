@@ -51,8 +51,31 @@ class ReturnHistoryInvoiceLine {
     this.rateCFormula = 0.0,
   });
 
-  double get availableQty =>
-      (billedQty - alreadyReturnedQty) > 0 ? (billedQty - alreadyReturnedQty) : 0.0;
+  double get totalBilledAll => billedQty + billedFreeQty;
+
+  double get totalReturnedAll => alreadyReturnedQty + alreadyReturnedFreeQty;
+
+  double get totalAvailableAll =>
+      (totalBilledAll - totalReturnedAll) > 0 ? (totalBilledAll - totalReturnedAll) : 0.0;
+
+  double get availableQty {
+    final paidDiff =
+        (billedQty - alreadyReturnedQty) > 0 ? (billedQty - alreadyReturnedQty) : 0.0;
+    return paidDiff <= totalAvailableAll ? paidDiff : totalAvailableAll;
+  }
+
+  double get availableFreeQty {
+    final rem = totalAvailableAll - availableQty;
+    return rem > 0 ? rem : 0.0;
+  }
+
+  bool get hasFreeScheme => billedFreeQty > 0.0001 && billedQty > 0.0001;
+
+  double get schemeNetRate {
+    final total = billedQty + billedFreeQty;
+    if (total <= 0 || billedFreeQty <= 0.0001) return rate;
+    return double.parse((rate * (billedQty / total)).toStringAsFixed(2));
+  }
 
   double get effectiveDiscPer {
     if (discountPer > 0.0001) return discountPer;
@@ -63,31 +86,68 @@ class ReturnHistoryInvoiceLine {
     return 0.0;
   }
 
-  Map<String, dynamic> toHistoryMap() => {
-        'billNo': billNo,
-        'internalNo': internalNo,
-        'date': date,
-        'batch': batch,
-        'exp': exp,
-        'packing': packing,
-        'hsn': hsn,
-        'qty': availableQty > 0 ? availableQty : billedQty,
-        'billedQty': billedQty,
-        'free': billedFreeQty,
-        'availableQty': availableQty,
-        'alreadyReturnedQty': alreadyReturnedQty,
-        'rate': rate,
-        'purchaseRate': rate,
-        'mrp': mrp,
-        'gst': gstRate,
-        'discountPer': effectiveDiscPer,
-        'discountRupees': discountRupees,
-        'rateA': rateA,
-        'rateB': rateB,
-        'rateC': rateC,
-        'appliedRateType': appliedRateType,
-        'rateCFormula': rateCFormula,
-      };
+  Map<String, dynamic> toHistoryMap({bool useSchemeNetRate = false}) {
+    final bool useNet = useSchemeNetRate && hasFreeScheme;
+    final double prefillQty = useNet
+        ? (totalAvailableAll > 0 ? totalAvailableAll : totalBilledAll)
+        : (availableQty > 0 ? availableQty : billedQty);
+    final double prefillFree = useNet ? 0.0 : availableFreeQty;
+    final double prefillRate = useNet ? schemeNetRate : rate;
+    return {
+      'billNo': billNo,
+      'internalNo': internalNo,
+      'date': date,
+      'batch': batch,
+      'exp': exp,
+      'packing': packing,
+      'hsn': hsn,
+      'qty': prefillQty,
+      'billedQty': billedQty,
+      'billedFreeQty': billedFreeQty,
+      'free': prefillFree,
+      'availableQty': availableQty,
+      'availableFreeQty': availableFreeQty,
+      'totalAvailableAll': totalAvailableAll,
+      'alreadyReturnedQty': alreadyReturnedQty,
+      'alreadyReturnedFreeQty': alreadyReturnedFreeQty,
+      'rate': prefillRate,
+      'purchaseRate': prefillRate,
+      'originalRate': rate,
+      'schemeNetRate': schemeNetRate,
+      'useSchemeNetRate': useNet,
+      'mrp': mrp,
+      'gst': gstRate,
+      'discountPer': effectiveDiscPer,
+      'discountRupees': discountRupees,
+      'rateA': rateA,
+      'rateB': rateB,
+      'rateC': rateC,
+      'appliedRateType': appliedRateType,
+      'rateCFormula': rateCFormula,
+    };
+  }
+}
+
+class ReturnSchemeContext {
+  final double billedQty;
+  final double billedFreeQty;
+  final double originalRate;
+  final bool initialUseSchemeNetRate;
+
+  const ReturnSchemeContext({
+    required this.billedQty,
+    required this.billedFreeQty,
+    required this.originalRate,
+    this.initialUseSchemeNetRate = false,
+  });
+
+  bool get hasFreeScheme => billedFreeQty > 0.0001 && billedQty > 0.0001;
+
+  double get schemeNetRate {
+    final total = billedQty + billedFreeQty;
+    if (total <= 0 || billedFreeQty <= 0.0001) return originalRate;
+    return double.parse((originalRate * (billedQty / total)).toStringAsFixed(2));
+  }
 }
 
 class ReturnBatchGroup {
@@ -135,8 +195,30 @@ class ReturnBatchGroup {
   double get alreadyReturnedQty => totalReturnedQty;
   double get totalBilledFree => totalBilledFreeQty;
 
-  double get netReturnableQty =>
-      (totalBilledQty - totalReturnedQty) > 0 ? (totalBilledQty - totalReturnedQty) : 0.0;
+  double get totalBilledAll => totalBilledQty + totalBilledFreeQty;
+  double get totalReturnedAll => totalReturnedQty + totalReturnedFreeQty;
+  double get netReturnableAll =>
+      (totalBilledAll - totalReturnedAll) > 0 ? (totalBilledAll - totalReturnedAll) : 0.0;
+
+  double get netReturnableQty {
+    final paidDiff =
+        (totalBilledQty - totalReturnedQty) > 0 ? (totalBilledQty - totalReturnedQty) : 0.0;
+    return paidDiff <= netReturnableAll ? paidDiff : netReturnableAll;
+  }
+
+  double get netReturnableFreeQty {
+    final rem = netReturnableAll - netReturnableQty;
+    return rem > 0 ? rem : 0.0;
+  }
+
+  bool get hasFreeScheme => totalBilledFreeQty > 0.0001 && totalBilledQty > 0.0001;
+
+  double get latestSchemeNetRate {
+    if (invoices.isNotEmpty) return invoices.first.schemeNetRate;
+    final total = totalBilledQty + totalBilledFreeQty;
+    if (total <= 0 || totalBilledFreeQty <= 0.0001) return latestRate;
+    return double.parse((latestRate * (totalBilledQty / total)).toStringAsFixed(2));
+  }
 
   bool get hasRateVariance => (maxRate - minRate).abs() > 0.01;
 
@@ -153,6 +235,7 @@ class ReturnRecentBillLine {
   final double billedQty;
   final double billedFreeQty;
   final double alreadyReturnedQty;
+  final double alreadyReturnedFreeQty;
   final double rate;
   final double mrp;
   final double gstRate;
@@ -177,6 +260,7 @@ class ReturnRecentBillLine {
     required this.billedQty,
     required this.billedFreeQty,
     required this.alreadyReturnedQty,
+    this.alreadyReturnedFreeQty = 0.0,
     required this.rate,
     required this.mrp,
     required this.gstRate,
@@ -192,8 +276,29 @@ class ReturnRecentBillLine {
     required this.date,
   });
 
-  double get availableQty =>
-      (billedQty - alreadyReturnedQty) > 0 ? (billedQty - alreadyReturnedQty) : 0.0;
+  double get totalBilledAll => billedQty + billedFreeQty;
+  double get totalReturnedAll => alreadyReturnedQty + alreadyReturnedFreeQty;
+  double get totalAvailableAll =>
+      (totalBilledAll - totalReturnedAll) > 0 ? (totalBilledAll - totalReturnedAll) : 0.0;
+
+  double get availableQty {
+    final paidDiff =
+        (billedQty - alreadyReturnedQty) > 0 ? (billedQty - alreadyReturnedQty) : 0.0;
+    return paidDiff <= totalAvailableAll ? paidDiff : totalAvailableAll;
+  }
+
+  double get availableFreeQty {
+    final rem = totalAvailableAll - availableQty;
+    return rem > 0 ? rem : 0.0;
+  }
+
+  bool get hasFreeScheme => billedFreeQty > 0.0001 && billedQty > 0.0001;
+
+  double get schemeNetRate {
+    final total = billedQty + billedFreeQty;
+    if (total <= 0 || billedFreeQty <= 0.0001) return rate;
+    return double.parse((rate * (billedQty / total)).toStringAsFixed(2));
+  }
 
   ReturnHistoryInvoiceLine toInvoiceLine() => ReturnHistoryInvoiceLine(
         billNo: billNo,
@@ -206,6 +311,7 @@ class ReturnRecentBillLine {
         billedQty: billedQty,
         billedFreeQty: billedFreeQty,
         alreadyReturnedQty: alreadyReturnedQty,
+        alreadyReturnedFreeQty: alreadyReturnedFreeQty,
         rate: rate,
         mrp: mrp,
         gstRate: gstRate,
@@ -238,8 +344,15 @@ class ReturnRecentBill {
 class ReturnAllocationItem {
   final ReturnHistoryInvoiceLine line;
   final double allocatedQty;
+  final double allocatedFreeQty;
+  final bool useSchemeNetRate;
 
-  const ReturnAllocationItem({required this.line, required this.allocatedQty});
+  const ReturnAllocationItem({
+    required this.line,
+    required this.allocatedQty,
+    this.allocatedFreeQty = 0.0,
+    this.useSchemeNetRate = false,
+  });
 }
 
 class ReturnAllocationResult {
@@ -422,6 +535,7 @@ class ReturnHistoryEngine {
     final Map<String, double> returnedByBatchAndBill = {};
     final Map<String, double> returnedFreeByBatchAndBill = {};
     final Map<String, double> unlinkedReturnedByBatch = {};
+    final Map<String, double> unlinkedReturnedFreeByBatch = {};
     final Map<String, double> totalReturnedByBatch = {};
     final Map<String, double> totalReturnedFreeByBatch = {};
 
@@ -455,6 +569,8 @@ class ReturnHistoryEngine {
       } else {
         unlinkedReturnedByBatch[bKey] =
             (unlinkedReturnedByBatch[bKey] ?? 0.0) + qty;
+        unlinkedReturnedFreeByBatch[bKey] =
+            (unlinkedReturnedFreeByBatch[bKey] ?? 0.0) + freeQty;
       }
     }
 
@@ -544,22 +660,36 @@ class ReturnHistoryEngine {
         ..sort((a, b) => b.date.compareTo(a.date));
 
       final Map<String, double> remainingBillReturn = {};
+      final Map<String, double> remainingBillFreeReturn = {};
       for (final l in list) {
         final composite = "$bKey||${l.billNo.trim().toUpperCase()}";
         if (returnedByBatchAndBill.containsKey(composite)) {
           remainingBillReturn[composite] = returnedByBatchAndBill[composite]!;
         }
+        if (returnedFreeByBatchAndBill.containsKey(composite)) {
+          remainingBillFreeReturn[composite] = returnedFreeByBatchAndBill[composite]!;
+        }
       }
       double remainingUnlinked = unlinkedReturnedByBatch[bKey] ?? 0.0;
-
+      double remainingUnlinkedFree = unlinkedReturnedFreeByBatch[bKey] ?? 0.0;
       final List<ReturnHistoryInvoiceLine> enriched = [];
       for (final l in list) {
         final composite = "$bKey||${l.billNo.trim().toUpperCase()}";
         double retForLine = 0.0;
+        double retFreeForLine = 0.0;
+        final explicitFreeAvail = remainingBillFreeReturn[composite] ?? 0.0;
+        if (explicitFreeAvail > 0) {
+          final takeFree = explicitFreeAvail <= l.billedFreeQty
+              ? explicitFreeAvail
+              : l.billedFreeQty;
+          retFreeForLine += takeFree;
+          remainingBillFreeReturn[composite] = explicitFreeAvail - takeFree;
+        }
         final explicitAvail = remainingBillReturn[composite] ?? 0.0;
         if (explicitAvail > 0) {
-          final take =
-              explicitAvail <= l.billedQty ? explicitAvail : l.billedQty;
+          final maxCap = (l.billedQty + l.billedFreeQty - retFreeForLine)
+              .clamp(0.0, double.infinity);
+          final take = explicitAvail <= maxCap ? explicitAvail : maxCap;
           retForLine += take;
           remainingBillReturn[composite] = explicitAvail - take;
         }
@@ -568,6 +698,13 @@ class ReturnHistoryEngine {
           final take = remainingUnlinked <= cap ? remainingUnlinked : cap;
           retForLine += take;
           remainingUnlinked -= take;
+        }
+        if (remainingUnlinkedFree > 0 && retFreeForLine < l.billedFreeQty) {
+          final capFree = l.billedFreeQty - retFreeForLine;
+          final takeFree =
+              remainingUnlinkedFree <= capFree ? remainingUnlinkedFree : capFree;
+          retFreeForLine += takeFree;
+          remainingUnlinkedFree -= takeFree;
         }
         enriched.add(ReturnHistoryInvoiceLine(
           billNo: l.billNo,
@@ -580,7 +717,7 @@ class ReturnHistoryEngine {
           billedQty: l.billedQty,
           billedFreeQty: l.billedFreeQty,
           alreadyReturnedQty: retForLine,
-          alreadyReturnedFreeQty: returnedFreeByBatchAndBill[composite] ?? 0.0,
+          alreadyReturnedFreeQty: retFreeForLine,
           rate: l.rate,
           mrp: l.mrp,
           gstRate: l.gstRate,
@@ -635,52 +772,116 @@ class ReturnHistoryEngine {
   static ReturnAllocationResult allocateReturnQty({
     required ReturnBatchGroup group,
     required double requestedQty,
+    double requestedFreeQty = 0.0,
+    bool useSchemeNetRate = false,
     bool newestFirst = true,
   }) {
-    if (requestedQty <= 0 || group.invoices.isEmpty) {
+    final bool hasPaidReq = requestedQty > 0.0001;
+    final bool hasFreeReq = !useSchemeNetRate && requestedFreeQty > 0.0001;
+    final double targetCap =
+        useSchemeNetRate ? group.netReturnableAll : group.netReturnableQty;
+    if ((!hasPaidReq && !hasFreeReq) || group.invoices.isEmpty) {
       return ReturnAllocationResult(
         allocations: const [],
         hasOverReturn: false,
-        netReturnable: group.netReturnableQty,
+        netReturnable: targetCap,
+      );
+    }
+    final ordered =
+        newestFirst ? group.invoices : group.invoices.reversed.toList();
+    if (useSchemeNetRate) {
+      double remaining = requestedQty;
+      final List<ReturnAllocationItem> out = [];
+      for (final line in ordered) {
+        if (remaining <= 0.0001) break;
+        final avail = line.totalAvailableAll;
+        if (avail <= 0.0001) continue;
+        final take = remaining <= avail ? remaining : avail;
+        out.add(ReturnAllocationItem(
+          line: line,
+          allocatedQty: take,
+          allocatedFreeQty: 0.0,
+          useSchemeNetRate: true,
+        ));
+        remaining -= take;
+      }
+      final bool hasOverReturn = remaining > 0.0001;
+      if (hasOverReturn) {
+        final primary = ordered.first;
+        final existingIdx = out.indexWhere((a) =>
+            a.line.billNo == primary.billNo && a.line.date == primary.date);
+        if (existingIdx != -1) {
+          final prev = out[existingIdx];
+          out[existingIdx] = ReturnAllocationItem(
+            line: prev.line,
+            allocatedQty: prev.allocatedQty + remaining,
+            allocatedFreeQty: 0.0,
+            useSchemeNetRate: true,
+          );
+        } else {
+          out.insert(
+              0,
+              ReturnAllocationItem(
+                line: primary,
+                allocatedQty: remaining,
+                allocatedFreeQty: 0.0,
+                useSchemeNetRate: true,
+              ));
+        }
+      }
+      return ReturnAllocationResult(
+        allocations: out,
+        hasOverReturn: hasOverReturn,
+        netReturnable: targetCap,
       );
     }
 
-    final ordered = newestFirst
-        ? group.invoices
-        : group.invoices.reversed.toList();
-    double remaining = requestedQty;
-    final List<ReturnAllocationItem> out = [];
+    double remPaid = requestedQty > 0 ? requestedQty : 0.0;
+    double remFree = requestedFreeQty > 0 ? requestedFreeQty : 0.0;
+    final Map<int, double> paidByIdx = {};
+    final Map<int, double> freeByIdx = {};
 
-    for (final line in ordered) {
-      if (remaining <= 0.0001) break;
-      final avail = line.availableQty;
-      if (avail <= 0.0001) continue;
-      final take = remaining <= avail ? remaining : avail;
-      out.add(ReturnAllocationItem(line: line, allocatedQty: take));
-      remaining -= take;
+    for (int i = 0; i < ordered.length; i++) {
+      final line = ordered[i];
+      if (remPaid > 0.0001 && line.availableQty > 0.0001) {
+        final take = remPaid <= line.availableQty ? remPaid : line.availableQty;
+        paidByIdx[i] = take;
+        remPaid -= take;
+      }
+      if (remFree > 0.0001 && line.availableFreeQty > 0.0001) {
+        final takeF =
+            remFree <= line.availableFreeQty ? remFree : line.availableFreeQty;
+        freeByIdx[i] = takeF;
+        remFree -= takeF;
+      }
     }
 
-    final bool hasOverReturn = remaining > 0.0001;
-    if (hasOverReturn) {
-      // Assign remaining overflow onto the primary selected invoice so no qty is silently dropped
-      final primary = ordered.first;
-      final existingIdx = out.indexWhere((a) =>
-          a.line.billNo == primary.billNo && a.line.date == primary.date);
-      if (existingIdx != -1) {
-        final prev = out[existingIdx];
-        out[existingIdx] = ReturnAllocationItem(
-          line: prev.line,
-          allocatedQty: prev.allocatedQty + remaining,
-        );
-      } else {
-        out.insert(0, ReturnAllocationItem(line: primary, allocatedQty: remaining));
+    final bool hasOverReturn = remPaid > 0.0001 || remFree > 0.0001;
+    if (remPaid > 0.0001) {
+      paidByIdx[0] = (paidByIdx[0] ?? 0.0) + remPaid;
+    }
+    if (remFree > 0.0001) {
+      freeByIdx[0] = (freeByIdx[0] ?? 0.0) + remFree;
+    }
+
+    final List<ReturnAllocationItem> out = [];
+    for (int i = 0; i < ordered.length; i++) {
+      final p = paidByIdx[i] ?? 0.0;
+      final f = freeByIdx[i] ?? 0.0;
+      if (p > 0.0001 || f > 0.0001) {
+        out.add(ReturnAllocationItem(
+          line: ordered[i],
+          allocatedQty: p,
+          allocatedFreeQty: f,
+          useSchemeNetRate: false,
+        ));
       }
     }
 
     return ReturnAllocationResult(
       allocations: out,
       hasOverReturn: hasOverReturn,
-      netReturnable: group.netReturnableQty,
+      netReturnable: targetCap,
     );
   }
 
@@ -697,22 +898,22 @@ class ReturnHistoryEngine {
     int limit = 15,
   }) {
     final Map<String, double> returnedByKey = {};
-
-    void trackReturn(String billNo, String medId, String medName, String batch, double qty) {
+    final Map<String, double> returnedFreeByKey = {};
+    void trackReturn(String billNo, String medId, String medName, String batch, double qty, double freeQty) {
       final b = billNo.trim().toUpperCase();
       if (b.isEmpty) return;
       final mKey = medId.trim().isNotEmpty ? medId.trim() : medName.trim().toLowerCase();
       final key = "$b||$mKey||${_batchKey(batch)}";
       returnedByKey[key] = (returnedByKey[key] ?? 0.0) + qty;
+      returnedFreeByKey[key] = (returnedFreeByKey[key] ?? 0.0) + freeQty;
     }
-
     if (isSale) {
       for (final sr in saleReturns) {
         if (sr.isDeleted == 1 || sr.status == "Cancelled") continue;
         if (excludeNoteId != null && excludeNoteId.isNotEmpty && sr.id == excludeNoteId) continue;
         if (!_matchesParty(targetId: partyId, targetName: partyName, docPartyId: sr.partyId, docPartyName: sr.partyName)) continue;
         for (final it in sr.items) {
-          trackReturn(it.origBillNo.trim().isNotEmpty ? it.origBillNo : sr.origBillNo, it.medicineID, it.name, it.batch, it.qty);
+          trackReturn(it.origBillNo.trim().isNotEmpty ? it.origBillNo : sr.origBillNo, it.medicineID, it.name, it.batch, it.qty, it.freeQty);
         }
       }
     } else {
@@ -721,7 +922,7 @@ class ReturnHistoryEngine {
         if (excludeNoteId != null && excludeNoteId.isNotEmpty && pr.id == excludeNoteId) continue;
         if (!_matchesParty(targetId: partyId, targetName: partyName, docPartyId: pr.partyId, docPartyName: pr.distributorName)) continue;
         for (final it in pr.items) {
-          trackReturn(it.origBillNo.trim().isNotEmpty ? it.origBillNo : pr.origBillNo, it.medicineID, it.name, it.batch, it.qty);
+          trackReturn(it.origBillNo.trim().isNotEmpty ? it.origBillNo : pr.origBillNo, it.medicineID, it.name, it.batch, it.qty, it.freeQty);
         }
       }
     }
@@ -733,6 +934,7 @@ class ReturnHistoryEngine {
         (it.name ?? '').toString(),
         (it.batch ?? '').toString(),
         ((it.qty ?? 0) as num).toDouble(),
+        ((it.freeQty ?? 0) as num).toDouble(),
       );
     }
 
@@ -765,6 +967,7 @@ class ReturnHistoryEngine {
             billedQty: it.qty,
             billedFreeQty: it.freeQty,
             alreadyReturnedQty: returnedByKey[key] ?? 0.0,
+            alreadyReturnedFreeQty: returnedFreeByKey[key] ?? 0.0,
             rate: it.rate,
             mrp: it.mrp,
             gstRate: it.gstRate,
@@ -815,6 +1018,7 @@ class ReturnHistoryEngine {
             billedQty: it.qty,
             billedFreeQty: it.freeQty,
             alreadyReturnedQty: returnedByKey[key] ?? 0.0,
+            alreadyReturnedFreeQty: returnedFreeByKey[key] ?? 0.0,
             rate: it.purchaseRate,
             mrp: it.mrp,
             gstRate: it.gstRate,
@@ -847,14 +1051,17 @@ class ReturnHistoryEngine {
     required ReturnHistoryInvoiceLine line,
     required double qty,
     double freeQty = 0.0,
+    bool useSchemeNetRate = false,
     required int srNo,
     required bool isLocal,
     required bool isBreakage,
     required bool isCommercial,
     String? idOverride,
   }) {
+    final double unitRate = useSchemeNetRate ? line.schemeNetRate : line.rate;
+    final double effFree = useSchemeNetRate ? 0.0 : freeQty;
     final double discPer = line.effectiveDiscPer;
-    final double gross = qty * line.rate;
+    final double gross = qty * unitRate;
     final double discRupees = discPer > 0
         ? double.parse((gross * (discPer / 100.0)).toStringAsFixed(2))
         : 0.0;
@@ -873,8 +1080,8 @@ class ReturnHistoryEngine {
       hsn: line.hsn.isNotEmpty ? line.hsn : med.hsnCode,
       mrp: line.mrp > 0 ? line.mrp : med.mrp,
       qty: qty,
-      freeQty: freeQty,
-      rate: line.rate,
+      freeQty: effFree,
+      rate: unitRate,
       gstRate: gstRate,
       cgst: isLocal ? tax / 2.0 : 0.0,
       sgst: isLocal ? tax / 2.0 : 0.0,
@@ -896,13 +1103,16 @@ class ReturnHistoryEngine {
     required ReturnHistoryInvoiceLine line,
     required double qty,
     double freeQty = 0.0,
+    bool useSchemeNetRate = false,
     required int srNo,
     required bool isBreakage,
     required bool isCommercial,
     String? idOverride,
   }) {
+    final double unitRate = useSchemeNetRate ? line.schemeNetRate : line.rate;
+    final double effFree = useSchemeNetRate ? 0.0 : freeQty;
     final double discPer = line.effectiveDiscPer;
-    final double gross = qty * line.rate;
+    final double gross = qty * unitRate;
     final double discRupees = discPer > 0
         ? double.parse((gross * (discPer / 100.0)).toStringAsFixed(2))
         : 0.0;
@@ -921,8 +1131,8 @@ class ReturnHistoryEngine {
       hsn: line.hsn.isNotEmpty ? line.hsn : med.hsnCode,
       mrp: line.mrp > 0 ? line.mrp : med.mrp,
       qty: qty,
-      freeQty: freeQty,
-      purchaseRate: line.rate,
+      freeQty: effFree,
+      purchaseRate: unitRate,
       gstRate: gstRate,
       total: total,
       rateA: line.rateA > 0 ? line.rateA : med.rateA,

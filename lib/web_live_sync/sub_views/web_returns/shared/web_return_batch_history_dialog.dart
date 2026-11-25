@@ -36,10 +36,12 @@ class WebReturnBatchHistoryDialog extends StatefulWidget {
 class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialog> {
   final TextEditingController _filterC = TextEditingController();
   final Map<String, TextEditingController> _splitQtyControllers = {};
+  final Map<String, TextEditingController> _splitFreeControllers = {};
   final Set<String> _expandedBatches = {};
   final Set<String> _quickSplitOpen = {};
   bool _onlyAvailable = false;
   bool _newestFirst = true;
+  bool _useSchemeNetRate = false;
   late List<ReturnBatchGroup> _groups;
 
   Color get _accent =>
@@ -79,15 +81,44 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
     for (final c in _splitQtyControllers.values) {
       c.dispose();
     }
+    for (final c in _splitFreeControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   TextEditingController _qtyControllerFor(ReturnBatchGroup g) {
     return _splitQtyControllers.putIfAbsent(g.batchKey, () {
-      final def = g.netReturnableQty > 0
-          ? formatQty(g.netReturnableQty)
-          : formatQty(g.totalBilledQty);
+      final def = _useSchemeNetRate
+          ? (g.netReturnableAll > 0 ? formatQty(g.netReturnableAll) : formatQty(g.totalBilledAll))
+          : (g.netReturnableQty > 0 ? formatQty(g.netReturnableQty) : formatQty(g.totalBilledQty));
       return TextEditingController(text: def);
+    });
+  }
+
+  TextEditingController _freeControllerFor(ReturnBatchGroup g) {
+    return _splitFreeControllers.putIfAbsent(g.batchKey, () {
+      final def = g.netReturnableFreeQty > 0 ? formatQty(g.netReturnableFreeQty) : "0";
+      return TextEditingController(text: def);
+    });
+  }
+
+  void _setSchemeMode(bool useNet) {
+    setState(() {
+      _useSchemeNetRate = useNet;
+      for (final g in _groups) {
+        if (_splitQtyControllers.containsKey(g.batchKey)) {
+          final defQ = useNet
+              ? (g.netReturnableAll > 0 ? formatQty(g.netReturnableAll) : formatQty(g.totalBilledAll))
+              : (g.netReturnableQty > 0 ? formatQty(g.netReturnableQty) : formatQty(g.totalBilledQty));
+          _splitQtyControllers[g.batchKey]!.text = defQ;
+        }
+        if (_splitFreeControllers.containsKey(g.batchKey)) {
+          _splitFreeControllers[g.batchKey]!.text = useNet
+              ? "0"
+              : (g.netReturnableFreeQty > 0 ? formatQty(g.netReturnableFreeQty) : "0");
+        }
+      }
     });
   }
 
@@ -95,14 +126,18 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
   Widget build(BuildContext context) {
     final q = _filterC.text.trim().toLowerCase();
     final filtered = _groups.where((g) {
-      if (_onlyAvailable && g.netReturnableQty <= 0.0001) return false;
+      if (_onlyAvailable && g.netReturnableAll <= 0.0001) return false;
       if (q.isEmpty) return true;
       if (g.batchDisplay.toLowerCase().contains(q)) return true;
       return g.invoices.any((inv) => inv.billNo.toLowerCase().contains(q));
     }).toList();
 
-    final double totalAvailAll =
+    final double totalAvailPaid =
         _groups.fold(0.0, (sum, g) => sum + g.netReturnableQty);
+    final double totalAvailFree =
+        _groups.fold(0.0, (sum, g) => sum + g.netReturnableFreeQty);
+    final double totalAvailAll = totalAvailPaid + totalAvailFree;
+    final bool hasAnyScheme = _groups.any((g) => g.hasFreeScheme);
 
     return AlertDialog(
       backgroundColor: const Color(0xFF1E293B),
@@ -163,7 +198,7 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                 ),
               ),
               child: Text(
-                "${_groups.length} Batches • Avail: ${formatQty(totalAvailAll)}",
+                "${_groups.length} Batches • Avail: ${formatQty(totalAvailPaid)}${totalAvailFree > 0 ? '+${formatQty(totalAvailFree)}F' : ''}",
                 style: TextStyle(
                   color: totalAvailAll > 0 ? Colors.greenAccent : _accent,
                   fontSize: 10.5,
@@ -254,6 +289,54 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                   ),
                 ],
               ),
+            if (hasAnyScheme) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_fix_high_rounded,
+                        color: Color(0xFF38BDF8), size: 15),
+                    const SizedBox(width: 6),
+                    const Text(
+                      "SCHEME RETURN MODE:",
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text("Bill Rate + Free",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      selected: !_useSchemeNetRate,
+                      onSelected: (_) => _setSchemeMode(false),
+                      visualDensity: VisualDensity.compact,
+                      selectedColor: _primaryBtn,
+                      backgroundColor: const Color(0xFF1E293B),
+                      labelStyle: const TextStyle(color: Colors.white),
+                    ),
+                    const SizedBox(width: 6),
+                    ChoiceChip(
+                      label: const Text("Scheme Net Rate (Random Qty)",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      selected: _useSchemeNetRate,
+                      onSelected: (_) => _setSchemeMode(true),
+                      visualDensity: VisualDensity.compact,
+                      selectedColor: const Color(0xFF0F766E),
+                      backgroundColor: const Color(0xFF1E293B),
+                      labelStyle: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             Expanded(
               child: filtered.isEmpty
@@ -312,7 +395,7 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
   Widget _buildBatchCard(ReturnBatchGroup g, String searchQuery) {
     final bool isExpanded = _expandedBatches.contains(g.batchKey);
     final bool isSplitOpen = _quickSplitOpen.contains(g.batchKey);
-    final bool hasAvail = g.netReturnableQty > 0.0001;
+    final bool hasAvail = g.netReturnableAll > 0.0001;
 
     final invList = searchQuery.isEmpty || g.batchDisplay.toLowerCase().contains(searchQuery)
         ? g.invoices
@@ -410,13 +493,24 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            rateText,
+                            _useSchemeNetRate && g.hasFreeScheme
+                                ? "₹${g.latestSchemeNetRate.toStringAsFixed(2)} (Net)"
+                                : rateText,
                             style: const TextStyle(
                               color: Colors.greenAccent,
                               fontWeight: FontWeight.w900,
                               fontSize: 13,
                             ),
                           ),
+                          if (g.hasFreeScheme)
+                            Text(
+                              "Bill: ₹${g.latestRate.toStringAsFixed(2)} • Scheme Net: ₹${g.latestSchemeNetRate.toStringAsFixed(2)}/u",
+                              style: const TextStyle(
+                                color: Color(0xFF38BDF8),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           Text(
                             "MRP ₹${g.latestMrp.toStringAsFixed(2)} • Disc ${g.latestDiscPer.toStringAsFixed(1)}% • GST ${g.latestGstRate.toInt()}%",
                             style: const TextStyle(color: Colors.white54, fontSize: 9.5),
@@ -437,14 +531,20 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                       const SizedBox(width: 8),
                       _statPill(
                         "Returned",
-                        formatQty(g.totalReturnedQty),
-                        g.totalReturnedQty > 0 ? Colors.orangeAccent : Colors.white38,
-                        g.totalReturnedQty > 0 ? const Color(0x22F59E0B) : Colors.white10,
+                        "${formatQty(g.totalReturnedQty)}${g.totalReturnedFreeQty > 0 ? ' + ${formatQty(g.totalReturnedFreeQty)}F' : ''}",
+                        (g.totalReturnedQty > 0 || g.totalReturnedFreeQty > 0)
+                            ? Colors.orangeAccent
+                            : Colors.white38,
+                        (g.totalReturnedQty > 0 || g.totalReturnedFreeQty > 0)
+                            ? const Color(0x22F59E0B)
+                            : Colors.white10,
                       ),
                       const SizedBox(width: 8),
                       _statPill(
                         "Returnable",
-                        formatQty(g.netReturnableQty),
+                        _useSchemeNetRate && g.hasFreeScheme
+                            ? "${formatQty(g.netReturnableAll)} Net"
+                            : "${formatQty(g.netReturnableQty)}${g.netReturnableFreeQty > 0 ? ' + ${formatQty(g.netReturnableFreeQty)}F' : ''}",
                         hasAvail ? Colors.greenAccent : Colors.redAccent,
                         hasAvail ? const Color(0x2210B981) : const Color(0x22EF4444),
                       ),
@@ -560,10 +660,15 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
 
   Widget _buildQuickSplitBar(ReturnBatchGroup g) {
     final qtyC = _qtyControllerFor(g);
+    final freeC = _freeControllerFor(g);
+    final bool netMode = _useSchemeNetRate && g.hasFreeScheme;
     final double req = double.tryParse(qtyC.text) ?? 0.0;
+    final double reqFree = netMode ? 0.0 : (double.tryParse(freeC.text) ?? 0.0);
     final alloc = ReturnHistoryEngine.allocateReturnQty(
       group: g,
       requestedQty: req,
+      requestedFreeQty: reqFree,
+      useSchemeNetRate: netMode,
       newestFirst: _newestFirst,
     );
 
@@ -614,7 +719,7 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
           Row(
             children: [
               SizedBox(
-                width: 120,
+                width: netMode ? 135 : 105,
                 height: 36,
                 child: TextField(
                   controller: qtyC,
@@ -625,7 +730,7 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                     fontSize: 13,
                   ),
                   decoration: InputDecoration(
-                    labelText: "Return Qty",
+                    labelText: netMode ? "Total Qty (Net)" : "Paid Qty",
                     labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
                     filled: true,
                     fillColor: const Color(0xFF0F172A),
@@ -638,11 +743,48 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                   onChanged: (_) => setState(() {}),
                 ),
               ),
+              if (!netMode && g.hasFreeScheme) ...[
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 86,
+                  height: 36,
+                  child: TextField(
+                    controller: freeC,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: "Free Qty",
+                      labelStyle: const TextStyle(color: Colors.white54, fontSize: 10),
+                      filled: true,
+                      fillColor: const Color(0xFF0F172A),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Colors.white24),
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (netMode)
+                      Text(
+                        "Scheme Net Rate: ₹${g.latestSchemeNetRate.toStringAsFixed(2)}/unit (0 Free)",
+                        style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     if (alloc.allocations.isEmpty)
                       const Text(
                         "Enter quantity > 0 to preview invoice allocation",
@@ -653,7 +795,8 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                         "Splits across ${alloc.allocations.length} bill(s): " +
                             alloc.allocations
                                 .take(4)
-                                .map((a) => "${a.line.billNo} (${formatQty(a.allocatedQty)})")
+                                .map((a) =>
+                                    "${a.line.billNo} (${formatQty(a.allocatedQty)}${a.allocatedFreeQty > 0 ? '+${formatQty(a.allocatedFreeQty)}F' : ''})")
                                 .join(", ") +
                             (alloc.allocations.length > 4 ? " +more" : ""),
                         style: const TextStyle(
@@ -666,7 +809,7 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                       ),
                     if (alloc.hasOverReturn)
                       Text(
-                        "Warning: Requested (${formatQty(req)}) exceeds Returnable (${formatQty(alloc.netReturnable)})!",
+                        "Warning: Requested exceeds Returnable (${formatQty(alloc.netReturnable)})!",
                         style: const TextStyle(
                           color: Colors.orangeAccent,
                           fontSize: 10,
@@ -704,12 +847,13 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
   }
 
   Widget _buildInvoiceRow(ReturnHistoryInvoiceLine line) {
-    final bool avail = line.availableQty > 0.0001;
+    final bool avail = line.totalAvailableAll > 0.0001;
+    final bool netMode = _useSchemeNetRate && line.hasFreeScheme;
     final dateStr = DateFormat('dd/MM/yyyy').format(line.date);
     return InkWell(
       onTap: () {
         Navigator.pop(context);
-        widget.onSelect(line.toHistoryMap());
+        widget.onSelect(line.toHistoryMap(useSchemeNetRate: netMode));
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 5),
@@ -747,9 +891,11 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
             ),
             const SizedBox(width: 10),
             Text(
-              "Ret: ${formatQty(line.alreadyReturnedQty)}",
+              "Ret: ${formatQty(line.alreadyReturnedQty)}${line.alreadyReturnedFreeQty > 0 ? '+${formatQty(line.alreadyReturnedFreeQty)}F' : ''}",
               style: TextStyle(
-                color: line.alreadyReturnedQty > 0 ? Colors.orangeAccent : Colors.white38,
+                color: (line.alreadyReturnedQty > 0 || line.alreadyReturnedFreeQty > 0)
+                    ? Colors.orangeAccent
+                    : Colors.white38,
                 fontSize: 10.5,
               ),
             ),
@@ -761,7 +907,9 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                "Avail: ${formatQty(line.availableQty)}",
+                netMode
+                    ? "Avail: ${formatQty(line.totalAvailableAll)} Net"
+                    : "Avail: ${formatQty(line.availableQty)}${line.availableFreeQty > 0 ? '+${formatQty(line.availableFreeQty)}F' : ''}",
                 style: TextStyle(
                   color: avail ? Colors.greenAccent : Colors.redAccent,
                   fontSize: 10,
@@ -771,7 +919,7 @@ class _WebReturnBatchHistoryDialogState extends State<WebReturnBatchHistoryDialo
             ),
             const Spacer(),
             Text(
-              "₹${line.rate.toStringAsFixed(2)}",
+              "₹${(netMode ? line.schemeNetRate : line.rate).toStringAsFixed(2)}${netMode ? ' Net' : ''}",
               style: const TextStyle(
                 color: Colors.greenAccent,
                 fontWeight: FontWeight.w900,

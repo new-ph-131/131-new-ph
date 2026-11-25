@@ -13,11 +13,15 @@ class AppPullBillPickedLine {
   final Medicine medicine;
   final ReturnHistoryInvoiceLine line;
   final double qty;
+  final double freeQty;
+  final bool useSchemeNetRate;
 
   const AppPullBillPickedLine({
     required this.medicine,
     required this.line,
     required this.qty,
+    this.freeQty = 0.0,
+    this.useSchemeNetRate = false,
   });
 }
 
@@ -104,10 +108,12 @@ class _AppReturnBatchHistorySheet extends StatefulWidget {
 class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet> {
   final TextEditingController _filterC = TextEditingController();
   final Map<String, TextEditingController> _splitQtyControllers = {};
+  final Map<String, TextEditingController> _splitFreeControllers = {};
   final Set<String> _expandedBatches = {};
   final Set<String> _quickSplitOpen = {};
   bool _onlyAvailable = false;
   bool _newestFirst = true;
+  bool _useSchemeNetRate = false;
   late List<ReturnBatchGroup> _groups;
 
   Color get _primary =>
@@ -145,15 +151,63 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
     for (final c in _splitQtyControllers.values) {
       c.dispose();
     }
+    for (final c in _splitFreeControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   TextEditingController _qtyControllerFor(ReturnBatchGroup g) {
     return _splitQtyControllers.putIfAbsent(g.batchKey, () {
-      final def = g.netReturnableQty > 0
-          ? formatQty(g.netReturnableQty)
-          : formatQty(g.totalBilledQty);
+      final bool netMode = _useSchemeNetRate && g.hasFreeScheme;
+      final def = netMode
+          ? (g.netReturnableAll > 0
+              ? formatQty(g.netReturnableAll)
+              : formatQty(g.totalBilledAll))
+          : (g.netReturnableQty > 0
+              ? formatQty(g.netReturnableQty)
+              : formatQty(g.totalBilledQty));
       return TextEditingController(text: def);
+    });
+  }
+
+  TextEditingController _freeControllerFor(ReturnBatchGroup g) {
+    return _splitFreeControllers.putIfAbsent(g.batchKey, () {
+      final bool netMode = _useSchemeNetRate && g.hasFreeScheme;
+      final def = netMode
+          ? "0"
+          : (g.netReturnableFreeQty > 0
+              ? formatQty(g.netReturnableFreeQty)
+              : "0");
+      return TextEditingController(text: def);
+    });
+  }
+
+  void _setSchemeMode(bool useNet) {
+    setState(() {
+      _useSchemeNetRate = useNet;
+      for (final g in _groups) {
+        if (!g.hasFreeScheme) continue;
+        final qC = _splitQtyControllers[g.batchKey];
+        final fC = _splitFreeControllers[g.batchKey];
+        if (useNet) {
+          final defQ = g.netReturnableAll > 0
+              ? formatQty(g.netReturnableAll)
+              : formatQty(g.totalBilledAll);
+          if (qC != null) qC.text = defQ;
+          if (fC != null) fC.text = "0";
+        } else {
+          final defQ = g.netReturnableQty > 0
+              ? formatQty(g.netReturnableQty)
+              : formatQty(g.totalBilledQty);
+          if (qC != null) qC.text = defQ;
+          if (fC != null) {
+            fC.text = g.netReturnableFreeQty > 0
+                ? formatQty(g.netReturnableFreeQty)
+                : "0";
+          }
+        }
+      }
     });
   }
 
@@ -161,17 +215,21 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
   Widget build(BuildContext context) {
     final q = _filterC.text.trim().toLowerCase();
     final filtered = _groups.where((g) {
-      if (_onlyAvailable && g.netReturnableQty <= 0.0001) return false;
+      if (_onlyAvailable && g.netReturnableAll <= 0.0001) return false;
       if (q.isEmpty) return true;
       if (g.batchDisplay.toLowerCase().contains(q)) return true;
       return g.invoices.any((i) => i.billNo.toLowerCase().contains(q));
     }).toList();
 
-    final double totalAvailAll =
+    final double totalAvailPaid =
         _groups.fold(0.0, (s, g) => s + g.netReturnableQty);
+    final double totalAvailFree =
+        _groups.fold(0.0, (s, g) => s + g.netReturnableFreeQty);
+    final double totalAvailAll = totalAvailPaid + totalAvailFree;
+    final bool hasAnyScheme = _groups.any((g) => g.hasFreeScheme);
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.84,
+      height: MediaQuery.of(context).size.height * 0.86,
       decoration: const BoxDecoration(
         color: Color(0xFFF8FAFC),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -239,7 +297,7 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                       ),
                     ),
                     child: Text(
-                      "${_groups.length} Batches • Avail ${formatQty(totalAvailAll)}",
+                      "${_groups.length} Batches • Avail ${formatQty(totalAvailPaid)}${totalAvailFree > 0 ? '+${formatQty(totalAvailFree)}F' : ''}",
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
@@ -305,6 +363,60 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                 ],
               ),
             ),
+            if (hasAnyScheme) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      Icon(Icons.auto_fix_high_rounded,
+                          size: 14, color: Colors.blue.shade800),
+                      Text(
+                        "SCHEME MODE:",
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                      ChoiceChip(
+                        label: const Text("Bill Rate + Free",
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                        selected: !_useSchemeNetRate,
+                        selectedColor: _primary,
+                        labelStyle: TextStyle(
+                          color: !_useSchemeNetRate ? Colors.white : Colors.black87,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => _setSchemeMode(false),
+                      ),
+                      ChoiceChip(
+                        label: const Text("Scheme Net Rate (Random Qty)",
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                        selected: _useSchemeNetRate,
+                        selectedColor: const Color(0xFF0F766E),
+                        labelStyle: TextStyle(
+                          color: _useSchemeNetRate ? Colors.white : Colors.black87,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (_) => _setSchemeMode(true),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
           const Divider(height: 16),
           Expanded(
@@ -370,16 +482,19 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
   Widget _buildBatchCard(ReturnBatchGroup g, String searchQuery) {
     final bool isExpanded = _expandedBatches.contains(g.batchKey);
     final bool isSplitOpen = _quickSplitOpen.contains(g.batchKey);
-    final bool hasAvail = g.netReturnableQty > 0.0001;
+    final bool hasAvail = g.netReturnableAll > 0.0001;
+    final bool netMode = _useSchemeNetRate && g.hasFreeScheme;
 
     final invList =
         searchQuery.isEmpty || g.batchDisplay.toLowerCase().contains(searchQuery)
             ? g.invoices
             : g.invoices.where((i) => i.billNo.toLowerCase().contains(searchQuery)).toList();
 
-    final String rateStr = g.hasRateVariance
-        ? "₹${g.minRate.toStringAsFixed(2)}–₹${g.maxRate.toStringAsFixed(2)}"
-        : "₹${g.latestRate.toStringAsFixed(2)}";
+    final String rateStr = netMode
+        ? "₹${g.latestSchemeNetRate.toStringAsFixed(2)} Net"
+        : (g.hasRateVariance
+            ? "₹${g.minRate.toStringAsFixed(2)}–₹${g.maxRate.toStringAsFixed(2)}"
+            : "₹${g.latestRate.toStringAsFixed(2)}");
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -468,32 +583,67 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        rateStr,
-                        style: TextStyle(
-                          color: Colors.green.shade800,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12.5,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            rateStr,
+                            style: TextStyle(
+                              color: Colors.green.shade800,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          if (g.hasFreeScheme)
+                            Text(
+                              "Net ₹${g.latestSchemeNetRate.toStringAsFixed(2)}/u",
+                              style: TextStyle(
+                                color: Colors.blue.shade800,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 9,
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _statChip("Billed", formatQty(g.totalBilledQty), Colors.black87,
-                          Colors.grey.shade100),
-                      const SizedBox(width: 6),
-                      _statChip("Ret", formatQty(g.totalReturnedQty),
-                          Colors.orange.shade900, Colors.orange.shade50),
-                      const SizedBox(width: 6),
-                      _statChip(
-                        "Avail",
-                        formatQty(g.netReturnableQty),
-                        hasAvail ? Colors.green.shade900 : Colors.red.shade800,
-                        hasAvail ? Colors.green.shade50 : Colors.red.shade50,
+                      Expanded(
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            _statChip(
+                              widget.isSale ? "Sold" : "Billed",
+                              "${formatQty(g.totalBilledQty)}${g.totalBilledFreeQty > 0 ? '+${formatQty(g.totalBilledFreeQty)}F' : ''}",
+                              Colors.black87,
+                              Colors.grey.shade100,
+                            ),
+                            _statChip(
+                              "Ret",
+                              "${formatQty(g.totalReturnedQty)}${g.totalReturnedFreeQty > 0 ? '+${formatQty(g.totalReturnedFreeQty)}F' : ''}",
+                              (g.totalReturnedQty > 0 || g.totalReturnedFreeQty > 0)
+                                  ? Colors.orange.shade900
+                                  : Colors.black54,
+                              (g.totalReturnedQty > 0 || g.totalReturnedFreeQty > 0)
+                                  ? Colors.orange.shade50
+                                  : Colors.grey.shade100,
+                            ),
+                            _statChip(
+                              "Avail",
+                              netMode
+                                  ? "${formatQty(g.netReturnableAll)} Net"
+                                  : "${formatQty(g.netReturnableQty)}${g.netReturnableFreeQty > 0 ? '+${formatQty(g.netReturnableFreeQty)}F' : ''}",
+                              hasAvail ? Colors.green.shade900 : Colors.red.shade800,
+                              hasAvail ? Colors.green.shade50 : Colors.red.shade50,
+                            ),
+                          ],
+                        ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 6),
                       if (widget.onAutoSplit != null)
                         InkWell(
                           onTap: () {
@@ -527,7 +677,7 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                             ),
                           ),
                         ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
                       Icon(
                         isExpanded
                             ? Icons.keyboard_arrow_up_rounded
@@ -570,11 +720,13 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                       itemCount: invList.length,
                       itemBuilder: (c, i) {
                         final ln = invList[i];
-                        final bool avail = ln.availableQty > 0.0001;
+                        final bool avail = ln.totalAvailableAll > 0.0001;
+                        final bool lineNetMode = _useSchemeNetRate && ln.hasFreeScheme;
                         return InkWell(
                           onTap: () {
                             Navigator.pop(context);
-                            widget.onSelect(ln.toHistoryMap());
+                            widget.onSelect(
+                                ln.toHistoryMap(useSchemeNetRate: lineNetMode));
                           },
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 6),
@@ -619,7 +771,7 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                                             fontWeight: FontWeight.w600),
                                       ),
                                       Text(
-                                        "Ret: ${formatQty(ln.alreadyReturnedQty)} • Avail: ${formatQty(ln.availableQty)}${ln.effectiveDiscPer > 0 ? ' • Disc ${ln.effectiveDiscPer.toStringAsFixed(1)}%' : ''}",
+                                        "Ret: ${formatQty(ln.alreadyReturnedQty)}${ln.alreadyReturnedFreeQty > 0 ? '+${formatQty(ln.alreadyReturnedFreeQty)}F' : ''} • Avail: ${lineNetMode ? '${formatQty(ln.totalAvailableAll)} Net' : '${formatQty(ln.availableQty)}${ln.availableFreeQty > 0 ? '+${formatQty(ln.availableFreeQty)}F' : ''}'}${ln.effectiveDiscPer > 0 ? ' • Disc ${ln.effectiveDiscPer.toStringAsFixed(1)}%' : ''}",
                                         style: TextStyle(
                                           fontSize: 9.5,
                                           fontWeight: FontWeight.bold,
@@ -631,10 +783,24 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                                     ],
                                   ),
                                 ),
-                                Text(
-                                  "₹${ln.rate.toStringAsFixed(2)}",
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w900, fontSize: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      "₹${(lineNetMode ? ln.schemeNetRate : ln.rate).toStringAsFixed(2)}${lineNetMode ? ' Net' : ''}",
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w900, fontSize: 12),
+                                    ),
+                                    if (ln.hasFreeScheme && !lineNetMode)
+                                      Text(
+                                        "Net ₹${ln.schemeNetRate.toStringAsFixed(2)}",
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade800,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -653,10 +819,15 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
 
   Widget _buildQuickSplitBox(ReturnBatchGroup g) {
     final qtyC = _qtyControllerFor(g);
+    final freeC = _freeControllerFor(g);
+    final bool netMode = _useSchemeNetRate && g.hasFreeScheme;
     final req = double.tryParse(qtyC.text) ?? 0.0;
+    final reqFree = netMode ? 0.0 : (double.tryParse(freeC.text) ?? 0.0);
     final alloc = ReturnHistoryEngine.allocateReturnQty(
       group: g,
       requestedQty: req,
+      requestedFreeQty: reqFree,
+      useSchemeNetRate: netMode,
       newestFirst: _newestFirst,
     );
 
@@ -696,27 +867,60 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
           Row(
             children: [
               SizedBox(
-                width: 90,
+                width: netMode ? 96 : 74,
                 height: 36,
                 child: TextField(
                   controller: qtyC,
                   keyboardType: TextInputType.number,
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  decoration: const InputDecoration(
-                    labelText: "Qty",
+                  decoration: InputDecoration(
+                    labelText: netMode ? "Net Qty" : "Paid Qty",
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   onChanged: (_) => setState(() {}),
                 ),
               ),
+              if (!netMode && g.hasFreeScheme) ...[
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 66,
+                  height: 36,
+                  child: TextField(
+                    controller: freeC,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.blue.shade800,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: "Free",
+                      isDense: true,
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+              ],
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (netMode)
+                      Text(
+                        "Scheme Net: ₹${g.latestSchemeNetRate.toStringAsFixed(2)}/u (0 Free)",
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal.shade800,
+                        ),
+                      ),
                     Text(
                       alloc.allocations.isEmpty
                           ? "Enter qty > 0"
@@ -724,7 +928,7 @@ class _AppReturnBatchHistorySheetState extends State<_AppReturnBatchHistorySheet
                               alloc.allocations
                                   .take(3)
                                   .map((a) =>
-                                      "${a.line.billNo}(${formatQty(a.allocatedQty)})")
+                                      "${a.line.billNo}(${formatQty(a.allocatedQty)}${a.allocatedFreeQty > 0 ? '+${formatQty(a.allocatedFreeQty)}F' : ''})")
                                   .join(", "),
                       style: const TextStyle(
                           fontSize: 10, fontWeight: FontWeight.bold),
@@ -813,6 +1017,8 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
   ReturnRecentBill? _selectedBill;
   final Set<int> _checked = {};
   final Map<int, TextEditingController> _qtyC = {};
+  final Map<int, TextEditingController> _freeC = {};
+  bool _useSchemeNetRate = false;
 
   Color get _primary =>
       widget.isSale ? const Color(0xFFB71C1C) : const Color(0xFFB45309);
@@ -853,6 +1059,9 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
     for (final c in _qtyC.values) {
       c.dispose();
     }
+    for (final c in _freeC.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -860,16 +1069,47 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
     for (final c in _qtyC.values) {
       c.dispose();
     }
+    for (final c in _freeC.values) {
+      c.dispose();
+    }
     _qtyC.clear();
+    _freeC.clear();
     _checked.clear();
     _selectedBill = b;
     for (int i = 0; i < b.lines.length; i++) {
       final ln = b.lines[i];
-      final def = ln.availableQty > 0 ? ln.availableQty : ln.billedQty;
-      _qtyC[i] = TextEditingController(text: formatQty(def));
-      if (ln.availableQty > 0) _checked.add(i);
+      final bool netMode = _useSchemeNetRate && ln.hasFreeScheme;
+      final defQty = netMode
+          ? (ln.totalAvailableAll > 0 ? ln.totalAvailableAll : ln.totalBilledAll)
+          : (ln.availableQty > 0 ? ln.availableQty : ln.billedQty);
+      final defFree = netMode ? 0.0 : ln.availableFreeQty;
+      _qtyC[i] = TextEditingController(text: formatQty(defQty));
+      _freeC[i] = TextEditingController(text: formatQty(defFree));
+      if (ln.totalAvailableAll > 0) _checked.add(i);
     }
     setState(() {});
+  }
+
+  void _toggleSchemeMode(bool useNet) {
+    setState(() {
+      _useSchemeNetRate = useNet;
+      if (_selectedBill != null) {
+        for (int i = 0; i < _selectedBill!.lines.length; i++) {
+          final ln = _selectedBill!.lines[i];
+          if (!ln.hasFreeScheme) continue;
+          if (useNet) {
+            final defQ =
+                ln.totalAvailableAll > 0 ? ln.totalAvailableAll : ln.totalBilledAll;
+            _qtyC[i]?.text = formatQty(defQ);
+            _freeC[i]?.text = "0";
+          } else {
+            final defQ = ln.availableQty > 0 ? ln.availableQty : ln.billedQty;
+            _qtyC[i]?.text = formatQty(defQ);
+            _freeC[i]?.text = formatQty(ln.availableFreeQty);
+          }
+        }
+      }
+    });
   }
 
   Medicine _resolveMed(ReturnRecentBillLine line) {
@@ -902,6 +1142,8 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
                     l.name.toLowerCase().contains(q) ||
                     l.batch.toLowerCase().contains(q)))
             .toList();
+    final bool hasSchemeLines =
+        _selectedBill?.lines.any((l) => l.hasFreeScheme) ?? false;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
@@ -1033,7 +1275,7 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
                         setState(() {
                           _checked.clear();
                           for (int i = 0; i < _selectedBill!.lines.length; i++) {
-                            if (_selectedBill!.lines[i].availableQty > 0) {
+                            if (_selectedBill!.lines[i].totalAvailableAll > 0) {
                               _checked.add(i);
                             }
                           }
@@ -1045,16 +1287,77 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
                   ],
                 ),
               ),
+              if (hasSchemeLines)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Icon(Icons.auto_fix_high_rounded,
+                            size: 14, color: Colors.blue.shade800),
+                        Text(
+                          "SCHEME:",
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                        ChoiceChip(
+                          label: const Text("Bill Rate + Free",
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          selected: !_useSchemeNetRate,
+                          selectedColor: _primary,
+                          labelStyle: TextStyle(
+                            color: !_useSchemeNetRate ? Colors.white : Colors.black87,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (_) => _toggleSchemeMode(false),
+                        ),
+                        ChoiceChip(
+                          label: const Text("Scheme Net Rate",
+                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold)),
+                          selected: _useSchemeNetRate,
+                          selectedColor: const Color(0xFF0F766E),
+                          labelStyle: TextStyle(
+                            color: _useSchemeNetRate ? Colors.white : Colors.black87,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (_) => _toggleSchemeMode(true),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   itemCount: _selectedBill!.lines.length,
                   itemBuilder: (c, idx) {
                     final ln = _selectedBill!.lines[idx];
+                    final bool netMode = _useSchemeNetRate && ln.hasFreeScheme;
                     final checked = _checked.contains(idx);
                     final ctrl = _qtyC[idx]!;
+                    final freeCtrl = _freeC[idx]!;
                     final typed = double.tryParse(ctrl.text) ?? 0.0;
-                    final over = typed > ln.availableQty + 0.0001;
+                    final typedFree =
+                        netMode ? 0.0 : (double.tryParse(freeCtrl.text) ?? 0.0);
+                    final over = netMode
+                        ? typed > ln.totalAvailableAll + 0.0001
+                        : (typed > ln.availableQty + 0.0001 ||
+                            typedFree > ln.availableFreeQty + 0.0001);
+                    final double displayRate =
+                        netMode ? ln.schemeNetRate : ln.rate;
                     return Card(
                       margin: const EdgeInsets.only(bottom: 7),
                       shape: RoundedRectangleBorder(
@@ -1090,16 +1393,16 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
                                           fontWeight: FontWeight.bold,
                                           fontSize: 12.5)),
                                   Text(
-                                    "Batch: ${ln.batch} • Exp: ${ln.exp} • Rate: ₹${ln.rate.toStringAsFixed(2)}${ln.discountPer > 0 ? ' (-${ln.discountPer.toStringAsFixed(1)}%)' : ''}",
+                                    "Batch: ${ln.batch} • Exp: ${ln.exp} • Rate: ₹${displayRate.toStringAsFixed(2)}${netMode ? ' (Net)' : ''}${ln.discountPer > 0 ? ' (-${ln.discountPer.toStringAsFixed(1)}%)' : ''}",
                                     style: const TextStyle(
                                         fontSize: 10, color: Colors.black54),
                                   ),
                                   Text(
-                                    "Billed: ${formatQty(ln.billedQty)} • Ret: ${formatQty(ln.alreadyReturnedQty)} • Avail: ${formatQty(ln.availableQty)}",
+                                    "Billed: ${formatQty(ln.billedQty)}${ln.billedFreeQty > 0 ? '+${formatQty(ln.billedFreeQty)}F' : ''} • Ret: ${formatQty(ln.alreadyReturnedQty)}${ln.alreadyReturnedFreeQty > 0 ? '+${formatQty(ln.alreadyReturnedFreeQty)}F' : ''} • Avail: ${netMode ? '${formatQty(ln.totalAvailableAll)} Net' : '${formatQty(ln.availableQty)}${ln.availableFreeQty > 0 ? '+${formatQty(ln.availableFreeQty)}F' : ''}'}",
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: ln.availableQty > 0
+                                      color: ln.totalAvailableAll > 0
                                           ? Colors.green.shade700
                                           : Colors.red.shade700,
                                     ),
@@ -1107,33 +1410,69 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
                                 ],
                               ),
                             ),
-                            SizedBox(
-                              width: 72,
-                              height: 36,
-                              child: TextField(
-                                controller: ctrl,
-                                keyboardType: TextInputType.number,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: over
-                                      ? Colors.orange.shade900
-                                      : Colors.black,
-                                ),
-                                decoration: InputDecoration(
-                                  labelText: "Qty",
-                                  isDense: true,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 6),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 62,
+                                  height: 36,
+                                  child: TextField(
+                                    controller: ctrl,
+                                    keyboardType: TextInputType.number,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: over
+                                          ? Colors.orange.shade900
+                                          : Colors.black,
+                                    ),
+                                    decoration: InputDecoration(
+                                      labelText: netMode ? "Net" : "Qty",
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 6),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    onChanged: (_) => setState(() {
+                                      _checked.add(idx);
+                                    }),
                                   ),
                                 ),
-                                onChanged: (_) => setState(() {
-                                  _checked.add(idx);
-                                }),
-                              ),
+                                if (!netMode && ln.billedFreeQty > 0) ...[
+                                  const SizedBox(width: 4),
+                                  SizedBox(
+                                    width: 54,
+                                    height: 36,
+                                    child: TextField(
+                                      controller: freeCtrl,
+                                      keyboardType: TextInputType.number,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: over
+                                            ? Colors.orange.shade900
+                                            : Colors.blue.shade800,
+                                      ),
+                                      decoration: InputDecoration(
+                                        labelText: "Free",
+                                        isDense: true,
+                                        contentPadding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 6),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                      ),
+                                      onChanged: (_) => setState(() {
+                                        _checked.add(idx);
+                                      }),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
@@ -1162,14 +1501,23 @@ class _AppPullFromBillSheetState extends State<_AppPullFromBillSheet> {
                               final out = <AppPullBillPickedLine>[];
                               for (final i in (_checked.toList()..sort())) {
                                 final ln = _selectedBill!.lines[i];
+                                final bool netMode =
+                                    _useSchemeNetRate && ln.hasFreeScheme;
                                 final qty =
                                     double.tryParse(_qtyC[i]?.text ?? "0") ??
                                         0.0;
-                                if (qty <= 0) continue;
+                                final freeQ = netMode
+                                    ? 0.0
+                                    : (double.tryParse(
+                                            _freeC[i]?.text ?? "0") ??
+                                        0.0);
+                                if (qty <= 0 && freeQ <= 0) continue;
                                 out.add(AppPullBillPickedLine(
                                   medicine: _resolveMed(ln),
                                   line: ln.toInvoiceLine(),
                                   qty: qty,
+                                  freeQty: freeQ,
+                                  useSchemeNetRate: netMode,
                                 ));
                               }
                               if (out.isEmpty) return;

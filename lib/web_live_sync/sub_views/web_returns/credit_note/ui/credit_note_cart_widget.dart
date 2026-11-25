@@ -52,6 +52,8 @@ class CreditNoteCartWidget extends StatelessWidget {
               med: med,
               line: a.line,
               qty: a.allocatedQty,
+              freeQty: a.allocatedFreeQty,
+              useSchemeNetRate: a.useSchemeNetRate,
               srNo: nextSr++,
               isLocal: controller.isLocal,
               isBreakage: controller.isBreakageMode,
@@ -104,6 +106,8 @@ class CreditNoteCartWidget extends StatelessWidget {
               med: p.medicine,
               line: p.line,
               qty: p.qty,
+              freeQty: p.freeQty,
+              useSchemeNetRate: p.useSchemeNetRate,
               srNo: nextSr++,
               isLocal: controller.isLocal,
               isBreakage: controller.isBreakageMode,
@@ -164,6 +168,20 @@ class CreditNoteCartWidget extends StatelessWidget {
       );
     }
 
+    ReturnSchemeContext? schemeCtx;
+    if (historyData != null) {
+      final bq = (historyData['billedQty'] as num?)?.toDouble() ?? 0.0;
+      final bf = (historyData['billedFreeQty'] as num?)?.toDouble() ?? 0.0;
+      final origR = ((historyData['originalRate'] ?? historyData['rate']) as num?)?.toDouble() ?? med.rateA;
+      if (bf > 0 && bq > 0) {
+        schemeCtx = ReturnSchemeContext(
+          billedQty: bq,
+          billedFreeQty: bf,
+          originalRate: origR,
+          initialUseSchemeNetRate: historyData['useSchemeNetRate'] == true,
+        );
+      }
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -175,6 +193,7 @@ class CreditNoteCartWidget extends StatelessWidget {
         availableBatches: batches,
         existingItem: preFilled,
         allowExpired: true,
+        returnScheme: schemeCtx,
         onAdd: (newItem) {
           final finalizedItem = itemToEdit != null
               ? newItem.copyWith(

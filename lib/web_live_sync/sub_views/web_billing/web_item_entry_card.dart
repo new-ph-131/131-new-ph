@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../web_models.dart';
 import '../../web_expiry_master.dart';
 import 'web_batch_lookup_dialog.dart';
+import '../../../logic/return_history_engine.dart';
 
 class WebItemEntryCard extends StatefulWidget {
   final Medicine med;
@@ -16,6 +17,7 @@ class WebItemEntryCard extends StatefulWidget {
   final Function(BillItem) onAdd;
   final VoidCallback onCancel;
   final bool allowExpired;
+  final ReturnSchemeContext? returnScheme;
 
   const WebItemEntryCard({
     super.key,
@@ -28,6 +30,7 @@ class WebItemEntryCard extends StatefulWidget {
     required this.onAdd,
     required this.onCancel,
     this.allowExpired = false,
+    this.returnScheme,
   });
 
   @override
@@ -47,11 +50,33 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
   final discAmtC = TextEditingController(text: "0.0");
 
   String selectedRateType = "A";
+  bool _useSchemeNetRate = false;
 
   @override
   void initState() {
     super.initState();
+    _useSchemeNetRate = widget.returnScheme?.initialUseSchemeNetRate ?? false;
     _setupInitialData();
+  }
+
+  void _toggleReturnSchemeMode(bool useNet) {
+    final scheme = widget.returnScheme;
+    if (scheme == null || !scheme.hasFreeScheme) return;
+    setState(() {
+      _useSchemeNetRate = useNet;
+      if (useNet) {
+        final curQ = double.tryParse(qtyC.text) ?? 0.0;
+        final curF = double.tryParse(freeC.text) ?? 0.0;
+        if (curF > 0) {
+          qtyC.text = formatQty(curQ + curF);
+          freeC.text = "0";
+        }
+        rateC.text = scheme.schemeNetRate.toStringAsFixed(2);
+      } else {
+        rateC.text = scheme.originalRate.toStringAsFixed(2);
+      }
+      _syncDiscount(true);
+    });
   }
 
   void _setupInitialData() {
@@ -348,6 +373,59 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                         ],
                       ),
                       const SizedBox(height: 14),
+                      if (widget.returnScheme != null && widget.returnScheme!.hasFreeScheme) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0x4438BDF8)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.auto_fix_high_rounded,
+                                  color: Color(0xFF38BDF8), size: 15),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "SCHEME (${formatQty(widget.returnScheme!.billedQty)}+${formatQty(widget.returnScheme!.billedFreeQty)}F):",
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              ChoiceChip(
+                                label: Text(
+                                  "Bill ₹${widget.returnScheme!.originalRate.toStringAsFixed(2)} + Free",
+                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                                selected: !_useSchemeNetRate,
+                                onSelected: (_) => _toggleReturnSchemeMode(false),
+                                visualDensity: VisualDensity.compact,
+                                selectedColor: const Color(0xFF2563EB),
+                                backgroundColor: const Color(0xFF1E293B),
+                                labelStyle: const TextStyle(color: Colors.white),
+                              ),
+                              const SizedBox(width: 6),
+                              ChoiceChip(
+                                label: Text(
+                                  "Net ₹${widget.returnScheme!.schemeNetRate.toStringAsFixed(2)} (Random Qty)",
+                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                                selected: _useSchemeNetRate,
+                                onSelected: (_) => _toggleReturnSchemeMode(true),
+                                visualDensity: VisualDensity.compact,
+                                selectedColor: const Color(0xFF0F766E),
+                                backgroundColor: const Color(0xFF1E293B),
+                                labelStyle: const TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       Row(
                         children: [
                           if (selectedRateType == "C") ...[
@@ -440,7 +518,7 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             elevation: 0,
                           ),
-                          onPressed: !isSaleAllowed || qtyC.text.isEmpty || (double.tryParse(qtyC.text) ?? 0.0) <= 0
+                          onPressed: !isSaleAllowed || ((double.tryParse(qtyC.text) ?? 0.0) <= 0 && (widget.returnScheme == null || (double.tryParse(freeC.text) ?? 0.0) <= 0))
                               ? null
                               : () {
                                   double q = double.tryParse(qtyC.text) ?? 1;

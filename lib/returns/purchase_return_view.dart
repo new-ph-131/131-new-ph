@@ -308,6 +308,8 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
                   med: med,
                   line: a.line,
                   qty: a.allocatedQty,
+                  freeQty: a.allocatedFreeQty,
+                  useSchemeNetRate: a.useSchemeNetRate,
                   srNo: sr++,
                   isBreakage: isBreakageMode,
                   isCommercial: isCommercial,
@@ -355,6 +357,8 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
             med: p.medicine,
             line: p.line,
             qty: p.qty,
+            freeQty: p.freeQty,
+            useSchemeNetRate: p.useSchemeNetRate,
             srNo: sr++,
             isBreakage: isBreakageMode,
             isCommercial: isCommercial,
@@ -401,7 +405,10 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
         exp: histExp,
         hsn: histHsn.isNotEmpty ? histHsn : med.hsnCode,
         mrp: ((historyData['mrp'] ?? med.mrp) as num).toDouble(),
-        purchaseRate: ((historyData['rate'] ?? med.purRate) as num).toDouble(),
+        purchaseRate:
+            ((historyData['purchaseRate'] ?? historyData['rate'] ?? med.purRate)
+                    as num)
+                .toDouble(),
         gstRate: ((historyData['gst'] ?? med.gst) as num).toDouble(),
         discountPer: ((historyData['discountPer'] ?? 0.0) as num).toDouble(),
         discountRupees: 0.0,
@@ -410,13 +417,33 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
         rateC: ((historyData['rateC'] ?? med.rateC) as num).toDouble(),
         appliedRateType: histRateType.isNotEmpty ? histRateType : "A",
         rateCFormula: ((historyData['rateCFormula'] ?? 0.0) as num).toDouble(),
-        qty: ((historyData['availableQty'] ?? historyData['qty'] ?? 1.0) as num)
+        qty: ((historyData['qty'] ?? historyData['availableQty'] ?? 1.0) as num)
             .toDouble(),
+        freeQty: ((historyData['free'] ?? 0.0) as num).toDouble(),
         total: 0,
         origBillNo: histBillNo,
         origBillDate: histDate,
         isManualOrigin: histBillNo.isEmpty,
       );
+    }
+    ReturnSchemeContext? schemeCtx;
+    if (historyData != null) {
+      final bq = (historyData['billedQty'] as num?)?.toDouble() ?? 0.0;
+      final bf = (historyData['billedFreeQty'] as num?)?.toDouble() ?? 0.0;
+      final origR =
+          ((historyData['originalRate'] ??
+                      historyData['purchaseRate'] ??
+                      historyData['rate']) as num?)
+                  ?.toDouble() ??
+              med.purRate;
+      if (bf > 0 && bq > 0) {
+        schemeCtx = ReturnSchemeContext(
+          billedQty: bq,
+          billedFreeQty: bf,
+          originalRate: origR,
+          initialUseSchemeNetRate: historyData['useSchemeNetRate'] == true,
+        );
+      }
     }
 
     showDialog(
@@ -426,6 +453,7 @@ class _PurchaseReturnViewState extends State<PurchaseReturnView> {
         srNo: existingItem?.srNo ?? (items.length + 1),
         existingItem: preFilled,
         allowExpired: true,
+        returnScheme: schemeCtx,
         onAdd: (newItem) async {
           final finalized = existingItem != null
               ? newItem.copyWith(

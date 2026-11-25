@@ -8,6 +8,7 @@ import 'pharoah_manager.dart';
 import 'expiry_master.dart';
 import 'batch_sync_engine.dart';
 import 'widgets.dart'; // Naya global lookup widget load karne ke liye
+import 'logic/return_history_engine.dart';
 
 class ItemEntryCard extends StatefulWidget {
   final Medicine med;
@@ -16,7 +17,8 @@ class ItemEntryCard extends StatefulWidget {
   final BillItem? existingItem;
   final Function(BillItem) onAdd;
   final VoidCallback onCancel;
-  final bool allowExpired; 
+  final bool allowExpired;
+  final ReturnSchemeContext? returnScheme;
 
   const ItemEntryCard({
     super.key,
@@ -26,7 +28,8 @@ class ItemEntryCard extends StatefulWidget {
     this.existingItem,
     required this.onAdd,
     required this.onCancel,
-    this.allowExpired = false, 
+    this.allowExpired = false,
+    this.returnScheme,
   });
 
   @override
@@ -47,12 +50,34 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
   final discAmtC = TextEditingController(text: "0.0"); 
 
   String selectedRateType = "A";
-  bool hideZeroStock = true; 
+  bool hideZeroStock = true;
+  bool _useSchemeNetRate = false;
 
   @override
   void initState() {
     super.initState();
+    _useSchemeNetRate = widget.returnScheme?.initialUseSchemeNetRate ?? false;
     _setupInitialData();
+  }
+
+  void _toggleReturnSchemeMode(bool useNet) {
+    final scheme = widget.returnScheme;
+    if (scheme == null || !scheme.hasFreeScheme) return;
+    setState(() {
+      _useSchemeNetRate = useNet;
+      if (useNet) {
+        final curQ = double.tryParse(qtyC.text) ?? 0.0;
+        final curF = double.tryParse(freeC.text) ?? 0.0;
+        if (curF > 0) {
+          qtyC.text = formatQty(curQ + curF);
+          freeC.text = "0";
+        }
+        rateC.text = scheme.schemeNetRate.toStringAsFixed(2);
+      } else {
+        rateC.text = scheme.originalRate.toStringAsFixed(2);
+      }
+      _syncBillDiscount(true);
+    });
   }
 
   void _setupInitialData() {
@@ -319,6 +344,71 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
                       ),
                       const SizedBox(height: 16),
 
+                      if (widget.returnScheme != null && widget.returnScheme!.hasFreeScheme) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEEF2FF),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: accentElectric.withOpacity(0.35)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.auto_fix_high_rounded, size: 14, color: brandDark),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    "SCHEME RETURN (${formatQty(widget.returnScheme!.billedQty)}+${formatQty(widget.returnScheme!.billedFreeQty)}F)",
+                                    style: const TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: brandDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  ChoiceChip(
+                                    label: Text(
+                                      "Bill ₹${widget.returnScheme!.originalRate.toStringAsFixed(2)} + Free",
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                    selected: !_useSchemeNetRate,
+                                    selectedColor: accentElectric,
+                                    labelStyle: TextStyle(
+                                      color: !_useSchemeNetRate ? Colors.white : brandDark,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onSelected: (_) => _toggleReturnSchemeMode(false),
+                                  ),
+                                  ChoiceChip(
+                                    label: Text(
+                                      "Net ₹${widget.returnScheme!.schemeNetRate.toStringAsFixed(2)} (Random Qty)",
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                    selected: _useSchemeNetRate,
+                                    selectedColor: const Color(0xFF0F766E),
+                                    labelStyle: TextStyle(
+                                      color: _useSchemeNetRate ? Colors.white : brandDark,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onSelected: (_) => _toggleReturnSchemeMode(true),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       // Price inputs row
                       Row(
                         children: [
@@ -392,7 +482,9 @@ class _ItemEntryCardState extends State<ItemEntryCard> {
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ), 
                           onPressed: () {
-                             if (qtyC.text.isEmpty || qtyC.text == "0") return;
+                             final qVal = double.tryParse(qtyC.text) ?? 0.0;
+                             final fVal = double.tryParse(freeC.text) ?? 0.0;
+                             if (qVal <= 0 && (widget.returnScheme == null || fVal <= 0)) return;
                              widget.onAdd(BillItem(
                                 id: widget.existingItem?.id ?? DateTime.now().toString(),
                                 srNo: widget.srNo, medicineID: widget.med.id, name: widget.med.name, packing: widget.med.packing,

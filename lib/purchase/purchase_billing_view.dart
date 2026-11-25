@@ -13,6 +13,7 @@ import '../expiry_master.dart';
 import 'package:intl/intl.dart';
 import '../pdf/pdf_router_service.dart';
 import 'dart:ui';
+import '../logic/return_history_engine.dart';
 
 class PurchaseBillingView extends StatefulWidget {
   final Party distributor;
@@ -352,7 +353,8 @@ class PurchaseItemEntryCard extends StatefulWidget {
   final PurchaseItem? existingItem; 
   final Function(PurchaseItem) onAdd; 
   final VoidCallback onCancel;
-  final bool allowExpired; 
+  final bool allowExpired;
+  final ReturnSchemeContext? returnScheme;
 
   const PurchaseItemEntryCard({
     super.key, 
@@ -362,6 +364,7 @@ class PurchaseItemEntryCard extends StatefulWidget {
     required this.onAdd, 
     required this.onCancel,
     this.allowExpired = false,
+    this.returnScheme,
   });
 
   @override State<PurchaseItemEntryCard> createState() => _PurchaseItemEntryCardState();
@@ -383,11 +386,33 @@ class _PurchaseItemEntryCardState extends State<PurchaseItemEntryCard> {
   final discAmtC = TextEditingController(text: "0.0");
 
   String selectedRateType = "A";
+  bool _useSchemeNetRate = false;
 
   @override 
   void initState() {
     super.initState();
+    _useSchemeNetRate = widget.returnScheme?.initialUseSchemeNetRate ?? false;
     _setupInitialData();
+  }
+
+  void _toggleReturnSchemeMode(bool useNet) {
+    final scheme = widget.returnScheme;
+    if (scheme == null || !scheme.hasFreeScheme) return;
+    setState(() {
+      _useSchemeNetRate = useNet;
+      if (useNet) {
+        final curQ = double.tryParse(qtyC.text) ?? 0.0;
+        final curF = double.tryParse(freeC.text) ?? 0.0;
+        if (curF > 0) {
+          qtyC.text = formatQty(curQ + curF);
+          freeC.text = "0";
+        }
+        purRateC.text = scheme.schemeNetRate.toStringAsFixed(2);
+      } else {
+        purRateC.text = scheme.originalRate.toStringAsFixed(2);
+      }
+      _syncDiscount(true);
+    });
   }
 
   void _setupInitialData() {
@@ -614,6 +639,71 @@ class _PurchaseItemEntryCardState extends State<PurchaseItemEntryCard> {
                         ],
                       ),
                       const SizedBox(height: 16),
+
+                      if (widget.returnScheme != null && widget.returnScheme!.hasFreeScheme) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDFA),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: brandTeal.withOpacity(0.35)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.auto_fix_high_rounded, size: 14, color: brandTeal),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    "SCHEME RETURN (${formatQty(widget.returnScheme!.billedQty)}+${formatQty(widget.returnScheme!.billedFreeQty)}F)",
+                                    style: const TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: jadeForest,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: [
+                                  ChoiceChip(
+                                    label: Text(
+                                      "Bill ₹${widget.returnScheme!.originalRate.toStringAsFixed(2)} + Free",
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                    selected: !_useSchemeNetRate,
+                                    selectedColor: sunsetCoral,
+                                    labelStyle: TextStyle(
+                                      color: !_useSchemeNetRate ? Colors.white : jadeForest,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onSelected: (_) => _toggleReturnSchemeMode(false),
+                                  ),
+                                  ChoiceChip(
+                                    label: Text(
+                                      "Net ₹${widget.returnScheme!.schemeNetRate.toStringAsFixed(2)} (Random Qty)",
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                    ),
+                                    selected: _useSchemeNetRate,
+                                    selectedColor: brandTeal,
+                                    labelStyle: TextStyle(
+                                      color: _useSchemeNetRate ? Colors.white : jadeForest,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    onSelected: (_) => _toggleReturnSchemeMode(true),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
 
                       Row(
                         children: [

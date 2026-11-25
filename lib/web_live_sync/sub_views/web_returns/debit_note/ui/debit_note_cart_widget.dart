@@ -54,6 +54,8 @@ class DebitNoteCartWidget extends StatelessWidget {
               med: med,
               line: a.line,
               qty: a.allocatedQty,
+              freeQty: a.allocatedFreeQty,
+              useSchemeNetRate: a.useSchemeNetRate,
               srNo: nextSr++,
               isBreakage: controller.isBreakageMode,
               isCommercial: controller.isCommercial,
@@ -105,6 +107,8 @@ class DebitNoteCartWidget extends StatelessWidget {
               med: p.medicine,
               line: p.line,
               qty: p.qty,
+              freeQty: p.freeQty,
+              useSchemeNetRate: p.useSchemeNetRate,
               srNo: nextSr++,
               isBreakage: controller.isBreakageMode,
               isCommercial: controller.isCommercial,
@@ -211,6 +215,21 @@ class DebitNoteCartWidget extends StatelessWidget {
     );
 
     String selectedRateType = itemToEdit?.appliedRateType ?? "A";
+    final double histBilledQ = (historyData?['billedQty'] as num?)?.toDouble() ?? 0.0;
+    final double histBilledF = (historyData?['billedFreeQty'] as num?)?.toDouble() ?? 0.0;
+    final double histOrigRate =
+        ((historyData?['originalRate'] ?? historyData?['purchaseRate'] ?? historyData?['rate']) as num?)
+                ?.toDouble() ??
+            med.purRate;
+    final ReturnSchemeContext? schemeCtx = (historyData != null && histBilledF > 0 && histBilledQ > 0)
+        ? ReturnSchemeContext(
+            billedQty: histBilledQ,
+            billedFreeQty: histBilledF,
+            originalRate: histOrigRate,
+            initialUseSchemeNetRate: historyData['useSchemeNetRate'] == true,
+          )
+        : null;
+    bool useSchemeNetRate = schemeCtx?.initialUseSchemeNetRate ?? false;
 
     showDialog(
       context: context,
@@ -244,6 +263,25 @@ class DebitNoteCartWidget extends StatelessWidget {
               }
             }
 
+            void toggleSchemeMode(bool useNet) {
+              if (schemeCtx == null || !schemeCtx.hasFreeScheme) return;
+              setDialogState(() {
+                useSchemeNetRate = useNet;
+                if (useNet) {
+                  final curQ = double.tryParse(qtyC.text) ?? 0.0;
+                  final curF = double.tryParse(freeC.text) ?? 0.0;
+                  if (curF > 0) {
+                    qtyC.text = formatQty(curQ + curF);
+                    freeC.text = "0";
+                  }
+                  purRateC.text = schemeCtx.schemeNetRate.toStringAsFixed(2);
+                } else {
+                  purRateC.text = schemeCtx.originalRate.toStringAsFixed(2);
+                }
+                syncDiscount(true);
+              });
+            }
+
             void executeSave() {
               if (expC.text.trim().isNotEmpty) {
                 final expWarn = ExpiryMaster.getValidationWarning(expC.text.trim());
@@ -256,6 +294,7 @@ class DebitNoteCartWidget extends StatelessWidget {
               }
 
               double q = double.tryParse(qtyC.text) ?? 0.0;
+              double fQty = double.tryParse(freeC.text) ?? 0.0;
               double pRate = double.tryParse(purRateC.text) ?? 0.0;
               double dAmt = double.tryParse(discAmtC.text) ?? 0.0;
               double gPer = double.tryParse(gstC.text) ?? 0.0;
@@ -266,7 +305,7 @@ class DebitNoteCartWidget extends StatelessWidget {
               double taxAmt = taxable * (gPer / 100);
               double netItemTotal = taxable + taxAmt;
 
-              if (q <= 0 || pRate <= 0) {
+              if ((q <= 0 && (schemeCtx == null || fQty <= 0)) || pRate <= 0) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                       content: Text(
@@ -495,6 +534,59 @@ class DebitNoteCartWidget extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 12),
+                            if (schemeCtx != null && schemeCtx.hasFreeScheme) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                margin: const EdgeInsets.only(bottom: 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0x44F59E0B)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.auto_fix_high_rounded,
+                                        color: Color(0xFFFBBF24), size: 15),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        "SCHEME (${formatQty(schemeCtx.billedQty)}+${formatQty(schemeCtx.billedFreeQty)}F):",
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    ChoiceChip(
+                                      label: Text(
+                                        "Bill ₹${schemeCtx.originalRate.toStringAsFixed(2)} + Free",
+                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                      selected: !useSchemeNetRate,
+                                      onSelected: (_) => toggleSchemeMode(false),
+                                      visualDensity: VisualDensity.compact,
+                                      selectedColor: const Color(0xFFD97706),
+                                      backgroundColor: const Color(0xFF1E293B),
+                                      labelStyle: const TextStyle(color: Colors.white),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    ChoiceChip(
+                                      label: Text(
+                                        "Net ₹${schemeCtx.schemeNetRate.toStringAsFixed(2)} (Random Qty)",
+                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                      selected: useSchemeNetRate,
+                                      onSelected: (_) => toggleSchemeMode(true),
+                                      visualDensity: VisualDensity.compact,
+                                      selectedColor: const Color(0xFF0F766E),
+                                      backgroundColor: const Color(0xFF1E293B),
+                                      labelStyle: const TextStyle(color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             Row(
                               children: [
                                 if (selectedRateType == "C") ...[
