@@ -871,7 +871,6 @@ class WebPdfRouterService {
       isLocal: isLocal,
       isCommercial: returnObj.isCommercial,
     );
-    final double totalItemDisc = returnObj.items.fold(0.0, (sum, it) => sum + (it.discountRupees > 0 ? it.discountRupees : 0.0));
     final String sigText = signLabel.trim().isNotEmpty ? signLabel.trim().toUpperCase() : "AUTHORISED SIGNATORY";
     return pw.Container(
       height: 110,
@@ -904,23 +903,22 @@ class WebPdfRouterService {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
-                if (totalItemDisc > 0.005) _fRow("ITEM DISC (-)", totalItemDisc),
                 _fRow("GROSS TAXABLE", summary.grossTaxable),
                 if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
                 if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST", summary.totalCGST),
-                  if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST", summary.totalSGST),
+                  if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST TOTAL", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST TOTAL", summary.totalSGST),
                 ] else ...[
-                  if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST", summary.totalIGST),
+                  if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST TOTAL", summary.totalIGST),
                 ],
                 if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text("NET CREDIT", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
+                    pw.Text("NET CREDIT", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.red900)),
                   ],
                 ),
               ],
@@ -1226,7 +1224,6 @@ class WebPdfRouterService {
       isLocal: isLocal,
       isCommercial: returnObj.isCommercial,
     );
-    final double totalItemDisc = returnObj.items.fold(0.0, (sum, it) => sum + (it.discountRupees > 0 ? it.discountRupees : 0.0));
     final String sigText = signLabel.trim().isNotEmpty ? signLabel.trim().toUpperCase() : "AUTHORISED SIGNATORY";
     return pw.Container(
       height: 110,
@@ -1261,23 +1258,22 @@ class WebPdfRouterService {
             decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))),
             child: pw.Column(
               children: [
-                if (totalItemDisc > 0.005) _fRow("ITEM DISC (-)", totalItemDisc),
                 _fRow("GROSS TAXABLE", summary.grossTaxable),
                 if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
                 if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
                 if (isLocal) ...[
-                  if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST", summary.totalCGST),
-                  if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST", summary.totalSGST),
+                  if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST TOTAL", summary.totalCGST),
+                  if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST TOTAL", summary.totalSGST),
                 ] else ...[
-                  if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST", summary.totalIGST),
+                  if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST TOTAL", summary.totalIGST),
                 ],
                 if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
                 pw.Divider(thickness: 0.5),
                 pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text("NET DEBIT", style: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold)),
-                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 12.5, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
+                    pw.Text("NET DEBIT", style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text("Rs. ${summary.finalGrandTotal.toStringAsFixed(2)}", style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold, color: PdfColors.brown900)),
                   ],
                 ),
               ],

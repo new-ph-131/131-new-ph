@@ -183,7 +183,6 @@ class CreditNotePdf {
       isLocal: local,
       isCommercial: ret.isCommercial,
     );
-    final double totalItemDisc = ret.items.fold(0.0, (sum, it) => sum + (it.discountRupees > 0 ? it.discountRupees : 0.0));
     final String sigText = signLabel.trim().isNotEmpty ? signLabel.trim().toUpperCase() : "AUTHORISED SIGNATORY";
     return pw.Container(height: 110, decoration: pw.BoxDecoration(border: pw.Border(top: pw.BorderSide(width: 0.5))), child: pw.Row(children: [
       pw.Container(width: 320, padding: const pw.EdgeInsets.all(5), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -201,15 +200,14 @@ class CreditNotePdf {
         ),
       ])),
       pw.Container(width: 250, padding: const pw.EdgeInsets.all(4), decoration: pw.BoxDecoration(border: pw.Border(right: pw.BorderSide(width: 0.5))), child: pw.Column(children: [
-        if (totalItemDisc > 0.005) _fRow("ITEM DISC (-)", totalItemDisc),
         _fRow("GROSS TAXABLE", summary.grossTaxable),
         if (summary.extraDiscount > 0) _fRow("EXTRA DISCOUNT (-)", summary.extraDiscount),
         if (summary.extraDiscount > 0) _fRow("NET TAXABLE", summary.netTaxable),
         if (local) ...[
-          if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST", summary.totalCGST),
-          if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST", summary.totalSGST),
+          if (summary.totalCGST > 0) _fRow(showReverseLabel ? "CGST REVERSE" : "CGST TOTAL", summary.totalCGST),
+          if (summary.totalSGST > 0) _fRow(showReverseLabel ? "SGST REVERSE" : "SGST TOTAL", summary.totalSGST),
         ] else ...[
-          if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST", summary.totalIGST),
+          if (summary.totalIGST > 0) _fRow(showReverseLabel ? "IGST REVERSE" : "IGST TOTAL", summary.totalIGST),
         ],
         if (summary.roundOff != 0) _fRow("ROUND OFF", summary.roundOff),
         pw.Divider(thickness: 0.5),
