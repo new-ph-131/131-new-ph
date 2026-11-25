@@ -793,6 +793,32 @@ class _WebItemEntryCardState extends State<WebItemEntryCard> {
       onChanged: onChanged,
     );
   }
+
+  Widget _rateSegment(String label, bool isSelected, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF2563EB) : Colors.black26,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: isSelected ? const Color(0xFF60A5FA) : Colors.white10),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.white54,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SpaciousInputField extends StatefulWidget {
@@ -904,32 +930,6 @@ class _SpaciousInputFieldState extends State<_SpaciousInputField> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _rateSegment(String label, bool isSelected, VoidCallback onTap) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF2563EB) : Colors.black26,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: isSelected ? const Color(0xFF60A5FA) : Colors.white10),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.white54,
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

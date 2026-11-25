@@ -947,119 +947,6 @@ class DebitNoteCartWidget extends StatelessWidget {
       onSubmitted: onSubmitted,
     );
   }
-}
-
-class _DebitNoteInputField extends StatefulWidget {
-  final String label;
-  final TextEditingController ctrl;
-  final bool isNum;
-  final bool isHighlight;
-  final bool isReadOnly;
-  final Widget? suffix;
-  final Function(String)? onChanged;
-  final Function(String)? onSubmitted;
-
-  const _DebitNoteInputField({
-    required this.label,
-    required this.ctrl,
-    this.isNum = false,
-    this.isHighlight = false,
-    this.isReadOnly = false,
-    this.suffix,
-    this.onChanged,
-    this.onSubmitted,
-  });
-
-  @override
-  State<_DebitNoteInputField> createState() => _DebitNoteInputFieldState();
-}
-
-class _DebitNoteInputFieldState extends State<_DebitNoteInputField> {
-  late final FocusNode _focusNode;
-  bool _isFocused = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _focusNode = FocusNode();
-    _focusNode.addListener(() {
-      if (mounted) {
-        setState(() {
-          _isFocused = _focusNode.hasFocus;
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool activeBorder = _isFocused || widget.isHighlight;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.label,
-          style: TextStyle(
-            color: _isFocused ? const Color(0xFFFBBF24) : Colors.white54,
-            fontSize: 8.5,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          decoration: BoxDecoration(
-            color: widget.isReadOnly
-                ? Colors.black38
-                : (activeBorder ? const Color(0x33F59E0B) : Colors.black26),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: activeBorder ? const Color(0xFFFBBF24) : Colors.white12,
-              width: _isFocused ? 1.5 : 1.0,
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: widget.ctrl,
-                  focusNode: _focusNode,
-                  showCursor: _isFocused,
-                  cursorColor: const Color(0xFFFBBF24),
-                  cursorHeight: 14,
-                  cursorWidth: 1.5,
-                  cursorRadius: const Radius.circular(2),
-                  readOnly: widget.isReadOnly,
-                  onChanged: widget.onChanged,
-                  onSubmitted: widget.onSubmitted,
-                  keyboardType: widget.isNum
-                      ? const TextInputType.numberWithOptions(decimal: true)
-                      : TextInputType.text,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(vertical: 8),
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              if (widget.suffix != null) widget.suffix!,
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _rateSegment(String label, bool isSelected, VoidCallback onTap) {
     return Expanded(
@@ -1783,5 +1670,119 @@ class _DebitNoteInputFieldState extends State<_DebitNoteInputField> {
       overflow: TextOverflow.ellipsis,
     );
     return width != null ? SizedBox(width: width, child: textWidget) : textWidget;
+  }
+}
+
+
+class _DebitNoteInputField extends StatefulWidget {
+  final String label;
+  final TextEditingController ctrl;
+  final bool isNum;
+  final bool isHighlight;
+  final bool isReadOnly;
+  final Widget? suffix;
+  final Function(String)? onChanged;
+  final Function(String)? onSubmitted;
+
+  const _DebitNoteInputField({
+    required this.label,
+    required this.ctrl,
+    this.isNum = false,
+    this.isHighlight = false,
+    this.isReadOnly = false,
+    this.suffix,
+    this.onChanged,
+    this.onSubmitted,
+  });
+
+  @override
+  State<_DebitNoteInputField> createState() => _DebitNoteInputFieldState();
+}
+
+class _DebitNoteInputFieldState extends State<_DebitNoteInputField> {
+  late final FocusNode _focusNode;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isFocused = _focusNode.hasFocus;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool activeBorder = _isFocused || widget.isHighlight;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: TextStyle(
+            color: _isFocused ? const Color(0xFFFBBF24) : Colors.white54,
+            fontSize: 8.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+            color: widget.isReadOnly
+                ? Colors.black38
+                : (activeBorder ? const Color(0x33F59E0B) : Colors.black26),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: activeBorder ? const Color(0xFFFBBF24) : Colors.white12,
+              width: _isFocused ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widget.ctrl,
+                  focusNode: _focusNode,
+                  showCursor: _isFocused,
+                  cursorColor: const Color(0xFFFBBF24),
+                  cursorHeight: 14,
+                  cursorWidth: 1.5,
+                  cursorRadius: const Radius.circular(2),
+                  readOnly: widget.isReadOnly,
+                  onChanged: widget.onChanged,
+                  onSubmitted: widget.onSubmitted,
+                  keyboardType: widget.isNum
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              if (widget.suffix != null) widget.suffix!,
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

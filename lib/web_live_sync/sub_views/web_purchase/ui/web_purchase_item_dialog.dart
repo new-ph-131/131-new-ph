@@ -618,6 +618,26 @@ class _WebPurchaseItemDialogState extends State<WebPurchaseItemDialog> {
       onChanged: onChanged,
     );
   }
+
+  Widget _segmentRate(String label, bool isSelected, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFF59E0B) : Colors.black26,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: isSelected ? Colors.black : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _WebPurchaseInputField extends StatefulWidget {
@@ -723,26 +743,6 @@ class _WebPurchaseInputFieldState extends State<_WebPurchaseInputField> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _segmentRate(String label, bool isSelected, VoidCallback onTap) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFF59E0B) : Colors.black26,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: isSelected ? Colors.black : Colors.white54, fontSize: 9, fontWeight: FontWeight.bold),
-          ),
-        ),
-      ),
     );
   }
 }
